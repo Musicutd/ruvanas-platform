@@ -43,6 +43,7 @@ model User {
   updatedAt    DateTime             @updatedAt
   memberships  OrganisationMember[]
   auditLogs    AuditLog[]           @relation("AuditActor")
+  sessions     Session[]
 }
 
 model Organisation {
@@ -72,18 +73,18 @@ model OrganisationMember {
 }
 
 model Plan {
-  id               String         @id @default(cuid())
-  name             String         @unique
-  code             String         @unique
+  id                String         @id @default(cuid())
+  name              String         @unique
+  code              String         @unique
   monthlyPriceCents Int
-  stationLimit     Int            @default(1)
-  storageLimitGb   Int
-  listenerLimit    Int
-  maxBitrateKbps   Int
-  active           Boolean        @default(true)
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
-  subscriptions    Subscription[]
+  stationLimit      Int            @default(1)
+  storageLimitGb    Int
+  listenerLimit     Int
+  maxBitrateKbps    Int
+  active            Boolean        @default(true)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  subscriptions     Subscription[]
 }
 
 model Subscription {
@@ -141,8 +142,8 @@ model AuditLog {
   organisationId String?
   actorUserId    String?
   action         String
-  entityType      String
-  entityId        String?
+  entityType     String
+  entityId       String?
   details        Json?
   createdAt      DateTime      @default(now())
 
@@ -151,4 +152,17 @@ model AuditLog {
 
   @@index([organisationId])
   @@index([actorUserId])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
 }
