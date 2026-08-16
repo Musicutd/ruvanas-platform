@@ -117,35 +117,38 @@ model Station {
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
 
-  organisation Organisation       @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  organisation Organisation         @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   streamConfig StationStreamConfig?
 
   @@index([organisationId])
 }
 
 model StationStreamConfig {
-  id              String   @id @default(cuid())
-  stationId       String   @unique
-  streamUrl       String?
-  mountPoint      String?
-  serverHost      String?
-  serverPort      Int?
-  encryptedSecret String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id                      String   @id @default(cuid())
+  stationId               String   @unique
+  centovaUsername         String?
+  streamUrl               String?
+  mountPoint              String?
+  serverHost              String?
+  serverPort              Int?
+  bitrateKbps             Int?
+  adminPasswordEncrypted  String?
+  sourcePasswordEncrypted String?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
 
   station Station @relation(fields: [stationId], references: [id], onDelete: Cascade)
 }
 
 model AuditLog {
-  id             String        @id @default(cuid())
+  id             String   @id @default(cuid())
   organisationId String?
   actorUserId    String?
   action         String
   entityType     String
   entityId       String?
   details        Json?
-  createdAt      DateTime      @default(now())
+  createdAt      DateTime @default(now())
 
   organisation Organisation? @relation(fields: [organisationId], references: [id], onDelete: SetNull)
   actor        User?         @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
