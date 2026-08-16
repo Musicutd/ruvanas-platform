@@ -1,11 +1,21 @@
 import { NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
 import { encryptSecret } from "@/lib/crypto";
+import { getAdminUser } from "@/lib/requireAdmin";
 
 const prisma = new PrismaClient();
 
 export async function POST(request, { params }) {
   const { stationId } = params;
+
+  // --- Admin gate: only SUPER_ADMIN / SUPPORT may configure streaming ---
+  const adminUser = await getAdminUser();
+  if (!adminUser) {
+    return NextResponse.json(
+      { error: "Forbidden. Only administrators can configure streaming settings." },
+      { status: 403 }
+    );
+  }
 
   try {
     const body = await request.json();
@@ -21,7 +31,6 @@ export async function POST(request, { params }) {
       sourcePassword
     } = body;
 
-    // Required fields validation (mirrors client-side rules)
     if (!streamUrl) {
       return NextResponse.json(
         { error: "Public stream URL is required." },
