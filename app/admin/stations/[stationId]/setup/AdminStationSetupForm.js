@@ -1,23 +1,22 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 
-export default function AdminStationSetupForm({ stationId, initialData }) {
-  const [form, setForm] = useState(
-    initialData || {
-      streamUrl: "",
-      mountPoint: "",
-      serverHost: "",
-      serverPort: "",
-      bitrateKbps: "",
-      centovaUsername: "",
-      adminPassword: "",
-      sourcePassword: ""
-    }
-  );
-
+export default function AdminStationSetupForm({ stationId, stationName, initialData }) {
+  const router = useRouter();
+  const [form, setForm] = useState(initialData || {
+    streamUrl: "",
+    mountPoint: "",
+    serverHost: "",
+    serverPort: "",
+    bitrateKbps: "",
+    centovaUsername: "",
+    adminPassword: "",
+    sourcePassword: ""
+  });
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState({ type: "", text: "" });
 
   function updateField(event) {
     setForm((current) => ({
@@ -29,7 +28,7 @@ export default function AdminStationSetupForm({ stationId, initialData }) {
   async function handleSubmit(event) {
     event.preventDefault();
     setSaving(true);
-    setMessage("");
+    setMessage({ type: "", text: "" });
 
     try {
       const response = await fetch(`/api/stations/${stationId}/setup`, {
@@ -43,18 +42,20 @@ export default function AdminStationSetupForm({ stationId, initialData }) {
       const data = await response.json();
 
       if (!response.ok) {
-        setMessage(data.error || "Could not save configuration.");
+        setMessage({ type: "error", text: data.error || "Failed to save configuration." });
         return;
       }
 
-      setMessage("Streaming configuration saved.");
+      setMessage({ type: "success", text: "Streaming configuration saved successfully." });
+
+      // Clear password fields after successful save
       setForm((current) => ({
         ...current,
         adminPassword: "",
         sourcePassword: ""
       }));
     } catch {
-      setMessage("Connection error. Please try again.");
+      setMessage({ type: "error", text: "A connection error occurred. Please try again." });
     } finally {
       setSaving(false);
     }
@@ -63,7 +64,7 @@ export default function AdminStationSetupForm({ stationId, initialData }) {
   return (
     <form onSubmit={handleSubmit} style={styles.form}>
       <section style={styles.section}>
-        <h2 style={styles.heading}>Stream connection</h2>
+        <h2 style={styles.sectionTitle}>Stream connection</h2>
 
         <label style={styles.label}>
           Stream URL
@@ -129,7 +130,7 @@ export default function AdminStationSetupForm({ stationId, initialData }) {
       </section>
 
       <section style={styles.section}>
-        <h2 style={styles.heading}>Centova credentials</h2>
+        <h2 style={styles.sectionTitle}>Centova credentials</h2>
 
         <label style={styles.label}>
           Centova username
@@ -139,38 +140,46 @@ export default function AdminStationSetupForm({ stationId, initialData }) {
             name="centovaUsername"
             value={form.centovaUsername}
             onChange={updateField}
+            placeholder="centova_admin"
           />
         </label>
 
         <label style={styles.label}>
-          Admin password
+          Admin password (leave blank to keep existing)
           <input
             style={styles.input}
             type="password"
             name="adminPassword"
             value={form.adminPassword}
             onChange={updateField}
-            placeholder="Leave blank to keep existing"
+            placeholder="••••••••"
           />
         </label>
 
         <label style={styles.label}>
-          Source password
+          Source password (leave blank to keep existing)
           <input
             style={styles.input}
             type="password"
             name="sourcePassword"
             value={form.sourcePassword}
             onChange={updateField}
-            placeholder="Leave blank to keep existing"
+            placeholder="••••••••"
           />
         </label>
       </section>
 
-      {message ? <p style={styles.message}>{message}</p> : null}
+      {message.text ? (
+        <p style={{
+          ...styles.message,
+          ...(message.type === "error" ? styles.messageError : styles.messageSuccess)
+        }}>
+          {message.text}
+        </p>
+      ) : null}
 
       <button type="submit" style={styles.button} disabled={saving}>
-        {saving ? "Saving..." : "Save configuration"}
+        {saving ? "Saving…" : "Save configuration"}
       </button>
     </form>
   );
@@ -179,7 +188,7 @@ export default function AdminStationSetupForm({ stationId, initialData }) {
 const styles = {
   form: {
     display: "grid",
-    gap: 24
+    gap: 28
   },
   section: {
     background: "#182235",
@@ -187,11 +196,12 @@ const styles = {
     borderRadius: 14,
     padding: 24,
     display: "grid",
-    gap: 16
+    gap: 18
   },
-  heading: {
+  sectionTitle: {
     color: "#f4b942",
-    fontSize: 15,
+    fontSize: 14,
+    fontWeight: 700,
     margin: 0,
     textTransform: "uppercase",
     letterSpacing: 0.8
@@ -199,9 +209,9 @@ const styles = {
   label: {
     display: "grid",
     gap: 8,
+    color: "#d8e0ec",
     fontSize: 14,
-    fontWeight: 700,
-    color: "#d8e0ec"
+    fontWeight: 700
   },
   input: {
     width: "100%",
@@ -220,10 +230,19 @@ const styles = {
   },
   message: {
     margin: 0,
-    padding: 12,
     borderRadius: 8,
-    background: "#1a3a2f",
+    padding: 12,
+    lineHeight: 1.45,
+    fontSize: 14
+  },
+  messageError: {
+    border: "1px solid #a63e4a",
+    background: "#3c1d27",
+    color: "#fecdd3"
+  },
+  messageSuccess: {
     border: "1px solid #2d7a4f",
+    background: "#1a3a2f",
     color: "#c6f6d5"
   },
   button: {
@@ -235,6 +254,6 @@ const styles = {
     fontSize: 16,
     fontWeight: 800,
     cursor: "pointer",
-    justifySelf: "start"
+    alignSelf: "start"
   }
 };
