@@ -1,24 +1,50 @@
 import { redirect } from "next/navigation";
-import { getAdminUser } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { cookies } from "next/headers";
+import { verify } from "jsonwebtoken";
+import prisma from "@/lib/prisma";
 import AdminStationSetupForm from "./AdminStationSetupForm";
 
 export default async function AdminStationSetupPage({ params }) {
-  const admin = await getAdminUser();
-  if (!admin) {
-    redirect("/login");
+  const cookieStore = await cookies();
+  const token = cookieStore.get("admin_token")?.value;
+
+  if (!token) {
+    redirect("/admin/login");
   }
 
+  let adminId;
+  try {
+    const decoded = verify(token, process.env.JWT_SECRET);
+    adminId = decoded.adminId;
+  } catch {
+    redirect("/admin/login");
+  }
+
+  const admin = await prisma.admin.findUnique({
+    where: { id: adminId },
+    select: { id: true, name: true, email: true }
+  });
+
+  if (!admin) {
+    redirect("/admin/login");
+  }
+
+  const stationId = params.stationId;
+
   const station = await prisma.station.findUnique({
-    where: { id: params.stationId },
-    include: {
-      organisation: {
-        include: {
-          subscription: {
-            include: {
-              plan: true
-            }
-          }
+    where: { id: stationId },
+    select: {
+      id: true,
+      name: true,
+      streamingSetup: {
+        select: {
+          streamUrl: true,
+          mountPoint: true,
+          serverHost: true,
+          serverPort: true,
+          bitrateKbps: true,
+          centovaUsername: true
+          // do NOT select passwords
         }
       }
     }
@@ -28,92 +54,43 @@ export default async function AdminStationSetupPage({ params }) {
     redirect("/admin/stations");
   }
 
-  const config = await prisma.stationStreamConfig.findUnique({
-    where: { stationId: station.id }
-  });
+  const initialData = station.streamingSetup
+    ? {
+        streamUrl: station.streamingSetup.streamUrl ?? "",
+        mountPoint: station.streamingSetup.mountPoint ?? "",
+        serverHost: station.streamingSetup.serverHost ?? "",
+        serverPort: station.streamingSetup.serverPort ?? "",
+        bitrateKbps: station.streamingSetup.bitrateKbps ?? "",
+        centovaUsername: station.streamingSetup.centovaUsername ?? "",
+        adminPassword: "",
+        sourcePassword: ""
+      }
+    : {
+        streamUrl: "",
+        mountPoint: "",
+        serverHost: "",
+        serverPort: "",
+        bitrateKbps: "",
+        centovaUsername: "",
+        adminPassword: "",
+        sourcePassword: ""
+      };
 
   return (
-    <main style={styles.page}>
-      <header style={styles.header}>
-        <a href="/admin/stations" style={styles.brand}>RUVANAS ADMIN</a>
-        <span style={styles.subheader}>Configure streaming</span>
-      </header>
+    <div style={{ maxWidth: 720, margin: "40px auto", padding: "0 16px" }}>
+      <h1 style={{ fontSize: 28, fontWeight: 800, marginBottom: 8 }}>
+        Configure streaming for {station.name}
+      </h1>
 
-      <section style={styles.content}>
-        <p style={styles.eyebrow}>STATION SETUP</p>
-        <h1 style={styles.title}>{station.name}</h1>
-        <p style={styles.subtitle}>
-          Configure Centova streaming details for this station. Changes are saved immediately.
-        </p>
+      <p style={{ color: "#9fb3c8", marginBottom: 24 }}>
+        Enter your Centova / streaming server details. Passwords are optional if you do not want to change them.
+      </p>
 
-        <AdminStationSetupForm
-          stationId={station.id}
-          stationName={station.name}
-          initialData={config ? {
-            streamUrl: config.streamUrl || "",
-            mountPoint: config.mountPoint || "",
-            serverHost: config.serverHost || "",
-            serverPort: config.serverPort?.toString() || "",
-            bitrateKbps: config.bitrateKbps?.toString() || "",
-            centovaUsername: config.centovaUsername || "",
-            adminPassword: "",
-            sourcePassword: ""
-          } : null}
-        />
-      </section>
-    </main>
+      <AdminStationSetupForm
+        stationId={stationId}
+        stationName={station.name}
+        initialData={initialData}
+      />
+    </div>
   );
 }
-
-const styles = {
-  page: {
-    minHeight: "100vh",
-    background: "#0f172a",
-    color: "#ffffff",
-    fontFamily: "Arial, sans-serif"
-  },
-  header: {
-    minHeight: 72,
-    display: "flex",
-    alignItems: "center",
-    gap: 24,
-    padding: "0 32px",
-    borderBottom: "1px solid #26344d",
-    background: "#141e2f"
-  },
-  brand: {
-    color: "#f4b942",
-    fontWeight: 800,
-    letterSpacing: 2,
-    textDecoration: "none"
-  },
-  subheader: {
-    color: "#94a3b8",
-    fontSize: 14,
-    fontWeight: 600
-  },
-  content: {
-    width: "min(900px, calc(100% - 40px))",
-    margin: "0 auto",
-    padding: "56px 0 72px"
-  },
-  eyebrow: {
-    color: "#f4b942",
-    letterSpacing: 1.5,
-    fontSize: 12,
-    fontWeight: 700,
-    margin: "0 0 12px",
-    textTransform: "uppercase"
-  },
-  title: {
-    fontSize: "clamp(28px, 4vw, 42px)",
-    margin: 0
-  },
-  subtitle: {
-    color: "#b8c3d6",
-    lineHeight: 1.6,
-    fontSize: 16,
-    maxWidth: 720,
-    margin: "16px 0 36px"
-  }
-};
