@@ -33,6 +33,8 @@ export default async function StationDetailsPage({ params }) {
     notFound();
   }
 
+  const needsSetup = station.status === "PENDING_SETUP";
+
   return (
     <main style={styles.page}>
       <header style={styles.header}>
@@ -53,7 +55,13 @@ export default async function StationDetailsPage({ params }) {
             <h2 style={styles.status}>{station.status.replace("_", " ")}</h2>
           </div>
 
-          <span style={styles.badge}>Provider setup pending</span>
+          {needsSetup ? (
+            <a href={`/stations/${station.id}/setup`} style={styles.setupButton}>
+              Configure streaming
+            </a>
+          ) : (
+            <span style={styles.badge}>Streaming configured</span>
+          )}
         </section>
 
         <section style={styles.grid}>
@@ -170,6 +178,16 @@ const styles = {
     padding: "8px 12px",
     fontSize: 13,
     fontWeight: 700
+  },
+  setupButton: {
+    background: "#f4b942",
+    color: "#101827",
+    border: "none",
+    borderRadius: 8,
+    padding: "12px 18px",
+    fontSize: 14,
+    fontWeight: 800,
+    textDecoration: "none"
   },
   grid: {
     display: "grid",
