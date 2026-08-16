@@ -40,7 +40,14 @@ export default function LoginPage() {
         return;
       }
 
-      router.push("/dashboard");
+      const role = data.user?.role;
+
+      if (role === "SUPER_ADMIN" || role === "ADMIN") {
+        router.push("/admin/stations");
+      } else {
+        router.push("/dashboard");
+      }
+
       router.refresh();
     } catch {
       setError("A connection error occurred. Please try again.");
