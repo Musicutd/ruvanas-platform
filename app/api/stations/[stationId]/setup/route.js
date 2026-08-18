@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 export async function POST(request, { params }) {
   try {
     const stationId = params.stationId;
+    const body = await request.json();
 
     const station = await prisma.station.findUnique({
       where: {
@@ -21,8 +22,6 @@ export async function POST(request, { params }) {
       );
     }
 
-    const body = await request.json();
-
     const {
       streamUrl,
       mountPoint,
@@ -34,7 +33,7 @@ export async function POST(request, { params }) {
       sourcePassword
     } = body;
 
-    const updateData = {
+    const configData = {
       streamUrl: streamUrl?.trim() || null,
       mountPoint: mountPoint?.trim() || null,
       serverHost: serverHost?.trim() || null,
@@ -44,21 +43,24 @@ export async function POST(request, { params }) {
     };
 
     if (adminPassword && adminPassword.trim() !== "") {
-      updateData.adminPassword = adminPassword;
+      configData.adminPassword = adminPassword;
     }
 
     if (sourcePassword && sourcePassword.trim() !== "") {
-      updateData.sourcePassword = sourcePassword;
+      configData.sourcePassword = sourcePassword;
     }
 
-    await prisma.streamingConfig.upsert({
+    await prisma.station.update({
       where: {
-        stationId
+        id: stationId
       },
-      update: updateData,
-      create: {
-        stationId,
-        ...updateData
+      data: {
+        streamConfig: {
+          upsert: {
+            update: configData,
+            create: configData
+          }
+        }
       }
     });
 
