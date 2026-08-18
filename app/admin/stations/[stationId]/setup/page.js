@@ -1,80 +1,32 @@
-import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
-import { verify } from "jsonwebtoken";
-import prisma from "@/lib/prisma";
+import { notFound } from "next/navigation";
+import { prisma } from "@/lib/prisma";
 import AdminStationSetupForm from "./AdminStationSetupForm";
 
 export default async function AdminStationSetupPage({ params }) {
-  const cookieStore = await cookies();
-  const token = cookieStore.get("admin_token")?.value;
-
-  if (!token) {
-    redirect("/admin/login");
-  }
-
-  let adminId;
-  try {
-    const decoded = verify(token, process.env.JWT_SECRET);
-    adminId = decoded.adminId;
-  } catch {
-    redirect("/admin/login");
-  }
-
-  const admin = await prisma.admin.findUnique({
-    where: { id: adminId },
-    select: { id: true, name: true, email: true }
-  });
-
-  if (!admin) {
-    redirect("/admin/login");
-  }
-
-  const stationId = params.stationId;
-
   const station = await prisma.station.findUnique({
-    where: { id: stationId },
-    select: {
-      id: true,
-      name: true,
-      streamingSetup: {
-        select: {
-          streamUrl: true,
-          mountPoint: true,
-          serverHost: true,
-          serverPort: true,
-          bitrateKbps: true,
-          centovaUsername: true
-          // do NOT select passwords
-        }
-      }
+    where: {
+      id: params.stationId
+    },
+    include: {
+      organisation: true,
+      streamConfig: true
     }
   });
 
   if (!station) {
-    redirect("/admin/stations");
+    notFound();
   }
 
-  const initialData = station.streamingSetup
-    ? {
-        streamUrl: station.streamingSetup.streamUrl ?? "",
-        mountPoint: station.streamingSetup.mountPoint ?? "",
-        serverHost: station.streamingSetup.serverHost ?? "",
-        serverPort: station.streamingSetup.serverPort ?? "",
-        bitrateKbps: station.streamingSetup.bitrateKbps ?? "",
-        centovaUsername: station.streamingSetup.centovaUsername ?? "",
-        adminPassword: "",
-        sourcePassword: ""
-      }
-    : {
-        streamUrl: "",
-        mountPoint: "",
-        serverHost: "",
-        serverPort: "",
-        bitrateKbps: "",
-        centovaUsername: "",
-        adminPassword: "",
-        sourcePassword: ""
-      };
+  const initialData = {
+    streamUrl: station.streamConfig?.streamUrl ?? "",
+    mountPoint: station.streamConfig?.mountPoint ?? "",
+    serverHost: station.streamConfig?.serverHost ?? "",
+    serverPort: station.streamConfig?.serverPort?.toString() ?? "",
+    bitrateKbps: station.streamConfig?.bitrateKbps?.toString() ?? "",
+    centovaUsername: station.streamConfig?.centovaUsername ?? "",
+    adminPassword: "",
+    sourcePassword: ""
+  };
 
   return (
     <div style={{ maxWidth: 720, margin: "40px auto", padding: "0 16px" }}>
@@ -83,11 +35,12 @@ export default async function AdminStationSetupPage({ params }) {
       </h1>
 
       <p style={{ color: "#9fb3c8", marginBottom: 24 }}>
-        Enter your Centova / streaming server details. Passwords are optional if you do not want to change them.
+        Enter the Centova and streaming-server details for this station.
+        Leave a password blank if you do not want to change it.
       </p>
 
       <AdminStationSetupForm
-        stationId={stationId}
+        stationId={station.id}
         stationName={station.name}
         initialData={initialData}
       />
