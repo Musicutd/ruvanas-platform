@@ -1,119 +1,81 @@
 import { NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
-import { encryptSecret } from "@/lib/crypto";
-import { getAdminUser } from "@/lib/requireAdmin";
-
-const prisma = new PrismaClient();
+import { cookies } from "next/headers";
+import { verify } from "jsonwebtoken";
+import prisma from "@/lib/prisma";
 
 export async function POST(request, { params }) {
-  const { stationId } = params;
+  const cookieStore = await cookies();
+  const token = cookieStore.get("admin_token")?.value;
 
-  // --- Admin gate: only SUPER_ADMIN / SUPPORT may configure streaming ---
-  const adminUser = await getAdminUser();
-  if (!adminUser) {
-    return NextResponse.json(
-      { error: "Forbidden. Only administrators can configure streaming settings." },
-      { status: 403 }
-    );
+  if (!token) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  let adminId;
   try {
-    const body = await request.json();
-
-    const {
-      centovaUsername,
-      serverHost,
-      serverPort,
-      mountPoint,
-      streamUrl,
-      bitrateKbps,
-      adminPassword,
-      sourcePassword
-    } = body;
-
-    if (!streamUrl) {
-      return NextResponse.json(
-        { error: "Public stream URL is required." },
-        { status: 400 }
-      );
-    }
-    if (!centovaUsername) {
-      return NextResponse.json(
-        { error: "Centova username is required." },
-        { status: 400 }
-      );
-    }
-    if (!serverHost) {
-      return NextResponse.json(
-        { error: "Server host is required." },
-        { status: 400 }
-      );
-    }
-
-    const station = await prisma.station.findUnique({
-      where: { id: stationId }
-    });
-
-    if (!station) {
-      return NextResponse.json(
-        { error: "Station not found." },
-        { status: 404 }
-      );
-    }
-
-    const parsedPort = serverPort ? parseInt(serverPort, 10) : null;
-    const parsedBitrate = bitrateKbps ? parseInt(bitrateKbps, 10) : null;
-
-    const adminPasswordEncrypted = adminPassword
-      ? encryptSecret(adminPassword)
-      : null;
-    const sourcePasswordEncrypted = sourcePassword
-      ? encryptSecret(sourcePassword)
-      : null;
-
-    await prisma.stationStreamConfig.upsert({
-      where: { stationId },
-      update: {
-        centovaUsername,
-        serverHost,
-        serverPort: parsedPort,
-        mountPoint: mountPoint || null,
-        streamUrl,
-        bitrateKbps: parsedBitrate,
-        ...(adminPasswordEncrypted ? { adminPasswordEncrypted } : {}),
-        ...(sourcePasswordEncrypted ? { sourcePasswordEncrypted } : {})
-      },
-      create: {
-        stationId,
-        centovaUsername,
-        serverHost,
-        serverPort: parsedPort,
-        mountPoint: mountPoint || null,
-        streamUrl,
-        bitrateKbps: parsedBitrate,
-        adminPasswordEncrypted,
-        sourcePasswordEncrypted
-      }
-    });
-
-    const updatedStation = await prisma.station.update({
-      where: { id: stationId },
-      data: { status: "ACTIVE" }
-    });
-
-    return NextResponse.json({
-      success: true,
-      station: {
-        id: updatedStation.id,
-        name: updatedStation.name,
-        status: updatedStation.status
-      }
-    });
-  } catch (err) {
-    console.error("Error saving station stream config:", err);
-    return NextResponse.json(
-      { error: "Failed to save streaming configuration." },
-      { status: 500 }
-    );
+    const decoded = verify(token, process.env.JWT_SECRET);
+    adminId = decoded.adminId;
+  } catch {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const admin = await prisma.admin.findUnique({
+    where: { id: adminId }
+  });
+
+  if (!admin) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const stationId = params.stationId;
+
+  const station = await prisma.station.findUnique({
+    where: { id: stationId }
+  });
+
+  if (!station) {
+    return NextResponse.json({ error: "Station not found" }, { status: 404 });
+  }
+
+  const body = await request.json();
+
+  const {
+    streamUrl,
+    mountPoint,
+    serverHost,
+    serverPort,
+    bitrateKbps,
+    centovaUsername,
+    adminPassword,
+    sourcePassword
+  } = body;
+
+  // Build update object
+  const update = {
+    streamUrl: streamUrl ?? null,
+    mountPoint: mountPoint ?? null,
+    serverHost: serverHost ?? null,
+    serverPort: serverPort ? Number(serverPort) : null,
+    bitrateKbps: bitrateKbps ? Number(bitrateKbps) : null,
+    centovaUsername: centovaUsername ?? null
+  };
+
+  // Only update passwords if provided
+  if (adminPassword && adminPassword.trim() !== "") {
+    update.adminPassword = adminPassword;
+  }
+  if (sourcePassword && sourcePassword.trim() !== "") {
+    update.sourcePassword = sourcePassword;
+  }
+
+  await prisma.streamingSetup.upsert({
+    where: { stationId },
+    update,
+    create: {
+      stationId,
+      ...update
+    }
+  });
+
+  return NextResponse.json({ ok: true });
 }
