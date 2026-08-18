@@ -51,7 +51,7 @@ export async function POST(request, { params }) {
       updateData.sourcePassword = sourcePassword;
     }
 
-    await prisma.streamConfig.upsert({
+    await prisma.streamingConfig.upsert({
       where: {
         stationId
       },
