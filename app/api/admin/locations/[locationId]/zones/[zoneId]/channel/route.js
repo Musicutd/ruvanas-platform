@@ -14,14 +14,17 @@ export async function POST(request, { params }) {
       );
     }
 
-    const zone = await prisma.zone.findFirst({
+    const zone = await prisma.zone.findUnique({
       where: {
-        id: zoneId,
-        locationId
+        id: zoneId
+      },
+      select: {
+        id: true,
+        locationId: true
       }
     });
 
-    if (!zone) {
+    if (!zone || zone.locationId !== locationId) {
       return NextResponse.json(
         { error: "Zone not found for this location." },
         { status: 404 }
@@ -44,52 +47,36 @@ export async function POST(request, { params }) {
       );
     }
 
-    const channel = await prisma.channel.findFirst({
+    const channel = await prisma.channel.findUnique({
       where: {
-        id: channelId,
-        organisationId: location.organisationId,
-        status: {
-          not: "ARCHIVED"
-        }
+        id: channelId
+      },
+      select: {
+        id: true,
+        organisationId: true,
+        name: true
       }
     });
 
     if (!channel) {
       return NextResponse.json(
-        { error: "Channel is not available for this organisation." },
+        { error: "Channel not found." },
         { status: 404 }
       );
     }
 
-    const assignment = await prisma.$transaction(async (transaction) => {
-      await transaction.channelAssignment.updateMany({
-        where: {
-          zoneId,
-          status: "ACTIVE"
-        },
-        data: {
-          status: "ARCHIVED"
-        }
-      });
+    if (channel.organisationId !== location.organisationId) {
+      return NextResponse.json(
+        { error: "Channel does not belong to this organisation." },
+        { status: 403 }
+      );
+    }
 
-      return transaction.channelAssignment.create({
-        data: {
-          zoneId,
-          channelId,
-          status: "ACTIVE"
-        },
-        include: {
-          channel: {
-            include: {
-              station: {
-                include: {
-                  streamConfig: true
-                }
-              }
-            }
-          }
-        }
-      });
+    const assignment = await prisma.channelAssignment.create({
+      data: {
+        zoneId,
+        channelId
+      }
     });
 
     return NextResponse.json(
@@ -101,14 +88,11 @@ export async function POST(request, { params }) {
       }
     );
   } catch (error) {
-    console.error("Error assigning channel to zone:", error);
+    console.error("ZONE_CHANNEL_ASSIGNMENT_ERROR", error);
 
     return NextResponse.json(
       {
-        error:
-          process.env.NODE_ENV === "development"
-            ? error.message
-            : "Unable to assign channel."
+        error: error?.message || String(error)
       },
       {
         status: 500
