@@ -34,8 +34,8 @@ export async function POST(request) {
         description,
         listenerLimit,
         storageLimitGb,
-        maxBitrateKbps,
-        status: "active"
+        maxBitrateKbps
+        // status is omitted; the DB uses its default StationStatus
       }
     });
 
