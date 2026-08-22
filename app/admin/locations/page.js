@@ -70,7 +70,7 @@ export default async function AdminLocationsPage() {
           <table
             style={{
               width: "100%",
-              minWidth: 760,
+              minWidth: 860,
               borderCollapse: "collapse"
             }}
           >
@@ -88,6 +88,7 @@ export default async function AdminLocationsPage() {
                 <th style={{ padding: 8 }}>Zones</th>
                 <th style={{ padding: 8 }}>Status</th>
                 <th style={{ padding: 8 }}>Created</th>
+                <th style={{ padding: 8 }}></th>
               </tr>
             </thead>
 
@@ -125,6 +126,24 @@ export default async function AdminLocationsPage() {
 
                   <td style={{ padding: 8 }}>
                     {new Date(location.createdAt).toLocaleDateString()}
+                  </td>
+
+                  <td style={{ padding: 8 }}>
+                    <Link
+                      href={`/admin/locations/${location.id}`}
+                      style={{
+                        display: "inline-block",
+                        padding: "8px 11px",
+                        border: "1px solid #f4b942",
+                        borderRadius: 7,
+                        color: "#f4b942",
+                        fontSize: 14,
+                        fontWeight: 800,
+                        textDecoration: "none"
+                      }}
+                    >
+                      Manage
+                    </Link>
                   </td>
                 </tr>
               ))}
