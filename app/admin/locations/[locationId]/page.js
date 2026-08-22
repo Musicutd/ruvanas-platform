@@ -78,65 +78,24 @@ export default async function AdminLocationDetailPage({ params }) {
   const addressLines = formatAddress(location);
 
   return (
-    <div style={{ maxWidth: 1100, margin: "40px auto", padding: "0 16px" }}>
-      <Link
-        href="/admin/locations"
-        style={{
-          display: "inline-block",
-          marginBottom: 20,
-          color: "#f4b942",
-          fontWeight: 700,
-          textDecoration: "none"
-        }}
-      >
+    <main style={styles.page}>
+      <Link href="/admin/locations" style={styles.backLink}>
         ← Back to retail locations
       </Link>
 
-      <div
-        style={{
-          display: "flex",
-          alignItems: "flex-start",
-          justifyContent: "space-between",
-          gap: 20,
-          flexWrap: "wrap",
-          marginBottom: 28
-        }}
-      >
+      <header style={styles.header}>
         <div>
-          <p
-            style={{
-              margin: "0 0 8px",
-              color: "#f4b942",
-              fontSize: 13,
-              fontWeight: 800,
-              letterSpacing: 0.8,
-              textTransform: "uppercase"
-            }}
-          >
-            Retail location
-          </p>
+          <p style={styles.eyebrow}>Retail location</p>
+          <h1 style={styles.title}>{location.name}</h1>
 
-          <h1 style={{ margin: 0, fontSize: 30 }}>{location.name}</h1>
-
-          <p style={{ margin: "10px 0 0", color: "#9fb3c8" }}>
+          <p style={styles.subtitle}>
             {location.organisation.name}
             {location.brand ? ` · ${location.brand.name}` : ""}
           </p>
         </div>
 
-        <div
-          style={{
-            padding: "8px 12px",
-            borderRadius: 999,
-            border: "1px solid #42526b",
-            color: "#d8e0ec",
-            fontSize: 13,
-            fontWeight: 800
-          }}
-        >
-          {location.status}
-        </div>
-      </div>
+        <div style={styles.statusBadge}>{location.status}</div>
+      </header>
 
       <section style={styles.section}>
         <h2 style={styles.sectionTitle}>Location details</h2>
@@ -156,9 +115,11 @@ export default async function AdminLocationDetailPage({ params }) {
             <div style={styles.label}>Address</div>
             <div style={styles.value}>
               {addressLines.length > 0 ? (
-                addressLines.map((line) => <div key={line}>{line}</div>)
+                addressLines.map((line, index) => (
+                  <div key={`${line}-${index}`}>{line}</div>
+                ))
               ) : (
-                <span style={{ opacity: 0.7 }}>No address entered</span>
+                <span style={styles.muted}>No address entered</span>
               )}
             </div>
           </div>
@@ -173,22 +134,13 @@ export default async function AdminLocationDetailPage({ params }) {
       </section>
 
       <section style={styles.section}>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "flex-start",
-            justifyContent: "space-between",
-            gap: 16,
-            flexWrap: "wrap",
-            marginBottom: 16
-          }}
-        >
+        <div style={styles.sectionHeader}>
           <div>
-            <h2 style={{ ...styles.sectionTitle, marginBottom: 6 }}>
+            <h2 style={{ ...styles.sectionTitle, marginBottom: 8 }}>
               Audio zones
             </h2>
 
-            <p style={{ margin: 0, color: "#9fb3c8", fontSize: 14 }}>
+            <p style={styles.description}>
               Assign a friendly Ruvanas Channel to each audio zone. One channel
               can be assigned to more than one zone.
             </p>
@@ -198,31 +150,20 @@ export default async function AdminLocationDetailPage({ params }) {
         </div>
 
         {location.zones.length === 0 ? (
-          <p style={{ margin: 0, color: "#9fb3c8" }}>
+          <p style={styles.muted}>
             No zones have been created for this location.
           </p>
         ) : (
-          <div style={{ overflowX: "auto" }}>
-            <table
-              style={{
-                width: "100%",
-                minWidth: 850,
-                borderCollapse: "collapse"
-              }}
-            >
+          <div style={styles.tableWrapper}>
+            <table style={styles.table}>
               <thead>
-                <tr
-                  style={{
-                    textAlign: "left",
-                    borderBottom: "1px solid #42526b"
-                  }}
-                >
-                  <th style={{ padding: 8 }}>Zone</th>
-                  <th style={{ padding: 8 }}>Status</th>
-                  <th style={{ padding: 8 }}>Assigned channel</th>
-                  <th style={{ padding: 8 }}>Stream status</th>
-                  <th style={{ padding: 8 }}>Created</th>
-                  <th style={{ padding: 8 }}></th>
+                <tr>
+                  <th style={styles.tableHeader}>Zone</th>
+                  <th style={styles.tableHeader}>Status</th>
+                  <th style={styles.tableHeader}>Assigned channel</th>
+                  <th style={styles.tableHeader}>Stream status</th>
+                  <th style={styles.tableHeader}>Created</th>
+                  <th style={styles.tableHeader}>Action</th>
                 </tr>
               </thead>
 
@@ -235,33 +176,44 @@ export default async function AdminLocationDetailPage({ params }) {
                   );
 
                   return (
-                    <tr
-                      key={zone.id}
-                      style={{ borderBottom: "1px solid #2b3a54" }}
-                    >
-                      <td style={{ padding: 8, fontWeight: 700 }}>
-                        {zone.name}
+                    <tr key={zone.id} style={styles.tableRow}>
+                      <td style={styles.tableCellStrong}>{zone.name}</td>
+
+                      <td style={styles.tableCell}>
+                        <span style={styles.zoneStatus}>{zone.status}</span>
                       </td>
 
-                      <td style={{ padding: 8 }}>{zone.status}</td>
-
-                      <td style={{ padding: 8 }}>
-                        {channel ? channel.name : "Not assigned"}
+                      <td style={styles.tableCell}>
+                        {channel ? (
+                          <span style={styles.channelName}>{channel.name}</span>
+                        ) : (
+                          <span style={styles.muted}>Not assigned</span>
+                        )}
                       </td>
 
-                      <td style={{ padding: 8 }}>
-                        {channel
-                          ? streamConfigured
-                            ? "Stream configured"
-                            : "Stream not configured"
-                          : "No channel assigned"}
+                      <td style={styles.tableCell}>
+                        {channel ? (
+                          <span
+                            style={
+                              streamConfigured
+                                ? styles.streamConfigured
+                                : styles.streamMissing
+                            }
+                          >
+                            {streamConfigured
+                              ? "Stream configured"
+                              : "Stream not configured"}
+                          </span>
+                        ) : (
+                          <span style={styles.muted}>No channel assigned</span>
+                        )}
                       </td>
 
-                      <td style={{ padding: 8 }}>
+                      <td style={styles.tableCell}>
                         {new Date(zone.createdAt).toLocaleDateString()}
                       </td>
 
-                      <td style={{ padding: 8 }}>
+                      <td style={styles.tableCell}>
                         <AssignChannelForm
                           locationId={location.id}
                           zoneId={zone.id}
@@ -276,42 +228,184 @@ export default async function AdminLocationDetailPage({ params }) {
           </div>
         )}
       </section>
-    </div>
+    </main>
   );
 }
 
 const styles = {
+  page: {
+    maxWidth: 1100,
+    margin: "0 auto",
+    padding: "40px 16px 64px",
+    color: "#172033",
+    background: "#ffffff"
+  },
+  backLink: {
+    display: "inline-block",
+    marginBottom: 28,
+    color: "#9a6400",
+    fontSize: 15,
+    fontWeight: 800,
+    textDecoration: "none"
+  },
+  header: {
+    display: "flex",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 20,
+    flexWrap: "wrap",
+    marginBottom: 30
+  },
+  eyebrow: {
+    margin: "0 0 8px",
+    color: "#9a6400",
+    fontSize: 13,
+    fontWeight: 900,
+    letterSpacing: 1,
+    textTransform: "uppercase"
+  },
+  title: {
+    margin: 0,
+    color: "#111827",
+    fontSize: 32,
+    fontWeight: 900
+  },
+  subtitle: {
+    margin: "10px 0 0",
+    color: "#4b5563",
+    fontSize: 16,
+    fontWeight: 600
+  },
+  statusBadge: {
+    padding: "9px 14px",
+    border: "2px solid #64748b",
+    borderRadius: 999,
+    background: "#f8fafc",
+    color: "#1e293b",
+    fontSize: 13,
+    fontWeight: 900
+  },
   section: {
     marginBottom: 24,
-    padding: 22,
-    border: "1px solid #2b3a54",
+    padding: 24,
+    border: "1px solid #cbd5e1",
     borderRadius: 12,
-    background: "#182235"
+    background: "#f8fafc",
+    boxShadow: "0 2px 6px rgba(15, 23, 42, 0.08)"
+  },
+  sectionHeader: {
+    display: "flex",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 18,
+    flexWrap: "wrap",
+    marginBottom: 20
   },
   sectionTitle: {
     margin: "0 0 18px",
-    color: "#f4b942",
-    fontSize: 14,
-    fontWeight: 800,
-    letterSpacing: 0.8,
+    color: "#172033",
+    fontSize: 17,
+    fontWeight: 900,
+    letterSpacing: 0.6,
     textTransform: "uppercase"
+  },
+  description: {
+    maxWidth: 720,
+    margin: 0,
+    color: "#475569",
+    fontSize: 15,
+    lineHeight: 1.55
   },
   detailGrid: {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
-    gap: 20
+    gap: 22
   },
   label: {
-    marginBottom: 6,
-    color: "#9fb3c8",
+    marginBottom: 7,
+    color: "#475569",
     fontSize: 12,
-    fontWeight: 800,
-    letterSpacing: 0.6,
+    fontWeight: 900,
+    letterSpacing: 0.7,
     textTransform: "uppercase"
   },
   value: {
-    color: "#ffffff",
-    fontSize: 15,
+    color: "#111827",
+    fontSize: 16,
+    fontWeight: 650,
     lineHeight: 1.55
+  },
+  muted: {
+    color: "#64748b",
+    fontWeight: 600
+  },
+  tableWrapper: {
+    overflowX: "auto",
+    border: "1px solid #cbd5e1",
+    borderRadius: 9,
+    background: "#ffffff"
+  },
+  table: {
+    width: "100%",
+    minWidth: 900,
+    borderCollapse: "collapse"
+  },
+  tableHeader: {
+    padding: "13px 12px",
+    borderBottom: "2px solid #94a3b8",
+    background: "#e2e8f0",
+    color: "#172033",
+    fontSize: 13,
+    fontWeight: 900,
+    textAlign: "left",
+    whiteSpace: "nowrap"
+  },
+  tableRow: {
+    borderBottom: "1px solid #cbd5e1"
+  },
+  tableCell: {
+    padding: "15px 12px",
+    color: "#1e293b",
+    fontSize: 15,
+    fontWeight: 600,
+    verticalAlign: "middle"
+  },
+  tableCellStrong: {
+    padding: "15px 12px",
+    color: "#111827",
+    fontSize: 15,
+    fontWeight: 900,
+    verticalAlign: "middle"
+  },
+  zoneStatus: {
+    display: "inline-block",
+    padding: "4px 8px",
+    borderRadius: 5,
+    background: "#dcfce7",
+    color: "#166534",
+    fontSize: 12,
+    fontWeight: 900
+  },
+  channelName: {
+    color: "#111827",
+    fontWeight: 900
+  },
+  streamConfigured: {
+    display: "inline-block",
+    padding: "4px 8px",
+    borderRadius: 5,
+    background: "#dcfce7",
+    color: "#166534",
+    fontSize: 12,
+    fontWeight: 800
+  },
+  streamMissing: {
+    display: "inline-block",
+    padding: "4px 8px",
+    borderRadius: 5,
+    background: "#fef3c7",
+    color: "#92400e",
+    fontSize: 12,
+    fontWeight: 800
   }
 };
