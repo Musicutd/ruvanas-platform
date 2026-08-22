@@ -46,9 +46,13 @@ export async function POST(request) {
     });
   } catch (error) {
     console.error("Error creating station:", error);
+
+    const errorMessage =
+      error instanceof Error ? error.message : String(error);
+
     return NextResponse.json(
       {
-        error: "Unable to create the station."
+        error: errorMessage
       },
       {
         status: 500
