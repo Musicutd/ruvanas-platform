@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import AddZoneForm from "./AddZoneForm";
 import AssignChannelForm from "./AssignChannelForm";
+import ActivateLocationButton from "./ActivateLocationButton";
 
 function formatAddress(location) {
   return [
@@ -94,7 +95,13 @@ export default async function AdminLocationDetailPage({ params }) {
           </p>
         </div>
 
-        <div style={styles.statusBadge}>{location.status}</div>
+        <div style={styles.headerActions}>
+          <div style={styles.statusBadge}>{location.status}</div>
+
+          {location.status === "DRAFT" ? (
+            <ActivateLocationButton locationId={location.id} />
+          ) : null}
+        </div>
       </header>
 
       <section style={styles.section}>
@@ -255,6 +262,12 @@ const styles = {
     gap: 20,
     flexWrap: "wrap",
     marginBottom: 30
+  },
+  headerActions: {
+    display: "flex",
+    alignItems: "flex-end",
+    gap: 12,
+    flexWrap: "wrap"
   },
   eyebrow: {
     margin: "0 0 8px",
