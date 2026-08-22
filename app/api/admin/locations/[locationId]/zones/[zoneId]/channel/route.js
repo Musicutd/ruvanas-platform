@@ -10,7 +10,7 @@ export async function POST(request, { params }) {
     if (!channelId || typeof channelId !== "string") {
       return NextResponse.json(
         {
-          error: "channelId is required."
+          error: "Please select a channel."
         },
         {
           status: 400
@@ -65,8 +65,7 @@ export async function POST(request, { params }) {
       },
       select: {
         id: true,
-        organisationId: true,
-        name: true
+        organisationId: true
       }
     });
 
@@ -84,7 +83,7 @@ export async function POST(request, { params }) {
     if (channel.organisationId !== location.organisationId) {
       return NextResponse.json(
         {
-          error: "Channel does not belong to this organisation."
+          error: "This channel does not belong to this organisation."
         },
         {
           status: 403
@@ -92,10 +91,28 @@ export async function POST(request, { params }) {
       );
     }
 
-    const assignment = await prisma.channelAssignment.create({
-      data: {
-        zoneId,
-        channelId
+    const assignment = await prisma.channelAssignment.upsert({
+      where: {
+        channelId_zoneId: {
+          channelId,
+          zoneId
+        }
+      },
+      update: {},
+      create: {
+        channelId,
+        zoneId
+      },
+      include: {
+        channel: {
+          include: {
+            station: {
+              include: {
+                streamConfig: true
+              }
+            }
+          }
+        }
       }
     });
 
@@ -104,7 +121,7 @@ export async function POST(request, { params }) {
         assignment
       },
       {
-        status: 201
+        status: 200
       }
     );
   } catch (error) {
@@ -112,7 +129,7 @@ export async function POST(request, { params }) {
 
     return NextResponse.json(
       {
-        error: error?.message || String(error)
+        error: "Unable to assign channel. Please try again."
       },
       {
         status: 500
