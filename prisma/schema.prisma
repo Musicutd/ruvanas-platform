@@ -33,6 +33,26 @@ enum StationStatus {
   CANCELLED
 }
 
+enum LocationStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  CLOSED
+}
+
+enum ZoneStatus {
+  ACTIVE
+  PAUSED
+  OFFLINE
+}
+
+enum ChannelStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
 model User {
   id           String               @id @default(cuid())
   name         String?
@@ -55,6 +75,9 @@ model Organisation {
   members      OrganisationMember[]
   subscription Subscription?
   stations     Station[]
+  brands       Brand[]
+  locations    Location[]
+  channels     Channel[]
   auditLogs    AuditLog[]
 }
 
@@ -100,6 +123,103 @@ model Subscription {
   plan         Plan         @relation(fields: [planId], references: [id])
 }
 
+model Brand {
+  id             String   @id @default(cuid())
+  organisationId String
+  name           String
+  slug           String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  locations    Location[]
+  channels     Channel[]
+
+  @@unique([organisationId, slug])
+  @@index([organisationId])
+}
+
+model Location {
+  id             String         @id @default(cuid())
+  organisationId String
+  brandId        String?
+  name           String
+  slug           String
+  status         LocationStatus @default(DRAFT)
+  timezone       String         @default("Europe/Malta")
+  addressLine1   String?
+  addressLine2   String?
+  city           String?
+  region         String?
+  postalCode     String?
+  countryCode    String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  brand        Brand?       @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  zones        Zone[]
+
+  @@unique([organisationId, slug])
+  @@index([organisationId])
+  @@index([brandId])
+}
+
+model Zone {
+  id         String     @id @default(cuid())
+  locationId String
+  name       String
+  slug       String
+  status     ZoneStatus @default(ACTIVE)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  location            Location            @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  channelAssignments  ChannelAssignment[]
+
+  @@unique([locationId, slug])
+  @@index([locationId])
+}
+
+model Channel {
+  id             String        @id @default(cuid())
+  organisationId String
+  brandId        String?
+  stationId      String?
+  name           String
+  slug           String
+  description    String?
+  status         ChannelStatus @default(DRAFT)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  organisation       Organisation        @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  brand              Brand?              @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  station            Station?            @relation(fields: [stationId], references: [id], onDelete: SetNull)
+  zoneAssignments    ChannelAssignment[]
+
+  @@unique([organisationId, slug])
+  @@index([organisationId])
+  @@index([brandId])
+  @@index([stationId])
+}
+
+model ChannelAssignment {
+  id         String   @id @default(cuid())
+  channelId  String
+  zoneId     String
+  activeFrom DateTime @default(now())
+  activeTo   DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  zone    Zone    @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, zoneId])
+  @@index([zoneId])
+}
+
 model Station {
   id                String        @id @default(cuid())
   organisationId    String
@@ -119,6 +239,7 @@ model Station {
 
   organisation Organisation         @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   streamConfig StationStreamConfig?
+  channels     Channel[]
 
   @@index([organisationId])
 }
