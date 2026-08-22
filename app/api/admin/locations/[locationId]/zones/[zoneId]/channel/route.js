@@ -9,8 +9,12 @@ export async function POST(request, { params }) {
 
     if (!channelId || typeof channelId !== "string") {
       return NextResponse.json(
-        { error: "channelId is required." },
-        { status: 400 }
+        {
+          error: "channelId is required."
+        },
+        {
+          status: 400
+        }
       );
     }
 
@@ -26,8 +30,12 @@ export async function POST(request, { params }) {
 
     if (!zone || zone.locationId !== locationId) {
       return NextResponse.json(
-        { error: "Zone not found for this location." },
-        { status: 404 }
+        {
+          error: "Zone not found for this location."
+        },
+        {
+          status: 404
+        }
       );
     }
 
@@ -42,8 +50,12 @@ export async function POST(request, { params }) {
 
     if (!location) {
       return NextResponse.json(
-        { error: "Location not found." },
-        { status: 404 }
+        {
+          error: "Location not found."
+        },
+        {
+          status: 404
+        }
       );
     }
 
@@ -60,15 +72,23 @@ export async function POST(request, { params }) {
 
     if (!channel) {
       return NextResponse.json(
-        { error: "Channel not found." },
-        { status: 404 }
+        {
+          error: "Channel not found."
+        },
+        {
+          status: 404
+        }
       );
     }
 
     if (channel.organisationId !== location.organisationId) {
       return NextResponse.json(
-        { error: "Channel does not belong to this organisation." },
-        { status: 403 }
+        {
+          error: "Channel does not belong to this organisation."
+        },
+        {
+          status: 403
+        }
       );
     }
 
@@ -92,7 +112,7 @@ export async function POST(request, { params }) {
 
     return NextResponse.json(
       {
-        error: error?.message || String(error)
+        error: "Unable to assign channel. Please try again."
       },
       {
         status: 500
