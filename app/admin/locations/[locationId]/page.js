@@ -25,6 +25,9 @@ export default async function AdminLocationDetailPage({ params }) {
       zones: {
         include: {
           channelAssignments: {
+            where: {
+              activeTo: null
+            },
             include: {
               channel: {
                 include: {
@@ -35,7 +38,11 @@ export default async function AdminLocationDetailPage({ params }) {
                   }
                 }
               }
-            }
+            },
+            orderBy: {
+              activeFrom: "desc"
+            },
+            take: 1
           }
         },
         orderBy: {
