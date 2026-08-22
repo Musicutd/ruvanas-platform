@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import AddZoneForm from "./AddZoneForm";
+import AssignChannelForm from "./AssignChannelForm";
 
 function formatAddress(location) {
   return [
@@ -48,10 +49,29 @@ export default async function AdminLocationDetailPage({ params }) {
     notFound();
   }
 
+  const channels = await prisma.channel.findMany({
+    where: {
+      organisationId: location.organisationId,
+      status: {
+        not: "ARCHIVED"
+      }
+    },
+    include: {
+      station: {
+        include: {
+          streamConfig: true
+        }
+      }
+    },
+    orderBy: {
+      name: "asc"
+    }
+  });
+
   const addressLines = formatAddress(location);
 
   return (
-    <div style={{ maxWidth: 1000, margin: "40px auto", padding: "0 16px" }}>
+    <div style={{ maxWidth: 1100, margin: "40px auto", padding: "0 16px" }}>
       <Link
         href="/admin/locations"
         style={{
@@ -162,8 +182,8 @@ export default async function AdminLocationDetailPage({ params }) {
             </h2>
 
             <p style={{ margin: 0, color: "#9fb3c8", fontSize: 14 }}>
-              Each zone is an independent in-store audio area. Channels and
-              streams will be assigned to zones.
+              Assign a friendly Ruvanas Channel to each audio zone. One channel
+              can be assigned to more than one zone.
             </p>
           </div>
 
@@ -179,7 +199,7 @@ export default async function AdminLocationDetailPage({ params }) {
             <table
               style={{
                 width: "100%",
-                minWidth: 680,
+                minWidth: 850,
                 borderCollapse: "collapse"
               }}
             >
@@ -195,6 +215,7 @@ export default async function AdminLocationDetailPage({ params }) {
                   <th style={{ padding: 8 }}>Assigned channel</th>
                   <th style={{ padding: 8 }}>Stream status</th>
                   <th style={{ padding: 8 }}>Created</th>
+                  <th style={{ padding: 8 }}></th>
                 </tr>
               </thead>
 
@@ -231,6 +252,14 @@ export default async function AdminLocationDetailPage({ params }) {
 
                       <td style={{ padding: 8 }}>
                         {new Date(zone.createdAt).toLocaleDateString()}
+                      </td>
+
+                      <td style={{ padding: 8 }}>
+                        <AssignChannelForm
+                          locationId={location.id}
+                          zoneId={zone.id}
+                          channels={channels}
+                        />
                       </td>
                     </tr>
                   );
