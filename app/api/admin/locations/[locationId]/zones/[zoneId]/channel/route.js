@@ -112,7 +112,7 @@ export async function POST(request, { params }) {
 
     return NextResponse.json(
       {
-        error: "Unable to assign channel. Please try again."
+        error: error?.message || String(error)
       },
       {
         status: 500
