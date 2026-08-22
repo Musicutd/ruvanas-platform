@@ -1,17 +1,16 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import AddZoneForm from "./AddZoneForm";
 
 function formatAddress(location) {
-  const lines = [
+  return [
     location.addressLine1,
     location.addressLine2,
     [location.postalCode, location.city].filter(Boolean).join(" "),
     location.region,
     location.countryCode
   ].filter(Boolean);
-
-  return lines;
 }
 
 export default async function AdminLocationDetailPage({ params }) {
@@ -130,9 +129,7 @@ export default async function AdminLocationDetailPage({ params }) {
             <div style={styles.label}>Address</div>
             <div style={styles.value}>
               {addressLines.length > 0 ? (
-                addressLines.map((line) => (
-                  <div key={line}>{line}</div>
-                ))
+                addressLines.map((line) => <div key={line}>{line}</div>)
               ) : (
                 <span style={{ opacity: 0.7 }}>No address entered</span>
               )}
@@ -152,7 +149,7 @@ export default async function AdminLocationDetailPage({ params }) {
         <div
           style={{
             display: "flex",
-            alignItems: "center",
+            alignItems: "flex-start",
             justifyContent: "space-between",
             gap: 16,
             flexWrap: "wrap",
@@ -170,9 +167,7 @@ export default async function AdminLocationDetailPage({ params }) {
             </p>
           </div>
 
-          <button type="button" disabled style={styles.disabledButton}>
-            Add zone — coming next
-          </button>
+          <AddZoneForm locationId={location.id} />
         </div>
 
         {location.zones.length === 0 ? (
@@ -282,15 +277,5 @@ const styles = {
     color: "#ffffff",
     fontSize: 15,
     lineHeight: 1.55
-  },
-  disabledButton: {
-    border: "1px solid #42526b",
-    borderRadius: 8,
-    background: "#101827",
-    color: "#778aa5",
-    padding: "10px 13px",
-    fontSize: 14,
-    fontWeight: 800,
-    cursor: "not-allowed"
   }
 };
