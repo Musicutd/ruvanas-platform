@@ -91,29 +91,73 @@ export async function POST(request, { params }) {
       );
     }
 
-    const assignment = await prisma.channelAssignment.upsert({
-      where: {
-        channelId_zoneId: {
-          channelId,
-          zoneId
+    const now = new Date();
+
+    const assignment = await prisma.$transaction(async (transaction) => {
+      const existingAssignment = await transaction.channelAssignment.findUnique({
+        where: {
+          channelId_zoneId: {
+            channelId,
+            zoneId
+          }
         }
-      },
-      update: {},
-      create: {
-        channelId,
-        zoneId
-      },
-      include: {
-        channel: {
+      });
+
+      if (existingAssignment?.activeTo === null) {
+        return existingAssignment;
+      }
+
+      await transaction.channelAssignment.updateMany({
+        where: {
+          zoneId,
+          activeTo: null
+        },
+        data: {
+          activeTo: now
+        }
+      });
+
+      if (existingAssignment) {
+        return transaction.channelAssignment.update({
+          where: {
+            id: existingAssignment.id
+          },
+          data: {
+            activeFrom: now,
+            activeTo: null
+          },
           include: {
-            station: {
+            channel: {
               include: {
-                streamConfig: true
+                station: {
+                  include: {
+                    streamConfig: true
+                  }
+                }
+              }
+            }
+          }
+        });
+      }
+
+      return transaction.channelAssignment.create({
+        data: {
+          channelId,
+          zoneId,
+          activeFrom: now
+        },
+        include: {
+          channel: {
+            include: {
+              station: {
+                include: {
+                  streamConfig: true
+                }
               }
             }
           }
         }
-      }
+      });
     });
 
     return NextResponse.json(
