@@ -70,6 +70,11 @@ enum MediaStatus {
   DELETED
 }
 
+enum MediaLibraryType {
+  RUVANAS_CATALOGUE
+  ORGANISATION_PROMO
+}
+
 model User {
   id           String               @id @default(cuid())
   name         String?
@@ -84,19 +89,19 @@ model User {
 }
 
 model Organisation {
-  id           String               @id @default(cuid())
-  name         String
-  slug         String               @unique
-  createdAt    DateTime             @default(now())
-  updatedAt    DateTime             @updatedAt
-  members      OrganisationMember[]
-  subscription Subscription?
-  stations     Station[]
-  brands       Brand[]
-  locations    Location[]
-  channels     Channel[]
-  mediaAssets  MediaAsset[]
-  auditLogs    AuditLog[]
+  id              String               @id @default(cuid())
+  name            String
+  slug            String               @unique
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  members         OrganisationMember[]
+  subscription    Subscription?
+  stations        Station[]
+  brands          Brand[]
+  locations       Location[]
+  channels        Channel[]
+  mediaAssets     MediaAsset[]        @relation("OrganisationMediaAssets")
+  auditLogs       AuditLog[]
 }
 
 model OrganisationMember {
@@ -114,18 +119,20 @@ model OrganisationMember {
 }
 
 model Plan {
-  id                String         @id @default(cuid())
-  name              String         @unique
-  code              String         @unique
-  monthlyPriceCents Int
-  stationLimit      Int            @default(1)
-  storageLimitGb    Int
-  listenerLimit     Int
-  maxBitrateKbps    Int
-  active            Boolean        @default(true)
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
-  subscriptions     Subscription[]
+  id                       String         @id @default(cuid())
+  name                     String         @unique
+  code                     String         @unique
+  monthlyPriceCents        Int
+  stationLimit             Int            @default(1)
+  storageLimitGb           Int
+  listenerLimit            Int
+  maxBitrateKbps           Int
+  includesRuvanasCatalogue Boolean        @default(false)
+  promoUploadEnabled       Boolean        @default(true)
+  active                   Boolean        @default(true)
+  createdAt                DateTime       @default(now())
+  updatedAt                DateTime       @updatedAt
+  subscriptions            Subscription[]
 }
 
 model Subscription {
@@ -200,16 +207,16 @@ model Zone {
 }
 
 model Channel {
-  id              String        @id @default(cuid())
+  id              String         @id @default(cuid())
   organisationId  String
   brandId         String?
   stationId       String?
   name            String
   slug            String
   description     String?
-  status          ChannelStatus @default(DRAFT)
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  status          ChannelStatus  @default(DRAFT)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
 
   organisation    Organisation        @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   brand           Brand?              @relation(fields: [brandId], references: [id], onDelete: SetNull)
@@ -280,24 +287,54 @@ model StationStreamConfig {
 }
 
 model MediaAsset {
-  id              String      @id @default(cuid())
-  organisationId  String
+  id              String           @id @default(cuid())
+  organisationId  String?
+  libraryType     MediaLibraryType @default(ORGANISATION_PROMO)
   name            String
   originalName    String
-  storageKey      String      @unique
+  storageKey      String           @unique
   mimeType        String
   sizeBytes       BigInt
   durationSeconds Int?
   mediaType       MediaType
-  status          MediaStatus @default(UPLOADING)
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+  status          MediaStatus      @default(UPLOADING)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
 
-  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  organisation Organisation?      @relation("OrganisationMediaAssets", fields: [organisationId], references: [id], onDelete: Cascade)
+  genres       MediaAssetGenre[]
 
   @@index([organisationId])
+  @@index([libraryType])
+  @@index([organisationId, libraryType])
   @@index([organisationId, mediaType])
   @@index([organisationId, status])
+  @@index([libraryType, status])
+}
+
+model MediaGenre {
+  id        String            @id @default(cuid())
+  name      String            @unique
+  slug      String            @unique
+  active    Boolean           @default(true)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  mediaAssets MediaAssetGenre[]
+}
+
+model MediaAssetGenre {
+  mediaAssetId String
+  mediaGenreId String
+  isPrimary    Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+
+  mediaAsset MediaAsset @relation(fields: [mediaAssetId], references: [id], onDelete: Cascade)
+  mediaGenre MediaGenre @relation(fields: [mediaGenreId], references: [id], onDelete: Cascade)
+
+  @@id([mediaAssetId, mediaGenreId])
+  @@index([mediaGenreId])
+  @@index([mediaAssetId])
 }
 
 model AuditLog {
