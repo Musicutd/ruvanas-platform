@@ -11,11 +11,17 @@ export const runtime = "nodejs";
 
 const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
 
+const promoMediaTypes = [
+  "COMMERCIAL",
+  "JINGLE",
+  "ANNOUNCEMENT",
+  "VOICEOVER"
+];
+
 const uploadSchema = z.object({
   organisationId: z.string().cuid(),
   name: z.string().trim().min(1).max(200),
   mediaType: z.enum([
-    "MUSIC",
     "COMMERCIAL",
     "JINGLE",
     "ANNOUNCEMENT",
@@ -103,9 +109,19 @@ export async function POST(request) {
       return NextResponse.json(
         {
           error:
-            "Choose an organisation and enter a valid display name, media type, and optional whole-number duration."
+            "Choose an organisation and enter a valid promotional audio type, display name, and optional whole-number duration."
         },
         { status: 400 }
+      );
+    }
+
+    if (!promoMediaTypes.includes(parsed.data.mediaType)) {
+      return NextResponse.json(
+        {
+          error:
+            "Organisation uploads are limited to commercials, jingles, announcements, and voiceovers."
+        },
+        { status: 403 }
       );
     }
 
@@ -150,7 +166,7 @@ export async function POST(request) {
       return NextResponse.json(
         {
           error:
-            "You do not have permission to upload media for this organisation."
+            "You do not have permission to upload promotional audio for this organisation."
         },
         { status: 403 }
       );
@@ -165,12 +181,23 @@ export async function POST(request) {
       );
     }
 
+    if (!subscription.plan.promoUploadEnabled) {
+      return NextResponse.json(
+        {
+          error:
+            "Promotional audio uploads are not included in this organisation's plan."
+        },
+        { status: 403 }
+      );
+    }
+
     const storageLimitBytes =
       BigInt(subscription.plan.storageLimitGb) * 1024n * 1024n * 1024n;
 
     const usage = await prisma.mediaAsset.aggregate({
       where: {
         organisationId: organisation.id,
+        libraryType: "ORGANISATION_PROMO",
         status: {
           in: ["UPLOADING", "PROCESSING", "READY"]
         }
@@ -185,7 +212,7 @@ export async function POST(request) {
 
     const buffer = Buffer.from(await file.arrayBuffer());
     const checksum = crypto.createHash("sha256").update(buffer).digest("hex");
-    const storageKey = `organisations/${organisation.id}/${parsed.data.mediaType.toLowerCase()}/${checksum}.${extension}`;
+    const storageKey = `organisations/${organisation.id}/promos/${parsed.data.mediaType.toLowerCase()}/${checksum}.${extension}`;
     const contentType = getContentType(file, extension);
 
     const existingAsset = await prisma.mediaAsset.findUnique({
@@ -206,7 +233,8 @@ export async function POST(request) {
     if (usedBytes + additionalBytes > storageLimitBytes) {
       return NextResponse.json(
         {
-          error: "This upload would exceed the organisation storage limit.",
+          error:
+            "This promotional upload would exceed the organisation storage limit.",
           usedBytes: usedBytes.toString(),
           limitBytes: storageLimitBytes.toString()
         },
@@ -220,6 +248,7 @@ export async function POST(request) {
             id: existingAsset.id
           },
           data: {
+            libraryType: "ORGANISATION_PROMO",
             name: parsed.data.name,
             originalName: file.name,
             mimeType: contentType,
@@ -232,6 +261,7 @@ export async function POST(request) {
       : await prisma.mediaAsset.create({
           data: {
             organisationId: organisation.id,
+            libraryType: "ORGANISATION_PROMO",
             name: parsed.data.name,
             originalName: file.name,
             storageKey,
@@ -266,6 +296,7 @@ export async function POST(request) {
         id: readyAsset.id,
         name: readyAsset.name,
         mediaType: readyAsset.mediaType,
+        libraryType: readyAsset.libraryType,
         status: readyAsset.status,
         sizeBytes: readyAsset.sizeBytes.toString()
       });
@@ -279,18 +310,21 @@ export async function POST(request) {
         }
       });
 
-      console.error("Cloudflare R2 upload failed:", storageError);
+      console.error("Cloudflare R2 promotional upload failed:", storageError);
 
       return NextResponse.json(
-        { error: "The audio file could not be stored. Please try again." },
+        {
+          error:
+            "The promotional audio file could not be stored. Please try again."
+        },
         { status: 502 }
       );
     }
   } catch (error) {
-    console.error("Media upload request failed:", error);
+    console.error("Promotional audio upload request failed:", error);
 
     return NextResponse.json(
-      { error: "The audio upload could not be completed." },
+      { error: "The promotional audio upload could not be completed." },
       { status: 500 }
     );
   }
