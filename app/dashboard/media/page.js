@@ -1,16 +1,48 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useSession } from "@/lib/session-client";
 
 export default function MediaLibraryPage() {
-  const { session, loading } = useSession();
   const router = useRouter();
 
+  const [loading, setLoading] = useState(true);
+  const [session, setSession] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const res = await fetch("/api/me");
+        if (!res.ok) {
+          if (!cancelled) {
+            router.push("/login");
+          }
+          return;
+        }
+        const data = await res.json();
+        if (!cancelled) {
+          setSession(data);
+        }
+      } catch {
+        if (!cancelled) {
+          router.push("/login");
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
 
   if (loading) {
     return (
@@ -21,7 +53,6 @@ export default function MediaLibraryPage() {
   }
 
   if (!session) {
-    router.push("/login");
     return null;
   }
 
