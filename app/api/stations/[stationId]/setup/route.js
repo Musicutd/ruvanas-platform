@@ -3,8 +3,17 @@ import { prisma } from "@/lib/prisma";
 import { encryptSecret } from "@/lib/crypto";
 import { getAdminUser } from "@/lib/requireAdmin";
 
-function invalid(message) {
-  return NextResponse.json({ error: message }, { status: 400 });
+function badRequest(error) {
+  return NextResponse.json({ error }, { status: 400 });
+}
+
+function isValidHttpUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 export async function POST(request, { params }) {
@@ -13,15 +22,19 @@ export async function POST(request, { params }) {
 
     if (!adminUser) {
       return NextResponse.json(
-        { error: "You are not authorised to update streaming configuration." },
-        { status: 403 }
+        {
+          error: "You are not authorised to update streaming configuration."
+        },
+        {
+          status: 403
+        }
       );
     }
 
     const stationId = params.stationId;
 
     if (!stationId) {
-      return invalid("Station ID is required.");
+      return badRequest("Station ID is required.");
     }
 
     const body = await request.json();
@@ -41,41 +54,39 @@ export async function POST(request, { params }) {
         : "";
 
     const sourcePassword =
-      typeof body.sourcePassword === "string" ? body.sourcePassword.trim() : "";
+      typeof body.sourcePassword === "string"
+        ? body.sourcePassword.trim()
+        : "";
 
     if (!streamUrl) {
-      return invalid("Stream URL is required.");
+      return badRequest("Public stream URL is required.");
     }
 
-    try {
-      const parsedUrl = new URL(streamUrl);
-
-      if (!["http:", "https:"].includes(parsedUrl.protocol)) {
-        return invalid("Stream URL must use http or https.");
-      }
-    } catch {
-      return invalid("Enter a valid public stream URL.");
+    if (!isValidHttpUrl(streamUrl)) {
+      return badRequest("Enter a valid public stream URL beginning with http:// or https://.");
     }
 
     if (!serverHost) {
-      return invalid("Server host is required.");
+      return badRequest("Server host is required.");
     }
 
     if (!centovaUsername) {
-      return invalid("Centova username is required.");
+      return badRequest("Centova username is required.");
     }
 
-    const parsedServerPort = Number(body.serverPort);
+    const serverPort = Number(body.serverPort);
 
     if (
-      !Number.isInteger(parsedServerPort) ||
-      parsedServerPort < 1 ||
-      parsedServerPort > 65535
+      !Number.isInteger(serverPort) ||
+      serverPort < 1 ||
+      serverPort > 65535
     ) {
-      return invalid("Server port must be a whole number from 1 to 65535.");
+      return badRequest(
+        "Server port must be a whole number from 1 to 65535."
+      );
     }
 
-    const parsedBitrateKbps =
+    const bitrateKbps =
       body.bitrateKbps === null ||
       body.bitrateKbps === undefined ||
       body.bitrateKbps === ""
@@ -83,37 +94,43 @@ export async function POST(request, { params }) {
         : Number(body.bitrateKbps);
 
     if (
-      parsedBitrateKbps !== null &&
-      (!Number.isInteger(parsedBitrateKbps) ||
-        parsedBitrateKbps < 8 ||
-        parsedBitrateKbps > 320)
+      bitrateKbps !== null &&
+      (!Number.isInteger(bitrateKbps) ||
+        bitrateKbps < 8 ||
+        bitrateKbps > 320)
     ) {
-      return invalid("Bitrate must be a whole number from 8 to 320 kbps.");
+      return badRequest(
+        "Bitrate must be a whole number from 8 to 320 kbps."
+      );
     }
 
     const station = await prisma.station.findUnique({
-      where: { id: stationId },
+      where: {
+        id: stationId
+      },
       select: {
         id: true,
-        organisationId: true,
-        streamConfig: {
-          select: {
-            sourcePasswordEncrypted: true
-          }
-        }
+        organisationId: true
       }
     });
 
     if (!station) {
-      return NextResponse.json({ error: "Station not found." }, { status: 404 });
+      return NextResponse.json(
+        {
+          error: "Station not found."
+        },
+        {
+          status: 404
+        }
+      );
     }
 
     const configData = {
       streamUrl,
       mountPoint: mountPoint || null,
       serverHost,
-      serverPort: parsedServerPort,
-      bitrateKbps: parsedBitrateKbps,
+      serverPort,
+      bitrateKbps,
       centovaUsername
     };
 
@@ -123,7 +140,9 @@ export async function POST(request, { params }) {
 
     await prisma.$transaction(async (tx) => {
       await tx.stationStreamConfig.upsert({
-        where: { stationId },
+        where: {
+          stationId
+        },
         update: configData,
         create: {
           stationId,
@@ -159,8 +178,12 @@ export async function POST(request, { params }) {
     console.error("Streaming setup save error:", error);
 
     return NextResponse.json(
-      { error: "Unable to save streaming configuration." },
-      { status: 500 }
+      {
+        error: "Unable to save streaming configuration."
+      },
+      {
+        status: 500
+      }
     );
   }
 }
