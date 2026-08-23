@@ -112,8 +112,8 @@ export default function AdminPromoLibraryPage() {
           <h1 style={styles.title}>Promo Library</h1>
           <p style={styles.description}>
             Manage private organisation commercials, jingles, announcements,
-            and voiceovers. Deleting a file removes it from storage and frees
-            the organisation’s allocated promo-storage space.
+            and voiceovers. Preview an approved file securely before using it
+            in a future campaign.
           </p>
         </div>
 
@@ -151,6 +151,7 @@ export default function AdminPromoLibraryPage() {
                   <th style={styles.tableHeader}>Size</th>
                   <th style={styles.tableHeader}>Duration</th>
                   <th style={styles.tableHeader}>Status</th>
+                  <th style={styles.tableHeader}>Preview</th>
                   <th style={styles.tableHeader}>Uploaded</th>
                   <th style={styles.tableHeader}>Action</th>
                 </tr>
@@ -189,6 +190,24 @@ export default function AdminPromoLibraryPage() {
                     </td>
 
                     <td style={styles.tableCell}>
+                      {asset.status === "READY" ? (
+                        <audio
+                          controls
+                          preload="none"
+                          style={styles.audioPlayer}
+                        >
+                          <source
+                            src={`/api/media/${asset.id}/stream`}
+                            type="audio/mpeg"
+                          />
+                          Your browser does not support audio playback.
+                        </audio>
+                      ) : (
+                        <span style={styles.notReady}>Not ready</span>
+                      )}
+                    </td>
+
+                    <td style={styles.tableCell}>
                       {new Date(asset.createdAt).toLocaleDateString()}
                     </td>
 
@@ -220,7 +239,7 @@ export default function AdminPromoLibraryPage() {
 
 const styles = {
   page: {
-    maxWidth: 1180,
+    maxWidth: 1320,
     margin: "0 auto",
     padding: "40px 16px 64px",
     color: "#172033"
@@ -248,7 +267,7 @@ const styles = {
     fontWeight: 900
   },
   description: {
-    maxWidth: 690,
+    maxWidth: 720,
     margin: "10px 0 0",
     color: "#475569",
     fontSize: 15,
@@ -331,7 +350,7 @@ const styles = {
   },
   table: {
     width: "100%",
-    minWidth: 1040,
+    minWidth: 1280,
     borderCollapse: "collapse"
   },
   tableHeader: {
@@ -385,6 +404,15 @@ const styles = {
     color: "#166534",
     fontSize: 12,
     fontWeight: 900
+  },
+  notReady: {
+    color: "#64748b",
+    fontSize: 13,
+    fontWeight: 700
+  },
+  audioPlayer: {
+    width: 210,
+    maxWidth: "100%"
   },
   deleteButton: {
     border: "1px solid #dc2626",
