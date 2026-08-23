@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 const mediaTypes = [
@@ -14,9 +14,62 @@ const mediaTypes = [
 
 export default function AdminMediaUploadPage() {
   const router = useRouter();
+
+  const [organisations, setOrganisations] = useState([]);
+  const [organisationId, setOrganisationId] = useState("");
+  const [loadingOrganisations, setLoadingOrganisations] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadOrganisations() {
+      try {
+        const response = await fetch("/api/admin/organisations");
+
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+
+          throw new Error(
+            data.error || "Unable to load organisations for this upload."
+          );
+        }
+
+        const data = await response.json();
+        const items = Array.isArray(data.organisations)
+          ? data.organisations
+          : [];
+
+        if (!cancelled) {
+          setOrganisations(items);
+
+          if (items.length === 1) {
+            setOrganisationId(items[0].id);
+          }
+        }
+      } catch (loadError) {
+        if (!cancelled) {
+          setError(
+            loadError instanceof Error
+              ? loadError.message
+              : "Unable to load organisations for this upload."
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingOrganisations(false);
+        }
+      }
+    }
+
+    loadOrganisations();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -27,11 +80,17 @@ export default function AdminMediaUploadPage() {
     const formData = new FormData(form);
     const file = formData.get("file");
 
+    if (!organisationId) {
+      setError("Choose the organisation that owns this audio file.");
+      return;
+    }
+
     if (!file || !(file instanceof File) || file.size === 0) {
       setError("Choose an audio file before uploading.");
       return;
     }
 
+    formData.set("organisationId", organisationId);
     setUploading(true);
 
     try {
@@ -84,9 +143,42 @@ export default function AdminMediaUploadPage() {
       <section style={styles.card}>
         <form onSubmit={handleSubmit} style={styles.form}>
           <div style={styles.field}>
+            <label htmlFor="organisationId" style={styles.label}>
+              Organisation
+            </label>
+
+            <select
+              id="organisationId"
+              name="organisationId"
+              value={organisationId}
+              onChange={(event) => setOrganisationId(event.target.value)}
+              disabled={loadingOrganisations || uploading}
+              required
+              style={styles.input}
+            >
+              <option value="">
+                {loadingOrganisations
+                  ? "Loading organisations…"
+                  : "Choose an organisation"}
+              </option>
+
+              {organisations.map((organisation) => (
+                <option key={organisation.id} value={organisation.id}>
+                  {organisation.name}
+                </option>
+              ))}
+            </select>
+
+            <p style={styles.hint}>
+              The uploaded file and storage quota belong to this organisation.
+            </p>
+          </div>
+
+          <div style={styles.field}>
             <label htmlFor="file" style={styles.label}>
               Audio file
             </label>
+
             <input
               id="file"
               name="file"
@@ -96,6 +188,7 @@ export default function AdminMediaUploadPage() {
               disabled={uploading}
               style={styles.input}
             />
+
             <p style={styles.hint}>
               Supported formats: MP3, WAV, OGG, and M4A. Maximum file size: 50
               MB.
@@ -106,6 +199,7 @@ export default function AdminMediaUploadPage() {
             <label htmlFor="name" style={styles.label}>
               Display name
             </label>
+
             <input
               id="name"
               name="name"
@@ -122,6 +216,7 @@ export default function AdminMediaUploadPage() {
             <label htmlFor="mediaType" style={styles.label}>
               Media type
             </label>
+
             <select
               id="mediaType"
               name="mediaType"
@@ -139,8 +234,10 @@ export default function AdminMediaUploadPage() {
 
           <div style={styles.field}>
             <label htmlFor="durationSeconds" style={styles.label}>
-              Duration in seconds <span style={styles.optional}>(optional)</span>
+              Duration in seconds{" "}
+              <span style={styles.optional}>(optional)</span>
             </label>
+
             <input
               id="durationSeconds"
               name="durationSeconds"
@@ -164,10 +261,12 @@ export default function AdminMediaUploadPage() {
 
             <button
               type="submit"
-              disabled={uploading}
+              disabled={loadingOrganisations || uploading}
               style={{
                 ...styles.submitButton,
-                ...(uploading ? styles.submitButtonDisabled : {})
+                ...(loadingOrganisations || uploading
+                  ? styles.submitButtonDisabled
+                  : {})
               }}
             >
               {uploading ? "Uploading…" : "Upload audio"}
