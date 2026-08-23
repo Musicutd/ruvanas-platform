@@ -1,180 +1,156 @@
+import crypto from "crypto";
 import { NextResponse } from "next/server";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
-import { r2Client, r2BucketName } from "@/lib/r2";
-import { prisma } from "@/lib/prisma";
-import { cookies } from "next/headers";
 import { z } from "zod";
+import { prisma } from "@/lib/prisma";
+import { r2BucketName, r2Client } from "@/lib/r2";
+import { getCurrentUser } from "@/lib/auth";
+
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
 
 const uploadSchema = z.object({
-  organisationId: z.string().cuid(),
-  name: z.string().min(1).max(200),
-  mediaType: z.enum(["MUSIC", "COMMERCIAL", "JINGLE", "ANNOUNCEMENT", "VOICEOVER"]),
-  durationSeconds: z.number().int().positive().nullable().optional()
+  name: z.string().trim().min(1).max(200),
+  mediaType: z.enum([
+    "MUSIC",
+    "COMMERCIAL",
+    "JINGLE",
+    "ANNOUNCEMENT",
+    "VOICEOVER"
+  ]),
+  durationSeconds: z.number().int().positive().nullable()
 });
 
-const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB
+const supportedExtensions = new Map([
+  ["mp3", "audio/mpeg"],
+  ["wav", "audio/wav"],
+  ["ogg", "audio/ogg"],
+  ["m4a", "audio/mp4"]
+]);
 
-function getContentType(fileName) {
-  const ext = fileName.split(".").pop()?.toLowerCase();
-  switch (ext) {
-    case "mp3":
-      return "audio/mpeg";
-    case "wav":
-      return "audio/wav";
-    case "ogg":
-      return "audio/ogg";
-    case "m4a":
-      return "audio/mp4";
-    default:
-      return "application/octet-stream";
-  }
+function getExtension(fileName) {
+  const value = fileName.split(".").pop()?.toLowerCase();
+
+  return value && supportedExtensions.has(value) ? value : null;
 }
 
-async function getSessionUserAndOrganisation() {
-  const cookieStore = await cookies();
-  const sessionToken = cookieStore.get("session_token")?.value;
-
-  if (!sessionToken) {
-    return { ok: false, error: "Not authenticated", status: 401 };
+function getContentType(file, extension) {
+  if (file.type && file.type.startsWith("audio/")) {
+    return file.type;
   }
 
-  const session = await prisma.session.findUnique({
-    where: { tokenHash: sessionToken },
-    include: {
-      user: {
-        include: {
-          memberships: {
-            where: {
-              organisation: {
-                subscription: {
-                  status: {
-                    in: ["TRIAL", "ACTIVE", "PAST_DUE"]
-                  }
-                }
-              }
-            },
-            include: {
-              organisation: {
-                include: {
-                  subscription: {
-                    include: {
-                      plan: true
-                    }
-                  }
-                }
+  return supportedExtensions.get(extension) || "application/octet-stream";
+}
+
+export async function POST(request) {
+  try {
+    const user = await getCurrentUser();
+
+    if (!user) {
+      return NextResponse.json(
+        { error: "Your session has expired. Please sign in again." },
+        { status: 401 }
+      );
+    }
+
+    const membership = await prisma.organisationMember.findFirst({
+      where: {
+        userId: user.id
+      },
+      orderBy: {
+        createdAt: "asc"
+      },
+      include: {
+        organisation: {
+          include: {
+            subscription: {
+              include: {
+                plan: true
               }
             }
           }
         }
       }
-    }
-  });
-
-  if (!session) {
-    return { ok: false, error: "Session not found", status: 401 };
-  }
-
-  if (session.expiresAt < new Date()) {
-    return { ok: false, error: "Session expired", status: 401 };
-  }
-
-  const membership = session.user.memberships[0];
-  if (!membership) {
-    return {
-      ok: false,
-      error: "User has no organisation membership",
-      status: 403
-    };
-  }
-
-  const user = session.user;
-  const organisation = membership.organisation;
-
-  return { ok: true, user, organisation, membership };
-}
-
-export async function POST(request) {
-  try {
-    const auth = await getSessionUserAndOrganisation();
-    if (!auth.ok) {
-      return NextResponse.json(
-        { error: auth.error },
-        { status: auth.status }
-      );
-    }
-
-    const { user, organisation } = auth;
-
-    const formData = await request.formData();
-    const file = formData.get("file");
-    const organisationId = formData.get("organisationId");
-    const name = formData.get("name");
-    const mediaType = formData.get("mediaType");
-    const durationSecondsRaw = formData.get("durationSeconds");
-
-    if (!file || !(file instanceof File)) {
-      return NextResponse.json(
-        { error: "No audio file provided" },
-        { status: 400 }
-      );
-    }
-
-    const parsed = uploadSchema.safeParse({
-      organisationId,
-      name,
-      mediaType,
-      durationSeconds: durationSecondsRaw
-        ? Number(durationSecondsRaw)
-        : null
     });
 
-    if (!parsed.success) {
+    if (!membership) {
       return NextResponse.json(
-        { error: "Invalid upload metadata", details: parsed.error.flatten() },
-        { status: 400 }
-      );
-    }
-
-    const { name: safeName, mediaType: safeMediaType, durationSeconds } =
-      parsed.data;
-
-    if (organisationId !== organisation.id) {
-      return NextResponse.json(
-        { error: "Organisation mismatch" },
+        { error: "This user is not assigned to an organisation." },
         { status: 403 }
       );
     }
 
-    const fileBytes = BigInt(file.size);
-    if (fileBytes > BigInt(MAX_FILE_SIZE_BYTES)) {
+    const organisation = membership.organisation;
+    const subscription = organisation.subscription;
+
+    if (!subscription || !subscription.plan) {
       return NextResponse.json(
-        {
-          error: "File too large",
-          maxBytes: MAX_FILE_SIZE_BYTES
-        },
+        { error: "The organisation does not have a storage plan configured." },
+        { status: 403 }
+      );
+    }
+
+    const formData = await request.formData();
+    const file = formData.get("file");
+    const name = String(formData.get("name") || "");
+    const mediaType = String(formData.get("mediaType") || "");
+    const durationSecondsValue = String(
+      formData.get("durationSeconds") || ""
+    ).trim();
+
+    if (!file || !(file instanceof File) || file.size === 0) {
+      return NextResponse.json(
+        { error: "Choose an audio file before uploading." },
+        { status: 400 }
+      );
+    }
+
+    const extension = getExtension(file.name);
+
+    if (!extension) {
+      return NextResponse.json(
+        { error: "Unsupported file type. Use MP3, WAV, OGG, or M4A." },
+        { status: 400 }
+      );
+    }
+
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      return NextResponse.json(
+        { error: "The file exceeds the 50 MB upload limit." },
         { status: 413 }
       );
     }
 
-    const subscription = await prisma.subscription.findUnique({
-      where: { organisationId: organisation.id },
-      include: { plan: true }
+    const durationSeconds = durationSecondsValue
+      ? Number(durationSecondsValue)
+      : null;
+
+    const parsed = uploadSchema.safeParse({
+      name,
+      mediaType,
+      durationSeconds
     });
 
-    if (!subscription) {
+    if (!parsed.success) {
       return NextResponse.json(
-        { error: "No active subscription found" },
-        { status: 403 }
+        {
+          error:
+            "Enter a valid display name, media type, and optional whole-number duration."
+        },
+        { status: 400 }
       );
     }
 
-    const storageLimitBytes = BigInt(subscription.plan.storageLimitGb) * BigInt(1024 * 1024 * 1024);
+    const storageLimitBytes =
+      BigInt(subscription.plan.storageLimitGb) * 1024n * 1024n * 1024n;
 
-    const currentUsage = await prisma.mediaAsset.aggregate({
+    const usage = await prisma.mediaAsset.aggregate({
       where: {
         organisationId: organisation.id,
         status: {
-          in: ["READY", "PROCESSING", "UPLOADING"]
+          in: ["UPLOADING", "PROCESSING", "READY"]
         }
       },
       _sum: {
@@ -182,69 +158,87 @@ export async function POST(request) {
       }
     });
 
-    const currentUsageBytes = (currentUsage._sum.sizeBytes ?? BigInt(0)) + fileBytes;
+    const usedBytes = usage._sum.sizeBytes || 0n;
+    const requestedBytes = BigInt(file.size);
 
-    if (currentUsageBytes > storageLimitBytes) {
+    if (usedBytes + requestedBytes > storageLimitBytes) {
       return NextResponse.json(
         {
-          error: "Storage limit exceeded",
-          usedBytes: currentUsageBytes.toString(),
+          error: "This upload would exceed the organisation storage limit.",
+          usedBytes: usedBytes.toString(),
           limitBytes: storageLimitBytes.toString()
         },
         { status: 413 }
       );
     }
 
-    const fileBuffer = Buffer.from(await file.arrayBuffer());
-    const fileHash = await crypto.subtle.digest(
-      "SHA-256",
-      fileBuffer
-    );
-    const hashHex = Array.from(new Uint8Array(fileHash))
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
-
-    const ext = file.name.split(".").pop() || "bin";
-    const storageKey = `org_${organisation.id}/${safeMediaType.toLowerCase()}/${hashHex}.${ext}`;
-    const contentType = getContentType(file.name);
-
-    await r2Client.send(
-      new PutObjectCommand({
-        Bucket: r2BucketName,
-        Key: storageKey,
-        Body: fileBuffer,
-        ContentType: contentType
-      })
-    );
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const checksum = crypto.createHash("sha256").update(buffer).digest("hex");
+    const storageKey = `organisations/${organisation.id}/${parsed.data.mediaType.toLowerCase()}/${checksum}.${extension}`;
+    const contentType = getContentType(file, extension);
 
     const mediaAsset = await prisma.mediaAsset.create({
       data: {
         organisationId: organisation.id,
-        name: safeName,
+        name: parsed.data.name,
         originalName: file.name,
         storageKey,
         mimeType: contentType,
-        sizeBytes: fileBytes,
-        durationSeconds: durationSeconds ?? null,
-        mediaType: safeMediaType,
-        status: "READY"
+        sizeBytes: requestedBytes,
+        durationSeconds: parsed.data.durationSeconds,
+        mediaType: parsed.data.mediaType,
+        status: "UPLOADING"
       }
     });
 
-    const publicUrl = `/api/media/stream/${mediaAsset.id}`;
+    try {
+      await r2Client.send(
+        new PutObjectCommand({
+          Bucket: r2BucketName,
+          Key: storageKey,
+          Body: buffer,
+          ContentType: contentType
+        })
+      );
 
-    return NextResponse.json({
-      id: mediaAsset.id,
-      name: mediaAsset.name,
-      mediaType: mediaAsset.mediaType,
-      sizeBytes: mediaAsset.sizeBytes.toString(),
-      durationSeconds: mediaAsset.durationSeconds,
-      url: publicUrl
-    });
+      const readyAsset = await prisma.mediaAsset.update({
+        where: {
+          id: mediaAsset.id
+        },
+        data: {
+          status: "READY"
+        }
+      });
+
+      return NextResponse.json({
+        id: readyAsset.id,
+        name: readyAsset.name,
+        mediaType: readyAsset.mediaType,
+        status: readyAsset.status,
+        sizeBytes: readyAsset.sizeBytes.toString()
+      });
+    } catch (storageError) {
+      await prisma.mediaAsset.update({
+        where: {
+          id: mediaAsset.id
+        },
+        data: {
+          status: "REJECTED"
+        }
+      });
+
+      console.error("Cloudflare R2 upload failed:", storageError);
+
+      return NextResponse.json(
+        { error: "The audio file could not be stored. Please try again." },
+        { status: 502 }
+      );
+    }
   } catch (error) {
-    console.error("Media upload error", error);
+    console.error("Media upload request failed:", error);
+
     return NextResponse.json(
-      { error: "Upload failed" },
+      { error: "The audio upload could not be completed." },
       { status: 500 }
     );
   }
