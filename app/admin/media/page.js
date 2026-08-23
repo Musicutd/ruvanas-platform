@@ -1,5 +1,7 @@
+"use client";
+
 import Link from "next/link";
-import { prisma } from "@/lib/prisma";
+import { useEffect, useState } from "react";
 
 function formatBytes(value) {
   const bytes = Number(value || 0);
@@ -29,26 +31,78 @@ function formatDuration(seconds) {
   return `${minutes}:${String(remainingSeconds).padStart(2, "0")}`;
 }
 
-export default async function AdminPromoLibraryPage() {
-  const mediaAssets = await prisma.mediaAsset.findMany({
-    where: {
-      libraryType: "ORGANISATION_PROMO",
-      status: {
-        notIn: ["ARCHIVED", "DELETED"]
+export default function AdminPromoLibraryPage() {
+  const [assets, setAssets] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [deletingId, setDeletingId] = useState("");
+  const [error, setError] = useState("");
+
+  async function loadAssets() {
+    setLoading(true);
+    setError("");
+
+    try {
+      const response = await fetch("/api/admin/media");
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+
+        throw new Error(data.error || "Unable to load promotional audio.");
       }
-    },
-    include: {
-      organisation: {
-        select: {
-          id: true,
-          name: true
-        }
-      }
-    },
-    orderBy: {
-      createdAt: "desc"
+
+      const data = await response.json();
+      setAssets(Array.isArray(data.assets) ? data.assets : []);
+    } catch (loadError) {
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : "Unable to load promotional audio."
+      );
+    } finally {
+      setLoading(false);
     }
-  });
+  }
+
+  useEffect(() => {
+    loadAssets();
+  }, []);
+
+  async function handleDelete(asset) {
+    const confirmed = window.confirm(
+      `Delete "${asset.name}" permanently?\n\nThis removes the file from Cloudflare R2 and the database. It cannot be undone.`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingId(asset.id);
+    setError("");
+
+    try {
+      const response = await fetch(`/api/media/${asset.id}`, {
+        method: "DELETE"
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "The audio file could not be deleted.");
+      }
+
+      setAssets((currentAssets) =>
+        currentAssets.filter((currentAsset) => currentAsset.id !== asset.id)
+      );
+    } catch (deleteError) {
+      setError(
+        deleteError instanceof Error
+          ? deleteError.message
+          : "The audio file could not be deleted."
+      );
+    } finally {
+      setDeletingId("");
+    }
+  }
 
   return (
     <main style={styles.page}>
@@ -58,8 +112,8 @@ export default async function AdminPromoLibraryPage() {
           <h1 style={styles.title}>Promo Library</h1>
           <p style={styles.description}>
             Manage private organisation commercials, jingles, announcements,
-            and voiceovers. Music catalogue content is managed separately by
-            Ruvanas.
+            and voiceovers. Deleting a file removes it from storage and frees
+            the organisation’s allocated promo-storage space.
           </p>
         </div>
 
@@ -68,10 +122,14 @@ export default async function AdminPromoLibraryPage() {
         </Link>
       </div>
 
+      {error ? <div style={styles.error}>{error}</div> : null}
+
       <section style={styles.section}>
         <h2 style={styles.sectionTitle}>Available promotional audio</h2>
 
-        {mediaAssets.length === 0 ? (
+        {loading ? (
+          <p style={styles.loadingState}>Loading promotional audio…</p>
+        ) : assets.length === 0 ? (
           <div style={styles.emptyState}>
             <p style={styles.emptyTitle}>No promotional audio is available.</p>
             <p style={styles.emptyDescription}>
@@ -94,11 +152,12 @@ export default async function AdminPromoLibraryPage() {
                   <th style={styles.tableHeader}>Duration</th>
                   <th style={styles.tableHeader}>Status</th>
                   <th style={styles.tableHeader}>Uploaded</th>
+                  <th style={styles.tableHeader}>Action</th>
                 </tr>
               </thead>
 
               <tbody>
-                {mediaAssets.map((asset) => (
+                {assets.map((asset) => (
                   <tr key={asset.id} style={styles.tableRow}>
                     <td style={styles.tableCellStrong}>
                       <div>{asset.name}</div>
@@ -132,6 +191,22 @@ export default async function AdminPromoLibraryPage() {
                     <td style={styles.tableCell}>
                       {new Date(asset.createdAt).toLocaleDateString()}
                     </td>
+
+                    <td style={styles.tableCell}>
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(asset)}
+                        disabled={deletingId === asset.id}
+                        style={{
+                          ...styles.deleteButton,
+                          ...(deletingId === asset.id
+                            ? styles.deleteButtonDisabled
+                            : {})
+                        }}
+                      >
+                        {deletingId === asset.id ? "Deleting…" : "Delete"}
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -145,7 +220,7 @@ export default async function AdminPromoLibraryPage() {
 
 const styles = {
   page: {
-    maxWidth: 1100,
+    maxWidth: 1180,
     margin: "0 auto",
     padding: "40px 16px 64px",
     color: "#172033"
@@ -156,7 +231,7 @@ const styles = {
     justifyContent: "space-between",
     gap: 20,
     flexWrap: "wrap",
-    marginBottom: 28
+    marginBottom: 20
   },
   eyebrow: {
     margin: "0 0 8px",
@@ -173,7 +248,7 @@ const styles = {
     fontWeight: 900
   },
   description: {
-    maxWidth: 650,
+    maxWidth: 690,
     margin: "10px 0 0",
     color: "#475569",
     fontSize: 15,
@@ -189,6 +264,16 @@ const styles = {
     fontWeight: 900,
     textDecoration: "none"
   },
+  error: {
+    marginBottom: 18,
+    border: "1px solid #fca5a5",
+    borderRadius: 7,
+    background: "#fef2f2",
+    color: "#991b1b",
+    padding: "12px 13px",
+    fontSize: 14,
+    fontWeight: 700
+  },
   section: {
     padding: 24,
     border: "1px solid #cbd5e1",
@@ -203,6 +288,12 @@ const styles = {
     fontWeight: 900,
     letterSpacing: 0.6,
     textTransform: "uppercase"
+  },
+  loadingState: {
+    margin: 0,
+    color: "#64748b",
+    fontSize: 15,
+    fontWeight: 600
   },
   emptyState: {
     padding: 22,
@@ -240,7 +331,7 @@ const styles = {
   },
   table: {
     width: "100%",
-    minWidth: 900,
+    minWidth: 1040,
     borderCollapse: "collapse"
   },
   tableHeader: {
@@ -268,7 +359,8 @@ const styles = {
     color: "#111827",
     fontSize: 14,
     fontWeight: 900,
-    verticalAlign: "middle"
+    verticalAlign: "middle",
+    minWidth: 230
   },
   originalName: {
     marginTop: 4,
@@ -293,5 +385,19 @@ const styles = {
     color: "#166534",
     fontSize: 12,
     fontWeight: 900
+  },
+  deleteButton: {
+    border: "1px solid #dc2626",
+    borderRadius: 7,
+    background: "#ffffff",
+    color: "#b91c1c",
+    padding: "8px 11px",
+    fontSize: 13,
+    fontWeight: 900,
+    cursor: "pointer"
+  },
+  deleteButtonDisabled: {
+    cursor: "not-allowed",
+    opacity: 0.65
   }
 };
