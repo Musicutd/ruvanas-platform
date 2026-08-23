@@ -53,6 +53,36 @@ enum ChannelStatus {
   ARCHIVED
 }
 
+enum StreamServerType {
+  SHOUTCAST_V2
+  ICECAST_V2
+}
+
+enum AudioCodec {
+  MP3
+  AAC
+}
+
+enum SourceConnectionStatus {
+  DISCONNECTED
+  CONNECTING
+  CONNECTED
+  ERROR
+}
+
+enum PlayoutEventType {
+  WORKER_STARTED
+  WORKER_STOPPED
+  WORKER_HEARTBEAT
+  SOURCE_CONNECTING
+  SOURCE_CONNECTED
+  SOURCE_DISCONNECTED
+  SOURCE_ERROR
+  TRACK_STARTED
+  TRACK_FINISHED
+  TRACK_FAILED
+}
+
 enum MediaType {
   MUSIC
   COMMERCIAL
@@ -83,6 +113,7 @@ model User {
   role         UserRole             @default(OWNER)
   createdAt    DateTime             @default(now())
   updatedAt    DateTime             @updatedAt
+
   memberships  OrganisationMember[]
   auditLogs    AuditLog[]           @relation("AuditActor")
   sessions     Session[]
@@ -94,6 +125,7 @@ model Organisation {
   slug            String               @unique
   createdAt       DateTime             @default(now())
   updatedAt       DateTime             @updatedAt
+
   members         OrganisationMember[]
   subscription    Subscription?
   stations        Station[]
@@ -132,6 +164,7 @@ model Plan {
   active                   Boolean        @default(true)
   createdAt                DateTime       @default(now())
   updatedAt                DateTime       @updatedAt
+
   subscriptions            Subscription[]
 }
 
@@ -222,6 +255,7 @@ model Channel {
   brand           Brand?              @relation(fields: [brandId], references: [id], onDelete: SetNull)
   station         Station?            @relation(fields: [stationId], references: [id], onDelete: SetNull)
   zoneAssignments ChannelAssignment[]
+  playoutEvents   PlayoutEvent[]
 
   @@unique([organisationId, slug])
   @@index([organisationId])
@@ -262,28 +296,60 @@ model Station {
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
 
-  organisation Organisation         @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  streamConfig StationStreamConfig?
-  channels     Channel[]
+  organisation  Organisation         @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  streamConfig  StationStreamConfig?
+  channels      Channel[]
+  playoutEvents PlayoutEvent[]
 
   @@index([organisationId])
 }
 
 model StationStreamConfig {
-  id                      String   @id @default(cuid())
-  stationId               String   @unique
+  id                      String                 @id @default(cuid())
+  stationId               String                 @unique
+
   centovaUsername         String?
   streamUrl               String?
   mountPoint              String?
   serverHost              String?
   serverPort              Int?
   bitrateKbps             Int?
+
+  serverType              StreamServerType       @default(SHOUTCAST_V2)
+  outputCodec             AudioCodec             @default(MP3)
+  sampleRateHz            Int                    @default(44100)
+  outputChannels          Int                    @default(2)
+
+  sourceConnectionStatus  SourceConnectionStatus @default(DISCONNECTED)
+  lastConnectedAt         DateTime?
+  lastHeartbeatAt         DateTime?
+  lastError               String?
+
   adminPasswordEncrypted  String?
   sourcePasswordEncrypted String?
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
+
+  createdAt               DateTime               @default(now())
+  updatedAt               DateTime               @updatedAt
 
   station Station @relation(fields: [stationId], references: [id], onDelete: Cascade)
+}
+
+model PlayoutEvent {
+  id          String           @id @default(cuid())
+  channelId   String
+  stationId   String
+  eventType   PlayoutEventType
+  assetId     String?
+  message     String?
+  metadata    Json?
+  occurredAt  DateTime         @default(now())
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  station Station @relation(fields: [stationId], references: [id], onDelete: Cascade)
+
+  @@index([channelId, occurredAt])
+  @@index([stationId, occurredAt])
+  @@index([eventType, occurredAt])
 }
 
 model MediaAsset {
