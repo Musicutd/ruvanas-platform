@@ -12,6 +12,7 @@ export const runtime = "nodejs";
 const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
 
 const uploadSchema = z.object({
+  organisationId: z.string().cuid(),
   name: z.string().trim().min(1).max(200),
   mediaType: z.enum([
     "MUSIC",
@@ -55,45 +56,9 @@ export async function POST(request) {
       );
     }
 
-    const membership = await prisma.organisationMember.findFirst({
-      where: {
-        userId: user.id
-      },
-      orderBy: {
-        createdAt: "asc"
-      },
-      include: {
-        organisation: {
-          include: {
-            subscription: {
-              include: {
-                plan: true
-              }
-            }
-          }
-        }
-      }
-    });
-
-    if (!membership) {
-      return NextResponse.json(
-        { error: "This user is not assigned to an organisation." },
-        { status: 403 }
-      );
-    }
-
-    const organisation = membership.organisation;
-    const subscription = organisation.subscription;
-
-    if (!subscription || !subscription.plan) {
-      return NextResponse.json(
-        { error: "The organisation does not have a storage plan configured." },
-        { status: 403 }
-      );
-    }
-
     const formData = await request.formData();
     const file = formData.get("file");
+    const organisationId = String(formData.get("organisationId") || "");
     const name = String(formData.get("name") || "");
     const mediaType = String(formData.get("mediaType") || "");
     const durationSecondsValue = String(
@@ -128,6 +93,7 @@ export async function POST(request) {
       : null;
 
     const parsed = uploadSchema.safeParse({
+      organisationId,
       name,
       mediaType,
       durationSeconds
@@ -137,9 +103,62 @@ export async function POST(request) {
       return NextResponse.json(
         {
           error:
-            "Enter a valid display name, media type, and optional whole-number duration."
+            "Choose an organisation and enter a valid display name, media type, and optional whole-number duration."
         },
         { status: 400 }
+      );
+    }
+
+    let organisation;
+
+    if (user.role === "SUPER_ADMIN") {
+      organisation = await prisma.organisation.findUnique({
+        where: {
+          id: parsed.data.organisationId
+        },
+        include: {
+          subscription: {
+            include: {
+              plan: true
+            }
+          }
+        }
+      });
+    } else {
+      const membership = await prisma.organisationMember.findFirst({
+        where: {
+          userId: user.id,
+          organisationId: parsed.data.organisationId
+        },
+        include: {
+          organisation: {
+            include: {
+              subscription: {
+                include: {
+                  plan: true
+                }
+              }
+            }
+          }
+        }
+      });
+
+      organisation = membership?.organisation || null;
+    }
+
+    if (!organisation) {
+      return NextResponse.json(
+        { error: "You do not have permission to upload media for this organisation." },
+        { status: 403 }
+      );
+    }
+
+    const subscription = organisation.subscription;
+
+    if (!subscription || !subscription.plan) {
+      return NextResponse.json(
+        { error: "The organisation does not have a storage plan configured." },
+        { status: 403 }
       );
     }
 
