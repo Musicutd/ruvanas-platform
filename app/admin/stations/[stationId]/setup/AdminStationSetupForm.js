@@ -3,20 +3,28 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-export default function AdminStationSetupForm({ stationId, stationName, initialData }) {
+export default function AdminStationSetupForm({
+  stationId,
+  stationName,
+  initialData
+}) {
   const router = useRouter();
-  const [form, setForm] = useState(initialData || {
-    streamUrl: "",
-    mountPoint: "",
-    serverHost: "",
-    serverPort: "",
-    bitrateKbps: "",
-    centovaUsername: "",
-    adminPassword: "",
+
+  const [form, setForm] = useState({
+    streamUrl: initialData?.streamUrl || "",
+    mountPoint: initialData?.mountPoint || "",
+    serverHost: initialData?.serverHost || "",
+    serverPort: initialData?.serverPort?.toString() || "",
+    bitrateKbps: initialData?.bitrateKbps?.toString() || "",
+    centovaUsername: initialData?.centovaUsername || "",
     sourcePassword: ""
   });
+
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState({ type: "", text: "" });
+  const [message, setMessage] = useState({
+    type: "",
+    text: ""
+  });
 
   function updateField(event) {
     setForm((current) => ({
@@ -27,35 +35,96 @@ export default function AdminStationSetupForm({ stationId, stationName, initialD
 
   async function handleSubmit(event) {
     event.preventDefault();
+
+    if (!form.streamUrl.trim()) {
+      setMessage({
+        type: "error",
+        text: "Please enter the stream URL."
+      });
+      return;
+    }
+
+    if (!form.serverHost.trim()) {
+      setMessage({
+        type: "error",
+        text: "Please enter the server host."
+      });
+      return;
+    }
+
+    if (!form.serverPort.trim()) {
+      setMessage({
+        type: "error",
+        text: "Please enter the server port."
+      });
+      return;
+    }
+
+    if (!form.centovaUsername.trim()) {
+      setMessage({
+        type: "error",
+        text: "Please enter the Centova username."
+      });
+      return;
+    }
+
     setSaving(true);
-    setMessage({ type: "", text: "" });
+    setMessage({
+      type: "",
+      text: ""
+    });
 
     try {
+      /*
+        Send only fields that the StreamConfig API/database accepts.
+        `adminPassword` is intentionally not sent or stored.
+      */
+      const payload = {
+        streamUrl: form.streamUrl.trim(),
+        mountPoint: form.mountPoint.trim(),
+        serverHost: form.serverHost.trim(),
+        serverPort: Number(form.serverPort),
+        bitrateKbps: form.bitrateKbps.trim()
+          ? Number(form.bitrateKbps)
+          : null,
+        centovaUsername: form.centovaUsername.trim(),
+        sourcePassword: form.sourcePassword
+      };
+
       const response = await fetch(`/api/stations/${stationId}/setup`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
         },
-        body: JSON.stringify(form)
+        body: JSON.stringify(payload)
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        setMessage({ type: "error", text: data.error || "Failed to save configuration." });
+        setMessage({
+          type: "error",
+          text: data.error || "Unable to save streaming configuration."
+        });
         return;
       }
 
-      setMessage({ type: "success", text: "Streaming configuration saved successfully." });
+      setMessage({
+        type: "success",
+        text: "Streaming configuration saved successfully."
+      });
 
-      // Clear password fields after successful save
       setForm((current) => ({
         ...current,
-        adminPassword: "",
         sourcePassword: ""
       }));
+
+      router.refresh();
     } catch {
-      setMessage({ type: "error", text: "A connection error occurred. Please try again." });
+      setMessage({
+        type: "error",
+        text: "A connection error occurred. Please try again."
+      });
     } finally {
       setSaving(false);
     }
@@ -75,6 +144,8 @@ export default function AdminStationSetupForm({ stationId, stationName, initialD
             value={form.streamUrl}
             onChange={updateField}
             placeholder="https://stream.example.com/live"
+            disabled={saving}
+            required
           />
         </label>
 
@@ -87,6 +158,7 @@ export default function AdminStationSetupForm({ stationId, stationName, initialD
             value={form.mountPoint}
             onChange={updateField}
             placeholder="/live"
+            disabled={saving}
           />
         </label>
 
@@ -99,6 +171,8 @@ export default function AdminStationSetupForm({ stationId, stationName, initialD
             value={form.serverHost}
             onChange={updateField}
             placeholder="stream.example.com"
+            disabled={saving}
+            required
           />
         </label>
 
@@ -112,6 +186,10 @@ export default function AdminStationSetupForm({ stationId, stationName, initialD
               value={form.serverPort}
               onChange={updateField}
               placeholder="8000"
+              min="1"
+              max="65535"
+              disabled={saving}
+              required
             />
           </label>
 
@@ -124,6 +202,8 @@ export default function AdminStationSetupForm({ stationId, stationName, initialD
               value={form.bitrateKbps}
               onChange={updateField}
               placeholder="128"
+              min="1"
+              disabled={saving}
             />
           </label>
         </div>
@@ -140,24 +220,17 @@ export default function AdminStationSetupForm({ stationId, stationName, initialD
             name="centovaUsername"
             value={form.centovaUsername}
             onChange={updateField}
-            placeholder="centova_admin"
+            placeholder="centova_account_name"
+            disabled={saving}
+            required
           />
         </label>
 
         <label style={styles.label}>
-          Admin password (leave blank to keep existing)
-          <input
-            style={styles.input}
-            type="password"
-            name="adminPassword"
-            value={form.adminPassword}
-            onChange={updateField}
-            placeholder="••••••••"
-          />
-        </label>
-
-        <label style={styles.label}>
-          Source password (leave blank to keep existing)
+          Source password{" "}
+          <span style={styles.optional}>
+            (leave blank to keep the existing value)
+          </span>
           <input
             style={styles.input}
             type="password"
@@ -165,15 +238,25 @@ export default function AdminStationSetupForm({ stationId, stationName, initialD
             value={form.sourcePassword}
             onChange={updateField}
             placeholder="••••••••"
+            disabled={saving}
           />
         </label>
+
+        <p style={styles.helpText}>
+          The administrator password is not stored in Ruvanas. Use Centova
+          directly to manage the account password.
+        </p>
       </section>
 
       {message.text ? (
-        <p style={{
-          ...styles.message,
-          ...(message.type === "error" ? styles.messageError : styles.messageSuccess)
-        }}>
+        <p
+          style={{
+            ...styles.message,
+            ...(message.type === "error"
+              ? styles.messageError
+              : styles.messageSuccess)
+          }}
+        >
           {message.text}
         </p>
       ) : null}
@@ -212,6 +295,16 @@ const styles = {
     color: "#d8e0ec",
     fontSize: 14,
     fontWeight: 700
+  },
+  optional: {
+    color: "#94a3b8",
+    fontWeight: 500
+  },
+  helpText: {
+    margin: 0,
+    color: "#aebcd0",
+    fontSize: 13,
+    lineHeight: 1.5
   },
   input: {
     width: "100%",
