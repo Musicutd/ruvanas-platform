@@ -4,15 +4,14 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-const mediaTypes = [
-  { value: "MUSIC", label: "Music" },
+const promoMediaTypes = [
   { value: "COMMERCIAL", label: "Commercial" },
   { value: "JINGLE", label: "Jingle" },
   { value: "ANNOUNCEMENT", label: "Announcement" },
   { value: "VOICEOVER", label: "Voiceover" }
 ];
 
-export default function AdminMediaUploadPage() {
+export default function AdminPromoUploadPage() {
   const router = useRouter();
 
   const [organisations, setOrganisations] = useState([]);
@@ -81,7 +80,7 @@ export default function AdminMediaUploadPage() {
     const file = formData.get("file");
 
     if (!organisationId) {
-      setError("Choose the organisation that owns this audio file.");
+      setError("Choose the organisation that owns this promotional audio.");
       return;
     }
 
@@ -102,7 +101,7 @@ export default function AdminMediaUploadPage() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || "The audio upload failed.");
+        throw new Error(data.error || "The promotional audio upload failed.");
       }
 
       setSuccess(`"${data.name}" uploaded successfully.`);
@@ -116,7 +115,7 @@ export default function AdminMediaUploadPage() {
       setError(
         uploadError instanceof Error
           ? uploadError.message
-          : "The audio upload failed."
+          : "The promotional audio upload failed."
       );
     } finally {
       setUploading(false);
@@ -127,16 +126,17 @@ export default function AdminMediaUploadPage() {
     <main style={styles.page}>
       <div style={styles.header}>
         <div>
-          <p style={styles.eyebrow}>Audio storage</p>
-          <h1 style={styles.title}>Upload audio</h1>
+          <p style={styles.eyebrow}>Organisation promo library</p>
+          <h1 style={styles.title}>Upload promotional audio</h1>
           <p style={styles.description}>
-            Add a music track, commercial, jingle, announcement, or voiceover
-            to the Ruvanas media library.
+            Upload an organisation-owned commercial, jingle, announcement, or
+            voiceover. Music catalogue uploads are managed separately by
+            Ruvanas.
           </p>
         </div>
 
         <Link href="/admin/media" style={styles.backLink}>
-          Back to Media Library
+          Back to Promo Library
         </Link>
       </div>
 
@@ -170,7 +170,8 @@ export default function AdminMediaUploadPage() {
             </select>
 
             <p style={styles.hint}>
-              The uploaded file and storage quota belong to this organisation.
+              This promotional file will be private to the selected
+              organisation and will count toward its storage allocation.
             </p>
           </div>
 
@@ -205,7 +206,7 @@ export default function AdminMediaUploadPage() {
               name="name"
               type="text"
               maxLength="200"
-              placeholder="Example: Summer promotion jingle"
+              placeholder="Example: Summer sale announcement"
               required
               disabled={uploading}
               style={styles.input}
@@ -214,17 +215,17 @@ export default function AdminMediaUploadPage() {
 
           <div style={styles.field}>
             <label htmlFor="mediaType" style={styles.label}>
-              Media type
+              Promotional audio type
             </label>
 
             <select
               id="mediaType"
               name="mediaType"
-              defaultValue="MUSIC"
+              defaultValue="COMMERCIAL"
               disabled={uploading}
               style={styles.input}
             >
-              {mediaTypes.map((mediaType) => (
+              {promoMediaTypes.map((mediaType) => (
                 <option key={mediaType.value} value={mediaType.value}>
                   {mediaType.label}
                 </option>
@@ -269,7 +270,7 @@ export default function AdminMediaUploadPage() {
                   : {})
               }}
             >
-              {uploading ? "Uploading…" : "Upload audio"}
+              {uploading ? "Uploading…" : "Upload promotional audio"}
             </button>
           </div>
         </form>
