@@ -29,8 +29,14 @@ function formatDuration(seconds) {
   return `${minutes}:${String(remainingSeconds).padStart(2, "0")}`;
 }
 
-export default async function AdminMediaPage() {
+export default async function AdminPromoLibraryPage() {
   const mediaAssets = await prisma.mediaAsset.findMany({
+    where: {
+      libraryType: "ORGANISATION_PROMO",
+      status: {
+        notIn: ["ARCHIVED", "DELETED"]
+      }
+    },
     include: {
       organisation: {
         select: {
@@ -48,31 +54,32 @@ export default async function AdminMediaPage() {
     <main style={styles.page}>
       <div style={styles.header}>
         <div>
-          <p style={styles.eyebrow}>Audio storage</p>
-          <h1 style={styles.title}>Media Library</h1>
+          <p style={styles.eyebrow}>Organisation-owned audio</p>
+          <h1 style={styles.title}>Promo Library</h1>
           <p style={styles.description}>
-            Upload and manage music, commercials, jingles, announcements, and
-            voiceovers stored securely in Cloudflare R2.
+            Manage private organisation commercials, jingles, announcements,
+            and voiceovers. Music catalogue content is managed separately by
+            Ruvanas.
           </p>
         </div>
 
         <Link href="/admin/media/upload" style={styles.addButton}>
-          Upload audio
+          Upload promotional audio
         </Link>
       </div>
 
       <section style={styles.section}>
-        <h2 style={styles.sectionTitle}>Uploaded media</h2>
+        <h2 style={styles.sectionTitle}>Available promotional audio</h2>
 
         {mediaAssets.length === 0 ? (
           <div style={styles.emptyState}>
-            <p style={styles.emptyTitle}>No media has been uploaded yet.</p>
+            <p style={styles.emptyTitle}>No promotional audio is available.</p>
             <p style={styles.emptyDescription}>
-              Upload a small MP3 first to confirm that Cloudflare R2 storage is
-              connected correctly.
+              Upload a commercial, jingle, announcement, or voiceover for an
+              organisation.
             </p>
             <Link href="/admin/media/upload" style={styles.emptyAction}>
-              Upload your first audio file
+              Upload promotional audio
             </Link>
           </div>
         ) : (
@@ -101,7 +108,7 @@ export default async function AdminMediaPage() {
                     </td>
 
                     <td style={styles.tableCell}>
-                      {asset.organisation.name}
+                      {asset.organisation?.name || "Unknown organisation"}
                     </td>
 
                     <td style={styles.tableCell}>
