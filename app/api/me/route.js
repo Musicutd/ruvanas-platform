@@ -1,88 +1,64 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUser } from "@/lib/auth";
+
+export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const cookieStore = await cookies();
-  const sessionToken = cookieStore.get("session_token")?.value;
+  try {
+    const user = await getCurrentUser();
 
-  if (!sessionToken) {
-    return NextResponse.json(
-      { error: "Not authenticated" },
-      { status: 401 }
-    );
-  }
+    if (!user) {
+      return NextResponse.json(
+        { error: "Not authenticated" },
+        { status: 401 }
+      );
+    }
 
-  const session = await prisma.session.findUnique({
-    where: { tokenHash: sessionToken },
-    include: {
-      user: {
-        include: {
-          memberships: {
-            where: {
-              organisation: {
-                subscription: {
-                  status: {
-                    in: ["TRIAL", "ACTIVE", "PAST_DUE"]
-                  }
-                }
-              }
-            },
-            include: {
-              organisation: {
-                include: {
-                  subscription: {
-                    include: {
-                      plan: true
-                    }
-                  }
-                }
-              }
-            }
+    const membership = await prisma.organisationMember.findFirst({
+      where: {
+        userId: user.id
+      },
+      orderBy: {
+        createdAt: "asc"
+      },
+      include: {
+        organisation: {
+          select: {
+            id: true,
+            name: true,
+            slug: true
           }
         }
       }
+    });
+
+    if (!membership) {
+      return NextResponse.json(
+        { error: "No organisation membership found for this user" },
+        { status: 403 }
+      );
     }
-  });
 
-  if (!session) {
+    return NextResponse.json({
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role
+      },
+      organisation: membership.organisation,
+      membership: {
+        id: membership.id,
+        role: membership.role
+      }
+    });
+  } catch (error) {
+    console.error("Unable to load current user:", error);
+
     return NextResponse.json(
-      { error: "Session not found" },
-      { status: 401 }
+      { error: "Unable to load the current session" },
+      { status: 500 }
     );
   }
-
-  if (session.expiresAt < new Date()) {
-    return NextResponse.json(
-      { error: "Session expired" },
-      { status: 401 }
-    );
-  }
-
-  const membership = session.user.memberships[0];
-  if (!membership) {
-    return NextResponse.json(
-      { error: "No organisation membership" },
-      { status: 403 }
-    );
-  }
-
-  const user = session.user;
-  const organisation = membership.organisation;
-
-  return NextResponse.json({
-    user: {
-      id: user.id,
-      email: user.email,
-      name: user.name
-    },
-    organisation: {
-      id: organisation.id,
-      name: organisation.name,
-      slug: organisation.slug
-    },
-    membership: {
-      role: membership.role
-    }
-  });
 }
