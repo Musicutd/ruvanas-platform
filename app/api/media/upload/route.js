@@ -32,9 +32,9 @@ const supportedExtensions = new Map([
 ]);
 
 function getExtension(fileName) {
-  const value = fileName.split(".").pop()?.toLowerCase();
+  const extension = fileName.split(".").pop()?.toLowerCase();
 
-  return value && supportedExtensions.has(value) ? value : null;
+  return extension && supportedExtensions.has(extension) ? extension : null;
 }
 
 function getContentType(file, extension) {
@@ -148,7 +148,10 @@ export async function POST(request) {
 
     if (!organisation) {
       return NextResponse.json(
-        { error: "You do not have permission to upload media for this organisation." },
+        {
+          error:
+            "You do not have permission to upload media for this organisation."
+        },
         { status: 403 }
       );
     }
@@ -180,7 +183,27 @@ export async function POST(request) {
     const usedBytes = usage._sum.sizeBytes || 0n;
     const requestedBytes = BigInt(file.size);
 
-    if (usedBytes + requestedBytes > storageLimitBytes) {
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const checksum = crypto.createHash("sha256").update(buffer).digest("hex");
+    const storageKey = `organisations/${organisation.id}/${parsed.data.mediaType.toLowerCase()}/${checksum}.${extension}`;
+    const contentType = getContentType(file, extension);
+
+    const existingAsset = await prisma.mediaAsset.findUnique({
+      where: {
+        storageKey
+      }
+    });
+
+    if (existingAsset && existingAsset.organisationId !== organisation.id) {
+      return NextResponse.json(
+        { error: "This media file belongs to another organisation." },
+        { status: 409 }
+      );
+    }
+
+    const additionalBytes = existingAsset ? 0n : requestedBytes;
+
+    if (usedBytes + additionalBytes > storageLimitBytes) {
       return NextResponse.json(
         {
           error: "This upload would exceed the organisation storage limit.",
@@ -191,24 +214,34 @@ export async function POST(request) {
       );
     }
 
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const checksum = crypto.createHash("sha256").update(buffer).digest("hex");
-    const storageKey = `organisations/${organisation.id}/${parsed.data.mediaType.toLowerCase()}/${checksum}.${extension}`;
-    const contentType = getContentType(file, extension);
-
-    const mediaAsset = await prisma.mediaAsset.create({
-      data: {
-        organisationId: organisation.id,
-        name: parsed.data.name,
-        originalName: file.name,
-        storageKey,
-        mimeType: contentType,
-        sizeBytes: requestedBytes,
-        durationSeconds: parsed.data.durationSeconds,
-        mediaType: parsed.data.mediaType,
-        status: "UPLOADING"
-      }
-    });
+    const mediaAsset = existingAsset
+      ? await prisma.mediaAsset.update({
+          where: {
+            id: existingAsset.id
+          },
+          data: {
+            name: parsed.data.name,
+            originalName: file.name,
+            mimeType: contentType,
+            sizeBytes: requestedBytes,
+            durationSeconds: parsed.data.durationSeconds,
+            mediaType: parsed.data.mediaType,
+            status: "UPLOADING"
+          }
+        })
+      : await prisma.mediaAsset.create({
+          data: {
+            organisationId: organisation.id,
+            name: parsed.data.name,
+            originalName: file.name,
+            storageKey,
+            mimeType: contentType,
+            sizeBytes: requestedBytes,
+            durationSeconds: parsed.data.durationSeconds,
+            mediaType: parsed.data.mediaType,
+            status: "UPLOADING"
+          }
+        });
 
     try {
       await r2Client.send(
