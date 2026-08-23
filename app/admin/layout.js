@@ -16,6 +16,15 @@ const navItems = [
     label: "Stations"
   },
   {
+    href: "/admin/media",
+    label: "Promo Library"
+  },
+  {
+    href: "/admin/catalogue",
+    label: "Music Catalogue",
+    superAdminOnly: true
+  },
+  {
     href: "/admin/brands",
     label: "Brands"
   },
@@ -31,6 +40,10 @@ export default async function AdminLayout({ children }) {
   if (!adminUser) {
     redirect("/login");
   }
+
+  const visibleNavItems = navItems.filter(
+    (item) => !item.superAdminOnly || adminUser.role === "SUPER_ADMIN"
+  );
 
   return (
     <div style={{ minHeight: "100vh", background: "#ffffff" }}>
@@ -88,7 +101,7 @@ export default async function AdminLayout({ children }) {
               flexWrap: "wrap"
             }}
           >
-            {navItems.map((item) => (
+            {visibleNavItems.map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
