@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
+import ChannelStatusButton from "./ChannelStatusButton";
 
 export default async function AdminChannelsPage() {
   const channels = await prisma.channel.findMany({
@@ -84,7 +85,7 @@ export default async function AdminChannelsPage() {
           <table
             style={{
               width: "100%",
-              minWidth: 1000,
+              minWidth: 1120,
               borderCollapse: "collapse"
             }}
           >
@@ -103,6 +104,7 @@ export default async function AdminChannelsPage() {
                 <th style={{ padding: 8 }}>Assigned zones</th>
                 <th style={{ padding: 8 }}>Status</th>
                 <th style={{ padding: 8 }}>Created</th>
+                <th style={{ padding: 8 }}>Action</th>
               </tr>
             </thead>
 
@@ -110,6 +112,12 @@ export default async function AdminChannelsPage() {
               {channels.map((channel) => {
                 const streamConfigured = Boolean(
                   channel.station?.streamConfig?.streamUrl
+                );
+
+                const canActivate = Boolean(
+                  channel.station &&
+                    streamConfigured &&
+                    channel.zoneAssignments.length > 0
                 );
 
                 return (
@@ -155,6 +163,15 @@ export default async function AdminChannelsPage() {
 
                     <td style={{ padding: 8 }}>
                       {new Date(channel.createdAt).toLocaleDateString()}
+                    </td>
+
+                    <td style={{ padding: 8 }}>
+                      <ChannelStatusButton
+                        channelId={channel.id}
+                        channelName={channel.name}
+                        currentStatus={channel.status}
+                        canActivate={canActivate}
+                      />
                     </td>
                   </tr>
                 );
