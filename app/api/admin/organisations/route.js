@@ -1,88 +1,62 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUser } from "@/lib/auth";
 
-function makeSlug(value) {
-  return value
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "");
-}
+export const dynamic = "force-dynamic";
 
-export async function POST(request) {
+export async function GET() {
   try {
-    const body = await request.json();
-    const name = body?.name?.trim();
+    const user = await getCurrentUser();
 
-    if (!name || typeof name !== "string") {
+    if (!user) {
       return NextResponse.json(
-        {
-          error: "Please enter an organisation name."
-        },
-        {
-          status: 400
-        }
+        { error: "Your session has expired. Please sign in again." },
+        { status: 401 }
       );
     }
 
-    const slug = makeSlug(name);
+    let organisations;
 
-    if (!slug) {
-      return NextResponse.json(
-        {
-          error: "Please enter a valid organisation name."
+    if (user.role === "SUPER_ADMIN") {
+      organisations = await prisma.organisation.findMany({
+        select: {
+          id: true,
+          name: true,
+          slug: true
         },
-        {
-          status: 400
+        orderBy: {
+          name: "asc"
         }
-      );
+      });
+    } else {
+      const memberships = await prisma.organisationMember.findMany({
+        where: {
+          userId: user.id
+        },
+        select: {
+          organisation: {
+            select: {
+              id: true,
+              name: true,
+              slug: true
+            }
+          }
+        },
+        orderBy: {
+          createdAt: "asc"
+        }
+      });
+
+      organisations = memberships.map((membership) => membership.organisation);
     }
 
-    const existingOrganisation = await prisma.organisation.findUnique({
-      where: {
-        slug
-      },
-      select: {
-        id: true
-      }
-    });
-
-    if (existingOrganisation) {
-      return NextResponse.json(
-        {
-          error: "An organisation with this name already exists."
-        },
-        {
-          status: 409
-        }
-      );
-    }
-
-    const organisation = await prisma.organisation.create({
-      data: {
-        name,
-        slug
-      }
-    });
-
-    return NextResponse.json(
-      {
-        organisation
-      },
-      {
-        status: 201
-      }
-    );
+    return NextResponse.json({ organisations });
   } catch (error) {
-    console.error("ORGANISATION_CREATE_ERROR", error);
+    console.error("Unable to load organisations for media upload:", error);
 
     return NextResponse.json(
-      {
-        error: "Unable to create organisation. Please try again."
-      },
-      {
-        status: 500
-      }
+      { error: "Unable to load organisations." },
+      { status: 500 }
     );
   }
 }
