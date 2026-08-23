@@ -53,6 +53,23 @@ enum ChannelStatus {
   ARCHIVED
 }
 
+enum MediaType {
+  MUSIC
+  COMMERCIAL
+  JINGLE
+  ANNOUNCEMENT
+  VOICEOVER
+}
+
+enum MediaStatus {
+  UPLOADING
+  READY
+  PROCESSING
+  REJECTED
+  ARCHIVED
+  DELETED
+}
+
 model User {
   id           String               @id @default(cuid())
   name         String?
@@ -78,6 +95,7 @@ model Organisation {
   brands       Brand[]
   locations    Location[]
   channels     Channel[]
+  mediaAssets  MediaAsset[]
   auditLogs    AuditLog[]
 }
 
@@ -166,37 +184,37 @@ model Location {
 }
 
 model Zone {
-  id         String     @id @default(cuid())
-  locationId String
-  name       String
-  slug       String
-  status     ZoneStatus @default(ACTIVE)
-  createdAt  DateTime   @default(now())
-  updatedAt  DateTime   @updatedAt
+  id                 String              @id @default(cuid())
+  locationId         String
+  name               String
+  slug               String
+  status             ZoneStatus          @default(ACTIVE)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
 
-  location            Location            @relation(fields: [locationId], references: [id], onDelete: Cascade)
-  channelAssignments  ChannelAssignment[]
+  location           Location            @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  channelAssignments ChannelAssignment[]
 
   @@unique([locationId, slug])
   @@index([locationId])
 }
 
 model Channel {
-  id             String        @id @default(cuid())
-  organisationId String
-  brandId        String?
-  stationId      String?
-  name           String
-  slug           String
-  description    String?
-  status         ChannelStatus @default(DRAFT)
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  id              String        @id @default(cuid())
+  organisationId  String
+  brandId         String?
+  stationId       String?
+  name            String
+  slug            String
+  description     String?
+  status          ChannelStatus @default(DRAFT)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
 
-  organisation       Organisation        @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  brand              Brand?              @relation(fields: [brandId], references: [id], onDelete: SetNull)
-  station            Station?            @relation(fields: [stationId], references: [id], onDelete: SetNull)
-  zoneAssignments    ChannelAssignment[]
+  organisation    Organisation        @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  brand           Brand?              @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  station         Station?            @relation(fields: [stationId], references: [id], onDelete: SetNull)
+  zoneAssignments ChannelAssignment[]
 
   @@unique([organisationId, slug])
   @@index([organisationId])
@@ -259,6 +277,27 @@ model StationStreamConfig {
   updatedAt               DateTime @updatedAt
 
   station Station @relation(fields: [stationId], references: [id], onDelete: Cascade)
+}
+
+model MediaAsset {
+  id              String      @id @default(cuid())
+  organisationId  String
+  name            String
+  originalName    String
+  storageKey      String      @unique
+  mimeType        String
+  sizeBytes       BigInt
+  durationSeconds Int?
+  mediaType       MediaType
+  status          MediaStatus @default(UPLOADING)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+
+  @@index([organisationId])
+  @@index([organisationId, mediaType])
+  @@index([organisationId, status])
 }
 
 model AuditLog {
