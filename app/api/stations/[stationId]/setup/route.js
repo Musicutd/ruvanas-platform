@@ -12,6 +12,7 @@ export async function POST(request, { params }) {
       serverPort,
       bitrateKbps,
       centovaUsername,
+      adminPassword,
       sourcePassword
     } = body;
 
@@ -28,11 +29,32 @@ export async function POST(request, { params }) {
       );
     }
 
-    if (!streamUrl || !serverHost || !serverPort || !centovaUsername) {
+    if (!streamUrl?.trim()) {
       return NextResponse.json(
         {
-          error:
-            "Stream URL, server host, server port, and Centova username are required."
+          error: "Stream URL is required."
+        },
+        {
+          status: 400
+        }
+      );
+    }
+
+    if (!serverHost?.trim()) {
+      return NextResponse.json(
+        {
+          error: "Server host is required."
+        },
+        {
+          status: 400
+        }
+      );
+    }
+
+    if (!centovaUsername?.trim()) {
+      return NextResponse.json(
+        {
+          error: "Centova username is required."
         },
         {
           status: 400
@@ -53,7 +75,7 @@ export async function POST(request, { params }) {
     ) {
       return NextResponse.json(
         {
-          error: "Server port must be a whole number between 1 and 65535."
+          error: "Server port must be a whole number from 1 to 65535."
         },
         {
           status: 400
@@ -95,16 +117,7 @@ export async function POST(request, { params }) {
       );
     }
 
-    const existingConfig = await prisma.streamConfig.findUnique({
-      where: {
-        stationId
-      },
-      select: {
-        id: true
-      }
-    });
-
-    const streamConfigData = {
+    const configData = {
       streamUrl: streamUrl.trim(),
       mountPoint: mountPoint?.trim() || null,
       serverHost: serverHost.trim(),
@@ -114,33 +127,29 @@ export async function POST(request, { params }) {
     };
 
     /*
-      The Prisma schema does not contain an `adminPassword` field.
-      Therefore, it must never be passed to prisma.streamConfig.create()
-      or prisma.streamConfig.update().
-
-      sourcePassword is added only when the user supplies a new value.
-      This allows a blank password field to preserve the existing value.
+      The schema stores encrypted password fields. This temporary version
+      maps the submitted passwords to those schema fields so the station
+      configuration can save. Replace this with real encryption before
+      production use.
     */
-    if (sourcePassword?.trim()) {
-      streamConfigData.sourcePassword = sourcePassword.trim();
+    if (adminPassword?.trim()) {
+      configData.adminPasswordEncrypted = adminPassword.trim();
     }
 
-    if (existingConfig) {
-      await prisma.streamConfig.update({
-        where: {
-          stationId
-        },
-        data: streamConfigData
-      });
-    } else {
-      await prisma.streamConfig.create({
-        data: {
-          stationId,
-          ...streamConfigData,
-          sourcePassword: sourcePassword?.trim() || null
-        }
-      });
+    if (sourcePassword?.trim()) {
+      configData.sourcePasswordEncrypted = sourcePassword.trim();
     }
+
+    await prisma.stationStreamConfig.upsert({
+      where: {
+        stationId
+      },
+      update: configData,
+      create: {
+        stationId,
+        ...configData
+      }
+    });
 
     return NextResponse.json({
       success: true,
@@ -148,8 +157,7 @@ export async function POST(request, { params }) {
     });
   } catch (error) {
     /*
-      Do not log `body`, passwords, or full submitted configuration.
-      The error itself is enough for Render diagnostics.
+      Never log the submitted request body, as it can contain passwords.
     */
     console.error("Streaming setup save error:", error);
 
