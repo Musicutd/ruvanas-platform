@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ruvanas
+      SESSION_SECRET: ci-session-secret-with-at-least-32-characters
+      SECRET_ENCRYPTION_KEY: 0000000000000000000000000000000000000000000000000000000000000000
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Replace with `npm ci` as soon as Phase 0 commits a package lockfile.
+      - name: Install dependencies
+        run: npm install --ignore-scripts
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Validate Prisma schema
+        run: npx prisma validate
+
+      - name: Run unit tests
+        run: npm test
+
+      - name: Build application
+        run: npm run build

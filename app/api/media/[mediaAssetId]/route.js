@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireOrganisationAccess, ORGANISATION_CONTENT_ROLES } from "@/lib/access-control";
 import { accessDenied } from "@/lib/api-response";
-import { r2BucketName, r2Client } from "@/lib/r2";
+import { getR2Storage } from "@/lib/r2";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -64,9 +64,11 @@ export async function DELETE(request, { params }) {
     }
 
     try {
-      await r2Client.send(
+      const r2 = getR2Storage();
+
+      await r2.client.send(
         new DeleteObjectCommand({
-          Bucket: r2BucketName,
+          Bucket: r2.bucketName,
           Key: mediaAsset.storageKey
         })
       );

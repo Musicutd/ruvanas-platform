@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { r2BucketName, r2Client } from "@/lib/r2";
+import { getR2Storage } from "@/lib/r2";
 import { getCurrentUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -274,9 +274,11 @@ export async function POST(request) {
         });
 
     try {
-      await r2Client.send(
+      const r2 = getR2Storage();
+
+      await r2.client.send(
         new PutObjectCommand({
-          Bucket: r2BucketName,
+          Bucket: r2.bucketName,
           Key: storageKey,
           Body: buffer,
           ContentType: contentType
