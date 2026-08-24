@@ -150,7 +150,7 @@ Extend the proven tenant, targeting, scheduling, player-health, and reporting fo
 
 - Eleven unit tests pass across access policy, tenant selection, environment validation, and entitlements.
 - Modified server-side JavaScript passes syntax validation and the patch passes whitespace checks.
-- The existing draft pull request's CI passed before this audit increment and must pass again on the resulting commit.
+- GitHub CI passed on the implementation commit produced by this audit.
 - The DOCX was inspected structurally in full: 280 paragraphs, 34 tables, 51 headings, one section, no images, comments, or tracked changes.
 - Visual page rendering could not be completed in this environment because LibreOffice is unavailable and desktop Word automation is not permitted. Content, styles, tables, headers/footers, and underlying WordprocessingML were still reviewed.
 
