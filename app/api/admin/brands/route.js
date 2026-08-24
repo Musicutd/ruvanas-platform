@@ -101,12 +101,27 @@ export async function POST(request) {
       );
     }
 
-    const brand = await prisma.brand.create({
-      data: {
-        organisationId,
-        name,
-        slug
-      }
+    const brand = await prisma.$transaction(async (tx) => {
+      const createdBrand = await tx.brand.create({
+        data: {
+          organisationId,
+          name,
+          slug
+        }
+      });
+
+      await tx.auditLog.create({
+        data: {
+          organisationId,
+          actorUserId: access.user.id,
+          action: "BRAND_CREATED",
+          entityType: "Brand",
+          entityId: createdBrand.id,
+          details: { name, slug }
+        }
+      });
+
+      return createdBrand;
     });
 
     return NextResponse.json(
@@ -130,3 +145,4 @@ export async function POST(request) {
     );
   }
 }
+

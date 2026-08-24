@@ -117,31 +117,52 @@ export async function POST(request) {
       );
     }
 
-    const location = await prisma.location.create({
-      data: {
-        organisationId,
-        brandId: brandId || null,
-        name,
-        slug: locationSlug,
-        status: "DRAFT",
-        timezone,
-        addressLine1: cleanOptionalText(body.addressLine1),
-        addressLine2: cleanOptionalText(body.addressLine2),
-        city: cleanOptionalText(body.city),
-        region: cleanOptionalText(body.region),
-        postalCode: cleanOptionalText(body.postalCode),
-        countryCode: cleanOptionalText(body.countryCode)?.toUpperCase() || null,
-        zones: {
-          create: {
-            name: firstZoneName,
-            slug: makeSlug(firstZoneName) || "main-store",
-            status: "ACTIVE"
+    const location = await prisma.$transaction(async (tx) => {
+      const createdLocation = await tx.location.create({
+        data: {
+          organisationId,
+          brandId: brandId || null,
+          name,
+          slug: locationSlug,
+          status: "DRAFT",
+          timezone,
+          addressLine1: cleanOptionalText(body.addressLine1),
+          addressLine2: cleanOptionalText(body.addressLine2),
+          city: cleanOptionalText(body.city),
+          region: cleanOptionalText(body.region),
+          postalCode: cleanOptionalText(body.postalCode),
+          countryCode: cleanOptionalText(body.countryCode)?.toUpperCase() || null,
+          zones: {
+            create: {
+              name: firstZoneName,
+              slug: makeSlug(firstZoneName) || "main-store",
+              status: "ACTIVE"
+            }
+          }
+        },
+        include: {
+          zones: true
+        }
+      });
+
+      await tx.auditLog.create({
+        data: {
+          organisationId,
+          actorUserId: access.user.id,
+          action: "LOCATION_CREATED",
+          entityType: "Location",
+          entityId: createdLocation.id,
+          details: {
+            name,
+            slug: locationSlug,
+            brandId: brandId || null,
+            timezone,
+            firstZoneId: createdLocation.zones[0]?.id || null
           }
         }
-      },
-      include: {
-        zones: true
-      }
+      });
+
+      return createdLocation;
     });
 
     return NextResponse.json(
@@ -165,3 +186,4 @@ export async function POST(request) {
     );
   }
 }
+

@@ -98,18 +98,47 @@ export async function POST(request, { params }) {
       }
     }
 
-    const updatedChannel = await prisma.channel.update({
-      where: {
-        id: channel.id
-      },
-      data: {
-        status: nextStatus
-      },
-      select: {
-        id: true,
-        name: true,
-        status: true
-      }
+    if (channel.status === nextStatus) {
+      return NextResponse.json({
+        success: true,
+        channel: {
+          id: channel.id,
+          name: channel.name,
+          status: channel.status
+        }
+      });
+    }
+
+    const updatedChannel = await prisma.$transaction(async (tx) => {
+      const changedChannel = await tx.channel.update({
+        where: {
+          id: channel.id
+        },
+        data: {
+          status: nextStatus
+        },
+        select: {
+          id: true,
+          name: true,
+          status: true
+        }
+      });
+
+      await tx.auditLog.create({
+        data: {
+          organisationId: channel.organisationId,
+          actorUserId: access.user.id,
+          action: "CHANNEL_STATUS_CHANGED",
+          entityType: "Channel",
+          entityId: channel.id,
+          details: {
+            previousStatus: channel.status,
+            status: nextStatus
+          }
+        }
+      });
+
+      return changedChannel;
     });
 
     return NextResponse.json({
@@ -129,3 +158,4 @@ export async function POST(request, { params }) {
     );
   }
 }
+

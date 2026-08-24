@@ -85,13 +85,28 @@ export async function POST(request, { params }) {
       );
     }
 
-    const zone = await prisma.zone.create({
-      data: {
-        locationId,
-        name,
-        slug,
-        status: "ACTIVE"
-      }
+    const zone = await prisma.$transaction(async (tx) => {
+      const createdZone = await tx.zone.create({
+        data: {
+          locationId,
+          name,
+          slug,
+          status: "ACTIVE"
+        }
+      });
+
+      await tx.auditLog.create({
+        data: {
+          organisationId: location.organisationId,
+          actorUserId: access.user.id,
+          action: "ZONE_CREATED",
+          entityType: "Zone",
+          entityId: createdZone.id,
+          details: { locationId, name, slug }
+        }
+      });
+
+      return createdZone;
     });
 
     return NextResponse.json(
@@ -115,3 +130,4 @@ export async function POST(request, { params }) {
     );
   }
 }
+

@@ -6,7 +6,8 @@ import {
   isPlatformAdminRole,
   ORGANISATION_CONTENT_ROLES,
   ORGANISATION_MANAGER_ROLES,
-  ORGANISATION_MEMBER_ROLES
+  ORGANISATION_MEMBER_ROLES,
+  PLATFORM_TENANT_OVERRIDE_ROLES
 } from "../lib/permissions.mjs";
 
 test("platform administration is limited to platform roles", () => {
@@ -14,6 +15,11 @@ test("platform administration is limited to platform roles", () => {
   assert.equal(isPlatformAdminRole("SUPPORT"), true);
   assert.equal(isPlatformAdminRole("OWNER"), false);
   assert.equal(isPlatformAdminRole(undefined), false);
+});
+
+test("only super admins bypass tenant membership checks", () => {
+  assert.deepEqual(PLATFORM_TENANT_OVERRIDE_ROLES, ["SUPER_ADMIN"]);
+  assert.equal(PLATFORM_TENANT_OVERRIDE_ROLES.includes("SUPPORT"), false);
 });
 
 test("all organisation roles can read organisation resources", () => {
@@ -44,3 +50,4 @@ test("content editors can manage media but viewers cannot", () => {
   );
   assert.equal(isOrganisationRoleAllowed("VIEWER", ORGANISATION_CONTENT_ROLES), false);
 });
+

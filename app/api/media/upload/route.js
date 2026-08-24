@@ -5,6 +5,12 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getR2Storage } from "@/lib/r2";
 import { getCurrentUser } from "@/lib/auth";
+import { resolveEntitlements } from "@/lib/entitlements.mjs";
+import {
+  ORGANISATION_CONTENT_ROLES,
+  requireOrganisationAccess
+} from "@/lib/access-control";
+import { accessDenied } from "@/lib/api-response";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -125,63 +131,46 @@ export async function POST(request) {
       );
     }
 
-    let organisation;
+    const access = await requireOrganisationAccess(
+      parsed.data.organisationId,
+      ORGANISATION_CONTENT_ROLES
+    );
 
-    if (user.role === "SUPER_ADMIN") {
-      organisation = await prisma.organisation.findUnique({
-        where: {
-          id: parsed.data.organisationId
-        },
-        include: {
-          subscription: {
-            include: {
-              plan: true
-            }
-          }
-        }
-      });
-    } else {
-      const membership = await prisma.organisationMember.findFirst({
-        where: {
-          userId: user.id,
-          organisationId: parsed.data.organisationId
-        },
-        include: {
-          organisation: {
-            include: {
-              subscription: {
-                include: {
-                  plan: true
-                }
-              }
-            }
-          }
-        }
-      });
-
-      organisation = membership?.organisation || null;
+    if (!access.ok) {
+      return accessDenied(access);
     }
+
+    const organisation = await prisma.organisation.findUnique({
+      where: {
+        id: parsed.data.organisationId
+      },
+      include: {
+        subscription: {
+          include: {
+            plan: true
+          }
+        }
+      }
+    });
 
     if (!organisation) {
       return NextResponse.json(
-        {
-          error:
-            "You do not have permission to upload promotional audio for this organisation."
-        },
-        { status: 403 }
+        { error: "The selected organisation was not found." },
+        { status: 404 }
       );
     }
 
     const subscription = organisation.subscription;
+    const entitlements = resolveEntitlements(subscription);
 
-    if (!subscription || !subscription.plan) {
+    if (!entitlements.serviceEnabled) {
       return NextResponse.json(
-        { error: "The organisation does not have a storage plan configured." },
+        { error: "An active subscription is required to upload promotional audio." },
         { status: 403 }
       );
     }
 
-    if (!subscription.plan.promoUploadEnabled) {
+    if (!entitlements.promoUploadEnabled) {
       return NextResponse.json(
         {
           error:
@@ -192,7 +181,7 @@ export async function POST(request) {
     }
 
     const storageLimitBytes =
-      BigInt(subscription.plan.storageLimitGb) * 1024n * 1024n * 1024n;
+      BigInt(entitlements.storageLimitGb) * 1024n * 1024n * 1024n;
 
     const usage = await prisma.mediaAsset.aggregate({
       where: {
@@ -285,13 +274,34 @@ export async function POST(request) {
         })
       );
 
-      const readyAsset = await prisma.mediaAsset.update({
-        where: {
-          id: mediaAsset.id
-        },
-        data: {
-          status: "READY"
-        }
+      const readyAsset = await prisma.$transaction(async (tx) => {
+        const storedAsset = await tx.mediaAsset.update({
+          where: {
+            id: mediaAsset.id
+          },
+          data: {
+            status: "READY"
+          }
+        });
+
+        await tx.auditLog.create({
+          data: {
+            organisationId: organisation.id,
+            actorUserId: user.id,
+            action: existingAsset
+              ? "MEDIA_ASSET_REPLACED"
+              : "MEDIA_ASSET_UPLOADED",
+            entityType: "MediaAsset",
+            entityId: storedAsset.id,
+            details: {
+              name: storedAsset.name,
+              mediaType: storedAsset.mediaType,
+              sizeBytes: storedAsset.sizeBytes.toString()
+            }
+          }
+        });
+
+        return storedAsset;
       });
 
       return NextResponse.json({
@@ -331,3 +341,4 @@ export async function POST(request) {
     );
   }
 }
+

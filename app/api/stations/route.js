@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { isOrganisationRoleAllowed, ORGANISATION_MANAGER_ROLES } from "@/lib/access-control";
-import slugify from "@/lib/slugify"; // adjust import if your existing slug helper differs
+import { isWithinLimit, resolveEntitlements } from "@/lib/entitlements.mjs";
+import slugify from "@/lib/slugify";
 
 export async function POST(request) {
   const user = await getCurrentUser();
@@ -54,28 +55,55 @@ export async function POST(request) {
   }
 
   const org = membership.organisation;
-  const plan = org.subscription?.plan;
+  const entitlements = resolveEntitlements(org.subscription);
   const stationCount = org.stations.length;
 
-  if (plan && stationCount >= plan.stationLimit) {
+  if (!entitlements.serviceEnabled) {
     return NextResponse.json(
-      { error: `Your ${plan.name} plan allows up to ${plan.stationLimit} station${plan.stationLimit === 1 ? "" : "s"}.` },
+      { error: "An active subscription is required to create a station." },
       { status: 403 }
     );
   }
 
-  const station = await prisma.station.create({
-    data: {
-      organisationId: org.id,
-      name,
-      description: description || null,
-      slug: slugify(name) + "-" + Math.random().toString(36).slice(2, 7),
-      status: "PENDING_SETUP",
-      listenerLimit: plan?.listenerLimit ?? 100,
-      storageLimitGb: plan?.storageLimitGb ?? 2,
-      maxBitrateKbps: plan?.maxBitrateKbps ?? 128
-    }
+  if (!isWithinLimit(stationCount, entitlements.stationLimit)) {
+    return NextResponse.json(
+      { error: `Your plan allows up to ${entitlements.stationLimit} station${entitlements.stationLimit === 1 ? "" : "s"}.` },
+      { status: 403 }
+    );
+  }
+
+  const station = await prisma.$transaction(async (tx) => {
+    const createdStation = await tx.station.create({
+      data: {
+        organisationId: org.id,
+        name,
+        description: description || null,
+        slug: slugify(name) + "-" + Math.random().toString(36).slice(2, 7),
+        status: "PENDING_SETUP",
+        listenerLimit: entitlements.listenerLimit,
+        storageLimitGb: entitlements.storageLimitGb,
+        maxBitrateKbps: entitlements.maxBitrateKbps
+      }
+    });
+
+    await tx.auditLog.create({
+      data: {
+        organisationId: org.id,
+        actorUserId: user.id,
+        action: "STATION_CREATED",
+        entityType: "Station",
+        entityId: createdStation.id,
+        details: {
+          name: createdStation.name,
+          slug: createdStation.slug,
+          planCode: entitlements.planCode
+        }
+      }
+    });
+
+    return createdStation;
   });
 
   return NextResponse.json({ success: true, station });
 }
+

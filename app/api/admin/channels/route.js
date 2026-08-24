@@ -129,16 +129,36 @@ export async function POST(request) {
       );
     }
 
-    const channel = await prisma.channel.create({
-      data: {
-        organisationId,
-        brandId: brandId || null,
-        stationId: stationId || null,
-        name,
-        slug,
-        description,
-        status: "DRAFT"
-      }
+    const channel = await prisma.$transaction(async (tx) => {
+      const createdChannel = await tx.channel.create({
+        data: {
+          organisationId,
+          brandId: brandId || null,
+          stationId: stationId || null,
+          name,
+          slug,
+          description,
+          status: "DRAFT"
+        }
+      });
+
+      await tx.auditLog.create({
+        data: {
+          organisationId,
+          actorUserId: access.user.id,
+          action: "CHANNEL_CREATED",
+          entityType: "Channel",
+          entityId: createdChannel.id,
+          details: {
+            name,
+            slug,
+            brandId: brandId || null,
+            stationId: stationId || null
+          }
+        }
+      });
+
+      return createdChannel;
     });
 
     return NextResponse.json(
@@ -162,3 +182,4 @@ export async function POST(request) {
     );
   }
 }
+
