@@ -42,9 +42,8 @@ jobs:
         with:
           node-version: 20
 
-      # Replace with `npm ci` as soon as Phase 0 commits a package lockfile.
       - name: Install dependencies
-        run: npm install --ignore-scripts
+        run: npm ci --ignore-scripts
 
       - name: Generate Prisma client
         run: npx prisma generate
@@ -60,11 +59,4 @@ jobs:
 
       - name: Build application
         run: npm run build
-
-      - name: Export generated dependency lock
-        run: |
-          echo "PACKAGE_LOCK_BASE64_BEGIN"
-          base64 -w 0 package-lock.json
-          echo
-          echo "PACKAGE_LOCK_BASE64_END"
 

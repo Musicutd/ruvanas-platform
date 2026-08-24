@@ -76,7 +76,7 @@ A full restart should be reconsidered only if production data proves that tenant
 
 ## Remaining Phase 0 risks
 
-- There are no committed Prisma migrations or dependency lockfile, so schema and dependency deployment are not yet reproducible.
+- The initial migration and dependency lockfile are now committed and verified against clean PostgreSQL in CI. An existing deployed database still requires the documented baseline-reconciliation procedure before migration history is adopted.
 - Route-level integration tests must prove unauthenticated, cross-tenant, under-privileged, and platform-override behavior against a test database.
 - `lib/auth-simple.js` duplicates the canonical session implementation with incompatible token handling and should be removed after confirming no external dependency.
 - Authentication still needs rate limiting, credential recovery, rotation/revocation controls, and a documented origin/CSRF policy.
@@ -90,7 +90,7 @@ A full restart should be reconsidered only if production data proves that tenant
 ### Phase 0A: secure, reproducible baseline
 
 1. Merge centralized authorization, entitlements, and audit coverage after deployment smoke testing.
-2. Add a dependency lockfile and the first production-compatible Prisma migration, with backup and rollback notes.
+2. Add a dependency lockfile and the first production-compatible Prisma migration, with backup and rollback notes. **Completed in the draft PR.**
 3. Add route-level tenant-isolation tests and a safe seeded test database.
 4. Remove the duplicate auth helper and document the canonical cookie/session lifecycle.
 5. Add rate limits, origin protections, request IDs, structured logging, and error monitoring.
@@ -148,7 +148,7 @@ Extend the proven tenant, targeting, scheduling, player-health, and reporting fo
 
 ## Validation notes
 
-- Eleven unit tests pass across access policy, tenant selection, environment validation, and entitlements.
+- Fourteen tests pass in CI, including a PostgreSQL-backed cross-tenant membership test.
 - Modified server-side JavaScript passes syntax validation and the patch passes whitespace checks.
 - GitHub CI passed on the implementation commit produced by this audit.
 - The DOCX was inspected structurally in full: 280 paragraphs, 34 tables, 51 headings, one section, no images, comments, or tracked changes.

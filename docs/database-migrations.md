@@ -1,0 +1,38 @@
+# Database migration operations
+
+## Initial baseline
+
+The migration in `prisma/migrations/20260824190000_initial_schema` creates the schema represented by `prisma/schema.prisma`. It is verified automatically against an empty PostgreSQL 16 database in CI.
+
+Do not apply the initial migration blindly to an existing production database. It is a creation baseline, not a destructive conversion script.
+
+## New or empty environment
+
+1. Create an empty PostgreSQL database.
+2. Set `DATABASE_URL` to that database.
+3. Run `npm ci`.
+4. Run `npm run db:migrate:deploy`.
+5. Start the application and complete authentication, hierarchy, and media smoke tests.
+
+## Existing environment reconciliation
+
+1. Take and verify a restorable database snapshot.
+2. Export the deployed schema and compare every table, enum, index, unique constraint, and foreign key with the initial migration.
+3. Resolve every difference explicitly before continuing. Do not use `prisma db push` against production.
+4. Only when the deployed schema is confirmed equivalent, mark the baseline as applied:
+
+   `npx prisma migrate resolve --applied 20260824190000_initial_schema`
+
+5. Run `npx prisma migrate status` and perform a staging smoke test before production rollout.
+
+## Rollback
+
+Prisma migrations are forward-only operationally. For a failed release:
+
+1. Stop application writes.
+2. Roll back the application release.
+3. If the migration changed production data or schema incompatibly, restore the verified pre-deployment snapshot.
+4. Record the incident and create a new corrective migration; never edit a migration that has already been applied.
+
+The initial baseline only creates objects in an empty database. Its recovery path is to discard the failed empty database and recreate it. Never run a broad drop script against a database that may contain user data.
+
