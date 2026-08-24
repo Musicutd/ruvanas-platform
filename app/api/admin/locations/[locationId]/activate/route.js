@@ -1,8 +1,16 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requirePlatformAdmin } from "@/lib/access-control";
+import { accessDenied } from "@/lib/api-response";
 
 export async function POST(request, { params }) {
   try {
+    const access = await requirePlatformAdmin();
+
+    if (!access.ok) {
+      return accessDenied(access);
+    }
+
     const { locationId } = params;
 
     const location = await prisma.location.findUnique({

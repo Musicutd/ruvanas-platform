@@ -1,10 +1,18 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requirePlatformAdmin } from "@/lib/access-control";
+import { accessDenied } from "@/lib/api-response";
 
 const ALLOWED_STATUSES = ["DRAFT", "ACTIVE", "PAUSED"];
 
 export async function POST(request, { params }) {
   try {
+    const access = await requirePlatformAdmin();
+
+    if (!access.ok) {
+      return accessDenied(access);
+    }
+
     const body = await request.json();
     const nextStatus = body.status;
 

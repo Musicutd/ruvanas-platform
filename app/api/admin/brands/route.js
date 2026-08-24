@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requirePlatformAdmin } from "@/lib/access-control";
+import { accessDenied } from "@/lib/api-response";
 
 function makeSlug(value) {
   return value
@@ -11,6 +13,12 @@ function makeSlug(value) {
 
 export async function POST(request) {
   try {
+    const access = await requirePlatformAdmin();
+
+    if (!access.ok) {
+      return accessDenied(access);
+    }
+
     const body = await request.json();
     const organisationId = body?.organisationId;
     const name = body?.name?.trim();

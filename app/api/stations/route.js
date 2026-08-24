@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
+import { isOrganisationRoleAllowed, ORGANISATION_MANAGER_ROLES } from "@/lib/access-control";
 import slugify from "@/lib/slugify"; // adjust import if your existing slug helper differs
 
 export async function POST(request) {
@@ -14,18 +15,42 @@ export async function POST(request) {
   // Only name and description are accepted from clients.
   // Any streaming-related fields sent in the body are ignored on purpose.
   const { name, description } = body;
+  const organisationId =
+    typeof body.organisationId === "string" ? body.organisationId.trim() : "";
 
   if (!name) {
     return NextResponse.json({ error: "Station name is required." }, { status: 400 });
   }
 
-  const membership = await prisma.organisationMember.findFirst({
-    where: { userId: user.id },
+  const memberships = await prisma.organisationMember.findMany({
+    where: {
+      userId: user.id,
+      ...(organisationId ? { organisationId } : {})
+    },
     include: { organisation: { include: { subscription: { include: { plan: true } }, stations: true } } }
   });
 
-  if (!membership) {
-    return NextResponse.json({ error: "No organisation found for this user." }, { status: 400 });
+  if (memberships.length === 0) {
+    return NextResponse.json(
+      { error: "You do not have access to the selected organisation." },
+      { status: 403 }
+    );
+  }
+
+  if (!organisationId && memberships.length > 1) {
+    return NextResponse.json(
+      { error: "Choose which organisation should own this station." },
+      { status: 400 }
+    );
+  }
+
+  const membership = memberships[0];
+
+  if (!isOrganisationRoleAllowed(membership.role, ORGANISATION_MANAGER_ROLES)) {
+    return NextResponse.json(
+      { error: "You do not have permission to create stations for this organisation." },
+      { status: 403 }
+    );
   }
 
   const org = membership.organisation;

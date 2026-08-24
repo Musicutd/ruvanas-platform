@@ -1,7 +1,8 @@
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser } from "@/lib/auth";
+import { requireOrganisationAccess } from "@/lib/access-control";
+import { accessDenied } from "@/lib/api-response";
 import { r2BucketName, r2Client } from "@/lib/r2";
 
 export const dynamic = "force-dynamic";
@@ -49,39 +50,8 @@ function parseRange(rangeHeader, contentLength) {
   };
 }
 
-async function canAccessAsset(user, asset) {
-  if (user.role === "SUPER_ADMIN") {
-    return true;
-  }
-
-  if (!asset.organisationId) {
-    return false;
-  }
-
-  const membership = await prisma.organisationMember.findFirst({
-    where: {
-      userId: user.id,
-      organisationId: asset.organisationId
-    },
-    select: {
-      id: true
-    }
-  });
-
-  return Boolean(membership);
-}
-
 export async function GET(request, { params }) {
   try {
-    const user = await getCurrentUser();
-
-    if (!user) {
-      return NextResponse.json(
-        { error: "Your session has expired. Please sign in again." },
-        { status: 401 }
-      );
-    }
-
     const mediaAssetId = String(params.mediaAssetId || "");
 
     if (!mediaAssetId) {
@@ -123,11 +93,17 @@ export async function GET(request, { params }) {
       );
     }
 
-    if (!(await canAccessAsset(user, asset))) {
+    if (!asset.organisationId) {
       return NextResponse.json(
-        { error: "You do not have permission to play this audio file." },
-        { status: 403 }
+        { error: "This audio file has no organisation owner." },
+        { status: 409 }
       );
+    }
+
+    const access = await requireOrganisationAccess(asset.organisationId);
+
+    if (!access.ok) {
+      return accessDenied(access);
     }
 
     const totalLength = Number(asset.sizeBytes);
