@@ -62,9 +62,9 @@ jobs:
         run: npm run build
 
       - name: Export generated dependency lock
-        uses: actions/upload-artifact@v4
-        with:
-          name: generated-package-lock
-          path: package-lock.json
-          if-no-files-found: error
+        run: |
+          echo "PACKAGE_LOCK_BASE64_BEGIN"
+          base64 -w 0 package-lock.json
+          echo
+          echo "PACKAGE_LOCK_BASE64_END"
 
