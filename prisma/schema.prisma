@@ -133,15 +133,16 @@ model Organisation {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  members      OrganisationMember[]
-  subscription Subscription?
-  stations     Station[]
-  brands       Brand[]
-  locations    Location[]
-  channels     Channel[]
-  mediaAssets  MediaAsset[]         @relation("OrganisationMediaAssets")
-  auditLogs    AuditLog[]
-  players      Player[]
+  members        OrganisationMember[]
+  subscription   Subscription?
+  stations       Station[]
+  brands         Brand[]
+  locations      Location[]
+  channels       Channel[]
+  mediaAssets    MediaAsset[]         @relation("OrganisationMediaAssets")
+  auditLogs      AuditLog[]
+  players        Player[]
+  activeSessions Session[]
 }
 
 model OrganisationMember {
@@ -430,15 +431,18 @@ model AuditLog {
 }
 
 model Session {
-  id        String   @id @default(cuid())
-  userId    String
-  tokenHash String   @unique
-  expiresAt DateTime
-  createdAt DateTime @default(now())
+  id                   String   @id @default(cuid())
+  userId               String
+  activeOrganisationId String?
+  tokenHash            String   @unique
+  expiresAt            DateTime
+  createdAt            DateTime @default(now())
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user               User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activeOrganisation Organisation? @relation(fields: [activeOrganisationId], references: [id], onDelete: SetNull)
 
   @@index([userId])
+  @@index([activeOrganisationId])
   @@index([expiresAt])
 }
 
