@@ -1,10 +1,18 @@
 import crypto from "crypto";
 import { NextResponse } from "next/server";
-import { PutObjectCommand } from "@aws-sdk/client-s3";
+import { CopyObjectCommand, DeleteObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { r2BucketName, r2Client } from "@/lib/r2";
+import { getR2Storage } from "@/lib/r2";
 import { getCurrentUser } from "@/lib/auth";
+import { resolveEntitlements } from "@/lib/entitlements.mjs";
+import {
+  ORGANISATION_CONTENT_ROLES,
+  requireOrganisationAccess
+} from "@/lib/access-control";
+import { accessDenied } from "@/lib/api-response";
+import { validateAudioUpload } from "@/lib/audio-validation.mjs";
+import { securityLog } from "@/lib/security-log";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -29,27 +37,6 @@ const uploadSchema = z.object({
   ]),
   durationSeconds: z.number().int().positive().nullable()
 });
-
-const supportedExtensions = new Map([
-  ["mp3", "audio/mpeg"],
-  ["wav", "audio/wav"],
-  ["ogg", "audio/ogg"],
-  ["m4a", "audio/mp4"]
-]);
-
-function getExtension(fileName) {
-  const extension = fileName.split(".").pop()?.toLowerCase();
-
-  return extension && supportedExtensions.has(extension) ? extension : null;
-}
-
-function getContentType(file, extension) {
-  if (file.type && file.type.startsWith("audio/")) {
-    return file.type;
-  }
-
-  return supportedExtensions.get(extension) || "application/octet-stream";
-}
 
 export async function POST(request) {
   try {
@@ -78,21 +65,28 @@ export async function POST(request) {
       );
     }
 
-    const extension = getExtension(file.name);
-
-    if (!extension) {
-      return NextResponse.json(
-        { error: "Unsupported file type. Use MP3, WAV, OGG, or M4A." },
-        { status: 400 }
-      );
-    }
-
     if (file.size > MAX_FILE_SIZE_BYTES) {
       return NextResponse.json(
         { error: "The file exceeds the 50 MB upload limit." },
         { status: 413 }
       );
     }
+
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const audioValidation = validateAudioUpload({
+      buffer,
+      fileName: file.name,
+      claimedType: file.type
+    });
+
+    if (!audioValidation.ok) {
+      securityLog("warn", "MEDIA_UPLOAD_REJECTED", request, {
+        reason: "invalid_audio_signature"
+      });
+      return NextResponse.json({ error: audioValidation.error }, { status: 400 });
+    }
+
+    const { extension, contentType } = audioValidation;
 
     const durationSeconds = durationSecondsValue
       ? Number(durationSecondsValue)
@@ -125,63 +119,46 @@ export async function POST(request) {
       );
     }
 
-    let organisation;
+    const access = await requireOrganisationAccess(
+      parsed.data.organisationId,
+      ORGANISATION_CONTENT_ROLES
+    );
 
-    if (user.role === "SUPER_ADMIN") {
-      organisation = await prisma.organisation.findUnique({
-        where: {
-          id: parsed.data.organisationId
-        },
-        include: {
-          subscription: {
-            include: {
-              plan: true
-            }
-          }
-        }
-      });
-    } else {
-      const membership = await prisma.organisationMember.findFirst({
-        where: {
-          userId: user.id,
-          organisationId: parsed.data.organisationId
-        },
-        include: {
-          organisation: {
-            include: {
-              subscription: {
-                include: {
-                  plan: true
-                }
-              }
-            }
-          }
-        }
-      });
-
-      organisation = membership?.organisation || null;
+    if (!access.ok) {
+      return accessDenied(access);
     }
+
+    const organisation = await prisma.organisation.findUnique({
+      where: {
+        id: parsed.data.organisationId
+      },
+      include: {
+        subscription: {
+          include: {
+            plan: true
+          }
+        }
+      }
+    });
 
     if (!organisation) {
       return NextResponse.json(
-        {
-          error:
-            "You do not have permission to upload promotional audio for this organisation."
-        },
-        { status: 403 }
+        { error: "The selected organisation was not found." },
+        { status: 404 }
       );
     }
 
     const subscription = organisation.subscription;
+    const entitlements = resolveEntitlements(subscription);
 
-    if (!subscription || !subscription.plan) {
+    if (!entitlements.serviceEnabled) {
       return NextResponse.json(
-        { error: "The organisation does not have a storage plan configured." },
+        { error: "An active subscription is required to upload promotional audio." },
         { status: 403 }
       );
     }
 
-    if (!subscription.plan.promoUploadEnabled) {
+    if (!entitlements.promoUploadEnabled) {
       return NextResponse.json(
         {
           error:
@@ -192,7 +169,7 @@ export async function POST(request) {
     }
 
     const storageLimitBytes =
-      BigInt(subscription.plan.storageLimitGb) * 1024n * 1024n * 1024n;
+      BigInt(entitlements.storageLimitGb) * 1024n * 1024n * 1024n;
 
     const usage = await prisma.mediaAsset.aggregate({
       where: {
@@ -210,10 +187,9 @@ export async function POST(request) {
     const usedBytes = usage._sum.sizeBytes || 0n;
     const requestedBytes = BigInt(file.size);
 
-    const buffer = Buffer.from(await file.arrayBuffer());
     const checksum = crypto.createHash("sha256").update(buffer).digest("hex");
     const storageKey = `organisations/${organisation.id}/promos/${parsed.data.mediaType.toLowerCase()}/${checksum}.${extension}`;
-    const contentType = getContentType(file, extension);
+    const quarantineKey = `quarantine/${organisation.id}/${crypto.randomUUID()}.${extension}`;
 
     const existingAsset = await prisma.mediaAsset.findUnique({
       where: {
@@ -255,7 +231,7 @@ export async function POST(request) {
             sizeBytes: requestedBytes,
             durationSeconds: parsed.data.durationSeconds,
             mediaType: parsed.data.mediaType,
-            status: "UPLOADING"
+            status: "PROCESSING"
           }
         })
       : await prisma.mediaAsset.create({
@@ -269,27 +245,70 @@ export async function POST(request) {
             sizeBytes: requestedBytes,
             durationSeconds: parsed.data.durationSeconds,
             mediaType: parsed.data.mediaType,
-            status: "UPLOADING"
+            status: "PROCESSING"
           }
         });
 
     try {
-      await r2Client.send(
+      const r2 = getR2Storage();
+
+      await r2.client.send(
         new PutObjectCommand({
-          Bucket: r2BucketName,
-          Key: storageKey,
+          Bucket: r2.bucketName,
+          Key: quarantineKey,
           Body: buffer,
-          ContentType: contentType
+          ContentType: contentType,
+          Metadata: {
+            checksum,
+            quarantine: "true"
+          }
         })
       );
 
-      const readyAsset = await prisma.mediaAsset.update({
-        where: {
-          id: mediaAsset.id
-        },
-        data: {
-          status: "READY"
-        }
+      await r2.client.send(
+        new CopyObjectCommand({
+          Bucket: r2.bucketName,
+          CopySource: `${r2.bucketName}/${quarantineKey}`,
+          Key: storageKey,
+          ContentType: contentType,
+          MetadataDirective: "REPLACE",
+          Metadata: { checksum, quarantine: "false" }
+        })
+      );
+
+      await r2.client.send(
+        new DeleteObjectCommand({ Bucket: r2.bucketName, Key: quarantineKey })
+      );
+
+      const readyAsset = await prisma.$transaction(async (tx) => {
+        const storedAsset = await tx.mediaAsset.update({
+          where: {
+            id: mediaAsset.id
+          },
+          data: {
+            status: "READY"
+          }
+        });
+
+        await tx.auditLog.create({
+          data: {
+            organisationId: organisation.id,
+            actorUserId: user.id,
+            action: existingAsset
+              ? "MEDIA_ASSET_REPLACED"
+              : "MEDIA_ASSET_UPLOADED",
+            entityType: "MediaAsset",
+            entityId: storedAsset.id,
+            details: {
+              name: storedAsset.name,
+              mediaType: storedAsset.mediaType,
+              sizeBytes: storedAsset.sizeBytes.toString(),
+              checksum
+            }
+          }
+        });
+
+        return storedAsset;
       });
 
       return NextResponse.json({
@@ -301,6 +320,15 @@ export async function POST(request) {
         sizeBytes: readyAsset.sizeBytes.toString()
       });
     } catch (storageError) {
+      try {
+        const r2 = getR2Storage();
+        await r2.client.send(
+          new DeleteObjectCommand({ Bucket: r2.bucketName, Key: quarantineKey })
+        );
+      } catch {
+        // The quarantine lifecycle policy is the final cleanup fallback.
+      }
+
       await prisma.mediaAsset.update({
         where: {
           id: mediaAsset.id
@@ -310,7 +338,10 @@ export async function POST(request) {
         }
       });
 
-      console.error("Cloudflare R2 promotional upload failed:", storageError);
+      securityLog("error", "MEDIA_STORAGE_ERROR", request, {
+        mediaAssetId: mediaAsset.id,
+        error: storageError instanceof Error ? storageError.message : "unknown"
+      });
 
       return NextResponse.json(
         {
@@ -321,7 +352,9 @@ export async function POST(request) {
       );
     }
   } catch (error) {
-    console.error("Promotional audio upload request failed:", error);
+    securityLog("error", "MEDIA_UPLOAD_ERROR", request, {
+      error: error instanceof Error ? error.message : "unknown"
+    });
 
     return NextResponse.json(
       { error: "The promotional audio upload could not be completed." },

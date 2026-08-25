@@ -1,29 +1,15 @@
 import { DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser } from "@/lib/auth";
-import { r2BucketName, r2Client } from "@/lib/r2";
+import { requireOrganisationAccess, ORGANISATION_CONTENT_ROLES } from "@/lib/access-control";
+import { accessDenied } from "@/lib/api-response";
+import { getR2Storage } from "@/lib/r2";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const organisationDeleteRoles = new Set([
-  "OWNER",
-  "MANAGER",
-  "CONTENT_EDITOR"
-]);
-
 export async function DELETE(request, { params }) {
   try {
-    const user = await getCurrentUser();
-
-    if (!user) {
-      return NextResponse.json(
-        { error: "Your session has expired. Please sign in again." },
-        { status: 401 }
-      );
-    }
-
     const mediaAssetId = String(params.mediaAssetId || "");
 
     if (!mediaAssetId) {
@@ -68,36 +54,21 @@ export async function DELETE(request, { params }) {
       );
     }
 
-    let permitted = user.role === "SUPER_ADMIN";
+    const access = await requireOrganisationAccess(
+      mediaAsset.organisationId,
+      ORGANISATION_CONTENT_ROLES
+    );
 
-    if (!permitted && organisationDeleteRoles.has(user.role)) {
-      const membership = await prisma.organisationMember.findFirst({
-        where: {
-          userId: user.id,
-          organisationId: mediaAsset.organisationId
-        },
-        select: {
-          id: true,
-          role: true
-        }
-      });
-
-      permitted = Boolean(
-        membership && organisationDeleteRoles.has(membership.role)
-      );
-    }
-
-    if (!permitted) {
-      return NextResponse.json(
-        { error: "You do not have permission to delete this audio file." },
-        { status: 403 }
-      );
+    if (!access.ok) {
+      return accessDenied(access);
     }
 
     try {
-      await r2Client.send(
+      const r2 = getR2Storage();
+
+      await r2.client.send(
         new DeleteObjectCommand({
-          Bucket: r2BucketName,
+          Bucket: r2.bucketName,
           Key: mediaAsset.storageKey
         })
       );
@@ -122,7 +93,7 @@ export async function DELETE(request, { params }) {
     await prisma.auditLog.create({
       data: {
         organisationId: mediaAsset.organisationId,
-        actorUserId: user.id,
+        actorUserId: access.user.id,
         action: "MEDIA_ASSET_DELETED",
         entityType: "MediaAsset",
         entityId: mediaAsset.id,

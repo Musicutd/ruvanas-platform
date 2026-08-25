@@ -1,8 +1,16 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requirePlatformAdmin } from "@/lib/access-control";
+import { accessDenied } from "@/lib/api-response";
 
 export async function POST(request, { params }) {
   try {
+    const access = await requirePlatformAdmin();
+
+    if (!access.ok) {
+      return accessDenied(access);
+    }
+
     const { locationId } = params;
 
     const location = await prisma.location.findUnique({
@@ -69,13 +77,31 @@ export async function POST(request, { params }) {
       );
     }
 
-    const updatedLocation = await prisma.location.update({
-      where: {
-        id: location.id
-      },
-      data: {
-        status: "ACTIVE"
-      }
+    const updatedLocation = await prisma.$transaction(async (tx) => {
+      const activatedLocation = await tx.location.update({
+        where: {
+          id: location.id
+        },
+        data: {
+          status: "ACTIVE"
+        }
+      });
+
+      await tx.auditLog.create({
+        data: {
+          organisationId: location.organisationId,
+          actorUserId: access.user.id,
+          action: "LOCATION_STATUS_CHANGED",
+          entityType: "Location",
+          entityId: location.id,
+          details: {
+            previousStatus: location.status,
+            status: "ACTIVE"
+          }
+        }
+      });
+
+      return activatedLocation;
     });
 
     return NextResponse.json({
@@ -94,3 +120,4 @@ export async function POST(request, { params }) {
     );
   }
 }
+

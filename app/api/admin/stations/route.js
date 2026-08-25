@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getAdminUser } from "@/lib/requireAdmin";
+import { requirePlatformAdmin } from "@/lib/access-control";
+import { accessDenied } from "@/lib/api-response";
 import { slugify } from "@/lib/slugify";
 
 function badRequest(error) {
@@ -9,18 +10,13 @@ function badRequest(error) {
 
 export async function POST(request) {
   try {
-    const adminUser = await getAdminUser();
+    const access = await requirePlatformAdmin();
 
-    if (!adminUser) {
-      return NextResponse.json(
-        {
-          error: "You are not authorised to create stations."
-        },
-        {
-          status: 403
-        }
-      );
+    if (!access.ok) {
+      return accessDenied(access);
     }
+
+    const adminUser = access.user;
 
     const body = await request.json();
 

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { encryptSecret } from "@/lib/crypto";
-import { getAdminUser } from "@/lib/requireAdmin";
+import { requirePlatformAdmin } from "@/lib/access-control";
+import { accessDenied } from "@/lib/api-response";
 
 function badRequest(error) {
   return NextResponse.json({ error }, { status: 400 });
@@ -18,18 +19,13 @@ function isValidHttpUrl(value) {
 
 export async function POST(request, { params }) {
   try {
-    const adminUser = await getAdminUser();
+    const access = await requirePlatformAdmin();
 
-    if (!adminUser) {
-      return NextResponse.json(
-        {
-          error: "You are not authorised to update streaming configuration."
-        },
-        {
-          status: 403
-        }
-      );
+    if (!access.ok) {
+      return accessDenied(access);
     }
+
+    const adminUser = access.user;
 
     const stationId = params.stationId;
 

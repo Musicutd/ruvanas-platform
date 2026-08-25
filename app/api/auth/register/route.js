@@ -2,6 +2,11 @@ import bcrypt from "bcryptjs";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSession } from "@/lib/auth";
+import { consumeRateLimit, createRateLimitKey } from "@/lib/rate-limit";
+import { securityLog } from "@/lib/security-log";
+
+const REGISTRATION_LIMIT = 5;
+const REGISTRATION_WINDOW_MS = 60 * 60 * 1000;
 
 function createSlug(value) {
   return value
@@ -20,6 +25,20 @@ export async function POST(request) {
     const email = String(body.email || "").trim().toLowerCase();
     const password = String(body.password || "");
     const organisationName = String(body.organisationName || "").trim();
+    const rateLimitKey = createRateLimitKey("register", request);
+    const rateLimit = await consumeRateLimit({
+      key: rateLimitKey,
+      limit: REGISTRATION_LIMIT,
+      windowMs: REGISTRATION_WINDOW_MS
+    });
+
+    if (!rateLimit.allowed) {
+      securityLog("warn", "REGISTRATION_RATE_LIMITED", request, { rateLimitKey });
+      return NextResponse.json(
+        { error: "Too many registration attempts. Please try again later." },
+        { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSeconds) } }
+      );
+    }
 
     if (!name || !email || !password || !organisationName) {
       return NextResponse.json(
@@ -128,6 +147,10 @@ export async function POST(request) {
     });
 
     await createSession(result.user.id);
+    securityLog("info", "REGISTRATION_SUCCEEDED", request, {
+      userId: result.user.id,
+      organisationId: result.organisation.id
+    });
 
     return NextResponse.json(
       {
@@ -145,7 +168,9 @@ export async function POST(request) {
       { status: 201 }
     );
   } catch (error) {
-    console.error("Registration failed:", error);
+    securityLog("error", "REGISTRATION_ERROR", request, {
+      error: error instanceof Error ? error.message : "unknown"
+    });
 
     return NextResponse.json(
       { error: "Unable to create your account. Please try again." },

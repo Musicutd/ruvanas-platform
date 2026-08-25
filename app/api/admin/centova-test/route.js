@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
 import { callCentovaAuthenticated } from "@/lib/centova";
+import { requirePlatformAdmin } from "@/lib/access-control";
+import { accessDenied } from "@/lib/api-response";
 
 export async function GET() {
-  const user = await getCurrentUser();
+  const access = await requirePlatformAdmin();
 
-  if (!user) {
-    return NextResponse.json({ error: "Not signed in." }, { status: 401 });
+  if (!access.ok) {
+    return accessDenied(access);
   }
 
   try {

@@ -15,7 +15,7 @@ export async function GET() {
       );
     }
 
-    const membership = await prisma.organisationMember.findFirst({
+    const memberships = await prisma.organisationMember.findMany({
       where: {
         userId: user.id
       },
@@ -33,12 +33,21 @@ export async function GET() {
       }
     });
 
-    if (!membership) {
+    if (memberships.length === 0) {
       return NextResponse.json(
         { error: "No organisation membership found for this user" },
         { status: 403 }
       );
     }
+
+    const primaryMembership = memberships[0];
+    const organisations = memberships.map((membership) => ({
+      ...membership.organisation,
+      membership: {
+        id: membership.id,
+        role: membership.role
+      }
+    }));
 
     return NextResponse.json({
       user: {
@@ -47,11 +56,12 @@ export async function GET() {
         name: user.name,
         role: user.role
       },
-      organisation: membership.organisation,
+      organisation: primaryMembership.organisation,
       membership: {
-        id: membership.id,
-        role: membership.role
-      }
+        id: primaryMembership.id,
+        role: primaryMembership.role
+      },
+      organisations
     });
   } catch (error) {
     console.error("Unable to load current user:", error);

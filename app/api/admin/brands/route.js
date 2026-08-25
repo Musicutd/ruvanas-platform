@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requirePlatformAdmin } from "@/lib/access-control";
+import { accessDenied } from "@/lib/api-response";
 
 function makeSlug(value) {
   return value
@@ -11,6 +13,12 @@ function makeSlug(value) {
 
 export async function POST(request) {
   try {
+    const access = await requirePlatformAdmin();
+
+    if (!access.ok) {
+      return accessDenied(access);
+    }
+
     const body = await request.json();
     const organisationId = body?.organisationId;
     const name = body?.name?.trim();
@@ -93,12 +101,27 @@ export async function POST(request) {
       );
     }
 
-    const brand = await prisma.brand.create({
-      data: {
-        organisationId,
-        name,
-        slug
-      }
+    const brand = await prisma.$transaction(async (tx) => {
+      const createdBrand = await tx.brand.create({
+        data: {
+          organisationId,
+          name,
+          slug
+        }
+      });
+
+      await tx.auditLog.create({
+        data: {
+          organisationId,
+          actorUserId: access.user.id,
+          action: "BRAND_CREATED",
+          entityType: "Brand",
+          entityId: createdBrand.id,
+          details: { name, slug }
+        }
+      });
+
+      return createdBrand;
     });
 
     return NextResponse.json(
@@ -122,3 +145,4 @@ export async function POST(request) {
     );
   }
 }
+

@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requirePlatformAdmin } from "@/lib/access-control";
+import { accessDenied } from "@/lib/api-response";
 
 function makeSlug(value) {
   return value
@@ -13,6 +15,12 @@ function makeSlug(value) {
 
 export async function POST(request, { params }) {
   try {
+    const access = await requirePlatformAdmin();
+
+    if (!access.ok) {
+      return accessDenied(access);
+    }
+
     const locationId = params.locationId;
     const body = await request.json();
 
@@ -77,13 +85,28 @@ export async function POST(request, { params }) {
       );
     }
 
-    const zone = await prisma.zone.create({
-      data: {
-        locationId,
-        name,
-        slug,
-        status: "ACTIVE"
-      }
+    const zone = await prisma.$transaction(async (tx) => {
+      const createdZone = await tx.zone.create({
+        data: {
+          locationId,
+          name,
+          slug,
+          status: "ACTIVE"
+        }
+      });
+
+      await tx.auditLog.create({
+        data: {
+          organisationId: location.organisationId,
+          actorUserId: access.user.id,
+          action: "ZONE_CREATED",
+          entityType: "Zone",
+          entityId: createdZone.id,
+          details: { locationId, name, slug }
+        }
+      });
+
+      return createdZone;
     });
 
     return NextResponse.json(
@@ -107,3 +130,4 @@ export async function POST(request, { params }) {
     );
   }
 }
+

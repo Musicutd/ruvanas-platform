@@ -1,8 +1,16 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requirePlatformAdmin } from "@/lib/access-control";
+import { accessDenied } from "@/lib/api-response";
 
 export async function POST(request, { params }) {
   try {
+    const access = await requirePlatformAdmin();
+
+    if (!access.ok) {
+      return accessDenied(access);
+    }
+
     const { locationId, zoneId } = params;
     const body = await request.json();
     const channelId = body?.channelId;
@@ -94,6 +102,17 @@ export async function POST(request, { params }) {
     const now = new Date();
 
     const assignment = await prisma.$transaction(async (transaction) => {
+      const previousAssignment = await transaction.channelAssignment.findFirst({
+        where: {
+          zoneId,
+          activeTo: null
+        },
+        select: {
+          id: true,
+          channelId: true
+        }
+      });
+
       const existingAssignment = await transaction.channelAssignment.findUnique({
         where: {
           channelId_zoneId: {
@@ -104,7 +123,18 @@ export async function POST(request, { params }) {
       });
 
       if (existingAssignment?.activeTo === null) {
-        return existingAssignment;
+        return transaction.channelAssignment.findUnique({
+          where: { id: existingAssignment.id },
+          include: {
+            channel: {
+              include: {
+                station: {
+                  include: { streamConfig: true }
+                }
+              }
+            }
+          }
+        });
       }
 
       await transaction.channelAssignment.updateMany({
@@ -117,8 +147,8 @@ export async function POST(request, { params }) {
         }
       });
 
-      if (existingAssignment) {
-        return transaction.channelAssignment.update({
+      const nextAssignment = existingAssignment
+        ? await transaction.channelAssignment.update({
           where: {
             id: existingAssignment.id
           },
@@ -137,10 +167,8 @@ export async function POST(request, { params }) {
               }
             }
           }
-        });
-      }
-
-      return transaction.channelAssignment.create({
+        })
+        : await transaction.channelAssignment.create({
         data: {
           channelId,
           zoneId,
@@ -157,7 +185,25 @@ export async function POST(request, { params }) {
             }
           }
         }
+        });
+
+      await transaction.auditLog.create({
+        data: {
+          organisationId: location.organisationId,
+          actorUserId: access.user.id,
+          action: "ZONE_CHANNEL_ASSIGNED",
+          entityType: "Zone",
+          entityId: zoneId,
+          details: {
+            locationId,
+            previousChannelId: previousAssignment?.channelId || null,
+            channelId,
+            assignmentId: nextAssignment.id
+          }
+        }
       });
+
+      return nextAssignment;
     });
 
     return NextResponse.json(
@@ -181,3 +227,4 @@ export async function POST(request, { params }) {
     );
   }
 }
+
