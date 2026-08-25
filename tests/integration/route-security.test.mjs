@@ -98,7 +98,7 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   });
   assert.equal(crossTenantStation.status, 403);
 
-  const ownerAdminAttempt = await api("/api/admin/organisations", {
+  const ownerAdminAttempt = await api("/api/admin/stations", {
     method: "POST",
     cookie: cookieA,
     body: { name: "Forbidden admin action" }
