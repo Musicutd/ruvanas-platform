@@ -34,6 +34,8 @@ export default async function DashboardPage() {
   const organisation = membership.organisation;
   const subscription = organisation.subscription;
   const plan = subscription?.plan;
+  const stationCount = organisation.stations.length;
+  const firstStation = organisation.stations[0];
 
   const storageUsedMb = organisation.stations.reduce(
     (total, station) => total + station.storageUsedMb,
@@ -77,7 +79,7 @@ export default async function DashboardPage() {
           <article style={styles.card}>
             <p style={styles.cardLabel}>Stations</p>
             <h2 style={styles.cardValue}>
-              {organisation.stations.length} / {plan?.stationLimit || 0}
+              {stationCount} / {plan?.stationLimit || 0}
             </h2>
             <p style={styles.cardText}>Online stations available</p>
           </article>
@@ -106,15 +108,21 @@ export default async function DashboardPage() {
         <section style={styles.nextCard}>
           <div>
             <p style={styles.eyebrow}>NEXT STEP</p>
-            <h2 style={styles.nextTitle}>Create your first radio station</h2>
+            <h2 style={styles.nextTitle}>
+              {firstStation ? "Manage your radio station" : "Create your first radio station"}
+            </h2>
             <p style={styles.nextText}>
-              Your platform is ready. The next module will allow you to create
-              stations and manage their Streamerr-backed infrastructure privately.
+              {firstStation
+                ? "Review its status, limits, and private streaming configuration."
+                : "Your platform is ready. Create a station and manage its streaming infrastructure privately."}
             </p>
           </div>
 
-          <a href="/stations/new" style={styles.primaryButton}>
-            Create station
+          <a
+            href={firstStation ? `/stations/${firstStation.id}` : "/stations/new"}
+            style={styles.primaryButton}
+          >
+            {firstStation ? "Open station" : "Create station"}
           </a>
         </section>
       </section>
@@ -237,3 +245,4 @@ const styles = {
     whiteSpace: "nowrap"
   }
 };
+
