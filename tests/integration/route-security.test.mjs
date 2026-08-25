@@ -56,6 +56,20 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   const me = await api("/api/me", { cookie: cookieA });
   assert.equal(me.status, 200);
 
+  const unauthenticatedPlayerState = await api("/api/player/state");
+  assert.equal(unauthenticatedPlayerState.status, 401);
+
+  const unauthenticatedHeartbeat = await api("/api/player/heartbeat", {
+    method: "POST"
+  });
+  assert.equal(unauthenticatedHeartbeat.status, 401);
+
+  const invalidPlayerEnrolment = await api("/api/player/enrol", {
+    method: "POST",
+    body: { code: "invalid-enrolment-code" }
+  });
+  assert.equal(invalidPlayerEnrolment.status, 400);
+
   const unauthenticatedStation = await api("/api/stations", {
     method: "POST",
     body: { name: "Unauthenticated station" }
