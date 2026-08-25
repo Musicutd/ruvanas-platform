@@ -12,6 +12,10 @@ const navItems = [
     label: "Ruvanas Channels"
   },
   {
+    href: "/admin/players",
+    label: "Players & health"
+  },
+  {
     href: "/admin/stations",
     label: "Stations"
   },
@@ -128,3 +132,4 @@ export default async function AdminLayout({ children }) {
     </div>
   );
 }
+
