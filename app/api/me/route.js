@@ -1,37 +1,20 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { getCurrentUser } from "@/lib/auth";
+import { getActiveOrganisationContext } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const user = await getCurrentUser();
+    const context = await getActiveOrganisationContext();
 
-    if (!user) {
+    if (!context) {
       return NextResponse.json(
         { error: "Not authenticated" },
         { status: 401 }
       );
     }
 
-    const memberships = await prisma.organisationMember.findMany({
-      where: {
-        userId: user.id
-      },
-      orderBy: {
-        createdAt: "asc"
-      },
-      include: {
-        organisation: {
-          select: {
-            id: true,
-            name: true,
-            slug: true
-          }
-        }
-      }
-    });
+    const { user, membership: activeMembership, memberships } = context;
 
     if (memberships.length === 0) {
       return NextResponse.json(
@@ -40,9 +23,10 @@ export async function GET() {
       );
     }
 
-    const primaryMembership = memberships[0];
     const organisations = memberships.map((membership) => ({
-      ...membership.organisation,
+      id: membership.organisation.id,
+      name: membership.organisation.name,
+      slug: membership.organisation.slug,
       membership: {
         id: membership.id,
         role: membership.role
@@ -56,10 +40,10 @@ export async function GET() {
         name: user.name,
         role: user.role
       },
-      organisation: primaryMembership.organisation,
+      organisation: activeMembership.organisation,
       membership: {
-        id: primaryMembership.id,
-        role: primaryMembership.role
+        id: activeMembership.id,
+        role: activeMembership.role
       },
       organisations
     });
@@ -72,3 +56,4 @@ export async function GET() {
     );
   }
 }
+
