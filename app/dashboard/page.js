@@ -1,31 +1,18 @@
 import { redirect } from "next/navigation";
-import { getCurrentUser } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { getActiveOrganisationContext } from "@/lib/auth";
+import OrganisationSwitcher from "./OrganisationSwitcher";
 
 export default async function DashboardPage() {
-  const user = await getCurrentUser();
+  const context = await getActiveOrganisationContext({
+    subscription: { include: { plan: true } },
+    stations: true
+  });
 
-  if (!user) {
+  if (!context) {
     redirect("/login");
   }
 
-  const membership = await prisma.organisationMember.findFirst({
-    where: {
-      userId: user.id
-    },
-    include: {
-      organisation: {
-        include: {
-          subscription: {
-            include: {
-              plan: true
-            }
-          },
-          stations: true
-        }
-      }
-    }
-  });
+  const { user, membership, memberships } = context;
 
   if (!membership) {
     redirect("/register");
@@ -60,6 +47,14 @@ export default async function DashboardPage() {
         <p style={styles.subtitle}>
           Manage your radio services, plans, and future streaming configuration from one place.
         </p>
+
+        <OrganisationSwitcher
+          organisations={memberships.map((item) => ({
+            id: item.organisation.id,
+            name: item.organisation.name
+          }))}
+          activeOrganisationId={organisation.id}
+        />
 
         <section style={styles.summaryGrid}>
           <article style={styles.card}>

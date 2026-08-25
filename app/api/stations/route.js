@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser } from "@/lib/auth";
+import { getActiveOrganisationContext, getCurrentUser } from "@/lib/auth";
 import { isOrganisationRoleAllowed, ORGANISATION_MANAGER_ROLES } from "@/lib/access-control";
 import { isWithinLimit, resolveEntitlements } from "@/lib/entitlements.mjs";
 import slugify from "@/lib/slugify";
@@ -23,29 +23,28 @@ export async function POST(request) {
     return NextResponse.json({ error: "Station name is required." }, { status: 400 });
   }
 
-  const memberships = await prisma.organisationMember.findMany({
-    where: {
-      userId: user.id,
-      ...(organisationId ? { organisationId } : {})
-    },
-    include: { organisation: { include: { subscription: { include: { plan: true } }, stations: true } } }
-  });
+  const include = {
+    subscription: { include: { plan: true } },
+    stations: true
+  };
+  const activeContext = organisationId
+    ? null
+    : await getActiveOrganisationContext(include);
+  const membership = organisationId
+    ? await prisma.organisationMember.findUnique({
+        where: {
+          userId_organisationId: { userId: user.id, organisationId }
+        },
+        include: { organisation: { include } }
+      })
+    : activeContext?.membership;
 
-  if (memberships.length === 0) {
+  if (!membership) {
     return NextResponse.json(
       { error: "You do not have access to the selected organisation." },
       { status: 403 }
     );
   }
-
-  if (!organisationId && memberships.length > 1) {
-    return NextResponse.json(
-      { error: "Choose which organisation should own this station." },
-      { status: 400 }
-    );
-  }
-
-  const membership = memberships[0];
 
   if (!isOrganisationRoleAllowed(membership.role, ORGANISATION_MANAGER_ROLES)) {
     return NextResponse.json(

@@ -146,7 +146,7 @@ export async function POST(request) {
       return { user, organisation };
     });
 
-    await createSession(result.user.id);
+    await createSession(result.user.id, result.organisation.id);
     securityLog("info", "REGISTRATION_SUCCEEDED", request, {
       userId: result.user.id,
       organisationId: result.organisation.id
@@ -178,3 +178,4 @@ export async function POST(request) {
     );
   }
 }
+

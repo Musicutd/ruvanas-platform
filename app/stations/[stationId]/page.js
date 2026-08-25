@@ -1,19 +1,15 @@
 import { notFound, redirect } from "next/navigation";
-import { getCurrentUser } from "@/lib/auth";
+import { getActiveOrganisationContext } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 export default async function StationDetailsPage({ params }) {
-  const user = await getCurrentUser();
+  const context = await getActiveOrganisationContext();
 
-  if (!user) {
+  if (!context) {
     redirect("/login");
   }
 
-  const membership = await prisma.organisationMember.findFirst({
-    where: {
-      userId: user.id
-    }
-  });
+  const membership = context.membership;
 
   if (!membership) {
     redirect("/register");
@@ -221,3 +217,4 @@ const styles = {
     margin: "0 0 12px"
   }
 };
+
