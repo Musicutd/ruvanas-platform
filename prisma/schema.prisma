@@ -105,35 +105,43 @@ enum MediaLibraryType {
   ORGANISATION_PROMO
 }
 
-model User {
-  id           String               @id @default(cuid())
-  name         String?
-  email        String               @unique
-  passwordHash String
-  role         UserRole             @default(OWNER)
-  createdAt    DateTime             @default(now())
-  updatedAt    DateTime             @updatedAt
+enum PlayerStatus {
+  PENDING_ENROLMENT
+  ONLINE
+  OFFLINE
+  DISABLED
+}
 
-  memberships  OrganisationMember[]
-  auditLogs    AuditLog[]           @relation("AuditActor")
-  sessions     Session[]
+model User {
+  id           String   @id @default(cuid())
+  name         String?
+  email        String   @unique
+  passwordHash String
+  role         UserRole @default(OWNER)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships OrganisationMember[]
+  auditLogs   AuditLog[]           @relation("AuditActor")
+  sessions    Session[]
 }
 
 model Organisation {
-  id              String               @id @default(cuid())
-  name            String
-  slug            String               @unique
-  createdAt       DateTime             @default(now())
-  updatedAt       DateTime             @updatedAt
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  members         OrganisationMember[]
-  subscription    Subscription?
-  stations        Station[]
-  brands          Brand[]
-  locations       Location[]
-  channels        Channel[]
-  mediaAssets     MediaAsset[]        @relation("OrganisationMediaAssets")
-  auditLogs       AuditLog[]
+  members      OrganisationMember[]
+  subscription Subscription?
+  stations     Station[]
+  brands       Brand[]
+  locations    Location[]
+  channels     Channel[]
+  mediaAssets  MediaAsset[]         @relation("OrganisationMediaAssets")
+  auditLogs    AuditLog[]
+  players      Player[]
 }
 
 model OrganisationMember {
@@ -151,21 +159,21 @@ model OrganisationMember {
 }
 
 model Plan {
-  id                       String         @id @default(cuid())
-  name                     String         @unique
-  code                     String         @unique
+  id                       String   @id @default(cuid())
+  name                     String   @unique
+  code                     String   @unique
   monthlyPriceCents        Int
-  stationLimit             Int            @default(1)
+  stationLimit             Int      @default(1)
   storageLimitGb           Int
   listenerLimit            Int
   maxBitrateKbps           Int
-  includesRuvanasCatalogue Boolean        @default(false)
-  promoUploadEnabled       Boolean        @default(true)
-  active                   Boolean        @default(true)
-  createdAt                DateTime       @default(now())
-  updatedAt                DateTime       @updatedAt
+  includesRuvanasCatalogue Boolean  @default(false)
+  promoUploadEnabled       Boolean  @default(true)
+  active                   Boolean  @default(true)
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
 
-  subscriptions            Subscription[]
+  subscriptions Subscription[]
 }
 
 model Subscription {
@@ -224,32 +232,33 @@ model Location {
 }
 
 model Zone {
-  id                 String              @id @default(cuid())
-  locationId         String
-  name               String
-  slug               String
-  status             ZoneStatus          @default(ACTIVE)
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
+  id         String     @id @default(cuid())
+  locationId String
+  name       String
+  slug       String
+  status     ZoneStatus @default(ACTIVE)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
 
   location           Location            @relation(fields: [locationId], references: [id], onDelete: Cascade)
   channelAssignments ChannelAssignment[]
+  players            Player[]
 
   @@unique([locationId, slug])
   @@index([locationId])
 }
 
 model Channel {
-  id              String         @id @default(cuid())
-  organisationId  String
-  brandId         String?
-  stationId       String?
-  name            String
-  slug            String
-  description     String?
-  status          ChannelStatus  @default(DRAFT)
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  id             String        @id @default(cuid())
+  organisationId String
+  brandId        String?
+  stationId      String?
+  name           String
+  slug           String
+  description    String?
+  status         ChannelStatus @default(DRAFT)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
   organisation    Organisation        @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   brand           Brand?              @relation(fields: [brandId], references: [id], onDelete: SetNull)
@@ -264,13 +273,13 @@ model Channel {
 }
 
 model ChannelAssignment {
-  id         String   @id @default(cuid())
+  id         String    @id @default(cuid())
   channelId  String
   zoneId     String
-  activeFrom DateTime @default(now())
+  activeFrom DateTime  @default(now())
   activeTo   DateTime?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
   channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
   zone    Zone    @relation(fields: [zoneId], references: [id], onDelete: Cascade)
@@ -305,44 +314,44 @@ model Station {
 }
 
 model StationStreamConfig {
-  id                      String                 @id @default(cuid())
-  stationId               String                 @unique
+  id        String @id @default(cuid())
+  stationId String @unique
 
-  centovaUsername         String?
-  streamUrl               String?
-  mountPoint              String?
-  serverHost              String?
-  serverPort              Int?
-  bitrateKbps             Int?
+  centovaUsername String?
+  streamUrl       String?
+  mountPoint      String?
+  serverHost      String?
+  serverPort      Int?
+  bitrateKbps     Int?
 
-  serverType              StreamServerType       @default(SHOUTCAST_V2)
-  outputCodec             AudioCodec             @default(MP3)
-  sampleRateHz            Int                    @default(44100)
-  outputChannels          Int                    @default(2)
+  serverType     StreamServerType @default(SHOUTCAST_V2)
+  outputCodec    AudioCodec       @default(MP3)
+  sampleRateHz   Int              @default(44100)
+  outputChannels Int              @default(2)
 
-  sourceConnectionStatus  SourceConnectionStatus @default(DISCONNECTED)
-  lastConnectedAt         DateTime?
-  lastHeartbeatAt         DateTime?
-  lastError               String?
+  sourceConnectionStatus SourceConnectionStatus @default(DISCONNECTED)
+  lastConnectedAt        DateTime?
+  lastHeartbeatAt        DateTime?
+  lastError              String?
 
   adminPasswordEncrypted  String?
   sourcePasswordEncrypted String?
 
-  createdAt               DateTime               @default(now())
-  updatedAt               DateTime               @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   station Station @relation(fields: [stationId], references: [id], onDelete: Cascade)
 }
 
 model PlayoutEvent {
-  id          String           @id @default(cuid())
-  channelId   String
-  stationId   String
-  eventType   PlayoutEventType
-  assetId     String?
-  message     String?
-  metadata    Json?
-  occurredAt  DateTime         @default(now())
+  id         String           @id @default(cuid())
+  channelId  String
+  stationId  String
+  eventType  PlayoutEventType
+  assetId    String?
+  message    String?
+  metadata   Json?
+  occurredAt DateTime         @default(now())
 
   channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
   station Station @relation(fields: [stationId], references: [id], onDelete: Cascade)
@@ -367,7 +376,7 @@ model MediaAsset {
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
-  organisation Organisation?      @relation("OrganisationMediaAssets", fields: [organisationId], references: [id], onDelete: Cascade)
+  organisation Organisation?     @relation("OrganisationMediaAssets", fields: [organisationId], references: [id], onDelete: Cascade)
   genres       MediaAssetGenre[]
 
   @@index([organisationId])
@@ -379,12 +388,12 @@ model MediaAsset {
 }
 
 model MediaGenre {
-  id        String            @id @default(cuid())
-  name      String            @unique
-  slug      String            @unique
-  active    Boolean           @default(true)
-  createdAt DateTime          @default(now())
-  updatedAt DateTime          @updatedAt
+  id        String   @id @default(cuid())
+  name      String   @unique
+  slug      String   @unique
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   mediaAssets MediaAssetGenre[]
 }
@@ -392,8 +401,8 @@ model MediaGenre {
 model MediaAssetGenre {
   mediaAssetId String
   mediaGenreId String
-  isPrimary    Boolean   @default(false)
-  createdAt    DateTime  @default(now())
+  isPrimary    Boolean  @default(false)
+  createdAt    DateTime @default(now())
 
   mediaAsset MediaAsset @relation(fields: [mediaAssetId], references: [id], onDelete: Cascade)
   mediaGenre MediaGenre @relation(fields: [mediaGenreId], references: [id], onDelete: Cascade)
@@ -442,3 +451,29 @@ model RateLimitBucket {
 
   @@index([expiresAt])
 }
+
+model Player {
+  id                 String       @id @default(cuid())
+  organisationId     String
+  zoneId             String
+  name               String
+  status             PlayerStatus @default(PENDING_ENROLMENT)
+  enrolmentTokenHash String?      @unique
+  enrolmentExpiresAt DateTime?
+  sessionTokenHash   String?      @unique
+  enrolledAt         DateTime?
+  lastHeartbeatAt    DateTime?
+  lastIpAddress      String?
+  lastUserAgent      String?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  zone         Zone         @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+
+  @@index([organisationId])
+  @@index([zoneId])
+  @@index([organisationId, status])
+  @@index([lastHeartbeatAt])
+}
+
