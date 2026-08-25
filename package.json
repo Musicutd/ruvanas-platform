@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "prisma generate && next build",
     "test": "node --test tests/*.test.mjs",
+    "test:integration": "node --test tests/integration/*.test.mjs",
     "start": "next start",
     "postinstall": "prisma generate",
     "db:migrate:dev": "prisma migrate dev",
@@ -27,4 +28,3 @@
     "node": ">=20"
   }
 }
-

@@ -432,3 +432,13 @@ model Session {
   @@index([userId])
   @@index([expiresAt])
 }
+
+model RateLimitBucket {
+  key             String   @id
+  count           Int      @default(0)
+  windowStartedAt DateTime
+  expiresAt       DateTime
+  updatedAt       DateTime @updatedAt
+
+  @@index([expiresAt])
+}
