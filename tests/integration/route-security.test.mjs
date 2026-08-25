@@ -56,6 +56,20 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   const me = await api("/api/me", { cookie: cookieA });
   assert.equal(me.status, 200);
 
+  const ownOrganisationSwitch = await api("/api/me/organisation", {
+    method: "POST",
+    cookie: cookieA,
+    body: { organisationId: accountABody.organisation.id }
+  });
+  assert.equal(ownOrganisationSwitch.status, 200);
+
+  const activeOrganisation = await api("/api/me", { cookie: cookieA });
+  assert.equal(activeOrganisation.status, 200);
+  assert.equal(
+    (await activeOrganisation.json()).organisation.id,
+    accountABody.organisation.id
+  );
+
   const unauthenticatedPlayerState = await api("/api/player/state");
   assert.equal(unauthenticatedPlayerState.status, 401);
 
@@ -101,6 +115,13 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   });
   assert.equal(accountB.status, 201, await accountB.clone().text());
   const cookieB = sessionCookie(accountB);
+
+  const crossTenantOrganisationSwitch = await api("/api/me/organisation", {
+    method: "POST",
+    cookie: cookieB,
+    body: { organisationId: accountABody.organisation.id }
+  });
+  assert.equal(crossTenantOrganisationSwitch.status, 403);
 
   const crossTenantStation = await api("/api/stations", {
     method: "POST",
