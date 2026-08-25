@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { publicRequestOrigin } from "@/lib/origin-policy.mjs";
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
@@ -8,7 +9,16 @@ function allowedOrigins(request) {
     .map((origin) => origin.trim())
     .filter(Boolean);
 
-  return new Set([request.nextUrl.origin, ...configured]);
+  const publicOrigin = publicRequestOrigin({
+    nextOrigin: request.nextUrl.origin,
+    host: request.headers.get("host"),
+    forwardedHost: request.headers.get("x-forwarded-host"),
+    forwardedProto: request.headers.get("x-forwarded-proto")
+  });
+
+  return new Set(
+    [request.nextUrl.origin, publicOrigin, ...configured].filter(Boolean)
+  );
 }
 
 export function middleware(request) {
@@ -47,3 +57,4 @@ export function middleware(request) {
 export const config = {
   matcher: "/api/:path*"
 };
+
