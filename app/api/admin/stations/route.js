@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requirePlatformAdmin } from "@/lib/access-control";
 import { accessDenied } from "@/lib/api-response";
-import { slugify } from "@/lib/slugify";
+import slugify from "@/lib/slugify";
 
 function badRequest(error) {
   return NextResponse.json({ error }, { status: 400 });
