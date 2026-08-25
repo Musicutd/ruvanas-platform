@@ -48,7 +48,7 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
       password: "correct-horse-battery-staple"
     }
   });
-  assert.equal(accountA.status, 201, await accountA.text());
+  assert.equal(accountA.status, 201, await accountA.clone().text());
   const accountABody = await accountA.json();
   const cookieA = sessionCookie(accountA);
   assert.ok(cookieA);
@@ -85,7 +85,7 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
       password: "correct-horse-battery-staple"
     }
   });
-  assert.equal(accountB.status, 201, await accountB.text());
+  assert.equal(accountB.status, 201, await accountB.clone().text());
   const cookieB = sessionCookie(accountB);
 
   const crossTenantStation = await api("/api/stations", {
@@ -128,3 +128,4 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   assert.equal(lastResponse.status, 429);
   assert.ok(Number(lastResponse.headers.get("retry-after")) > 0);
 });
+
