@@ -224,14 +224,49 @@ model Location {
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 
-  organisation     Organisation          @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  brand            Brand?                @relation(fields: [brandId], references: [id], onDelete: SetNull)
-  zones            Zone[]
-  groupMemberships LocationGroupMember[]
+  organisation      Organisation               @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  brand             Brand?                     @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  zones             Zone[]
+  groupMemberships  LocationGroupMember[]
+  openingHours      LocationOpeningHour[]
+  openingExceptions LocationOpeningException[]
 
   @@unique([organisationId, slug])
   @@index([organisationId])
   @@index([brandId])
+}
+
+model LocationOpeningHour {
+  id             String   @id @default(cuid())
+  locationId     String
+  weekday        Int
+  isClosed       Boolean  @default(false)
+  opensAtMinute  Int?
+  closesAtMinute Int?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@unique([locationId, weekday])
+  @@index([locationId])
+}
+
+model LocationOpeningException {
+  id             String   @id @default(cuid())
+  locationId     String
+  date           DateTime @db.Date
+  isClosed       Boolean  @default(true)
+  opensAtMinute  Int?
+  closesAtMinute Int?
+  label          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@unique([locationId, date])
+  @@index([locationId, date])
 }
 
 model LocationGroup {
@@ -510,4 +545,3 @@ model Player {
   @@index([organisationId, status])
   @@index([lastHeartbeatAt])
 }
-
