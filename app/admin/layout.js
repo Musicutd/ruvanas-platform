@@ -4,6 +4,10 @@ import { getAdminUser } from "@/lib/requireAdmin";
 
 const navItems = [
   {
+    href: "/admin/location-groups",
+    label: "Location groups"
+  },
+  {
     href: "/admin/locations",
     label: "Retail locations"
   },
