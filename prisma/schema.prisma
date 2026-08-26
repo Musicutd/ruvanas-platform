@@ -138,6 +138,7 @@ model Organisation {
   stations       Station[]
   brands         Brand[]
   locations      Location[]
+  locationGroups LocationGroup[]
   channels       Channel[]
   mediaAssets    MediaAsset[]         @relation("OrganisationMediaAssets")
   auditLogs      AuditLog[]
@@ -223,13 +224,42 @@ model Location {
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 
-  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  brand        Brand?       @relation(fields: [brandId], references: [id], onDelete: SetNull)
-  zones        Zone[]
+  organisation     Organisation          @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  brand            Brand?                @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  zones            Zone[]
+  groupMemberships LocationGroupMember[]
 
   @@unique([organisationId, slug])
   @@index([organisationId])
   @@index([brandId])
+}
+
+model LocationGroup {
+  id             String   @id @default(cuid())
+  organisationId String
+  name           String
+  slug           String
+  description    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organisation Organisation          @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  locations    LocationGroupMember[]
+
+  @@unique([organisationId, slug])
+  @@index([organisationId])
+}
+
+model LocationGroupMember {
+  locationGroupId String
+  locationId      String
+  createdAt       DateTime @default(now())
+
+  locationGroup LocationGroup @relation(fields: [locationGroupId], references: [id], onDelete: Cascade)
+  location      Location      @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@id([locationGroupId, locationId])
+  @@index([locationId])
 }
 
 model Zone {

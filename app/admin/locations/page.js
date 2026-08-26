@@ -6,7 +6,10 @@ export default async function AdminLocationsPage() {
     include: {
       organisation: true,
       brand: true,
-      zones: true
+      zones: true,
+      groupMemberships: {
+        include: { locationGroup: true }
+      }
     },
     orderBy: {
       createdAt: "desc"
@@ -86,6 +89,7 @@ export default async function AdminLocationsPage() {
                 <th style={{ padding: 8 }}>Brand</th>
                 <th style={{ padding: 8 }}>Timezone</th>
                 <th style={{ padding: 8 }}>Zones</th>
+                <th style={{ padding: 8 }}>Groups</th>
                 <th style={{ padding: 8 }}>Status</th>
                 <th style={{ padding: 8 }}>Created</th>
                 <th style={{ padding: 8 }}></th>
@@ -121,6 +125,12 @@ export default async function AdminLocationsPage() {
                   <td style={{ padding: 8 }}>{location.timezone}</td>
 
                   <td style={{ padding: 8 }}>{location.zones.length}</td>
+
+                  <td style={{ padding: 8 }}>
+                    {location.groupMemberships.length > 0
+                      ? location.groupMemberships.map((membership) => membership.locationGroup.name).join(", ")
+                      : "—"}
+                  </td>
 
                   <td style={{ padding: 8 }}>{location.status}</td>
 
@@ -158,3 +168,4 @@ export default async function AdminLocationsPage() {
     </div>
   );
 }
+
