@@ -100,6 +100,12 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   );
   assert.equal(unauthenticatedGroupAssignment.status, 401);
 
+  const unauthenticatedOpeningHours = await api(
+    "/api/admin/locations/not-a-location/opening-hours",
+    { method: "PUT", body: { weeklyHours: [], exceptions: [] } }
+  );
+  assert.equal(unauthenticatedOpeningHours.status, 401);
+
   const station = await api("/api/stations", {
     method: "POST",
     cookie: cookieA,
@@ -160,6 +166,12 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   );
   assert.equal(ownerBulkAssignmentAttempt.status, 403);
 
+  const ownerOpeningHoursAttempt = await api(
+    "/api/admin/locations/not-a-location/opening-hours",
+    { method: "PUT", cookie: cookieA, body: { weeklyHours: [], exceptions: [] } }
+  );
+  assert.equal(ownerOpeningHoursAttempt.status, 403);
+
   const db = new PrismaClient();
   try {
     await db.user.update({
@@ -182,6 +194,29 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
         data: { locationId: location.id, name: "Cafe", slug: "cafe" }
       })
     ]);
+    const openingHours = await api(
+      `/api/admin/locations/${location.id}/opening-hours`,
+      {
+        method: "PUT",
+        cookie: cookieA,
+        body: {
+          weeklyHours: Array.from({ length: 7 }, (_, weekday) => ({
+            weekday,
+            isClosed: weekday === 0,
+            opensAt: "09:00",
+            closesAt: "18:00"
+          })),
+          exceptions: [
+            { date: "2026-12-25", label: "Christmas", isClosed: true },
+            { date: "2026-12-31", label: "New Year's Eve", isClosed: false, opensAt: "09:00", closesAt: "14:00" }
+          ]
+        }
+      }
+    );
+    assert.equal(openingHours.status, 200, await openingHours.clone().text());
+    assert.equal(await db.locationOpeningHour.count({ where: { locationId: location.id } }), 7);
+    assert.equal(await db.locationOpeningException.count({ where: { locationId: location.id } }), 2);
+    assert.equal(await db.auditLog.count({ where: { action: "LOCATION_OPENING_HOURS_UPDATED", entityId: location.id } }), 1);
     const channels = await Promise.all([
       db.channel.create({
         data: {
@@ -298,4 +333,3 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   assert.equal(lastResponse.status, 429);
   assert.ok(Number(lastResponse.headers.get("retry-after")) > 0);
 });
-

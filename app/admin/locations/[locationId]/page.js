@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import AddZoneForm from "./AddZoneForm";
 import AssignChannelForm from "./AssignChannelForm";
 import ActivateLocationButton from "./ActivateLocationButton";
+import OpeningHoursForm from "./OpeningHoursForm";
+import { formatLocalTime } from "@/lib/opening-hours.mjs";
 
 function formatAddress(location) {
   return [
@@ -49,7 +51,9 @@ export default async function AdminLocationDetailPage({ params }) {
         orderBy: {
           createdAt: "asc"
         }
-      }
+      },
+      openingHours: { orderBy: { weekday: "asc" } },
+      openingExceptions: { orderBy: { date: "asc" } }
     }
   });
 
@@ -77,6 +81,19 @@ export default async function AdminLocationDetailPage({ params }) {
   });
 
   const addressLines = formatAddress(location);
+  const initialHours = location.openingHours.map((entry) => ({
+    weekday: entry.weekday,
+    isClosed: entry.isClosed,
+    opensAt: formatLocalTime(entry.opensAtMinute) || "09:00",
+    closesAt: formatLocalTime(entry.closesAtMinute) || "18:00"
+  }));
+  const initialExceptions = location.openingExceptions.map((entry) => ({
+    date: entry.date.toISOString().slice(0, 10),
+    label: entry.label || "",
+    isClosed: entry.isClosed,
+    opensAt: formatLocalTime(entry.opensAtMinute) || "09:00",
+    closesAt: formatLocalTime(entry.closesAtMinute) || "18:00"
+  }));
 
   return (
     <main style={styles.page}>
@@ -138,6 +155,16 @@ export default async function AdminLocationDetailPage({ params }) {
             </div>
           </div>
         </div>
+      </section>
+
+      <section style={styles.section}>
+        <h2 style={styles.sectionTitle}>Opening hours</h2>
+        <OpeningHoursForm
+          locationId={location.id}
+          timezone={location.timezone}
+          initialHours={initialHours}
+          initialExceptions={initialExceptions}
+        />
       </section>
 
       <section style={styles.section}>
