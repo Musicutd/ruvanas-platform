@@ -24,6 +24,12 @@ function sessionCookie(response) {
   return response.headers.get("set-cookie")?.split(";")[0] || "";
 }
 
+function dateOffset(days) {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
 test("route-level origin, authentication, tenant, plan, and rate-limit controls", async () => {
   const missingOrigin = await api("/api/auth/login", {
     method: "POST",
@@ -386,15 +392,15 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
       name: `Lunch offer ${suffix}`,
       priority: "NORMAL",
       schedulingMode: "PLAYS_PER_HOUR",
-      playsPerHour: 2,
-      effectiveFrom: "2026-09-01",
-      effectiveTo: "2026-09-07",
+      playsPerHour: 12,
+      effectiveFrom: dateOffset(-1),
+      effectiveTo: dateOffset(1),
       maxPromoMinutesPerHour: 12,
-      minSamePromoGapMinutes: 15,
+      minSamePromoGapMinutes: 5,
       minAnyPromoGapMinutes: 2,
       respectOpeningHours: true,
       targets: [{ targetType: "LOCATION", targetId: location.id }],
-      schedules: [{ weekday: 2, startsAt: "09:00", endsAt: "17:00" }]
+      schedules: Array.from({ length: 7 }, (_, weekday) => ({ weekday, startsAt: "00:00", endsAt: "23:59" }))
     };
     const campaignPreview = await api("/api/admin/campaigns/preview", {
       method: "POST",
@@ -405,7 +411,7 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     const campaignPreviewBody = await campaignPreview.json();
     assert.equal(campaignPreviewBody.preview.canPublish, true);
     assert.equal(campaignPreviewBody.preview.targetZoneCount, 2);
-    assert.equal(campaignPreviewBody.preview.estimatedTotalPlays, 32);
+    assert.ok(campaignPreviewBody.preview.estimatedTotalPlays > 0);
 
     const campaignDraft = await api("/api/admin/campaigns", {
       method: "POST",
@@ -416,7 +422,7 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     const campaignDraftBody = await campaignDraft.json();
     assert.equal(campaignDraftBody.campaign.status, "DRAFT");
     assert.equal(await db.campaignTarget.count({ where: { campaignId: campaignDraftBody.campaign.id } }), 1);
-    assert.equal(await db.campaignSchedule.count({ where: { campaignId: campaignDraftBody.campaign.id } }), 1);
+    assert.equal(await db.campaignSchedule.count({ where: { campaignId: campaignDraftBody.campaign.id } }), 7);
 
     const publishedCampaign = await api(`/api/admin/campaigns/${campaignDraftBody.campaign.id}/publish`, {
       method: "PATCH",
@@ -470,14 +476,23 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     assert.equal(playerManifestBody.state, "READY");
     assert.equal(playerManifestBody.musicMode.id, musicModeBody.mode.id);
     assert.equal(playerManifestBody.playlist[0].trackId, track.id);
+    assert.equal(playerManifestBody.playlist[0].itemType, "MUSIC");
+    assert.match(playerManifestBody.playlist[0].scheduleItemId, /^[0-9a-f]{64}$/);
     assert.equal("storageKey" in playerManifestBody.playlist[0], false);
     assert.match(playerManifestBody.playlist[0].proofToken, /^[0-9a-f]{64}$/);
+    assert.equal(playerManifestBody.insertions.length, 1);
+    assert.equal(playerManifestBody.insertions[0].itemType, "PROMO");
+    assert.equal(playerManifestBody.insertions[0].campaignId, campaignDraftBody.campaign.id);
+    assert.equal(playerManifestBody.insertions[0].promoVersionId, promoVersion.id);
+    assert.equal(await db.playoutIntent.count({ where: { scheduleItemId: playerManifestBody.insertions[0].scheduleItemId } }), 1);
 
     const playbackEventId = randomUUID();
     const playbackEvent = {
       eventId: playbackEventId,
       manifestVersion: playerManifestBody.version,
       proofToken: playerManifestBody.playlist[0].proofToken,
+      scheduleItemId: playerManifestBody.playlist[0].scheduleItemId,
+      itemType: "MUSIC",
       trackId: track.id,
       eventType: "STARTED",
       occurredAt: new Date().toISOString(),
@@ -499,6 +514,29 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     assert.equal(duplicateProofOfPlay.status, 200, await duplicateProofOfPlay.clone().text());
     assert.equal((await duplicateProofOfPlay.json()).duplicates, 1);
     assert.equal(await db.proofOfPlayEvent.count({ where: { playerId: playerManifestBody.player.id, clientEventId: playbackEventId } }), 1);
+
+    const promoPlaybackEventId = randomUUID();
+    const promoProofOfPlay = await api("/api/player/proof-of-play", {
+      method: "POST",
+      cookie: `ruvanas_player=${rawPlayerToken}`,
+      body: { events: [{
+        eventId: promoPlaybackEventId,
+        manifestVersion: playerManifestBody.version,
+        proofToken: playerManifestBody.insertions[0].proofToken,
+        scheduleItemId: playerManifestBody.insertions[0].scheduleItemId,
+        itemType: "PROMO",
+        eventType: "COMPLETED",
+        occurredAt: new Date().toISOString(),
+        positionSeconds: 20
+      }] }
+    });
+    assert.equal(promoProofOfPlay.status, 200, await promoProofOfPlay.clone().text());
+    assert.equal((await promoProofOfPlay.json()).accepted, 1);
+    const storedPromoProof = await db.proofOfPlayEvent.findUnique({ where: { clientEventId: promoPlaybackEventId } });
+    assert.equal(storedPromoProof.itemType, "PROMO");
+    assert.equal(storedPromoProof.campaignId, campaignDraftBody.campaign.id);
+    assert.equal(storedPromoProof.promoVersionId, promoVersion.id);
+    assert.equal(storedPromoProof.trackId, null);
 
     const tamperedProofOfPlay = await api("/api/player/proof-of-play", {
       method: "POST",

@@ -9,10 +9,11 @@ function percent(value) {
 export default async function ProofOfPlayPage() {
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const recentWhere = { occurredAt: { gte: since } };
-  const [started, completed, failed, activePlayers, events] = await Promise.all([
+  const [started, completed, failed, interrupted, activePlayers, events] = await Promise.all([
     prisma.proofOfPlayEvent.count({ where: { ...recentWhere, eventType: "STARTED" } }),
     prisma.proofOfPlayEvent.count({ where: { ...recentWhere, eventType: "COMPLETED" } }),
     prisma.proofOfPlayEvent.count({ where: { ...recentWhere, eventType: "FAILED" } }),
+    prisma.proofOfPlayEvent.count({ where: { ...recentWhere, eventType: "INTERRUPTED" } }),
     prisma.proofOfPlayEvent.findMany({
       where: recentWhere,
       distinct: ["playerId"],
@@ -21,7 +22,11 @@ export default async function ProofOfPlayPage() {
     prisma.proofOfPlayEvent.findMany({
       orderBy: { occurredAt: "desc" },
       take: 100,
-      include: { organisation: { select: { name: true } } }
+      include: {
+        organisation: { select: { name: true } },
+        campaign: { select: { name: true } },
+        playoutIntent: { select: { plannedStart: true } }
+      }
     })
   ]);
   const completionRate = started ? Math.min(1, completed / started) : 0;
@@ -35,9 +40,10 @@ export default async function ProofOfPlayPage() {
       </header>
 
       <section style={styles.metrics} aria-label="Last 24 hours">
-        <Metric label="Track starts" value={started} />
+        <Metric label="Playback starts" value={started} />
         <Metric label="Completed" value={completed} />
         <Metric label="Failed" value={failed} tone={failed ? "warning" : "normal"} />
+        <Metric label="Interrupted" value={interrupted} tone={interrupted ? "warning" : "normal"} />
         <Metric label="Completion rate" value={percent(completionRate)} />
         <Metric label="Active players" value={activePlayers.length} />
       </section>
@@ -47,15 +53,16 @@ export default async function ProofOfPlayPage() {
         {events.length === 0 ? <p style={styles.subtitle}>No playback confirmations have been received yet.</p> : (
           <div style={{ overflowX: "auto" }}>
             <table style={styles.table}>
-              <thead><tr><th style={styles.th}>Time</th><th style={styles.th}>Status</th><th style={styles.th}>Track</th><th style={styles.th}>Player</th><th style={styles.th}>Location / zone</th><th style={styles.th}>Organisation</th><th style={styles.th}>Manifest</th></tr></thead>
+              <thead><tr><th style={styles.th}>Time</th><th style={styles.th}>Status</th><th style={styles.th}>Type</th><th style={styles.th}>Content / campaign</th><th style={styles.th}>Player</th><th style={styles.th}>Location / zone</th><th style={styles.th}>Organisation</th><th style={styles.th}>Schedule item</th></tr></thead>
               <tbody>{events.map((event) => <tr key={event.id}>
                 <td style={styles.td}>{event.occurredAt.toLocaleString()}</td>
-                <td style={styles.td}><span style={{ ...styles.badge, ...(event.eventType === "FAILED" ? styles.failed : event.eventType === "COMPLETED" ? styles.completed : styles.started) }}>{event.eventType}</span></td>
-                <td style={styles.tdStrong}>{event.trackArtist} — {event.trackTitle}</td>
+                <td style={styles.td}><span style={{ ...styles.badge, ...(new Set(["FAILED", "INTERRUPTED"]).has(event.eventType) ? styles.failed : event.eventType === "COMPLETED" ? styles.completed : styles.started) }}>{event.eventType}</span></td>
+                <td style={styles.tdStrong}>{event.itemType}</td>
+                <td style={styles.tdStrong}>{event.trackArtist} — {event.trackTitle}{event.campaign ? <small style={styles.detail}>Campaign: {event.campaign.name}{event.playoutIntent ? ` · planned ${event.playoutIntent.plannedStart.toLocaleString()}` : ""}</small> : null}</td>
                 <td style={styles.td}>{event.playerName}</td>
                 <td style={styles.td}>{event.locationName} / {event.zoneName}</td>
                 <td style={styles.td}>{event.organisation.name}</td>
-                <td style={styles.mono}>{event.manifestVersion}</td>
+                <td style={styles.mono}>{event.scheduleItemId.slice(0, 12)}…<small style={styles.detail}>Manifest {event.manifestVersion}</small></td>
               </tr>)}</tbody>
             </table>
           </div>
@@ -86,11 +93,12 @@ const styles = {
   metricPeriod: { color: "#64748b" },
   card: { border: "1px solid #cbd5e1", borderRadius: 12, padding: 22, background: "#fff" },
   sectionTitle: { margin: "0 0 16px", fontSize: 22 },
-  table: { width: "100%", borderCollapse: "collapse", minWidth: 1080 },
+  table: { width: "100%", borderCollapse: "collapse", minWidth: 1240 },
   th: { padding: 10, textAlign: "left", borderBottom: "2px solid #cbd5e1", color: "#475569", fontSize: 13 },
   td: { padding: 10, borderBottom: "1px solid #e2e8f0", color: "#334155", verticalAlign: "top" },
   tdStrong: { padding: 10, borderBottom: "1px solid #e2e8f0", color: "#0f172a", fontWeight: 800, verticalAlign: "top" },
   mono: { padding: 10, borderBottom: "1px solid #e2e8f0", color: "#475569", fontFamily: "monospace", fontSize: 12, verticalAlign: "top" },
+  detail: { display: "block", marginTop: 4, color: "#64748b", fontFamily: "Arial, sans-serif", fontWeight: 500 },
   badge: { display: "inline-block", padding: "5px 8px", borderRadius: 999, fontSize: 11, fontWeight: 900 },
   started: { background: "#dbeafe", color: "#1e40af" },
   completed: { background: "#dcfce7", color: "#166534" },

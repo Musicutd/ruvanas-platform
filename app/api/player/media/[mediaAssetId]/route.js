@@ -28,8 +28,9 @@ export async function GET(request, { params }) {
     if (!player || player.status === "DISABLED") return NextResponse.json({ error: "This player is not enrolled or has been disabled." }, { status: 401 });
 
     const mediaAssetId = String(params.mediaAssetId || "");
-    const { resolution } = await resolvePlayerProgramming(player, new Date());
-    const isEligible = (resolution.musicMode?.tracks || []).some(({ track }) =>
+    const instant = new Date();
+    const { resolution, campaignPlayout } = await resolvePlayerProgramming(player, instant);
+    const isEligibleMusic = (resolution.musicMode?.tracks || []).some(({ track }) =>
       track.status === "READY" &&
       track.mediaAsset?.id === mediaAssetId &&
       track.mediaAsset.status === "READY" &&
@@ -37,7 +38,21 @@ export async function GET(request, { params }) {
       track.mediaAsset.mediaType === "MUSIC" &&
       track.mediaAsset.organisationId === null
     );
-    if (!isEligible) return NextResponse.json({ error: "This track is not in the player's current playback plan." }, { status: 404 });
+    const isCurrentPromo = (campaignPlayout.insertions || []).some((item) => item.mediaAssetId === mediaAssetId);
+    const recentPromoIntent = isCurrentPromo ? null : await prisma.playoutIntent.findFirst({
+      where: {
+        playerId: player.id,
+        organisationId: player.organisationId,
+        zoneId: player.zoneId,
+        mediaAssetId,
+        plannedStart: { gte: new Date(instant.getTime() - 15 * 60 * 1000) },
+        expiresAt: { gt: instant }
+      },
+      select: { id: true }
+    });
+    if (!isEligibleMusic && !isCurrentPromo && !recentPromoIntent) {
+      return NextResponse.json({ error: "This audio is not in the player's current playback plan." }, { status: 404 });
+    }
 
     const asset = await prisma.mediaAsset.findUnique({
       where: { id: mediaAssetId },
