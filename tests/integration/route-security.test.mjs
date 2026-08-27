@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
 import { PrismaClient } from "@prisma/client";
+import { hashPlayerToken } from "../../lib/player-tokens.mjs";
 
 const baseUrl = process.env.INTEGRATION_BASE_URL || "http://127.0.0.1:3100";
 
@@ -73,6 +74,12 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
 
   const unauthenticatedPlayerState = await api("/api/player/state");
   assert.equal(unauthenticatedPlayerState.status, 401);
+
+  const unauthenticatedManifest = await api("/api/player/manifest");
+  assert.equal(unauthenticatedManifest.status, 401);
+
+  const unauthenticatedPlayerMedia = await api("/api/player/media/not-an-asset");
+  assert.equal(unauthenticatedPlayerMedia.status, 401);
 
   const unauthenticatedHeartbeat = await api("/api/player/heartbeat", {
     method: "POST"
@@ -291,9 +298,9 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
         body: {
           weeklyHours: Array.from({ length: 7 }, (_, weekday) => ({
             weekday,
-            isClosed: weekday === 0,
-            opensAt: "09:00",
-            closesAt: "18:00"
+            isClosed: false,
+            opensAt: "00:00",
+            closesAt: "23:59"
           })),
           exceptions: [
             { date: "2026-12-25", label: "Christmas", isClosed: true },
@@ -315,7 +322,7 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
         targetId: location.id,
         name: `Retail week ${suffix}`,
         publish: true,
-        slots: [{ weekday: 1, startsAt: "09:00", endsAt: "17:00", musicModeId: musicModeBody.mode.id, priority: 10 }]
+        slots: Array.from({ length: 7 }, (_, weekday) => ({ weekday, startsAt: "00:00", endsAt: "23:59", musicModeId: musicModeBody.mode.id, priority: 10 }))
       }
     });
     assert.equal(publishedSchedule.status, 201, await publishedSchedule.clone().text());
@@ -329,6 +336,27 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     const resolvedScheduleBody = await resolvedSchedule.json();
     assert.equal(resolvedScheduleBody.resolution.musicMode.id, musicModeBody.mode.id);
     assert.equal(resolvedScheduleBody.resolution.reason, "LOCATION_SLOT");
+
+    const rawPlayerToken = `integration-player-${suffix}`;
+    await db.player.create({ data: {
+      organisationId: accountABody.organisation.id,
+      zoneId: zones[0].id,
+      name: `Integration Player ${suffix}`,
+      status: "ONLINE",
+      sessionTokenHash: hashPlayerToken(rawPlayerToken, process.env.SESSION_SECRET),
+      enrolledAt: new Date(),
+      lastHeartbeatAt: new Date()
+    } });
+    const playerManifest = await api("/api/player/manifest", { cookie: `ruvanas_player=${rawPlayerToken}` });
+    assert.equal(playerManifest.status, 200, await playerManifest.clone().text());
+    const playerManifestBody = await playerManifest.json();
+    assert.equal(playerManifestBody.state, "READY");
+    assert.equal(playerManifestBody.musicMode.id, musicModeBody.mode.id);
+    assert.equal(playerManifestBody.playlist[0].trackId, track.id);
+    assert.equal("storageKey" in playerManifestBody.playlist[0], false);
+
+    const unavailablePlayerMedia = await api("/api/player/media/not-an-asset", { cookie: `ruvanas_player=${rawPlayerToken}` });
+    assert.equal(unavailablePlayerMedia.status, 404);
     const channels = await Promise.all([
       db.channel.create({
         data: {
