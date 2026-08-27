@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getActiveOrganisationContext } from "@/lib/auth";
 import OrganisationSwitcher from "./OrganisationSwitcher";
+import { resolveEntitlements } from "@/lib/entitlements.mjs";
 
 export default async function DashboardPage() {
   const context = await getActiveOrganisationContext({
@@ -21,6 +22,7 @@ export default async function DashboardPage() {
   const organisation = membership.organisation;
   const subscription = organisation.subscription;
   const plan = subscription?.plan;
+  const entitlements = resolveEntitlements(subscription);
   const stationCount = organisation.stations.length;
   const firstStation = organisation.stations[0];
 
@@ -34,6 +36,7 @@ export default async function DashboardPage() {
       <header style={styles.header}>
         <a href="/" style={styles.brand}>RUVANAS</a>
         <div style={styles.headerActions}>
+          {entitlements.schoolRadioEnabled ? <a href="/dashboard/school-radio" style={styles.reportLink}>School Radio</a> : null}
           <a href="/dashboard/reports" style={styles.reportLink}>Campaign reports</a>
           <form action="/api/auth/logout" method="post">
             <button style={styles.logoutButton} type="submit">Sign out</button>
@@ -253,4 +256,3 @@ const styles = {
     whiteSpace: "nowrap"
   }
 };
-

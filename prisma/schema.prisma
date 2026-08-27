@@ -216,6 +216,28 @@ enum ProofOfPlayEventType {
 enum PlaybackItemType {
   MUSIC
   PROMO
+  SCHOOL_ANNOUNCEMENT
+}
+
+enum SchoolPublishingPolicy {
+  PRIVATE
+  UNLISTED
+  PUBLIC
+}
+
+enum SchoolAnnouncementStatus {
+  DRAFT
+  IN_REVIEW
+  APPROVED
+  CHANGES_REQUESTED
+  REJECTED
+  ARCHIVED
+}
+
+enum SchoolBroadcastSlotStatus {
+  APPROVED
+  CANCELLED
+  COMPLETED
 }
 
 enum ReportExportStatus {
@@ -235,14 +257,17 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  memberships            OrganisationMember[]
-  auditLogs              AuditLog[]           @relation("AuditActor")
-  sessions               Session[]
-  submittedPromoVersions PromoVersion[]       @relation("PromoVersionSubmittedBy")
-  reviewedPromoVersions  PromoVersion[]       @relation("PromoVersionReviewedBy")
-  publishedCampaigns     Campaign[]           @relation("CampaignPublishedBy")
-  reportExports          ReportExportJob[]    @relation("ReportExportRequestedBy")
-  confirmedTrackRights   Track[]              @relation("TrackRightsConfirmedBy")
+  memberships                 OrganisationMember[]
+  auditLogs                   AuditLog[]            @relation("AuditActor")
+  sessions                    Session[]
+  submittedPromoVersions      PromoVersion[]        @relation("PromoVersionSubmittedBy")
+  reviewedPromoVersions       PromoVersion[]        @relation("PromoVersionReviewedBy")
+  publishedCampaigns          Campaign[]            @relation("CampaignPublishedBy")
+  reportExports               ReportExportJob[]     @relation("ReportExportRequestedBy")
+  confirmedTrackRights        Track[]               @relation("TrackRightsConfirmedBy")
+  createdSchoolAnnouncements  SchoolAnnouncement[]  @relation("SchoolAnnouncementCreatedBy")
+  reviewedSchoolAnnouncements SchoolAnnouncement[]  @relation("SchoolAnnouncementReviewedBy")
+  approvedSchoolSlots         SchoolBroadcastSlot[] @relation("SchoolBroadcastSlotApprovedBy")
 }
 
 model Organisation {
@@ -252,24 +277,27 @@ model Organisation {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  members           OrganisationMember[]
-  subscription      Subscription?
-  stations          Station[]
-  brands            Brand[]
-  locations         Location[]
-  locationGroups    LocationGroup[]
-  channels          Channel[]
-  mediaAssets       MediaAsset[]         @relation("OrganisationMediaAssets")
-  promoAssets       PromoAsset[]
-  auditLogs         AuditLog[]
-  players           Player[]
-  musicModes        MusicMode[]
-  musicSchedules    MusicSchedule[]
-  proofOfPlayEvents ProofOfPlayEvent[]
-  campaigns         Campaign[]
-  playoutIntents    PlayoutIntent[]
-  reportExports     ReportExportJob[]
-  activeSessions    Session[]
+  members              OrganisationMember[]
+  subscription         Subscription?
+  stations             Station[]
+  brands               Brand[]
+  locations            Location[]
+  locationGroups       LocationGroup[]
+  channels             Channel[]
+  mediaAssets          MediaAsset[]          @relation("OrganisationMediaAssets")
+  promoAssets          PromoAsset[]
+  auditLogs            AuditLog[]
+  players              Player[]
+  musicModes           MusicMode[]
+  musicSchedules       MusicSchedule[]
+  proofOfPlayEvents    ProofOfPlayEvent[]
+  campaigns            Campaign[]
+  playoutIntents       PlayoutIntent[]
+  reportExports        ReportExportJob[]
+  activeSessions       Session[]
+  schoolProfile        SchoolProfile?
+  schoolAnnouncements  SchoolAnnouncement[]
+  schoolBroadcastSlots SchoolBroadcastSlot[]
 }
 
 model OrganisationMember {
@@ -297,6 +325,7 @@ model Plan {
   maxBitrateKbps           Int
   includesRuvanasCatalogue Boolean  @default(false)
   promoUploadEnabled       Boolean  @default(true)
+  schoolRadioEnabled       Boolean  @default(false)
   active                   Boolean  @default(true)
   createdAt                DateTime @default(now())
   updatedAt                DateTime @updatedAt
@@ -351,14 +380,15 @@ model Location {
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 
-  organisation      Organisation               @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  brand             Brand?                     @relation(fields: [brandId], references: [id], onDelete: SetNull)
-  zones             Zone[]
-  groupMemberships  LocationGroupMember[]
-  openingHours      LocationOpeningHour[]
-  openingExceptions LocationOpeningException[]
-  musicSchedules    MusicSchedule[]
-  campaignTargets   CampaignTarget[]
+  organisation         Organisation               @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  brand                Brand?                     @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  zones                Zone[]
+  groupMemberships     LocationGroupMember[]
+  openingHours         LocationOpeningHour[]
+  openingExceptions    LocationOpeningException[]
+  musicSchedules       MusicSchedule[]
+  campaignTargets      CampaignTarget[]
+  schoolBroadcastSlots SchoolBroadcastSlot[]
 
   @@unique([organisationId, slug])
   @@index([organisationId])
@@ -436,13 +466,14 @@ model Zone {
   createdAt  DateTime   @default(now())
   updatedAt  DateTime   @updatedAt
 
-  location           Location            @relation(fields: [locationId], references: [id], onDelete: Cascade)
-  channelAssignments ChannelAssignment[]
-  players            Player[]
-  musicSchedules     MusicSchedule[]
-  proofOfPlayEvents  ProofOfPlayEvent[]
-  campaignTargets    CampaignTarget[]
-  playoutIntents     PlayoutIntent[]
+  location             Location              @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  channelAssignments   ChannelAssignment[]
+  players              Player[]
+  musicSchedules       MusicSchedule[]
+  proofOfPlayEvents    ProofOfPlayEvent[]
+  campaignTargets      CampaignTarget[]
+  playoutIntents       PlayoutIntent[]
+  schoolBroadcastSlots SchoolBroadcastSlot[]
 
   @@unique([locationId, slug])
   @@index([locationId])
@@ -633,15 +664,16 @@ model PromoVersion {
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
 
-  promoAsset        PromoAsset           @relation("PromoAssetVersions", fields: [promoAssetId], references: [id], onDelete: Cascade)
-  mediaAsset        MediaAsset           @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
-  submittedBy       User?                @relation("PromoVersionSubmittedBy", fields: [submittedById], references: [id], onDelete: SetNull)
-  reviewedBy        User?                @relation("PromoVersionReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
-  approvedForPromo  PromoAsset?          @relation("CurrentApprovedPromoVersion")
-  processingJobs    PromoProcessingJob[]
-  campaigns         Campaign[]
-  playoutIntents    PlayoutIntent[]
-  proofOfPlayEvents ProofOfPlayEvent[]
+  promoAsset          PromoAsset           @relation("PromoAssetVersions", fields: [promoAssetId], references: [id], onDelete: Cascade)
+  mediaAsset          MediaAsset           @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+  submittedBy         User?                @relation("PromoVersionSubmittedBy", fields: [submittedById], references: [id], onDelete: SetNull)
+  reviewedBy          User?                @relation("PromoVersionReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+  approvedForPromo    PromoAsset?          @relation("CurrentApprovedPromoVersion")
+  processingJobs      PromoProcessingJob[]
+  campaigns           Campaign[]
+  schoolAnnouncements SchoolAnnouncement[]
+  playoutIntents      PlayoutIntent[]
+  proofOfPlayEvents   ProofOfPlayEvent[]
 
   @@unique([promoAssetId, version])
   @@index([promoAssetId, status])
@@ -819,6 +851,80 @@ model MusicModeTrack {
   @@index([trackId])
 }
 
+model SchoolProfile {
+  id               String                 @id @default(cuid())
+  organisationId   String                 @unique
+  displayName      String?
+  publishingPolicy SchoolPublishingPolicy @default(PRIVATE)
+  policyVersion    String                 @default("school-radio-v1")
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+
+  @@index([publishingPolicy])
+}
+
+model SchoolAnnouncement {
+  id               String                   @id @default(cuid())
+  organisationId   String
+  promoVersionId   String
+  title            String
+  summary          String?
+  status           SchoolAnnouncementStatus @default(DRAFT)
+  policyVersion    String                   @default("school-radio-v1")
+  createdByUserId  String
+  reviewedByUserId String?
+  submittedAt      DateTime?
+  reviewedAt       DateTime?
+  reviewNotes      String?
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+
+  organisation   Organisation          @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  promoVersion   PromoVersion          @relation(fields: [promoVersionId], references: [id], onDelete: Restrict)
+  createdBy      User                  @relation("SchoolAnnouncementCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  reviewedBy     User?                 @relation("SchoolAnnouncementReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+  broadcastSlots SchoolBroadcastSlot[]
+
+  @@index([organisationId, status])
+  @@index([promoVersionId])
+  @@index([createdByUserId])
+  @@index([reviewedByUserId])
+}
+
+model SchoolBroadcastSlot {
+  id                 String                    @id @default(cuid())
+  organisationId     String
+  announcementId     String
+  locationId         String?
+  zoneId             String?
+  startsAt           DateTime
+  endsAt             DateTime
+  status             SchoolBroadcastSlotStatus @default(APPROVED)
+  revision           Int                       @default(1)
+  approvedByUserId   String
+  approvedAt         DateTime                  @default(now())
+  cancelledAt        DateTime?
+  cancellationReason String?
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+
+  organisation      Organisation       @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  announcement      SchoolAnnouncement @relation(fields: [announcementId], references: [id], onDelete: Restrict)
+  location          Location?          @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  zone              Zone?              @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  approvedBy        User               @relation("SchoolBroadcastSlotApprovedBy", fields: [approvedByUserId], references: [id], onDelete: Restrict)
+  playoutIntents    PlayoutIntent[]
+  proofOfPlayEvents ProofOfPlayEvent[]
+
+  @@index([organisationId, status, startsAt])
+  @@index([locationId, status, startsAt])
+  @@index([zoneId, status, startsAt])
+  @@index([announcementId])
+  @@index([approvedByUserId])
+}
+
 model MusicSchedule {
   id             String              @id @default(cuid())
   organisationId String
@@ -957,80 +1063,86 @@ model Player {
 }
 
 model PlayoutIntent {
-  id                  String   @id @default(cuid())
-  scheduleItemId      String   @unique
-  organisationId      String
-  playerId            String
-  zoneId              String
-  channelId           String?
-  campaignId          String
-  promoVersionId      String
-  mediaAssetId        String
-  locationId          String
-  locationName        String
-  locationTimezone    String
-  locationGroups      Json
-  publicationRevision Int
-  sourceRevision      String
-  plannedStart        DateTime
-  expiresAt           DateTime
-  createdAt           DateTime @default(now())
+  id                    String   @id @default(cuid())
+  scheduleItemId        String   @unique
+  organisationId        String
+  playerId              String
+  zoneId                String
+  channelId             String?
+  campaignId            String?
+  schoolBroadcastSlotId String?
+  promoVersionId        String
+  mediaAssetId          String
+  locationId            String
+  locationName          String
+  locationTimezone      String
+  locationGroups        Json
+  publicationRevision   Int
+  sourceRevision        String
+  plannedStart          DateTime
+  expiresAt             DateTime
+  createdAt             DateTime @default(now())
 
-  organisation   Organisation       @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  player         Player             @relation(fields: [playerId], references: [id], onDelete: Cascade)
-  zone           Zone               @relation(fields: [zoneId], references: [id], onDelete: Cascade)
-  channel        Channel?           @relation(fields: [channelId], references: [id], onDelete: SetNull)
-  campaign       Campaign           @relation(fields: [campaignId], references: [id], onDelete: Restrict)
-  promoVersion   PromoVersion       @relation(fields: [promoVersionId], references: [id], onDelete: Restrict)
-  mediaAsset     MediaAsset         @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
-  playbackEvents ProofOfPlayEvent[]
+  organisation        Organisation         @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  player              Player               @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  zone                Zone                 @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  channel             Channel?             @relation(fields: [channelId], references: [id], onDelete: SetNull)
+  campaign            Campaign?            @relation(fields: [campaignId], references: [id], onDelete: Restrict)
+  schoolBroadcastSlot SchoolBroadcastSlot? @relation(fields: [schoolBroadcastSlotId], references: [id], onDelete: Restrict)
+  promoVersion        PromoVersion         @relation(fields: [promoVersionId], references: [id], onDelete: Restrict)
+  mediaAsset          MediaAsset           @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+  playbackEvents      ProofOfPlayEvent[]
 
   @@unique([playerId, campaignId, publicationRevision, plannedStart])
+  @@unique([playerId, schoolBroadcastSlotId, plannedStart])
   @@index([organisationId, plannedStart])
   @@index([playerId, plannedStart])
   @@index([zoneId, plannedStart])
   @@index([channelId, plannedStart])
   @@index([campaignId, plannedStart])
+  @@index([schoolBroadcastSlotId, plannedStart])
   @@index([promoVersionId, plannedStart])
   @@index([locationId, plannedStart])
   @@index([expiresAt])
 }
 
 model ProofOfPlayEvent {
-  id              String               @id @default(cuid())
-  clientEventId   String
-  organisationId  String
-  playerId        String
-  zoneId          String
-  scheduleItemId  String
-  itemType        PlaybackItemType     @default(MUSIC)
-  trackId         String?
-  campaignId      String?
-  promoVersionId  String?
-  playoutIntentId String?
-  channelId       String?
-  mediaAssetId    String
-  manifestVersion String
-  eventType       ProofOfPlayEventType
-  occurredAt      DateTime
-  receivedAt      DateTime             @default(now())
-  positionSeconds Int?
-  failureReason   String?
-  playerName      String
-  locationName    String
-  zoneName        String
-  trackTitle      String
-  trackArtist     String
+  id                    String               @id @default(cuid())
+  clientEventId         String
+  organisationId        String
+  playerId              String
+  zoneId                String
+  scheduleItemId        String
+  itemType              PlaybackItemType     @default(MUSIC)
+  trackId               String?
+  campaignId            String?
+  promoVersionId        String?
+  playoutIntentId       String?
+  schoolBroadcastSlotId String?
+  channelId             String?
+  mediaAssetId          String
+  manifestVersion       String
+  eventType             ProofOfPlayEventType
+  occurredAt            DateTime
+  receivedAt            DateTime             @default(now())
+  positionSeconds       Int?
+  failureReason         String?
+  playerName            String
+  locationName          String
+  zoneName              String
+  trackTitle            String
+  trackArtist           String
 
-  organisation  Organisation   @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  player        Player         @relation(fields: [playerId], references: [id], onDelete: Cascade)
-  zone          Zone           @relation(fields: [zoneId], references: [id], onDelete: Cascade)
-  track         Track?         @relation(fields: [trackId], references: [id], onDelete: Restrict)
-  campaign      Campaign?      @relation(fields: [campaignId], references: [id], onDelete: Restrict)
-  promoVersion  PromoVersion?  @relation(fields: [promoVersionId], references: [id], onDelete: Restrict)
-  playoutIntent PlayoutIntent? @relation(fields: [playoutIntentId], references: [id], onDelete: Restrict)
-  channel       Channel?       @relation(fields: [channelId], references: [id], onDelete: SetNull)
-  mediaAsset    MediaAsset     @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+  organisation        Organisation         @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  player              Player               @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  zone                Zone                 @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  track               Track?               @relation(fields: [trackId], references: [id], onDelete: Restrict)
+  campaign            Campaign?            @relation(fields: [campaignId], references: [id], onDelete: Restrict)
+  promoVersion        PromoVersion?        @relation(fields: [promoVersionId], references: [id], onDelete: Restrict)
+  playoutIntent       PlayoutIntent?       @relation(fields: [playoutIntentId], references: [id], onDelete: Restrict)
+  schoolBroadcastSlot SchoolBroadcastSlot? @relation(fields: [schoolBroadcastSlotId], references: [id], onDelete: Restrict)
+  channel             Channel?             @relation(fields: [channelId], references: [id], onDelete: SetNull)
+  mediaAsset          MediaAsset           @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
 
   @@unique([clientEventId])
   @@index([organisationId, occurredAt])
@@ -1040,6 +1152,7 @@ model ProofOfPlayEvent {
   @@index([campaignId, occurredAt])
   @@index([promoVersionId, occurredAt])
   @@index([playoutIntentId, occurredAt])
+  @@index([schoolBroadcastSlotId, occurredAt])
   @@index([channelId, occurredAt])
   @@index([manifestVersion])
   @@index([eventType, occurredAt])
@@ -1073,4 +1186,3 @@ model ReportExportJob {
   @@index([status, availableAt, leaseUntil])
   @@index([expiresAt])
 }
-

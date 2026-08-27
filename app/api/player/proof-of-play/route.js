@@ -17,7 +17,7 @@ const eventSchema = z.object({
   manifestVersion: z.string().regex(/^[0-9a-f]{24}$/),
   proofToken: z.string().regex(/^[0-9a-f]{64}$/),
   scheduleItemId: z.string().regex(/^[0-9a-f]{64}$/),
-  itemType: z.enum(["MUSIC", "PROMO"]),
+  itemType: z.enum(["MUSIC", "PROMO", "SCHOOL_ANNOUNCEMENT"]),
   trackId: z.string().cuid().optional().nullable(),
   eventType: z.enum(["STARTED", "COMPLETED", "FAILED", "INTERRUPTED"]),
   occurredAt: z.string().datetime({ offset: true }),
@@ -27,8 +27,8 @@ const eventSchema = z.object({
   if (event.itemType === "MUSIC" && !event.trackId) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: "Music events need a track ID.", path: ["trackId"] });
   }
-  if (event.itemType === "PROMO" && event.trackId) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: "Promo events cannot claim a catalogue track.", path: ["trackId"] });
+  if (event.itemType !== "MUSIC" && event.trackId) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "Insertion events cannot claim a catalogue track.", path: ["trackId"] });
   }
 });
 
@@ -57,7 +57,7 @@ export async function POST(request) {
     const now = new Date();
     const events = parsed.data.events;
     const trackIds = [...new Set(events.filter((event) => event.itemType === "MUSIC").map((event) => event.trackId))];
-    const scheduleItemIds = [...new Set(events.filter((event) => event.itemType === "PROMO").map((event) => event.scheduleItemId))];
+    const scheduleItemIds = [...new Set(events.filter((event) => event.itemType !== "MUSIC").map((event) => event.scheduleItemId))];
     const [tracks, intents] = await Promise.all([
       prisma.track.findMany({ where: { id: { in: trackIds } }, include: { mediaAsset: true } }),
       prisma.playoutIntent.findMany({
@@ -69,6 +69,7 @@ export async function POST(request) {
         },
         include: {
           campaign: { select: { id: true, name: true } },
+          schoolBroadcastSlot: { include: { announcement: { select: { id: true, title: true } } } },
           promoVersion: { include: { promoAsset: { select: { id: true, name: true } } } },
           mediaAsset: true
         }
@@ -82,8 +83,12 @@ export async function POST(request) {
       const occurredAt = new Date(event.occurredAt);
       const age = now.getTime() - occurredAt.getTime();
       const track = event.itemType === "MUSIC" ? tracksById.get(event.trackId) : null;
-      const intent = event.itemType === "PROMO" ? intentsByScheduleItemId.get(event.scheduleItemId) : null;
+      const intent = event.itemType !== "MUSIC" ? intentsByScheduleItemId.get(event.scheduleItemId) : null;
       const contentId = track?.id || intent?.promoVersionId;
+      const validIntentType = !intent || (
+        (event.itemType === "PROMO" && Boolean(intent.campaignId) && !intent.schoolBroadcastSlotId) ||
+        (event.itemType === "SCHOOL_ANNOUNCEMENT" && Boolean(intent.schoolBroadcastSlotId) && !intent.campaignId)
+      );
       const signedForPlayer = contentId && verifyPlaybackProofToken({
         playerId: player.id,
         manifestVersion: event.manifestVersion,
@@ -96,7 +101,7 @@ export async function POST(request) {
       );
       const validChannel = !intent?.channelId || intent.channelId === channelId;
 
-      if (!contentId || !signedForPlayer || !validPromoTime || !validChannel || age > MAX_EVENT_AGE_MS || age < -MAX_CLOCK_SKEW_MS) {
+      if (!contentId || !signedForPlayer || !validIntentType || !validPromoTime || !validChannel || age > MAX_EVENT_AGE_MS || age < -MAX_CLOCK_SKEW_MS) {
         return NextResponse.json({ error: "One or more playback events could not be verified." }, { status: 400 });
       }
     }
@@ -105,7 +110,7 @@ export async function POST(request) {
       const inserted = await tx.proofOfPlayEvent.createMany({
         data: events.map((event) => {
           const track = event.itemType === "MUSIC" ? tracksById.get(event.trackId) : null;
-          const intent = event.itemType === "PROMO" ? intentsByScheduleItemId.get(event.scheduleItemId) : null;
+          const intent = event.itemType !== "MUSIC" ? intentsByScheduleItemId.get(event.scheduleItemId) : null;
           return {
             clientEventId: event.eventId,
             organisationId: player.organisationId,
@@ -116,9 +121,10 @@ export async function POST(request) {
             itemType: event.itemType,
             trackId: track?.id || null,
             campaignId: intent?.campaignId || null,
+            schoolBroadcastSlotId: intent?.schoolBroadcastSlotId || null,
             promoVersionId: intent?.promoVersionId || null,
             playoutIntentId: intent?.id || null,
-            mediaAssetId: track?.mediaAssetId || intent.mediaAssetId,
+            mediaAssetId: track?.mediaAssetId || intent?.mediaAssetId,
             manifestVersion: event.manifestVersion,
             eventType: event.eventType,
             occurredAt: new Date(event.occurredAt),
@@ -127,8 +133,8 @@ export async function POST(request) {
             playerName: player.name,
             locationName: player.zone.location.name,
             zoneName: player.zone.name,
-            trackTitle: track?.title || intent.promoVersion.promoAsset.name,
-            trackArtist: track?.artist || "Promotion"
+            trackTitle: track?.title || intent?.schoolBroadcastSlot?.announcement?.title || intent?.promoVersion.promoAsset.name,
+            trackArtist: track?.artist || (event.itemType === "SCHOOL_ANNOUNCEMENT" ? "School announcement" : "Promotion")
           };
         }),
         skipDuplicates: true
