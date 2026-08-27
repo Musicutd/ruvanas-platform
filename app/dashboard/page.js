@@ -33,12 +33,12 @@ export default async function DashboardPage() {
     <main style={styles.page}>
       <header style={styles.header}>
         <a href="/" style={styles.brand}>RUVANAS</a>
-
-        <form action="/api/auth/logout" method="post">
-          <button style={styles.logoutButton} type="submit">
-            Sign out
-          </button>
-        </form>
+        <div style={styles.headerActions}>
+          <a href="/dashboard/reports" style={styles.reportLink}>Campaign reports</a>
+          <form action="/api/auth/logout" method="post">
+            <button style={styles.logoutButton} type="submit">Sign out</button>
+          </form>
+        </div>
       </header>
 
       <section style={styles.content}>
@@ -146,6 +146,19 @@ const styles = {
     fontWeight: 800,
     letterSpacing: 2,
     textDecoration: "none"
+  },
+  headerActions: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10
+  },
+  reportLink: {
+    border: "1px solid #f4b942",
+    borderRadius: 8,
+    color: "#f4b942",
+    padding: "9px 14px",
+    textDecoration: "none",
+    fontWeight: 800
   },
   logoutButton: {
     border: "1px solid #485a76",
