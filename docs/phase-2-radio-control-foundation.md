@@ -24,5 +24,5 @@ Music modes do not yet decide what plays. The next milestone adds versioned sche
 - Every creation is written to the audit log in the same database transaction.
 - A mode may contain at most 200 distinct tracks.
 - Weights are whole numbers from 1 to 1000.
-- Commercial catalogue uploading and subscriber access remain disabled until licensing and rights decisions are confirmed.
+- Catalogue upload is available only to `SUPER_ADMIN` through the controlled, rights-declared workflow documented in `docs/super-admin-catalogue-upload.md`. Subscriber playback still requires an explicitly ready track, Music Mode assignment, and published schedule.
 

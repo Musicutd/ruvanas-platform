@@ -170,6 +170,16 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   });
   assert.equal(unauthenticatedMusicSchedule.status, 401);
 
+  const unauthenticatedCatalogueUpload = await fetch(
+    `${baseUrl}/api/admin/catalogue/upload`,
+    {
+      method: "POST",
+      headers: { origin: baseUrl },
+      body: new FormData()
+    }
+  );
+  assert.equal(unauthenticatedCatalogueUpload.status, 401);
+
   const station = await api("/api/stations", {
     method: "POST",
     cookie: cookieA,
@@ -253,12 +263,55 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   });
   assert.equal(ownerMusicScheduleAttempt.status, 403);
 
+  const ownerCatalogueUploadAttempt = await fetch(
+    `${baseUrl}/api/admin/catalogue/upload`,
+    {
+      method: "POST",
+      headers: { origin: baseUrl, cookie: cookieA },
+      body: new FormData()
+    }
+  );
+  assert.equal(ownerCatalogueUploadAttempt.status, 403);
+
   const db = new PrismaClient();
   try {
     await db.user.update({
       where: { id: accountABody.user.id },
       data: { role: "SUPER_ADMIN" }
     });
+
+    const invalidCatalogueUploadForm = new FormData();
+    invalidCatalogueUploadForm.set("title", "Invalid catalogue file");
+    invalidCatalogueUploadForm.set("artist", "Ruvanas Test Artist");
+    invalidCatalogueUploadForm.set("rightsHolder", "Ruvanas Test Rights");
+    invalidCatalogueUploadForm.set("rightsReference", "TEST-LICENCE");
+    invalidCatalogueUploadForm.set("permittedTerritories", "Worldwide");
+    invalidCatalogueUploadForm.set("rightsConfirmed", "true");
+    invalidCatalogueUploadForm.set(
+      "file",
+      new Blob(["not audio content"], { type: "audio/mpeg" }),
+      "fake.mp3"
+    );
+    const invalidCatalogueUpload = await fetch(
+      `${baseUrl}/api/admin/catalogue/upload`,
+      {
+        method: "POST",
+        headers: { origin: baseUrl, cookie: cookieA },
+        body: invalidCatalogueUploadForm
+      }
+    );
+    assert.equal(invalidCatalogueUpload.status, 400);
+
+    const catalogueRegistrationWithoutRights = await api("/api/admin/tracks", {
+      method: "POST",
+      cookie: cookieA,
+      body: {
+        mediaAssetId: "not-a-catalogue-asset",
+        title: "Missing rights declaration",
+        artist: "Ruvanas Test Artist"
+      }
+    });
+    assert.equal(catalogueRegistrationWithoutRights.status, 400);
 
     const musicMode = await api("/api/admin/music-modes", {
       method: "POST",
