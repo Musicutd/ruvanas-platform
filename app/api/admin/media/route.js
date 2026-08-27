@@ -4,6 +4,41 @@ import { getCurrentUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
+function serializeVersion(version) {
+  return {
+    id: version.id,
+    version: version.version,
+    status: version.status,
+    qcStatus: version.qcStatus,
+    sourceType: version.sourceType,
+    sourceReference: version.sourceReference,
+    languageCode: version.languageCode,
+    checksumSha256: version.checksumSha256,
+    loudnessLufs: version.loudnessLufs?.toString() || null,
+    durationSeconds:
+      version.durationSeconds ?? version.mediaAsset.durationSeconds,
+    qcNotes: version.qcNotes,
+    submittedAt: version.submittedAt?.toISOString() || null,
+    reviewedAt: version.reviewedAt?.toISOString() || null,
+    createdAt: version.createdAt.toISOString(),
+    mediaAsset: {
+      id: version.mediaAsset.id,
+      originalName: version.mediaAsset.originalName,
+      mimeType: version.mediaAsset.mimeType,
+      sizeBytes: version.mediaAsset.sizeBytes.toString(),
+      status: version.mediaAsset.status,
+      previewUrl: `/api/media/${version.mediaAsset.id}/stream`
+    },
+    processingJobs: version.processingJobs.map((job) => ({
+      id: job.id,
+      jobType: job.jobType,
+      status: job.status,
+      attempts: job.attempts,
+      errorMessage: job.errorMessage
+    }))
+  };
+}
+
 export async function GET() {
   try {
     const user = await getCurrentUser();
@@ -15,78 +50,56 @@ export async function GET() {
       );
     }
 
-    let where;
+    let organisationIds = null;
 
-    if (user.role === "SUPER_ADMIN") {
-      where = {
-        libraryType: "ORGANISATION_PROMO",
-        status: {
-          notIn: ["ARCHIVED", "DELETED"]
-        }
-      };
-    } else {
+    if (user.role !== "SUPER_ADMIN") {
       const memberships = await prisma.organisationMember.findMany({
-        where: {
-          userId: user.id
-        },
-        select: {
-          organisationId: true
-        }
+        where: { userId: user.id },
+        select: { organisationId: true }
       });
 
-      const organisationIds = memberships.map(
-        (membership) => membership.organisationId
-      );
-
-      where = {
-        organisationId: {
-          in: organisationIds
-        },
-        libraryType: "ORGANISATION_PROMO",
-        status: {
-          notIn: ["ARCHIVED", "DELETED"]
-        }
-      };
+      organisationIds = memberships.map((membership) => membership.organisationId);
     }
 
-    const assets = await prisma.mediaAsset.findMany({
-      where,
+    const assets = await prisma.promoAsset.findMany({
+      where: {
+        status: { not: "ARCHIVED" },
+        ...(organisationIds
+          ? { organisationId: { in: organisationIds } }
+          : {})
+      },
       include: {
-        organisation: {
-          select: {
-            id: true,
-            name: true
+        organisation: { select: { id: true, name: true } },
+        versions: {
+          orderBy: { version: "desc" },
+          include: {
+            mediaAsset: true,
+            processingJobs: { orderBy: { jobType: "asc" } }
           }
         }
       },
-      orderBy: {
-        createdAt: "desc"
-      }
+      orderBy: [{ updatedAt: "desc" }, { name: "asc" }]
     });
 
     return NextResponse.json({
       assets: assets.map((asset) => ({
         id: asset.id,
         name: asset.name,
-        originalName: asset.originalName,
         mediaType: asset.mediaType,
+        languageCode: asset.languageCode,
         status: asset.status,
-        sizeBytes: asset.sizeBytes.toString(),
-        durationSeconds: asset.durationSeconds,
+        currentApprovedVersionId: asset.currentApprovedVersionId,
         createdAt: asset.createdAt.toISOString(),
-        organisation: asset.organisation
-          ? {
-              id: asset.organisation.id,
-              name: asset.organisation.name
-            }
-          : null
+        updatedAt: asset.updatedAt.toISOString(),
+        organisation: asset.organisation,
+        versions: asset.versions.map(serializeVersion)
       }))
     });
   } catch (error) {
     console.error("Unable to load promotional audio:", error);
 
     return NextResponse.json(
-      { error: "Unable to load promotional audio." },
+      { error: "Unable to load the promotional library." },
       { status: 500 }
     );
   }

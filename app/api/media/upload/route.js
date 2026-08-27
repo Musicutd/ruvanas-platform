@@ -12,6 +12,11 @@ import {
 } from "@/lib/access-control";
 import { accessDenied } from "@/lib/api-response";
 import { validateAudioUpload } from "@/lib/audio-validation.mjs";
+import {
+  buildPromoProcessingJobs,
+  nextPromoVersionNumber,
+  normalizePromoLanguageCode
+} from "@/lib/promo-versioning.mjs";
 import { securityLog } from "@/lib/security-log";
 
 export const dynamic = "force-dynamic";
@@ -28,6 +33,7 @@ const promoMediaTypes = [
 
 const uploadSchema = z.object({
   organisationId: z.string().cuid(),
+  promoAssetId: z.string().min(1).max(100).nullable(),
   name: z.string().trim().min(1).max(200),
   mediaType: z.enum([
     "COMMERCIAL",
@@ -35,7 +41,8 @@ const uploadSchema = z.object({
     "ANNOUNCEMENT",
     "VOICEOVER"
   ]),
-  durationSeconds: z.number().int().positive().nullable()
+  durationSeconds: z.number().int().positive().nullable(),
+  languageCode: z.string().trim().max(35)
 });
 
 export async function POST(request) {
@@ -54,6 +61,8 @@ export async function POST(request) {
     const organisationId = String(formData.get("organisationId") || "");
     const name = String(formData.get("name") || "");
     const mediaType = String(formData.get("mediaType") || "");
+    const promoAssetId = String(formData.get("promoAssetId") || "").trim() || null;
+    const languageCodeValue = String(formData.get("languageCode") || "und");
     const durationSecondsValue = String(
       formData.get("durationSeconds") || ""
     ).trim();
@@ -94,9 +103,11 @@ export async function POST(request) {
 
     const parsed = uploadSchema.safeParse({
       organisationId,
+      promoAssetId,
       name,
       mediaType,
-      durationSeconds
+      durationSeconds,
+      languageCode: languageCodeValue
     });
 
     if (!parsed.success) {
@@ -116,6 +127,22 @@ export async function POST(request) {
             "Organisation uploads are limited to commercials, jingles, announcements, and voiceovers."
         },
         { status: 403 }
+      );
+    }
+
+    let languageCode;
+
+    try {
+      languageCode = normalizePromoLanguageCode(parsed.data.languageCode);
+    } catch (languageError) {
+      return NextResponse.json(
+        {
+          error:
+            languageError instanceof Error
+              ? languageError.message
+              : "Enter a valid promotional audio language."
+        },
+        { status: 400 }
       );
     }
 
@@ -204,6 +231,45 @@ export async function POST(request) {
       );
     }
 
+    const requestedPromoAsset = parsed.data.promoAssetId
+      ? await prisma.promoAsset.findUnique({
+          where: { id: parsed.data.promoAssetId },
+          include: {
+            versions: {
+              select: { version: true }
+            }
+          }
+        })
+      : null;
+
+    if (parsed.data.promoAssetId && !requestedPromoAsset) {
+      return NextResponse.json(
+        { error: "The promotional asset was not found." },
+        { status: 404 }
+      );
+    }
+
+    if (
+      requestedPromoAsset &&
+      (requestedPromoAsset.organisationId !== organisation.id ||
+        requestedPromoAsset.status !== "ACTIVE")
+    ) {
+      return NextResponse.json(
+        { error: "This promotional asset is not available to this organisation." },
+        { status: 403 }
+      );
+    }
+
+    if (
+      requestedPromoAsset &&
+      requestedPromoAsset.mediaType !== parsed.data.mediaType
+    ) {
+      return NextResponse.json(
+        { error: "A new version must keep the promotional asset's audio type." },
+        { status: 400 }
+      );
+    }
+
     const additionalBytes = existingAsset ? 0n : requestedBytes;
 
     if (usedBytes + additionalBytes > storageLimitBytes) {
@@ -218,8 +284,10 @@ export async function POST(request) {
       );
     }
 
-    const mediaAsset = existingAsset
-      ? await prisma.mediaAsset.update({
+    const mediaAsset = existingAsset?.status === "READY"
+      ? existingAsset
+      : existingAsset
+        ? await prisma.mediaAsset.update({
           where: {
             id: existingAsset.id
           },
@@ -233,8 +301,8 @@ export async function POST(request) {
             mediaType: parsed.data.mediaType,
             status: "PROCESSING"
           }
-        })
-      : await prisma.mediaAsset.create({
+          })
+        : await prisma.mediaAsset.create({
           data: {
             organisationId: organisation.id,
             libraryType: "ORGANISATION_PROMO",
@@ -247,46 +315,82 @@ export async function POST(request) {
             mediaType: parsed.data.mediaType,
             status: "PROCESSING"
           }
-        });
+          });
+
+    const needsStorageWrite = !existingAsset || existingAsset.status !== "READY";
 
     try {
-      const r2 = getR2Storage();
+      if (needsStorageWrite) {
+        const r2 = getR2Storage();
 
-      await r2.client.send(
-        new PutObjectCommand({
-          Bucket: r2.bucketName,
-          Key: quarantineKey,
-          Body: buffer,
-          ContentType: contentType,
-          Metadata: {
-            checksum,
-            quarantine: "true"
-          }
-        })
-      );
+        await r2.client.send(
+          new PutObjectCommand({
+            Bucket: r2.bucketName,
+            Key: quarantineKey,
+            Body: buffer,
+            ContentType: contentType,
+            Metadata: {
+              checksum,
+              quarantine: "true"
+            }
+          })
+        );
 
-      await r2.client.send(
-        new CopyObjectCommand({
-          Bucket: r2.bucketName,
-          CopySource: `${r2.bucketName}/${quarantineKey}`,
-          Key: storageKey,
-          ContentType: contentType,
-          MetadataDirective: "REPLACE",
-          Metadata: { checksum, quarantine: "false" }
-        })
-      );
+        await r2.client.send(
+          new CopyObjectCommand({
+            Bucket: r2.bucketName,
+            CopySource: `${r2.bucketName}/${quarantineKey}`,
+            Key: storageKey,
+            ContentType: contentType,
+            MetadataDirective: "REPLACE",
+            Metadata: { checksum, quarantine: "false" }
+          })
+        );
 
-      await r2.client.send(
-        new DeleteObjectCommand({ Bucket: r2.bucketName, Key: quarantineKey })
-      );
+        await r2.client.send(
+          new DeleteObjectCommand({ Bucket: r2.bucketName, Key: quarantineKey })
+        );
+      }
 
-      const readyAsset = await prisma.$transaction(async (tx) => {
-        const storedAsset = await tx.mediaAsset.update({
-          where: {
-            id: mediaAsset.id
-          },
+      const result = await prisma.$transaction(async (tx) => {
+        const storedAsset = needsStorageWrite
+          ? await tx.mediaAsset.update({
+              where: { id: mediaAsset.id },
+              data: { status: "READY" }
+            })
+          : mediaAsset;
+
+        const promoAsset = requestedPromoAsset
+          ? requestedPromoAsset
+          : await tx.promoAsset.create({
+              data: {
+                organisationId: organisation.id,
+                name: parsed.data.name,
+                mediaType: parsed.data.mediaType,
+                languageCode
+              }
+            });
+
+        const versionNumber = requestedPromoAsset
+          ? nextPromoVersionNumber(requestedPromoAsset.versions)
+          : 1;
+
+        const promoVersion = await tx.promoVersion.create({
           data: {
-            status: "READY"
+            promoAssetId: promoAsset.id,
+            mediaAssetId: storedAsset.id,
+            version: versionNumber,
+            status: "IN_REVIEW",
+            qcStatus: "PENDING",
+            sourceType: "UPLOAD",
+            languageCode,
+            checksumSha256: checksum,
+            durationSeconds: parsed.data.durationSeconds,
+            submittedById: user.id,
+            submittedAt: new Date(),
+            processingJobs: {
+              create: buildPromoProcessingJobs()
+            }
           }
         });
 
@@ -294,49 +398,56 @@ export async function POST(request) {
           data: {
             organisationId: organisation.id,
             actorUserId: user.id,
-            action: existingAsset
-              ? "MEDIA_ASSET_REPLACED"
-              : "MEDIA_ASSET_UPLOADED",
-            entityType: "MediaAsset",
-            entityId: storedAsset.id,
+            action: "PROMO_VERSION_UPLOADED",
+            entityType: "PromoVersion",
+            entityId: promoVersion.id,
             details: {
-              name: storedAsset.name,
-              mediaType: storedAsset.mediaType,
+              promoAssetId: promoAsset.id,
+              name: promoAsset.name,
+              version: promoVersion.version,
+              mediaType: promoAsset.mediaType,
+              languageCode,
               sizeBytes: storedAsset.sizeBytes.toString(),
               checksum
             }
           }
         });
 
-        return storedAsset;
+        return { storedAsset, promoAsset, promoVersion };
       });
 
       return NextResponse.json({
-        id: readyAsset.id,
-        name: readyAsset.name,
-        mediaType: readyAsset.mediaType,
-        libraryType: readyAsset.libraryType,
-        status: readyAsset.status,
-        sizeBytes: readyAsset.sizeBytes.toString()
+        id: result.storedAsset.id,
+        promoAssetId: result.promoAsset.id,
+        promoVersionId: result.promoVersion.id,
+        version: result.promoVersion.version,
+        name: result.promoAsset.name,
+        mediaType: result.promoAsset.mediaType,
+        languageCode: result.promoVersion.languageCode,
+        libraryType: result.storedAsset.libraryType,
+        status: result.promoVersion.status,
+        sizeBytes: result.storedAsset.sizeBytes.toString(),
+        durationSeconds: result.promoVersion.durationSeconds,
+        url: `/api/media/${result.storedAsset.id}/stream`
       });
     } catch (storageError) {
-      try {
-        const r2 = getR2Storage();
-        await r2.client.send(
-          new DeleteObjectCommand({ Bucket: r2.bucketName, Key: quarantineKey })
-        );
-      } catch {
-        // The quarantine lifecycle policy is the final cleanup fallback.
+      if (needsStorageWrite) {
+        try {
+          const r2 = getR2Storage();
+          await r2.client.send(
+            new DeleteObjectCommand({ Bucket: r2.bucketName, Key: quarantineKey })
+          );
+        } catch {
+          // The quarantine lifecycle policy is the final cleanup fallback.
+        }
       }
 
-      await prisma.mediaAsset.update({
-        where: {
-          id: mediaAsset.id
-        },
-        data: {
-          status: "REJECTED"
-        }
-      });
+      if (needsStorageWrite) {
+        await prisma.mediaAsset.update({
+          where: { id: mediaAsset.id },
+          data: { status: "REJECTED" }
+        });
+      }
 
       securityLog("error", "MEDIA_STORAGE_ERROR", request, {
         mediaAssetId: mediaAsset.id,
