@@ -140,6 +140,12 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   );
   assert.equal(unauthenticatedSchoolEntitlement.status, 401);
 
+  const unauthenticatedOrganisationCreate = await api("/api/admin/organisations", {
+    method: "POST",
+    body: { name: "Unauthenticated organisation", planId: "not-a-plan" }
+  });
+  assert.equal(unauthenticatedOrganisationCreate.status, 401);
+
   const unauthenticatedCampaignExport = await api("/api/reports/campaign-proof/exports", {
     method: "POST",
     body: { from: dateOffset(-1), to: dateOffset(1) }
@@ -294,12 +300,58 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   );
   assert.equal(ownerSchoolEntitlementAttempt.status, 403);
 
+  const ownerOrganisationCreateAttempt = await api("/api/admin/organisations", {
+    method: "POST",
+    cookie: cookieA,
+    body: { name: "Forbidden organisation", planId: "not-a-plan" }
+  });
+  assert.equal(ownerOrganisationCreateAttempt.status, 403);
+
   const db = new PrismaClient();
   try {
     await db.user.update({
       where: { id: accountABody.user.id },
       data: { role: "SUPER_ADMIN" }
     });
+
+    const starterPlan = await db.plan.findUnique({ where: { code: "STARTER" } });
+    assert.ok(starterPlan);
+    const createdOrganisationResponse = await api("/api/admin/organisations", {
+      method: "POST",
+      cookie: cookieA,
+      body: {
+        name: `School Radio QA ${suffix}`,
+        planId: starterPlan.id,
+        assignCurrentUser: true
+      }
+    });
+    assert.equal(
+      createdOrganisationResponse.status,
+      201,
+      await createdOrganisationResponse.clone().text()
+    );
+    const createdOrganisation = (await createdOrganisationResponse.json()).organisation;
+    assert.equal(createdOrganisation.subscription.planId, starterPlan.id);
+    assert.ok(
+      await db.organisationMember.findUnique({
+        where: {
+          userId_organisationId: {
+            userId: accountABody.user.id,
+            organisationId: createdOrganisation.id
+          }
+        }
+      })
+    );
+    assert.equal(
+      await db.auditLog.count({
+        where: {
+          organisationId: createdOrganisation.id,
+          action: "ORGANISATION_CREATED",
+          entityId: createdOrganisation.id
+        }
+      }),
+      1
+    );
 
     const enableSchoolRadio = await api(
       `/api/admin/organisations/${accountABody.organisation.id}/school-radio`,

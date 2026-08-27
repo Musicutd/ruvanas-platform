@@ -1,7 +1,18 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { prisma } from "@/lib/prisma";
+import { getAdminUser } from "@/lib/requireAdmin";
 import CreateOrganisationForm from "./CreateOrganisationForm";
 
-export default function NewOrganisationPage() {
+export default async function NewOrganisationPage() {
+  const adminUser = await getAdminUser();
+  if (adminUser?.role !== "SUPER_ADMIN") redirect("/admin/organisations");
+  const plans = await prisma.plan.findMany({
+    where: { active: true },
+    orderBy: [{ monthlyPriceCents: "asc" }, { name: "asc" }],
+    select: { id: true, name: true, code: true, monthlyPriceCents: true }
+  });
+
   return (
     <main style={styles.page}>
       <Link href="/admin/organisations" style={styles.backLink}>
@@ -19,7 +30,7 @@ export default function NewOrganisationPage() {
       </div>
 
       <section style={styles.section}>
-        <CreateOrganisationForm />
+        <CreateOrganisationForm plans={plans} currentUserEmail={adminUser.email} />
       </section>
     </main>
   );
@@ -72,3 +83,4 @@ const styles = {
     boxShadow: "0 2px 6px rgba(15, 23, 42, 0.08)"
   }
 };
+

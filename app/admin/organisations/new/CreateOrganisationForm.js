@@ -11,9 +11,11 @@ function makeSlug(value) {
     .replace(/(^-|-$)/g, "");
 }
 
-export default function CreateOrganisationForm() {
+export default function CreateOrganisationForm({ plans, currentUserEmail }) {
   const router = useRouter();
   const [name, setName] = useState("");
+  const [planId, setPlanId] = useState(plans[0]?.id || "");
+  const [assignCurrentUser, setAssignCurrentUser] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState({
     type: "",
@@ -25,10 +27,10 @@ export default function CreateOrganisationForm() {
 
     const trimmedName = name.trim();
 
-    if (!trimmedName) {
+    if (!trimmedName || !planId) {
       setMessage({
         type: "error",
-        text: "Please enter an organisation name."
+        text: "Please enter an organisation name and choose a plan."
       });
       return;
     }
@@ -47,7 +49,9 @@ export default function CreateOrganisationForm() {
         },
         body: JSON.stringify({
           name: trimmedName,
-          slug: makeSlug(trimmedName)
+          slug: makeSlug(trimmedName),
+          planId,
+          assignCurrentUser
         })
       });
 
@@ -93,6 +97,33 @@ export default function CreateOrganisationForm() {
         A unique URL-safe slug will be created automatically from the
         organisation name.
       </p>
+
+      <label style={styles.label}>
+        Initial subscription plan
+        <select
+          value={planId}
+          onChange={(event) => setPlanId(event.target.value)}
+          style={styles.input}
+          disabled={saving}
+          required
+        >
+          {plans.map((plan) => (
+            <option key={plan.id} value={plan.id}>
+              {plan.name} ({plan.code})
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label style={styles.checkboxLabel}>
+        <input
+          type="checkbox"
+          checked={assignCurrentUser}
+          onChange={(event) => setAssignCurrentUser(event.target.checked)}
+          disabled={saving}
+        />
+        Assign {currentUserEmail} as the initial organisation owner
+      </label>
 
       {message.text ? (
         <p
@@ -144,6 +175,15 @@ const styles = {
     fontSize: 13,
     lineHeight: 1.45
   },
+  checkboxLabel: {
+    display: "flex",
+    alignItems: "flex-start",
+    gap: 9,
+    color: "#334155",
+    fontSize: 13,
+    fontWeight: 700,
+    lineHeight: 1.45
+  },
   submitButton: {
     justifySelf: "start",
     border: "none",
@@ -173,3 +213,4 @@ const styles = {
     color: "#166534"
   }
 };
+
