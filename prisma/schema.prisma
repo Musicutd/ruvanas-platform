@@ -112,6 +112,18 @@ enum PlayerStatus {
   DISABLED
 }
 
+enum TrackStatus {
+  DRAFT
+  READY
+  ARCHIVED
+}
+
+enum MusicModeStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
 model User {
   id           String   @id @default(cuid())
   name         String?
@@ -143,6 +155,7 @@ model Organisation {
   mediaAssets    MediaAsset[]         @relation("OrganisationMediaAssets")
   auditLogs      AuditLog[]
   players        Player[]
+  musicModes     MusicMode[]
   activeSessions Session[]
 }
 
@@ -444,6 +457,7 @@ model MediaAsset {
 
   organisation Organisation?     @relation("OrganisationMediaAssets", fields: [organisationId], references: [id], onDelete: Cascade)
   genres       MediaAssetGenre[]
+  track        Track?
 
   @@index([organisationId])
   @@index([libraryType])
@@ -451,6 +465,55 @@ model MediaAsset {
   @@index([organisationId, mediaType])
   @@index([organisationId, status])
   @@index([libraryType, status])
+}
+
+model Track {
+  id           String      @id @default(cuid())
+  mediaAssetId String      @unique
+  title        String
+  artist       String
+  album        String?
+  releaseYear  Int?
+  isExplicit   Boolean     @default(false)
+  status       TrackStatus @default(DRAFT)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  mediaAsset MediaAsset       @relation(fields: [mediaAssetId], references: [id], onDelete: Cascade)
+  musicModes MusicModeTrack[]
+
+  @@index([status])
+  @@index([artist, title])
+}
+
+model MusicMode {
+  id             String          @id @default(cuid())
+  organisationId String
+  name           String
+  slug           String
+  description    String?
+  status         MusicModeStatus @default(DRAFT)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  organisation Organisation     @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  tracks       MusicModeTrack[]
+
+  @@unique([organisationId, slug])
+  @@index([organisationId, status])
+}
+
+model MusicModeTrack {
+  musicModeId String
+  trackId     String
+  weight      Int      @default(100)
+  createdAt   DateTime @default(now())
+
+  musicMode MusicMode @relation(fields: [musicModeId], references: [id], onDelete: Cascade)
+  track     Track     @relation(fields: [trackId], references: [id], onDelete: Cascade)
+
+  @@id([musicModeId, trackId])
+  @@index([trackId])
 }
 
 model MediaGenre {
@@ -545,3 +608,4 @@ model Player {
   @@index([organisationId, status])
   @@index([lastHeartbeatAt])
 }
+
