@@ -16,6 +16,11 @@ const navItems = [
     label: "Ruvanas Channels"
   },
   {
+    href: "/admin/music-modes",
+    label: "Music modes",
+    superAdminOnly: true
+  },
+  {
     href: "/admin/players",
     label: "Players & health"
   },
