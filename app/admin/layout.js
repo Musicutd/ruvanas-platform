@@ -21,6 +21,11 @@ const navItems = [
     superAdminOnly: true
   },
   {
+    href: "/admin/music-schedules",
+    label: "Music schedules",
+    superAdminOnly: true
+  },
+  {
     href: "/admin/players",
     label: "Players & health"
   },
@@ -141,4 +146,3 @@ export default async function AdminLayout({ children }) {
     </div>
   );
 }
-

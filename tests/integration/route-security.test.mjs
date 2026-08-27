@@ -112,6 +112,12 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   });
   assert.equal(unauthenticatedMusicMode.status, 401);
 
+  const unauthenticatedMusicSchedule = await api("/api/admin/music-schedules", {
+    method: "POST",
+    body: { organisationId: "not-an-organisation", targetType: "LOCATION", targetId: "not-a-location", name: "No session", slots: [] }
+  });
+  assert.equal(unauthenticatedMusicSchedule.status, 401);
+
   const station = await api("/api/stations", {
     method: "POST",
     cookie: cookieA,
@@ -188,6 +194,13 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   });
   assert.equal(ownerMusicModeAttempt.status, 403);
 
+  const ownerMusicScheduleAttempt = await api("/api/admin/music-schedules", {
+    method: "POST",
+    cookie: cookieA,
+    body: { organisationId: accountABody.organisation.id, targetType: "LOCATION", targetId: "not-a-location", name: "Forbidden schedule", slots: [] }
+  });
+  assert.equal(ownerMusicScheduleAttempt.status, 403);
+
   const db = new PrismaClient();
   try {
     await db.user.update({
@@ -249,6 +262,11 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
         }
       })
     );
+    await db.musicModeTrack.create({ data: { musicModeId: musicModeBody.mode.id, trackId: track.id, weight: 100 } });
+    const activateMode = await api(`/api/admin/music-modes/${musicModeBody.mode.id}/status`, {
+      method: "PATCH", cookie: cookieA, body: { status: "ACTIVE" }
+    });
+    assert.equal(activateMode.status, 200, await activateMode.clone().text());
 
     const location = await db.location.create({
       data: {
@@ -288,6 +306,29 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     assert.equal(await db.locationOpeningHour.count({ where: { locationId: location.id } }), 7);
     assert.equal(await db.locationOpeningException.count({ where: { locationId: location.id } }), 2);
     assert.equal(await db.auditLog.count({ where: { action: "LOCATION_OPENING_HOURS_UPDATED", entityId: location.id } }), 1);
+    const publishedSchedule = await api("/api/admin/music-schedules", {
+      method: "POST",
+      cookie: cookieA,
+      body: {
+        organisationId: accountABody.organisation.id,
+        targetType: "LOCATION",
+        targetId: location.id,
+        name: `Retail week ${suffix}`,
+        publish: true,
+        slots: [{ weekday: 1, startsAt: "09:00", endsAt: "17:00", musicModeId: musicModeBody.mode.id, priority: 10 }]
+      }
+    });
+    assert.equal(publishedSchedule.status, 201, await publishedSchedule.clone().text());
+    const publishedScheduleBody = await publishedSchedule.json();
+    assert.equal(publishedScheduleBody.schedule.status, "PUBLISHED");
+    assert.equal(publishedScheduleBody.schedule.version, 1);
+    assert.equal(await db.auditLog.count({ where: { action: "MUSIC_SCHEDULE_PUBLISHED", entityId: publishedScheduleBody.schedule.id } }), 1);
+
+    const resolvedSchedule = await api(`/api/admin/music-schedules/resolve?zoneId=${zones[0].id}&at=2026-08-31T10%3A00%3A00.000Z`, { cookie: cookieA });
+    assert.equal(resolvedSchedule.status, 200, await resolvedSchedule.clone().text());
+    const resolvedScheduleBody = await resolvedSchedule.json();
+    assert.equal(resolvedScheduleBody.resolution.musicMode.id, musicModeBody.mode.id);
+    assert.equal(resolvedScheduleBody.resolution.reason, "LOCATION_SLOT");
     const channels = await Promise.all([
       db.channel.create({
         data: {
@@ -414,4 +455,3 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   assert.equal(lastResponse.status, 429);
   assert.ok(Number(lastResponse.headers.get("retry-after")) > 0);
 });
-

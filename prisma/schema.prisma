@@ -124,6 +124,12 @@ enum MusicModeStatus {
   ARCHIVED
 }
 
+enum MusicScheduleStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
 model User {
   id           String   @id @default(cuid())
   name         String?
@@ -156,6 +162,7 @@ model Organisation {
   auditLogs      AuditLog[]
   players        Player[]
   musicModes     MusicMode[]
+  musicSchedules MusicSchedule[]
   activeSessions Session[]
 }
 
@@ -243,6 +250,7 @@ model Location {
   groupMemberships  LocationGroupMember[]
   openingHours      LocationOpeningHour[]
   openingExceptions LocationOpeningException[]
+  musicSchedules    MusicSchedule[]
 
   @@unique([organisationId, slug])
   @@index([organisationId])
@@ -322,6 +330,7 @@ model Zone {
   location           Location            @relation(fields: [locationId], references: [id], onDelete: Cascade)
   channelAssignments ChannelAssignment[]
   players            Player[]
+  musicSchedules     MusicSchedule[]
 
   @@unique([locationId, slug])
   @@index([locationId])
@@ -496,8 +505,9 @@ model MusicMode {
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
 
-  organisation Organisation     @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  tracks       MusicModeTrack[]
+  organisation  Organisation     @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  tracks        MusicModeTrack[]
+  scheduleSlots ScheduleSlot[]
 
   @@unique([organisationId, slug])
   @@index([organisationId, status])
@@ -514,6 +524,48 @@ model MusicModeTrack {
 
   @@id([musicModeId, trackId])
   @@index([trackId])
+}
+
+model MusicSchedule {
+  id             String              @id @default(cuid())
+  organisationId String
+  locationId     String?
+  zoneId         String?
+  name           String
+  version        Int                 @default(1)
+  status         MusicScheduleStatus @default(DRAFT)
+  timezone       String
+  effectiveFrom  DateTime?           @db.Date
+  effectiveTo    DateTime?           @db.Date
+  publishedAt    DateTime?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  organisation Organisation   @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  location     Location?      @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  zone         Zone?          @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  slots        ScheduleSlot[]
+
+  @@index([organisationId, status])
+  @@index([locationId, status, version])
+  @@index([zoneId, status, version])
+}
+
+model ScheduleSlot {
+  id          String   @id @default(cuid())
+  scheduleId  String
+  musicModeId String
+  weekday     Int
+  startMinute Int
+  endMinute   Int
+  priority    Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  schedule  MusicSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  musicMode MusicMode     @relation(fields: [musicModeId], references: [id], onDelete: Restrict)
+
+  @@index([scheduleId, weekday, startMinute])
+  @@index([musicModeId])
 }
 
 model MediaGenre {
@@ -608,4 +660,3 @@ model Player {
   @@index([organisationId, status])
   @@index([lastHeartbeatAt])
 }
-
