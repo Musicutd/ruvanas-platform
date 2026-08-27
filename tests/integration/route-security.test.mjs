@@ -104,6 +104,18 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   );
   assert.equal(unauthenticatedPromoReview.status, 401);
 
+  const unauthenticatedCampaignPreview = await api(
+    "/api/admin/campaigns/preview",
+    { method: "POST", body: {} }
+  );
+  assert.equal(unauthenticatedCampaignPreview.status, 401);
+
+  const unauthenticatedCampaignPublish = await api(
+    "/api/admin/campaigns/not-a-campaign/publish",
+    { method: "PATCH" }
+  );
+  assert.equal(unauthenticatedCampaignPublish.status, 401);
+
   const invalidPlayerEnrolment = await api("/api/player/enrol", {
     method: "POST",
     body: { code: "invalid-enrolment-code" }
@@ -331,6 +343,93 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     assert.equal(await db.locationOpeningHour.count({ where: { locationId: location.id } }), 7);
     assert.equal(await db.locationOpeningException.count({ where: { locationId: location.id } }), 2);
     assert.equal(await db.auditLog.count({ where: { action: "LOCATION_OPENING_HOURS_UPDATED", entityId: location.id } }), 1);
+
+    const promoMedia = await db.mediaAsset.create({
+      data: {
+        organisationId: accountABody.organisation.id,
+        name: `Campaign promo ${suffix}`,
+        originalName: "campaign-promo.mp3",
+        storageKey: `integration/promos/${suffix}.mp3`,
+        mimeType: "audio/mpeg",
+        sizeBytes: 2048n,
+        durationSeconds: 20,
+        mediaType: "COMMERCIAL",
+        libraryType: "ORGANISATION_PROMO",
+        status: "READY"
+      }
+    });
+    const promoAsset = await db.promoAsset.create({
+      data: {
+        organisationId: accountABody.organisation.id,
+        name: `Campaign promo ${suffix}`,
+        mediaType: "COMMERCIAL",
+        languageCode: "en"
+      }
+    });
+    const promoVersion = await db.promoVersion.create({
+      data: {
+        promoAssetId: promoAsset.id,
+        mediaAssetId: promoMedia.id,
+        version: 1,
+        status: "APPROVED",
+        qcStatus: "PASSED",
+        languageCode: "en",
+        durationSeconds: 20,
+        reviewedAt: new Date()
+      }
+    });
+    await db.promoAsset.update({ where: { id: promoAsset.id }, data: { currentApprovedVersionId: promoVersion.id } });
+
+    const campaignPayload = {
+      organisationId: accountABody.organisation.id,
+      promoVersionId: promoVersion.id,
+      name: `Lunch offer ${suffix}`,
+      priority: "NORMAL",
+      schedulingMode: "PLAYS_PER_HOUR",
+      playsPerHour: 2,
+      effectiveFrom: "2026-09-01",
+      effectiveTo: "2026-09-07",
+      maxPromoMinutesPerHour: 12,
+      minSamePromoGapMinutes: 15,
+      minAnyPromoGapMinutes: 2,
+      respectOpeningHours: true,
+      targets: [{ targetType: "LOCATION", targetId: location.id }],
+      schedules: [{ weekday: 2, startsAt: "09:00", endsAt: "17:00" }]
+    };
+    const campaignPreview = await api("/api/admin/campaigns/preview", {
+      method: "POST",
+      cookie: cookieA,
+      body: campaignPayload
+    });
+    assert.equal(campaignPreview.status, 200, await campaignPreview.clone().text());
+    const campaignPreviewBody = await campaignPreview.json();
+    assert.equal(campaignPreviewBody.preview.canPublish, true);
+    assert.equal(campaignPreviewBody.preview.targetZoneCount, 2);
+    assert.equal(campaignPreviewBody.preview.estimatedTotalPlays, 32);
+
+    const campaignDraft = await api("/api/admin/campaigns", {
+      method: "POST",
+      cookie: cookieA,
+      body: campaignPayload
+    });
+    assert.equal(campaignDraft.status, 201, await campaignDraft.clone().text());
+    const campaignDraftBody = await campaignDraft.json();
+    assert.equal(campaignDraftBody.campaign.status, "DRAFT");
+    assert.equal(await db.campaignTarget.count({ where: { campaignId: campaignDraftBody.campaign.id } }), 1);
+    assert.equal(await db.campaignSchedule.count({ where: { campaignId: campaignDraftBody.campaign.id } }), 1);
+
+    const publishedCampaign = await api(`/api/admin/campaigns/${campaignDraftBody.campaign.id}/publish`, {
+      method: "PATCH",
+      cookie: cookieA
+    });
+    assert.equal(publishedCampaign.status, 200, await publishedCampaign.clone().text());
+    const publishedCampaignBody = await publishedCampaign.json();
+    assert.equal(publishedCampaignBody.campaign.status, "PUBLISHED");
+    assert.equal(publishedCampaignBody.campaign.publicationRevision, 1);
+    assert.match(publishedCampaignBody.campaign.publishedConfigurationHash, /^[0-9a-f]{64}$/);
+    assert.equal(await db.auditLog.count({ where: { action: "CAMPAIGN_DRAFT_CREATED", entityId: campaignDraftBody.campaign.id } }), 1);
+    assert.equal(await db.auditLog.count({ where: { action: "CAMPAIGN_PUBLISHED", entityId: campaignDraftBody.campaign.id } }), 1);
+
     const publishedSchedule = await api("/api/admin/music-schedules", {
       method: "POST",
       cookie: cookieA,
