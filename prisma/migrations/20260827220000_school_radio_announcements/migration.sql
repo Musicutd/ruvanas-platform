@@ -1,5 +1,4 @@
 -- Phase 3E: staff-managed school announcements and approved broadcast slots.
-ALTER TYPE "PlaybackItemType" ADD VALUE IF NOT EXISTS 'SCHOOL_ANNOUNCEMENT';
 
 CREATE TYPE "SchoolPublishingPolicy" AS ENUM ('PRIVATE', 'UNLISTED', 'PUBLIC');
 CREATE TYPE "SchoolAnnouncementStatus" AS ENUM ('DRAFT', 'IN_REVIEW', 'APPROVED', 'CHANGES_REQUESTED', 'REJECTED', 'ARCHIVED');
