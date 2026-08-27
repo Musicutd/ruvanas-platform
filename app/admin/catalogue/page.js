@@ -51,6 +51,7 @@ export default async function AdminCataloguePage() {
       }
     },
     include: {
+      track: true,
       genres: {
         include: {
           mediaGenre: true
@@ -153,6 +154,7 @@ export default async function AdminCataloguePage() {
               <thead>
                 <tr>
                   <th style={styles.tableHeader}>Track</th>
+                  <th style={styles.tableHeader}>Artist</th>
                   <th style={styles.tableHeader}>Genres</th>
                   <th style={styles.tableHeader}>Type</th>
                   <th style={styles.tableHeader}>Status</th>
@@ -164,10 +166,14 @@ export default async function AdminCataloguePage() {
                 {catalogueAssets.map((asset) => (
                   <tr key={asset.id} style={styles.tableRow}>
                     <td style={styles.tableCellStrong}>
-                      <div>{asset.name}</div>
+                      <div>{asset.track?.title || asset.name}</div>
                       <div style={styles.originalName}>
                         {asset.originalName}
                       </div>
+                    </td>
+
+                    <td style={styles.tableCell}>
+                      {asset.track?.artist || "Metadata pending"}
                     </td>
 
                     <td style={styles.tableCell}>
@@ -181,7 +187,7 @@ export default async function AdminCataloguePage() {
                     <td style={styles.tableCell}>{asset.mediaType}</td>
 
                     <td style={styles.tableCell}>
-                      <span style={styles.statusBadge}>{asset.status}</span>
+                      <span style={styles.statusBadge}>{asset.track?.status || asset.status}</span>
                     </td>
 
                     <td style={styles.tableCell}>
@@ -395,3 +401,4 @@ const styles = {
     fontWeight: 900
   }
 };
+
