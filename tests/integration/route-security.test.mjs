@@ -285,6 +285,16 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     assert.equal(activeAssignments.length, 2);
     assert.ok(activeAssignments.every((assignment) => assignment.channelId === channels[1].id));
 
+    await assert.rejects(
+      db.channelAssignment.create({
+        data: {
+          channelId: channels[0].id,
+          zoneId: zones[1].id
+        }
+      }),
+      (error) => error?.code === "P2002"
+    );
+
     const repeatedAssignment = await api(
       `/api/admin/location-groups/${locationGroup.id}/channel`,
       {

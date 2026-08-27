@@ -7,6 +7,10 @@ import {
   flattenGroupZones,
   planGroupAssignmentChanges
 } from "@/lib/group-channel-assignments.mjs";
+import {
+  isRetryableTransactionError,
+  runSerializableTransaction
+} from "@/lib/transaction-retry.mjs";
 
 const requestSchema = z.object({
   channelId: z.string().trim().min(1),
@@ -113,7 +117,7 @@ export async function POST(request, { params }) {
       });
     }
 
-    const result = await prisma.$transaction(async (tx) => {
+    const result = await runSerializableTransaction(prisma, async (tx) => {
       const activeAssignments = await tx.channelAssignment.findMany({
         where: {
           zoneId: { in: zoneIds },
@@ -221,7 +225,7 @@ export async function POST(request, { params }) {
         changedZoneCount: plan.changes.length,
         unchangedZoneCount: plan.unchangedZoneIds.length
       };
-    }, { isolationLevel: "Serializable" });
+    });
 
     return NextResponse.json({
       ok: true,
@@ -232,10 +236,17 @@ export async function POST(request, { params }) {
     });
   } catch (error) {
     console.error("LOCATION_GROUP_CHANNEL_ASSIGNMENT_ERROR", error);
+
+    if (isRetryableTransactionError(error)) {
+      return NextResponse.json(
+        { error: "Another channel update is in progress. Please try again." },
+        { status: 409 }
+      );
+    }
+
     return NextResponse.json(
       { error: "Unable to assign the group channel. Please try again." },
       { status: 500 }
     );
   }
 }
-

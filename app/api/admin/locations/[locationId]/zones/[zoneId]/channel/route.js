@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requirePlatformAdmin } from "@/lib/access-control";
 import { accessDenied } from "@/lib/api-response";
+import {
+  isRetryableTransactionError,
+  runSerializableTransaction
+} from "@/lib/transaction-retry.mjs";
 
 export async function POST(request, { params }) {
   try {
@@ -67,9 +71,11 @@ export async function POST(request, { params }) {
       );
     }
 
-    const channel = await prisma.channel.findUnique({
+    const channel = await prisma.channel.findFirst({
       where: {
-        id: channelId
+        id: channelId,
+        organisationId: location.organisationId,
+        status: { not: "ARCHIVED" }
       },
       select: {
         id: true,
@@ -80,29 +86,18 @@ export async function POST(request, { params }) {
     if (!channel) {
       return NextResponse.json(
         {
-          error: "Channel not found."
+          error: "The selected channel is not available to this organisation."
         },
         {
-          status: 404
-        }
-      );
-    }
-
-    if (channel.organisationId !== location.organisationId) {
-      return NextResponse.json(
-        {
-          error: "This channel does not belong to this organisation."
-        },
-        {
-          status: 403
+          status: 400
         }
       );
     }
 
     const now = new Date();
 
-    const assignment = await prisma.$transaction(async (transaction) => {
-      const previousAssignment = await transaction.channelAssignment.findFirst({
+    const assignment = await runSerializableTransaction(prisma, async (transaction) => {
+      const previousAssignments = await transaction.channelAssignment.findMany({
         where: {
           zoneId,
           activeTo: null
@@ -122,7 +117,10 @@ export async function POST(request, { params }) {
         }
       });
 
-      if (existingAssignment?.activeTo === null) {
+      if (
+        existingAssignment?.activeTo === null &&
+        previousAssignments.length === 1
+      ) {
         return transaction.channelAssignment.findUnique({
           where: { id: existingAssignment.id },
           include: {
@@ -196,7 +194,9 @@ export async function POST(request, { params }) {
           entityId: zoneId,
           details: {
             locationId,
-            previousChannelId: previousAssignment?.channelId || null,
+            previousChannelIds: previousAssignments.map(
+              (previousAssignment) => previousAssignment.channelId
+            ),
             channelId,
             assignmentId: nextAssignment.id
           }
@@ -217,6 +217,13 @@ export async function POST(request, { params }) {
   } catch (error) {
     console.error("ZONE_CHANNEL_ASSIGNMENT_ERROR", error);
 
+    if (isRetryableTransactionError(error)) {
+      return NextResponse.json(
+        { error: "Another channel update is in progress. Please try again." },
+        { status: 409 }
+      );
+    }
+
     return NextResponse.json(
       {
         error: "Unable to assign channel. Please try again."
@@ -227,4 +234,3 @@ export async function POST(request, { params }) {
     );
   }
 }
-
