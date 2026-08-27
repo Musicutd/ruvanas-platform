@@ -242,6 +242,7 @@ model User {
   reviewedPromoVersions  PromoVersion[]       @relation("PromoVersionReviewedBy")
   publishedCampaigns     Campaign[]           @relation("CampaignPublishedBy")
   reportExports          ReportExportJob[]    @relation("ReportExportRequestedBy")
+  confirmedTrackRights   Track[]              @relation("TrackRightsConfirmedBy")
 }
 
 model Organisation {
@@ -759,23 +760,32 @@ model CampaignSchedule {
 }
 
 model Track {
-  id           String      @id @default(cuid())
-  mediaAssetId String      @unique
-  title        String
-  artist       String
-  album        String?
-  releaseYear  Int?
-  isExplicit   Boolean     @default(false)
-  status       TrackStatus @default(DRAFT)
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
+  id                   String      @id @default(cuid())
+  mediaAssetId         String      @unique
+  title                String
+  artist               String
+  album                String?
+  releaseYear          Int?
+  isExplicit           Boolean     @default(false)
+  status               TrackStatus @default(DRAFT)
+  rightsHolder         String?
+  rightsReference      String?
+  permittedTerritories String?
+  licenceExpiresAt     DateTime?   @db.Date
+  rightsConfirmedAt    DateTime?
+  rightsConfirmedById  String?
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
 
   mediaAsset        MediaAsset         @relation(fields: [mediaAssetId], references: [id], onDelete: Cascade)
+  rightsConfirmedBy User?              @relation("TrackRightsConfirmedBy", fields: [rightsConfirmedById], references: [id], onDelete: SetNull)
   musicModes        MusicModeTrack[]
   proofOfPlayEvents ProofOfPlayEvent[]
 
   @@index([status])
   @@index([artist, title])
+  @@index([rightsConfirmedById])
+  @@index([licenceExpiresAt])
 }
 
 model MusicMode {

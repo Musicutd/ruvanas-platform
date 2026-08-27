@@ -42,7 +42,7 @@ test("manifest includes signed campaign insertions without exposing storage deta
 });
 
 test("unavailable catalogue entries are removed from a manifest",()=>{
-  const unsafe={...resolution,musicMode:{...resolution.musicMode,tracks:[entry("draft",100,{status:"DRAFT"}),entry("private",100,{mediaAsset:{id:"asset-private",status:"READY",mediaType:"MUSIC",libraryType:"ORGANISATION_PROMO",organisationId:"org-1"}})]}};
+  const unsafe={...resolution,musicMode:{...resolution.musicMode,tracks:[entry("draft",100,{status:"DRAFT"}),entry("expired",100,{licenceExpiresAt:new Date("2026-08-30T00:00:00.000Z")}),entry("private",100,{mediaAsset:{id:"asset-private",status:"READY",mediaType:"MUSIC",libraryType:"ORGANISATION_PROMO",organisationId:"org-1"}})]}};
   const manifest=buildPlayerManifest({player,resolution:unsafe,proofSecret,instant:new Date("2026-08-31T10:02:00.000Z")});
   assert.equal(manifest.playlist.length,0);
   assert.equal(manifest.state,"NO_PLAYABLE_TRACKS");
@@ -54,3 +54,4 @@ test("closed and unscheduled players receive an empty plan",()=>{
   assert.equal(manifest.musicMode,null);
   assert.deepEqual(manifest.playlist,[]);
 });
+

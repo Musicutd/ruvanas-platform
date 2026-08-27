@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import CatalogueUploadForm from "./CatalogueUploadForm";
 
 const plannedGenres = [
   {
@@ -38,6 +39,7 @@ export default async function AdminCataloguePage() {
   }
 
   const genres = await prisma.mediaGenre.findMany({
+    where: { active: true },
     orderBy: {
       name: "asc"
     }
@@ -71,6 +73,8 @@ export default async function AdminCataloguePage() {
         }))
       : plannedGenres;
 
+  const uploadGenres = genres.map(({ id, name }) => ({ id, name }));
+
   return (
     <main style={styles.page}>
       <div style={styles.header}>
@@ -78,9 +82,9 @@ export default async function AdminCataloguePage() {
           <p style={styles.eyebrow}>Ruvanas-managed audio</p>
           <h1 style={styles.title}>Music Catalogue</h1>
           <p style={styles.description}>
-            This is the future platform-wide music catalogue. Only Ruvanas
-            Super Admins can manage catalogue tracks. Organisation-owned promos
-            remain private and are managed in the Promo Library.
+            This is the platform-wide Ruvanas music catalogue. Only Ruvanas
+            Super Admins can upload and manage catalogue tracks. Organisation-owned
+            promos remain private and are managed in the Promo Library.
           </p>
         </div>
 
@@ -90,13 +94,30 @@ export default async function AdminCataloguePage() {
       </div>
 
       <section style={styles.notice}>
-        <h2 style={styles.noticeTitle}>Commercial music is not enabled</h2>
+        <h2 style={styles.noticeTitle}>Upload only authorised music</h2>
         <p style={styles.noticeText}>
-          Catalogue uploads and organisation access remain disabled until
-          Ruvanas has the appropriate commercial-music licensing, rights,
-          territory, and distribution arrangements in place. Do not upload
-          ordinary commercial tracks here at this stage.
+          This controlled uploader is available only to Ruvanas Super Admins.
+          Upload music only when Ruvanas owns the recording or has documented
+          permission to store, distribute, and programme it. Adding a file does
+          not grant music rights or make the track available to customers by
+          itself.
         </p>
+      </section>
+
+      <section style={styles.section}>
+        <div style={styles.sectionHeader}>
+          <div>
+            <h2 style={styles.sectionTitle}>Upload catalogue music</h2>
+            <p style={styles.sectionDescription}>
+              Files are signature-checked, stored privately, checksum-addressed,
+              and recorded with the rights declaration and uploader audit trail.
+            </p>
+          </div>
+
+          <span style={styles.countBadge}>Super Admin only</span>
+        </div>
+
+        <CatalogueUploadForm genres={uploadGenres} />
       </section>
 
       <section style={styles.section}>
@@ -158,6 +179,7 @@ export default async function AdminCataloguePage() {
                   <th style={styles.tableHeader}>Genres</th>
                   <th style={styles.tableHeader}>Type</th>
                   <th style={styles.tableHeader}>Status</th>
+                  <th style={styles.tableHeader}>Rights</th>
                   <th style={styles.tableHeader}>Added</th>
                 </tr>
               </thead>
@@ -188,6 +210,19 @@ export default async function AdminCataloguePage() {
 
                     <td style={styles.tableCell}>
                       <span style={styles.statusBadge}>{asset.track?.status || asset.status}</span>
+                    </td>
+
+                    <td style={styles.tableCell}>
+                      {asset.track?.rightsHolder ? (
+                        <>
+                          <div>{asset.track.rightsHolder}</div>
+                          <div style={styles.originalName}>
+                            {asset.track.permittedTerritories || "Territories not recorded"}
+                          </div>
+                        </>
+                      ) : (
+                        "Legacy record"
+                      )}
                     </td>
 
                     <td style={styles.tableCell}>

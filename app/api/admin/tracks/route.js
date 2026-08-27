@@ -12,7 +12,13 @@ const trackSchema = z.object({
   artist: z.string().trim().min(1).max(200),
   album: z.string().trim().max(200).optional().nullable(),
   releaseYear: z.number().int().min(1877).max(2200).optional().nullable(),
-  isExplicit: z.boolean().default(false)
+  isExplicit: z.boolean().default(false),
+  status: z.enum(["DRAFT", "READY"]).default("DRAFT"),
+  rightsHolder: z.string().trim().min(1).max(200),
+  rightsReference: z.string().trim().min(1).max(500),
+  permittedTerritories: z.string().trim().min(1).max(500),
+  licenceExpiresAt: z.coerce.date().optional().nullable(),
+  rightsConfirmed: z.literal(true)
 });
 
 function superAdminOnly(access) {
@@ -73,7 +79,10 @@ export async function POST(request) {
 
     if (!parsed.success) {
       return NextResponse.json(
-        { error: "Enter valid track metadata and a catalogue media asset." },
+        {
+          error:
+            "Enter valid track metadata, a catalogue media asset, and the required rights declaration."
+        },
         { status: 400 }
       );
     }
@@ -97,11 +106,13 @@ export async function POST(request) {
     }
 
     const track = await prisma.$transaction(async (tx) => {
+      const { rightsConfirmed: _rightsConfirmed, ...trackData } = parsed.data;
       const created = await tx.track.create({
         data: {
-          ...parsed.data,
+          ...trackData,
           album: parsed.data.album || null,
-          status: "READY"
+          rightsConfirmedAt: new Date(),
+          rightsConfirmedById: access.user.id
         }
       });
 
@@ -114,7 +125,12 @@ export async function POST(request) {
           details: {
             mediaAssetId: created.mediaAssetId,
             title: created.title,
-            artist: created.artist
+            artist: created.artist,
+            status: created.status,
+            rightsHolder: created.rightsHolder,
+            rightsReference: created.rightsReference,
+            permittedTerritories: created.permittedTerritories,
+            licenceExpiresAt: created.licenceExpiresAt?.toISOString() || null
           }
         }
       });

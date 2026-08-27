@@ -46,6 +46,26 @@ test("global ready catalogue music is available to every organisation", () => {
   );
 });
 
+test("expired catalogue rights remove a track from music-mode eligibility", () => {
+  assert.equal(
+    canUseTrackForOrganisation(
+      {
+        status: "READY",
+        licenceExpiresAt: new Date("2026-08-30T00:00:00.000Z"),
+        mediaAsset: {
+          status: "READY",
+          mediaType: "MUSIC",
+          libraryType: "RUVANAS_CATALOGUE",
+          organisationId: null
+        }
+      },
+      "organisation-1",
+      new Date("2026-08-31T00:00:00.000Z")
+    ),
+    false
+  );
+});
+
 test("private or non-music assets cannot leak into another organisation mode", () => {
   const privateTrack = {
     status: "READY",

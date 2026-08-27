@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentPlayer } from "@/lib/player-auth";
 import { resolvePlayerProgramming } from "@/lib/player-programming";
 import { getR2Storage } from "@/lib/r2";
+import { isCatalogueLicenceCurrent } from "@/lib/catalogue-upload.mjs";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -36,7 +37,8 @@ export async function GET(request, { params }) {
       track.mediaAsset.status === "READY" &&
       track.mediaAsset.libraryType === "RUVANAS_CATALOGUE" &&
       track.mediaAsset.mediaType === "MUSIC" &&
-      track.mediaAsset.organisationId === null
+      track.mediaAsset.organisationId === null &&
+      isCatalogueLicenceCurrent(track.licenceExpiresAt, instant)
     );
     const isCurrentPromo = (campaignPlayout.insertions || []).some((item) => item.mediaAssetId === mediaAssetId);
     const recentPromoIntent = isCurrentPromo ? null : await prisma.playoutIntent.findFirst({
@@ -87,3 +89,4 @@ export async function GET(request, { params }) {
     return NextResponse.json({ error: "The audio file could not be played." }, { status: 500 });
   }
 }
+
