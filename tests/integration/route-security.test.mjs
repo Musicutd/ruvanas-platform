@@ -422,7 +422,7 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     const campaignDraftBody = await campaignDraft.json();
     assert.equal(campaignDraftBody.campaign.status, "DRAFT");
     assert.equal(await db.campaignTarget.count({ where: { campaignId: campaignDraftBody.campaign.id } }), 1);
-    assert.equal(await db.campaignSchedule.count({ where: { campaignId: campaignDraftBody.campaign.id } }), 1);
+    assert.equal(await db.campaignSchedule.count({ where: { campaignId: campaignDraftBody.campaign.id } }), 7);
 
     const publishedCampaign = await api(`/api/admin/campaigns/${campaignDraftBody.campaign.id}/publish`, {
       method: "PATCH",
