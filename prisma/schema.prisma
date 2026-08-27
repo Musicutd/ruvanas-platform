@@ -273,6 +273,22 @@ enum ProductionFundingType {
 enum ProductionOrderEventType {
   CREATED
   STATUS_CHANGED
+  ASSIGNMENT_CHANGED
+  FILE_ADDED
+  SCRIPT_VERSION_CREATED
+  REVISION_REQUESTED
+  REVISION_RESOLVED
+}
+
+enum ProductionOrderFileKind {
+  BRIEF_ATTACHMENT
+  AUDIO_PREVIEW
+  FINAL_MASTER
+}
+
+enum ProductionRevisionStatus {
+  OPEN
+  RESOLVED
 }
 
 model User {
@@ -284,20 +300,24 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  memberships                 OrganisationMember[]
-  auditLogs                   AuditLog[]             @relation("AuditActor")
-  sessions                    Session[]
-  submittedPromoVersions      PromoVersion[]         @relation("PromoVersionSubmittedBy")
-  reviewedPromoVersions       PromoVersion[]         @relation("PromoVersionReviewedBy")
-  publishedCampaigns          Campaign[]             @relation("CampaignPublishedBy")
-  reportExports               ReportExportJob[]      @relation("ReportExportRequestedBy")
-  confirmedTrackRights        Track[]                @relation("TrackRightsConfirmedBy")
-  createdSchoolAnnouncements  SchoolAnnouncement[]   @relation("SchoolAnnouncementCreatedBy")
-  reviewedSchoolAnnouncements SchoolAnnouncement[]   @relation("SchoolAnnouncementReviewedBy")
-  approvedSchoolSlots         SchoolBroadcastSlot[]  @relation("SchoolBroadcastSlotApprovedBy")
-  createdProductionOrders     ProductionOrder[]      @relation("ProductionOrderCreatedBy")
-  assignedProductionOrders    ProductionOrder[]      @relation("ProductionOrderAssignedTo")
-  productionOrderEvents       ProductionOrderEvent[] @relation("ProductionOrderEventActor")
+  memberships                  OrganisationMember[]
+  auditLogs                    AuditLog[]                  @relation("AuditActor")
+  sessions                     Session[]
+  submittedPromoVersions       PromoVersion[]              @relation("PromoVersionSubmittedBy")
+  reviewedPromoVersions        PromoVersion[]              @relation("PromoVersionReviewedBy")
+  publishedCampaigns           Campaign[]                  @relation("CampaignPublishedBy")
+  reportExports                ReportExportJob[]           @relation("ReportExportRequestedBy")
+  confirmedTrackRights         Track[]                     @relation("TrackRightsConfirmedBy")
+  createdSchoolAnnouncements   SchoolAnnouncement[]        @relation("SchoolAnnouncementCreatedBy")
+  reviewedSchoolAnnouncements  SchoolAnnouncement[]        @relation("SchoolAnnouncementReviewedBy")
+  approvedSchoolSlots          SchoolBroadcastSlot[]       @relation("SchoolBroadcastSlotApprovedBy")
+  createdProductionOrders      ProductionOrder[]           @relation("ProductionOrderCreatedBy")
+  assignedProductionOrders     ProductionOrder[]           @relation("ProductionOrderAssignedTo")
+  productionOrderEvents        ProductionOrderEvent[]      @relation("ProductionOrderEventActor")
+  productionOrderFiles         ProductionOrderFile[]       @relation("ProductionOrderFileUploadedBy")
+  productionScriptVersions     ProductionScriptVersion[]   @relation("ProductionScriptVersionCreatedBy")
+  requestedProductionRevisions ProductionRevisionRequest[] @relation("ProductionRevisionRequestedBy")
+  resolvedProductionRevisions  ProductionRevisionRequest[] @relation("ProductionRevisionResolvedBy")
 }
 
 model Organisation {
@@ -307,29 +327,32 @@ model Organisation {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  members               OrganisationMember[]
-  subscription          Subscription?
-  stations              Station[]
-  brands                Brand[]
-  locations             Location[]
-  locationGroups        LocationGroup[]
-  channels              Channel[]
-  mediaAssets           MediaAsset[]           @relation("OrganisationMediaAssets")
-  promoAssets           PromoAsset[]
-  auditLogs             AuditLog[]
-  players               Player[]
-  musicModes            MusicMode[]
-  musicSchedules        MusicSchedule[]
-  proofOfPlayEvents     ProofOfPlayEvent[]
-  campaigns             Campaign[]
-  playoutIntents        PlayoutIntent[]
-  reportExports         ReportExportJob[]
-  activeSessions        Session[]
-  schoolProfile         SchoolProfile?
-  schoolAnnouncements   SchoolAnnouncement[]
-  schoolBroadcastSlots  SchoolBroadcastSlot[]
-  productionOrders      ProductionOrder[]
-  productionOrderEvents ProductionOrderEvent[]
+  members                    OrganisationMember[]
+  subscription               Subscription?
+  stations                   Station[]
+  brands                     Brand[]
+  locations                  Location[]
+  locationGroups             LocationGroup[]
+  channels                   Channel[]
+  mediaAssets                MediaAsset[]                @relation("OrganisationMediaAssets")
+  promoAssets                PromoAsset[]
+  auditLogs                  AuditLog[]
+  players                    Player[]
+  musicModes                 MusicMode[]
+  musicSchedules             MusicSchedule[]
+  proofOfPlayEvents          ProofOfPlayEvent[]
+  campaigns                  Campaign[]
+  playoutIntents             PlayoutIntent[]
+  reportExports              ReportExportJob[]
+  activeSessions             Session[]
+  schoolProfile              SchoolProfile?
+  schoolAnnouncements        SchoolAnnouncement[]
+  schoolBroadcastSlots       SchoolBroadcastSlot[]
+  productionOrders           ProductionOrder[]
+  productionOrderEvents      ProductionOrderEvent[]
+  productionOrderFiles       ProductionOrderFile[]
+  productionScriptVersions   ProductionScriptVersion[]
+  productionRevisionRequests ProductionRevisionRequest[]
 }
 
 model OrganisationMember {
@@ -987,15 +1010,81 @@ model ProductionOrder {
   createdAt             DateTime                @default(now())
   updatedAt             DateTime                @updatedAt
 
-  organisation Organisation           @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  createdBy    User                   @relation("ProductionOrderCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  assignedTo   User?                  @relation("ProductionOrderAssignedTo", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+  organisation Organisation                @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  createdBy    User                        @relation("ProductionOrderCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  assignedTo   User?                       @relation("ProductionOrderAssignedTo", fields: [assignedToUserId], references: [id], onDelete: SetNull)
   events       ProductionOrderEvent[]
+  files        ProductionOrderFile[]
+  scripts      ProductionScriptVersion[]
+  revisions    ProductionRevisionRequest[]
 
   @@index([organisationId, status, createdAt])
   @@index([createdByUserId])
   @@index([assignedToUserId, status])
   @@index([deadlineAt])
+}
+
+model ProductionOrderFile {
+  id               String                  @id @default(cuid())
+  organisationId   String
+  orderId          String
+  uploadedByUserId String
+  kind             ProductionOrderFileKind
+  originalName     String
+  storageKey       String                  @unique
+  mimeType         String
+  sizeBytes        BigInt
+  checksumSha256   String
+  createdAt        DateTime                @default(now())
+
+  organisation Organisation    @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  order        ProductionOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  uploadedBy   User            @relation("ProductionOrderFileUploadedBy", fields: [uploadedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([organisationId, createdAt])
+  @@index([orderId, kind, createdAt])
+  @@index([uploadedByUserId, createdAt])
+}
+
+model ProductionScriptVersion {
+  id              String   @id @default(cuid())
+  organisationId  String
+  orderId         String
+  createdByUserId String
+  version         Int
+  languageCode    String
+  content         String
+  productionNotes String?
+  createdAt       DateTime @default(now())
+
+  organisation Organisation    @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  order        ProductionOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  createdBy    User            @relation("ProductionScriptVersionCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@unique([orderId, version])
+  @@index([organisationId, createdAt])
+  @@index([createdByUserId, createdAt])
+}
+
+model ProductionRevisionRequest {
+  id                String                   @id @default(cuid())
+  organisationId    String
+  orderId           String
+  requestedByUserId String
+  resolvedByUserId  String?
+  message           String
+  status            ProductionRevisionStatus @default(OPEN)
+  createdAt         DateTime                 @default(now())
+  resolvedAt        DateTime?
+
+  organisation Organisation    @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  order        ProductionOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  requestedBy  User            @relation("ProductionRevisionRequestedBy", fields: [requestedByUserId], references: [id], onDelete: Restrict)
+  resolvedBy   User?           @relation("ProductionRevisionResolvedBy", fields: [resolvedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([organisationId, status, createdAt])
+  @@index([orderId, status, createdAt])
+  @@index([requestedByUserId, createdAt])
 }
 
 model ProductionOrderEvent {

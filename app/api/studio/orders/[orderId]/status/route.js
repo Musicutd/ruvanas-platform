@@ -6,7 +6,7 @@ import { productionPermissions, transitionProductionOrder } from "@/lib/producti
 import { requireActiveStudio } from "@/lib/studio-access";
 
 const actionSchema = z.object({
-  action: z.enum(["SUBMIT", "START_PRODUCTION", "REQUEST_APPROVAL", "REQUEST_CHANGES", "APPROVE", "DELIVER", "CANCEL"]),
+  action: z.enum(["SUBMIT", "START_PRODUCTION", "RESUME_PRODUCTION", "REQUEST_APPROVAL", "REQUEST_CHANGES", "APPROVE", "DELIVER", "CANCEL"]),
   note: z.string().trim().max(2000).optional().nullable()
 });
 
@@ -17,9 +17,12 @@ export async function PATCH(request, { params }) {
   if (!parsed.success) return NextResponse.json({ error: "Choose a valid production action." }, { status: 400 });
   const order = await prisma.productionOrder.findFirst({
     where: { id: String(params.orderId || ""), organisationId: access.organisation.id },
-    select: { id: true, status: true }
+    select: { id: true, status: true, _count: { select: { files: { where: { kind: "FINAL_MASTER" } } } } }
   });
   if (!order) return NextResponse.json({ error: "The production order was not found." }, { status: 404 });
+  if (parsed.data.action === "DELIVER" && order._count.files < 1) {
+    return NextResponse.json({ error: "Upload a final master before marking this order as delivered." }, { status: 409 });
+  }
 
   let transition;
   try {
@@ -54,6 +57,25 @@ export async function PATCH(request, { params }) {
           note
         }
       });
+      if (parsed.data.action === "REQUEST_CHANGES") {
+        await tx.productionRevisionRequest.create({
+          data: { organisationId: access.organisation.id, orderId: order.id, requestedByUserId: access.user.id, message: note }
+        });
+        await tx.productionOrderEvent.create({
+          data: { organisationId: access.organisation.id, orderId: order.id, actorUserId: access.user.id, eventType: "REVISION_REQUESTED", fromStatus: order.status, toStatus: item.status, note }
+        });
+      }
+      if (parsed.data.action === "REQUEST_APPROVAL") {
+        const resolved = await tx.productionRevisionRequest.updateMany({
+          where: { organisationId: access.organisation.id, orderId: order.id, status: "OPEN" },
+          data: { status: "RESOLVED", resolvedByUserId: access.user.id, resolvedAt: new Date() }
+        });
+        if (resolved.count) {
+          await tx.productionOrderEvent.create({
+            data: { organisationId: access.organisation.id, orderId: order.id, actorUserId: access.user.id, eventType: "REVISION_RESOLVED", fromStatus: order.status, toStatus: item.status, note: `${resolved.count} revision request${resolved.count === 1 ? "" : "s"} resolved by the new approval submission.` }
+          });
+        }
+      }
       await tx.auditLog.create({
         data: {
           organisationId: access.organisation.id,

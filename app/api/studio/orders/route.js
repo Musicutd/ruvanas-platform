@@ -13,8 +13,27 @@ function orderInclude() {
     events: {
       orderBy: { createdAt: "asc" },
       include: { actor: { select: { id: true, name: true, email: true } } }
+    },
+    files: {
+      orderBy: { createdAt: "desc" },
+      include: { uploadedBy: { select: { id: true, name: true, email: true } } }
+    },
+    scripts: {
+      orderBy: { version: "desc" },
+      include: { createdBy: { select: { id: true, name: true, email: true } } }
+    },
+    revisions: {
+      orderBy: { createdAt: "desc" },
+      include: {
+        requestedBy: { select: { id: true, name: true, email: true } },
+        resolvedBy: { select: { id: true, name: true, email: true } }
+      }
     }
   };
+}
+
+function serialiseOrder(order) {
+  return { ...order, files: order.files.map(({ storageKey: _storageKey, sizeBytes, ...file }) => ({ ...file, sizeBytes: sizeBytes.toString() })) };
 }
 
 export async function GET() {
@@ -25,12 +44,19 @@ export async function GET() {
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     include: orderInclude()
   });
+  const permissions = productionPermissions({ platformRole: access.user.role, membershipRole: access.membership.role });
+  const staff = permissions.canProduce ? await prisma.user.findMany({
+    where: { role: { in: ["SUPER_ADMIN", "SUPPORT"] } },
+    orderBy: [{ name: "asc" }, { email: "asc" }],
+    select: { id: true, name: true, email: true, role: true }
+  }) : [];
   return NextResponse.json({
     organisation: { id: access.organisation.id, name: access.organisation.name },
     role: access.membership.role,
     platformRole: access.user.role,
-    permissions: productionPermissions({ platformRole: access.user.role, membershipRole: access.membership.role }),
-    orders
+    permissions,
+    staff,
+    orders: orders.map(serialiseOrder)
   });
 }
 
@@ -92,7 +118,6 @@ export async function POST(request) {
     });
     return created;
   });
-  return NextResponse.json({ order }, { status: 201 });
+  return NextResponse.json({ order: serialiseOrder(order) }, { status: 201 });
 }
-
 
