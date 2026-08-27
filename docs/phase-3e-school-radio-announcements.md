@@ -36,7 +36,7 @@ Database constraints enforce exactly one slot target, a positive slot duration, 
 ## Rollout
 
 1. Deploy the migration and application to staging.
-2. Enable `schoolRadioEnabled` only on the chosen staging plan.
+2. From **Admin → Organisations**, enable School Radio only for the chosen staging organisation. This writes a subscription-level override and does not change the shared plan.
 3. Verify staff creation, manager review, scheduling, player manifest, protected playback, cancellation, tenant isolation, and audit logs.
 4. Keep the production capability disabled until the staging acceptance checks pass.
 5. Enable the chosen production plan deliberately; no other plan or Render project is changed.
@@ -44,3 +44,4 @@ Database constraints enforce exactly one slot target, a positive slot duration, 
 ## Deferred intentionally
 
 Student accounts, student profile data, public publishing, remote recording, moderation automation, consent records, and community sharing remain outside this milestone. They require a separate safeguarding and privacy review before implementation.
+
