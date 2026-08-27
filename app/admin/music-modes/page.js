@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
+import MusicModeStatusButton from "./MusicModeStatusButton";
 
 export default async function MusicModesPage() {
   const user = await getCurrentUser();
@@ -24,8 +25,7 @@ export default async function MusicModesPage() {
           <p style={styles.eyebrow}>Radio Control</p>
           <h1 style={styles.title}>Music modes</h1>
           <p style={styles.description}>
-            Define reusable, organisation-owned music profiles. Scheduling will
-            select these modes deterministically in the next milestone.
+            Define reusable, organisation-owned music profiles and activate them when they are ready for scheduling.
           </p>
         </div>
         <Link href="/admin/music-modes/new" style={styles.action}>Create music mode</Link>
@@ -39,7 +39,7 @@ export default async function MusicModesPage() {
       ) : (
         <section style={styles.tableWrap}>
           <table style={styles.table}>
-            <thead><tr><th style={styles.th}>Mode</th><th style={styles.th}>Organisation</th><th style={styles.th}>Tracks</th><th style={styles.th}>Status</th><th style={styles.th}>Updated</th></tr></thead>
+            <thead><tr><th style={styles.th}>Mode</th><th style={styles.th}>Organisation</th><th style={styles.th}>Tracks</th><th style={styles.th}>Status</th><th style={styles.th}>Updated</th><th style={styles.th}>Action</th></tr></thead>
             <tbody>{modes.map((mode) => (
               <tr key={mode.id} style={styles.row}>
                 <td style={styles.strong}><div>{mode.name}</div><small style={styles.muted}>{mode.slug}</small></td>
@@ -47,6 +47,7 @@ export default async function MusicModesPage() {
                 <td style={styles.td}>{mode._count.tracks}</td>
                 <td style={styles.td}>{mode.status}</td>
                 <td style={styles.td}>{new Date(mode.updatedAt).toLocaleDateString()}</td>
+                <td style={styles.td}><MusicModeStatusButton modeId={mode.id} status={mode.status} trackCount={mode._count.tracks} /></td>
               </tr>
             ))}</tbody>
           </table>
@@ -67,4 +68,3 @@ const styles = {
   th:{padding:13,textAlign:"left",background:"#e2e8f0",borderBottom:"2px solid #94a3b8"},row:{borderBottom:"1px solid #cbd5e1"},
   td:{padding:14,fontWeight:600},strong:{padding:14,fontWeight:900},muted:{color:"#64748b",fontWeight:600}
 };
-
