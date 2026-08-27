@@ -28,6 +28,25 @@ test("active and trial subscriptions receive plan entitlements", () => {
   }
 });
 
+test("an organisation subscription can override the shared School Radio plan default", () => {
+  assert.equal(
+    resolveEntitlements({
+      status: "ACTIVE",
+      schoolRadioEnabled: false,
+      plan
+    }).schoolRadioEnabled,
+    false
+  );
+  assert.equal(
+    resolveEntitlements({
+      status: "ACTIVE",
+      schoolRadioEnabled: true,
+      plan: { ...plan, schoolRadioEnabled: false }
+    }).schoolRadioEnabled,
+    true
+  );
+});
+
 test("suspended, cancelled, missing, and inactive plans deny service", () => {
   for (const subscription of [
     { status: "SUSPENDED", plan },
@@ -48,3 +67,4 @@ test("limit checks stop at the configured boundary", () => {
   assert.equal(isWithinLimit(5, 5), false);
   assert.equal(isWithinLimit(6, 5), false);
 });
+
