@@ -36,6 +36,7 @@ export default async function DashboardPage() {
       <header style={styles.header}>
         <a href="/" style={styles.brand}>RUVANAS</a>
         <div style={styles.headerActions}>
+          {entitlements.serviceEnabled ? <a href="/dashboard/studio" style={styles.reportLink}>Ruvanas Studio</a> : null}
           {entitlements.schoolRadioEnabled ? <a href="/dashboard/school-radio" style={styles.reportLink}>School Radio</a> : null}
           <a href="/dashboard/reports" style={styles.reportLink}>Campaign reports</a>
           <form action="/api/auth/logout" method="post">
@@ -256,3 +257,4 @@ const styles = {
     whiteSpace: "nowrap"
   }
 };
+
