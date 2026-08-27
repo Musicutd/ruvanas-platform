@@ -71,6 +71,7 @@ export default function MediaLibraryPage() {
       const nameInput = form.name;
       const mediaTypeInput = form.mediaType;
       const durationInput = form.durationSeconds;
+      const languageInput = form.languageCode;
 
       if (!fileInput.files || fileInput.files.length === 0) {
         throw new Error("Please select an audio file");
@@ -88,6 +89,7 @@ export default function MediaLibraryPage() {
       formData.append("organisationId", organisation.id);
       formData.append("name", name);
       formData.append("mediaType", mediaType);
+      formData.append("languageCode", languageInput.value.trim() || "und");
       if (durationSeconds) {
         formData.append("durationSeconds", String(durationSeconds));
       }
@@ -151,16 +153,29 @@ export default function MediaLibraryPage() {
             </label>
             <select
               name="mediaType"
-              defaultValue="MUSIC"
+              defaultValue="COMMERCIAL"
               disabled={uploading}
               className="w-full border rounded px-3 py-2"
             >
-              <option value="MUSIC">Music</option>
               <option value="COMMERCIAL">Commercial</option>
               <option value="JINGLE">Jingle</option>
               <option value="ANNOUNCEMENT">Announcement</option>
               <option value="VOICEOVER">Voiceover</option>
             </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">
+              Language code
+            </label>
+            <input
+              type="text"
+              name="languageCode"
+              defaultValue="und"
+              placeholder="en, mt, en-GB"
+              disabled={uploading}
+              className="w-full border rounded px-3 py-2"
+            />
           </div>
 
           <div>
@@ -194,10 +209,13 @@ export default function MediaLibraryPage() {
 
         {result && (
           <div className="mt-4 p-3 border border-green-300 bg-green-50 text-green-700 rounded">
-            <p className="font-medium">Upload successful</p>
+            <p className="font-medium">Upload received for review</p>
             <ul className="mt-2 text-sm">
               <li>Name: {result.name}</li>
               <li>Type: {result.mediaType}</li>
+              <li>Version: {result.version}</li>
+              <li>Review status: {result.status}</li>
+              <li>Language: {result.languageCode}</li>
               <li>Size: {Number(result.sizeBytes).toLocaleString()} bytes</li>
               {result.durationSeconds && (
                 <li>Duration: {result.durationSeconds} s</li>

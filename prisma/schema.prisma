@@ -105,6 +105,45 @@ enum MediaLibraryType {
   ORGANISATION_PROMO
 }
 
+enum PromoAssetStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum PromoVersionStatus {
+  DRAFT
+  IN_REVIEW
+  APPROVED
+  REJECTED
+  SUPERSEDED
+}
+
+enum PromoQcStatus {
+  PENDING
+  PASSED
+  FAILED
+}
+
+enum PromoSourceType {
+  UPLOAD
+  LEGACY_IMPORT
+  STUDIO
+}
+
+enum PromoProcessingJobType {
+  PREVIEW
+  TRANSCODE
+  LOUDNESS_ANALYSIS
+}
+
+enum PromoProcessingJobStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+}
+
 enum PlayerStatus {
   PENDING_ENROLMENT
   ONLINE
@@ -145,9 +184,11 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  memberships OrganisationMember[]
-  auditLogs   AuditLog[]           @relation("AuditActor")
-  sessions    Session[]
+  memberships            OrganisationMember[]
+  auditLogs              AuditLog[]           @relation("AuditActor")
+  sessions               Session[]
+  submittedPromoVersions PromoVersion[]       @relation("PromoVersionSubmittedBy")
+  reviewedPromoVersions  PromoVersion[]       @relation("PromoVersionReviewedBy")
 }
 
 model Organisation {
@@ -165,6 +206,7 @@ model Organisation {
   locationGroups    LocationGroup[]
   channels          Channel[]
   mediaAssets       MediaAsset[]         @relation("OrganisationMediaAssets")
+  promoAssets       PromoAsset[]
   auditLogs         AuditLog[]
   players           Player[]
   musicModes        MusicMode[]
@@ -475,6 +517,7 @@ model MediaAsset {
   organisation      Organisation?      @relation("OrganisationMediaAssets", fields: [organisationId], references: [id], onDelete: Cascade)
   genres            MediaAssetGenre[]
   track             Track?
+  promoVersions     PromoVersion[]
   proofOfPlayEvents ProofOfPlayEvent[]
 
   @@index([organisationId])
@@ -483,6 +526,79 @@ model MediaAsset {
   @@index([organisationId, mediaType])
   @@index([organisationId, status])
   @@index([libraryType, status])
+}
+
+model PromoAsset {
+  id                       String           @id @default(cuid())
+  organisationId           String
+  name                     String
+  mediaType                MediaType
+  languageCode             String           @default("und")
+  status                   PromoAssetStatus @default(ACTIVE)
+  currentApprovedVersionId String?          @unique
+  createdAt                DateTime         @default(now())
+  updatedAt                DateTime         @updatedAt
+
+  organisation           Organisation   @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  versions               PromoVersion[] @relation("PromoAssetVersions")
+  currentApprovedVersion PromoVersion?  @relation("CurrentApprovedPromoVersion", fields: [currentApprovedVersionId], references: [id], onDelete: SetNull)
+
+  @@index([organisationId, status])
+  @@index([organisationId, name])
+}
+
+model PromoVersion {
+  id              String             @id @default(cuid())
+  promoAssetId    String
+  mediaAssetId    String
+  version         Int
+  status          PromoVersionStatus @default(DRAFT)
+  qcStatus        PromoQcStatus      @default(PENDING)
+  sourceType      PromoSourceType    @default(UPLOAD)
+  sourceReference String?
+  languageCode    String             @default("und")
+  checksumSha256  String?
+  loudnessLufs    Decimal?           @db.Decimal(5, 2)
+  durationSeconds Int?
+  qcNotes         String?
+  submittedById   String?
+  reviewedById    String?
+  submittedAt     DateTime?
+  reviewedAt      DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  promoAsset       PromoAsset           @relation("PromoAssetVersions", fields: [promoAssetId], references: [id], onDelete: Cascade)
+  mediaAsset       MediaAsset           @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+  submittedBy      User?                @relation("PromoVersionSubmittedBy", fields: [submittedById], references: [id], onDelete: SetNull)
+  reviewedBy       User?                @relation("PromoVersionReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+  approvedForPromo PromoAsset?          @relation("CurrentApprovedPromoVersion")
+  processingJobs   PromoProcessingJob[]
+
+  @@unique([promoAssetId, version])
+  @@index([promoAssetId, status])
+  @@index([mediaAssetId])
+  @@index([status, qcStatus])
+  @@index([submittedById])
+  @@index([reviewedById])
+}
+
+model PromoProcessingJob {
+  id             String                   @id @default(cuid())
+  promoVersionId String
+  jobType        PromoProcessingJobType
+  status         PromoProcessingJobStatus @default(QUEUED)
+  attempts       Int                      @default(0)
+  errorMessage   String?
+  startedAt      DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+
+  promoVersion PromoVersion @relation(fields: [promoVersionId], references: [id], onDelete: Cascade)
+
+  @@unique([promoVersionId, jobType])
+  @@index([status, createdAt])
 }
 
 model Track {

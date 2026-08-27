@@ -5,59 +5,50 @@ import { useEffect, useState } from "react";
 
 function formatBytes(value) {
   const bytes = Number(value || 0);
-
-  if (bytes === 0) {
-    return "0 B";
-  }
-
+  if (!bytes) return "0 B";
   const units = ["B", "KB", "MB", "GB"];
-  const index = Math.min(
-    Math.floor(Math.log(bytes) / Math.log(1024)),
-    units.length - 1
-  );
+  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
   const amount = bytes / 1024 ** index;
-
   return `${amount >= 10 || index === 0 ? amount.toFixed(0) : amount.toFixed(1)} ${units[index]}`;
 }
 
 function formatDuration(seconds) {
-  if (!seconds) {
-    return "—";
-  }
+  if (!seconds) return "—";
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
 
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = seconds % 60;
+const badgeColours = {
+  APPROVED: ["#dcfce7", "#166534"],
+  PASSED: ["#dcfce7", "#166534"],
+  IN_REVIEW: ["#fef3c7", "#92400e"],
+  PENDING: ["#fef3c7", "#92400e"],
+  REJECTED: ["#fee2e2", "#991b1b"],
+  FAILED: ["#fee2e2", "#991b1b"],
+  SUPERSEDED: ["#e2e8f0", "#475569"],
+  QUEUED: ["#e0f2fe", "#075985"]
+};
 
-  return `${minutes}:${String(remainingSeconds).padStart(2, "0")}`;
+function Badge({ value }) {
+  const [background, color] = badgeColours[value] || ["#e2e8f0", "#334155"];
+  return <span style={{ ...styles.badge, background, color }}>{String(value).replaceAll("_", " ")}</span>;
 }
 
 export default function AdminPromoLibraryPage() {
   const [assets, setAssets] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [deletingId, setDeletingId] = useState("");
+  const [workingId, setWorkingId] = useState("");
   const [error, setError] = useState("");
 
   async function loadAssets() {
     setLoading(true);
     setError("");
-
     try {
       const response = await fetch("/api/admin/media");
-
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-
-        throw new Error(data.error || "Unable to load promotional audio.");
-      }
-
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Unable to load the promotional library.");
       setAssets(Array.isArray(data.assets) ? data.assets : []);
     } catch (loadError) {
-      setError(
-        loadError instanceof Error
-          ? loadError.message
-          : "Unable to load promotional audio."
-      );
+      setError(loadError instanceof Error ? loadError.message : "Unable to load the promotional library.");
     } finally {
       setLoading(false);
     }
@@ -67,40 +58,53 @@ export default function AdminPromoLibraryPage() {
     loadAssets();
   }, []);
 
-  async function handleDelete(asset) {
-    const confirmed = window.confirm(
-      `Delete "${asset.name}" permanently?\n\nThis removes the file from Cloudflare R2 and the database. It cannot be undone.`
+  async function review(asset, version, decision) {
+    const notes = window.prompt(
+      decision === "REJECT"
+        ? "Why did this version fail review?"
+        : "Optional approval notes:",
+      ""
     );
+    if (notes === null || (decision === "REJECT" && !notes.trim())) return;
 
-    if (!confirmed) {
-      return;
-    }
-
-    setDeletingId(asset.id);
+    setWorkingId(version.id);
     setError("");
-
     try {
-      const response = await fetch(`/api/media/${asset.id}`, {
-        method: "DELETE"
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || "The audio file could not be deleted.");
-      }
-
-      setAssets((currentAssets) =>
-        currentAssets.filter((currentAsset) => currentAsset.id !== asset.id)
+      const response = await fetch(
+        `/api/admin/promos/${asset.id}/versions/${version.id}/review`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ decision, notes })
+        }
       );
-    } catch (deleteError) {
-      setError(
-        deleteError instanceof Error
-          ? deleteError.message
-          : "The audio file could not be deleted."
-      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "The version could not be reviewed.");
+      await loadAssets();
+    } catch (reviewError) {
+      setError(reviewError instanceof Error ? reviewError.message : "The version could not be reviewed.");
     } finally {
-      setDeletingId("");
+      setWorkingId("");
+    }
+  }
+
+  async function archive(asset) {
+    if (!window.confirm(`Archive "${asset.name}"? Its version and audit history will be retained.`)) return;
+    setWorkingId(asset.id);
+    setError("");
+    try {
+      const response = await fetch(`/api/admin/promos/${asset.id}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "ARCHIVED" })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "The promotional asset could not be archived.");
+      setAssets((current) => current.filter((item) => item.id !== asset.id));
+    } catch (archiveError) {
+      setError(archiveError instanceof Error ? archiveError.message : "The promotional asset could not be archived.");
+    } finally {
+      setWorkingId("");
     }
   }
 
@@ -108,324 +112,119 @@ export default function AdminPromoLibraryPage() {
     <main style={styles.page}>
       <div style={styles.header}>
         <div>
-          <p style={styles.eyebrow}>Organisation-owned audio</p>
-          <h1 style={styles.title}>Promo Library</h1>
+          <p style={styles.eyebrow}>Milestone 3A</p>
+          <h1 style={styles.title}>Versioned Promo Library</h1>
           <p style={styles.description}>
-            Manage private organisation commercials, jingles, announcements,
-            and voiceovers. Preview an approved file securely before using it
-            in a future campaign.
+            Promotional audio now keeps immutable versions, review status, QC evidence, language metadata, and processing work without changing protected playback URLs.
           </p>
         </div>
-
-        <Link href="/admin/media/upload" style={styles.addButton}>
-          Upload promotional audio
-        </Link>
+        <Link href="/admin/media/upload" style={styles.primaryButton}>Upload a promo</Link>
       </div>
 
       {error ? <div style={styles.error}>{error}</div> : null}
 
-      <section style={styles.section}>
-        <h2 style={styles.sectionTitle}>Available promotional audio</h2>
+      {loading ? (
+        <p style={styles.loading}>Loading promotional assets…</p>
+      ) : assets.length === 0 ? (
+        <section style={styles.empty}>
+          <h2 style={styles.emptyTitle}>No promotional assets yet</h2>
+          <p style={styles.muted}>Upload the first commercial, jingle, announcement, or voiceover.</p>
+          <Link href="/admin/media/upload" style={styles.secondaryButton}>Upload promotional audio</Link>
+        </section>
+      ) : (
+        <div style={styles.assetList}>
+          {assets.map((asset) => {
+            const latest = asset.versions[0];
+            const approved = asset.versions.find((version) => version.id === asset.currentApprovedVersionId);
+            return (
+              <section key={asset.id} style={styles.card}>
+                <div style={styles.cardHeader}>
+                  <div>
+                    <div style={styles.cardTitleLine}>
+                      <h2 style={styles.cardTitle}>{asset.name}</h2>
+                      <Badge value={asset.status} />
+                    </div>
+                    <p style={styles.muted}>{asset.organisation.name} · {asset.mediaType} · {asset.languageCode}</p>
+                  </div>
+                  <div style={styles.actions}>
+                    <Link href={`/admin/media/upload?promoAssetId=${asset.id}`} style={styles.secondaryButton}>Add version</Link>
+                    <button type="button" onClick={() => archive(asset)} disabled={workingId === asset.id} style={styles.archiveButton}>Archive</button>
+                  </div>
+                </div>
 
-        {loading ? (
-          <p style={styles.loadingState}>Loading promotional audio…</p>
-        ) : assets.length === 0 ? (
-          <div style={styles.emptyState}>
-            <p style={styles.emptyTitle}>No promotional audio is available.</p>
-            <p style={styles.emptyDescription}>
-              Upload a commercial, jingle, announcement, or voiceover for an
-              organisation.
-            </p>
-            <Link href="/admin/media/upload" style={styles.emptyAction}>
-              Upload promotional audio
-            </Link>
-          </div>
-        ) : (
-          <div style={styles.tableWrapper}>
-            <table style={styles.table}>
-              <thead>
-                <tr>
-                  <th style={styles.tableHeader}>Name</th>
-                  <th style={styles.tableHeader}>Organisation</th>
-                  <th style={styles.tableHeader}>Type</th>
-                  <th style={styles.tableHeader}>Size</th>
-                  <th style={styles.tableHeader}>Duration</th>
-                  <th style={styles.tableHeader}>Status</th>
-                  <th style={styles.tableHeader}>Preview</th>
-                  <th style={styles.tableHeader}>Uploaded</th>
-                  <th style={styles.tableHeader}>Action</th>
-                </tr>
-              </thead>
+                <div style={styles.summaryGrid}>
+                  <div><span style={styles.label}>Versions</span><strong>{asset.versions.length}</strong></div>
+                  <div><span style={styles.label}>Latest</span><strong>{latest ? `v${latest.version}` : "—"}</strong></div>
+                  <div><span style={styles.label}>Approved</span><strong>{approved ? `v${approved.version}` : "None"}</strong></div>
+                  <div><span style={styles.label}>Updated</span><strong>{new Date(asset.updatedAt).toLocaleDateString()}</strong></div>
+                </div>
 
-              <tbody>
-                {assets.map((asset) => (
-                  <tr key={asset.id} style={styles.tableRow}>
-                    <td style={styles.tableCellStrong}>
-                      <div>{asset.name}</div>
-                      <div style={styles.originalName}>
-                        {asset.originalName}
-                      </div>
-                    </td>
-
-                    <td style={styles.tableCell}>
-                      {asset.organisation?.name || "Unknown organisation"}
-                    </td>
-
-                    <td style={styles.tableCell}>
-                      <span style={styles.typeBadge}>
-                        {asset.mediaType}
-                      </span>
-                    </td>
-
-                    <td style={styles.tableCell}>
-                      {formatBytes(asset.sizeBytes)}
-                    </td>
-
-                    <td style={styles.tableCell}>
-                      {formatDuration(asset.durationSeconds)}
-                    </td>
-
-                    <td style={styles.tableCell}>
-                      <span style={styles.statusBadge}>{asset.status}</span>
-                    </td>
-
-                    <td style={styles.tableCell}>
-                      {asset.status === "READY" ? (
-                        <audio
-                          controls
-                          preload="none"
-                          style={styles.audioPlayer}
-                        >
-                          <source
-                            src={`/api/media/${asset.id}/stream`}
-                            type="audio/mpeg"
-                          />
-                          Your browser does not support audio playback.
-                        </audio>
-                      ) : (
-                        <span style={styles.notReady}>Not ready</span>
-                      )}
-                    </td>
-
-                    <td style={styles.tableCell}>
-                      {new Date(asset.createdAt).toLocaleDateString()}
-                    </td>
-
-                    <td style={styles.tableCell}>
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(asset)}
-                        disabled={deletingId === asset.id}
-                        style={{
-                          ...styles.deleteButton,
-                          ...(deletingId === asset.id
-                            ? styles.deleteButtonDisabled
-                            : {})
-                        }}
-                      >
-                        {deletingId === asset.id ? "Deleting…" : "Delete"}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+                <div style={styles.tableWrapper}>
+                  <table style={styles.table}>
+                    <thead><tr>
+                      <th style={styles.th}>Version</th><th style={styles.th}>File</th><th style={styles.th}>Language</th>
+                      <th style={styles.th}>Duration</th><th style={styles.th}>Review</th><th style={styles.th}>QC</th>
+                      <th style={styles.th}>Processing</th><th style={styles.th}>Preview</th><th style={styles.th}>Actions</th>
+                    </tr></thead>
+                    <tbody>
+                      {asset.versions.map((version) => (
+                        <tr key={version.id} style={styles.tr}>
+                          <td style={styles.tdStrong}>v{version.version}{version.id === asset.currentApprovedVersionId ? <div style={styles.current}>CURRENT</div> : null}</td>
+                          <td style={styles.td}><div>{version.mediaAsset.originalName}</div><small>{formatBytes(version.mediaAsset.sizeBytes)}</small></td>
+                          <td style={styles.td}>{version.languageCode}</td>
+                          <td style={styles.td}>{formatDuration(version.durationSeconds)}</td>
+                          <td style={styles.td}><Badge value={version.status} />{version.qcNotes ? <div style={styles.note}>{version.qcNotes}</div> : null}</td>
+                          <td style={styles.td}><Badge value={version.qcStatus} /></td>
+                          <td style={styles.td}><div style={styles.jobs}>{version.processingJobs.length ? version.processingJobs.map((job) => <span key={job.id}>{job.jobType.replaceAll("_", " ")}: <Badge value={job.status} /></span>) : <span>Legacy version</span>}</div></td>
+                          <td style={styles.td}>{version.mediaAsset.status === "READY" ? <audio controls preload="none" style={styles.audio}><source src={version.mediaAsset.previewUrl} type={version.mediaAsset.mimeType} /></audio> : "Not ready"}</td>
+                          <td style={styles.td}>{version.status === "IN_REVIEW" ? <div style={styles.actions}><button disabled={workingId === version.id} onClick={() => review(asset, version, "APPROVE")} style={styles.approveButton}>Approve</button><button disabled={workingId === version.id} onClick={() => review(asset, version, "REJECT")} style={styles.rejectButton}>Reject</button></div> : "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            );
+          })}
+        </div>
+      )}
     </main>
   );
 }
 
 const styles = {
-  page: {
-    maxWidth: 1320,
-    margin: "0 auto",
-    padding: "40px 16px 64px",
-    color: "#172033"
-  },
-  header: {
-    display: "flex",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: 20,
-    flexWrap: "wrap",
-    marginBottom: 20
-  },
-  eyebrow: {
-    margin: "0 0 8px",
-    color: "#9a6400",
-    fontSize: 13,
-    fontWeight: 900,
-    letterSpacing: 1,
-    textTransform: "uppercase"
-  },
-  title: {
-    margin: 0,
-    color: "#111827",
-    fontSize: 32,
-    fontWeight: 900
-  },
-  description: {
-    maxWidth: 720,
-    margin: "10px 0 0",
-    color: "#475569",
-    fontSize: 15,
-    lineHeight: 1.55
-  },
-  addButton: {
-    display: "inline-block",
-    borderRadius: 7,
-    background: "#f4b942",
-    color: "#172033",
-    padding: "10px 14px",
-    fontSize: 14,
-    fontWeight: 900,
-    textDecoration: "none"
-  },
-  error: {
-    marginBottom: 18,
-    border: "1px solid #fca5a5",
-    borderRadius: 7,
-    background: "#fef2f2",
-    color: "#991b1b",
-    padding: "12px 13px",
-    fontSize: 14,
-    fontWeight: 700
-  },
-  section: {
-    padding: 24,
-    border: "1px solid #cbd5e1",
-    borderRadius: 12,
-    background: "#f8fafc",
-    boxShadow: "0 2px 6px rgba(15, 23, 42, 0.08)"
-  },
-  sectionTitle: {
-    margin: "0 0 18px",
-    color: "#172033",
-    fontSize: 17,
-    fontWeight: 900,
-    letterSpacing: 0.6,
-    textTransform: "uppercase"
-  },
-  loadingState: {
-    margin: 0,
-    color: "#64748b",
-    fontSize: 15,
-    fontWeight: 600
-  },
-  emptyState: {
-    padding: 22,
-    border: "1px dashed #94a3b8",
-    borderRadius: 9,
-    background: "#ffffff"
-  },
-  emptyTitle: {
-    margin: 0,
-    color: "#172033",
-    fontSize: 16,
-    fontWeight: 900
-  },
-  emptyDescription: {
-    margin: "8px 0 16px",
-    color: "#64748b",
-    fontSize: 14,
-    lineHeight: 1.5
-  },
-  emptyAction: {
-    display: "inline-block",
-    borderRadius: 7,
-    background: "#172033",
-    color: "#ffffff",
-    padding: "10px 13px",
-    fontSize: 14,
-    fontWeight: 800,
-    textDecoration: "none"
-  },
-  tableWrapper: {
-    overflowX: "auto",
-    border: "1px solid #cbd5e1",
-    borderRadius: 9,
-    background: "#ffffff"
-  },
-  table: {
-    width: "100%",
-    minWidth: 1280,
-    borderCollapse: "collapse"
-  },
-  tableHeader: {
-    padding: "13px 12px",
-    borderBottom: "2px solid #94a3b8",
-    background: "#e2e8f0",
-    color: "#172033",
-    fontSize: 13,
-    fontWeight: 900,
-    textAlign: "left",
-    whiteSpace: "nowrap"
-  },
-  tableRow: {
-    borderBottom: "1px solid #cbd5e1"
-  },
-  tableCell: {
-    padding: "15px 12px",
-    color: "#1e293b",
-    fontSize: 14,
-    fontWeight: 600,
-    verticalAlign: "middle"
-  },
-  tableCellStrong: {
-    padding: "15px 12px",
-    color: "#111827",
-    fontSize: 14,
-    fontWeight: 900,
-    verticalAlign: "middle",
-    minWidth: 230
-  },
-  originalName: {
-    marginTop: 4,
-    color: "#64748b",
-    fontSize: 12,
-    fontWeight: 600
-  },
-  typeBadge: {
-    display: "inline-block",
-    padding: "4px 8px",
-    borderRadius: 5,
-    background: "#fef3c7",
-    color: "#92400e",
-    fontSize: 12,
-    fontWeight: 900
-  },
-  statusBadge: {
-    display: "inline-block",
-    padding: "4px 8px",
-    borderRadius: 5,
-    background: "#dcfce7",
-    color: "#166534",
-    fontSize: 12,
-    fontWeight: 900
-  },
-  notReady: {
-    color: "#64748b",
-    fontSize: 13,
-    fontWeight: 700
-  },
-  audioPlayer: {
-    width: 210,
-    maxWidth: "100%"
-  },
-  deleteButton: {
-    border: "1px solid #dc2626",
-    borderRadius: 7,
-    background: "#ffffff",
-    color: "#b91c1c",
-    padding: "8px 11px",
-    fontSize: 13,
-    fontWeight: 900,
-    cursor: "pointer"
-  },
-  deleteButtonDisabled: {
-    cursor: "not-allowed",
-    opacity: 0.65
-  }
+  page: { maxWidth: 1380, margin: "0 auto", padding: "40px 16px 64px", color: "#172033" },
+  header: { display: "flex", justifyContent: "space-between", gap: 20, alignItems: "flex-start", flexWrap: "wrap", marginBottom: 22 },
+  eyebrow: { margin: "0 0 8px", color: "#9a6400", fontSize: 13, fontWeight: 900, letterSpacing: 1, textTransform: "uppercase" },
+  title: { margin: 0, fontSize: 32, color: "#111827" },
+  description: { maxWidth: 780, color: "#475569", lineHeight: 1.55 },
+  primaryButton: { display: "inline-block", borderRadius: 7, background: "#f4b942", color: "#172033", padding: "11px 15px", fontWeight: 900, textDecoration: "none" },
+  secondaryButton: { display: "inline-block", border: "1px solid #64748b", borderRadius: 7, background: "#fff", color: "#172033", padding: "8px 11px", fontSize: 13, fontWeight: 800, textDecoration: "none" },
+  archiveButton: { border: "1px solid #94a3b8", borderRadius: 7, background: "#fff", color: "#475569", padding: "8px 11px", fontWeight: 800, cursor: "pointer" },
+  approveButton: { border: 0, borderRadius: 6, background: "#166534", color: "#fff", padding: "7px 9px", fontWeight: 800, cursor: "pointer" },
+  rejectButton: { border: "1px solid #dc2626", borderRadius: 6, background: "#fff", color: "#b91c1c", padding: "7px 9px", fontWeight: 800, cursor: "pointer" },
+  error: { marginBottom: 18, border: "1px solid #fca5a5", borderRadius: 7, background: "#fef2f2", color: "#991b1b", padding: 12, fontWeight: 700 },
+  loading: { color: "#64748b", fontWeight: 700 },
+  empty: { padding: 24, border: "1px dashed #94a3b8", borderRadius: 10, background: "#f8fafc" },
+  emptyTitle: { margin: "0 0 8px" },
+  assetList: { display: "grid", gap: 20 },
+  card: { border: "1px solid #cbd5e1", borderRadius: 12, background: "#f8fafc", padding: 20, boxShadow: "0 2px 6px rgba(15,23,42,.06)" },
+  cardHeader: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, flexWrap: "wrap" },
+  cardTitleLine: { display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" },
+  cardTitle: { margin: 0, fontSize: 21 },
+  muted: { margin: "6px 0 0", color: "#64748b", lineHeight: 1.45 },
+  summaryGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(130px,1fr))", gap: 10, margin: "18px 0", padding: 14, borderRadius: 8, background: "#fff", border: "1px solid #e2e8f0" },
+  label: { display: "block", marginBottom: 4, color: "#64748b", fontSize: 11, fontWeight: 900, textTransform: "uppercase" },
+  badge: { display: "inline-block", borderRadius: 5, padding: "3px 7px", fontSize: 11, fontWeight: 900, whiteSpace: "nowrap" },
+  tableWrapper: { overflowX: "auto", border: "1px solid #cbd5e1", borderRadius: 9, background: "#fff" },
+  table: { width: "100%", minWidth: 1250, borderCollapse: "collapse" },
+  th: { padding: "11px 10px", borderBottom: "2px solid #94a3b8", background: "#e2e8f0", fontSize: 12, fontWeight: 900, textAlign: "left", whiteSpace: "nowrap" },
+  tr: { borderBottom: "1px solid #e2e8f0" },
+  td: { padding: "12px 10px", verticalAlign: "middle", fontSize: 13, color: "#334155" },
+  tdStrong: { padding: "12px 10px", verticalAlign: "middle", fontWeight: 900 },
+  current: { marginTop: 4, color: "#166534", fontSize: 9, letterSpacing: .5 },
+  jobs: { display: "grid", gap: 5, minWidth: 190 },
+  note: { marginTop: 5, maxWidth: 180, color: "#64748b", fontSize: 11 },
+  audio: { width: 190, maxWidth: "100%" },
+  actions: { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }
 };

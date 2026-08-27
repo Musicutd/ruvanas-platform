@@ -92,6 +92,18 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   });
   assert.equal(unauthenticatedProofOfPlay.status, 401);
 
+  const unauthenticatedPromoArchive = await api(
+    "/api/admin/promos/example/status",
+    { method: "PATCH", body: { status: "ARCHIVED" } }
+  );
+  assert.equal(unauthenticatedPromoArchive.status, 401);
+
+  const unauthenticatedPromoReview = await api(
+    "/api/admin/promos/example/versions/example/review",
+    { method: "PATCH", body: { decision: "APPROVE" } }
+  );
+  assert.equal(unauthenticatedPromoReview.status, 401);
+
   const invalidPlayerEnrolment = await api("/api/player/enrol", {
     method: "POST",
     body: { code: "invalid-enrolment-code" }

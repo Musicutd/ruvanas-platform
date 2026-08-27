@@ -29,7 +29,10 @@ export async function DELETE(request, { params }) {
         libraryType: true,
         name: true,
         storageKey: true,
-        status: true
+        status: true,
+        _count: {
+          select: { promoVersions: true }
+        }
       }
     });
 
@@ -50,6 +53,16 @@ export async function DELETE(request, { params }) {
     if (!mediaAsset.organisationId) {
       return NextResponse.json(
         { error: "This promotional audio file has no organisation owner." },
+        { status: 409 }
+      );
+    }
+
+    if (mediaAsset._count.promoVersions > 0) {
+      return NextResponse.json(
+        {
+          error:
+            "Versioned promotional audio is retained for audit history. Archive the promotional asset instead."
+        },
         { status: 409 }
       );
     }
