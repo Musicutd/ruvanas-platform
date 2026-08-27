@@ -334,13 +334,14 @@ model Plan {
 }
 
 model Subscription {
-  id               String             @id @default(cuid())
-  organisationId   String             @unique
-  planId           String
-  status           SubscriptionStatus @default(TRIAL)
-  currentPeriodEnd DateTime?
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @updatedAt
+  id                 String             @id @default(cuid())
+  organisationId     String             @unique
+  planId             String
+  status             SubscriptionStatus @default(TRIAL)
+  currentPeriodEnd   DateTime?
+  schoolRadioEnabled Boolean?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
 
   organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   plan         Plan         @relation(fields: [planId], references: [id])
@@ -1186,3 +1187,4 @@ model ReportExportJob {
   @@index([status, availableAt, leaseUntil])
   @@index([expiresAt])
 }
+

@@ -8,7 +8,7 @@ Ruvanas now has an additive School Radio foundation that reuses the existing ten
 
 - Staff accounts only; no student accounts or student identity fields.
 - School publishing policy defaults to `PRIVATE`.
-- The capability is disabled by default with `Plan.schoolRadioEnabled`.
+- The capability is disabled by default with `Plan.schoolRadioEnabled`; a nullable subscription override allows SUPER_ADMIN to change one organisation without changing a shared plan.
 - Every API resolves the signed-in user's active organisation and rejects cross-tenant resources.
 - Announcement audio must already be organisation-owned, ready, and approved through the existing immutable promo-audio review process.
 - Content staff can create and submit announcements. Only organisation owners/managers can approve, reject, request changes, schedule, or cancel.
@@ -36,11 +36,12 @@ Database constraints enforce exactly one slot target, a positive slot duration, 
 ## Rollout
 
 1. Deploy the migration and application to staging.
-2. Enable `schoolRadioEnabled` only on the chosen staging plan.
+2. From **Admin → Organisations**, enable School Radio only for the chosen staging organisation. This writes a subscription-level override and does not change the shared plan.
 3. Verify staff creation, manager review, scheduling, player manifest, protected playback, cancellation, tenant isolation, and audit logs.
 4. Keep the production capability disabled until the staging acceptance checks pass.
-5. Enable the chosen production plan deliberately; no other plan or Render project is changed.
+5. Enable the chosen production organisation deliberately; no other organisation, shared plan, or Render project is changed.
 
 ## Deferred intentionally
 
 Student accounts, student profile data, public publishing, remote recording, moderation automation, consent records, and community sharing remain outside this milestone. They require a separate safeguarding and privacy review before implementation.
+

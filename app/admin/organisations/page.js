@@ -1,7 +1,11 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
+import { getAdminUser } from "@/lib/requireAdmin";
+import SchoolRadioEntitlementControl from "./SchoolRadioEntitlementControl";
 
 export default async function AdminOrganisationsPage() {
+  const adminUser = await getAdminUser();
+  const canManageSchoolRadio = adminUser?.role === "SUPER_ADMIN";
   const organisations = await prisma.organisation.findMany({
     include: {
       subscription: {
@@ -56,6 +60,7 @@ export default async function AdminOrganisationsPage() {
                   <th style={styles.tableHeader}>Organisation</th>
                   <th style={styles.tableHeader}>Plan</th>
                   <th style={styles.tableHeader}>Subscription</th>
+                  <th style={styles.tableHeader}>School Radio</th>
                   <th style={styles.tableHeader}>Members</th>
                   <th style={styles.tableHeader}>Brands</th>
                   <th style={styles.tableHeader}>Locations</th>
@@ -79,6 +84,23 @@ export default async function AdminOrganisationsPage() {
 
                     <td style={styles.tableCell}>
                       {organisation.subscription?.status || "No subscription"}
+                    </td>
+
+                    <td style={styles.tableCellFeature}>
+                      {organisation.subscription ? (
+                        <SchoolRadioEntitlementControl
+                          organisationId={organisation.id}
+                          effectiveEnabled={Boolean(
+                            organisation.subscription.schoolRadioEnabled ??
+                            organisation.subscription.plan.schoolRadioEnabled
+                          )}
+                          overrideEnabled={organisation.subscription.schoolRadioEnabled}
+                          planDefaultEnabled={organisation.subscription.plan.schoolRadioEnabled}
+                          canManage={canManageSchoolRadio}
+                        />
+                      ) : (
+                        <span style={styles.muted}>Unavailable</span>
+                      )}
                     </td>
 
                     <td style={styles.tableCell}>
@@ -192,7 +214,7 @@ const styles = {
   },
   table: {
     width: "100%",
-    minWidth: 1050,
+    minWidth: 1230,
     borderCollapse: "collapse"
   },
   tableHeader: {
@@ -223,6 +245,16 @@ const styles = {
     fontWeight: 900,
     verticalAlign: "middle"
   },
+  tableCellFeature: {
+    minWidth: 230,
+    padding: "15px 12px",
+    verticalAlign: "middle"
+  },
+  muted: {
+    color: "#64748b",
+    fontSize: 13,
+    fontWeight: 700
+  },
   slug: {
     marginTop: 4,
     color: "#64748b",
@@ -230,3 +262,4 @@ const styles = {
     fontWeight: 600
   }
 };
+
