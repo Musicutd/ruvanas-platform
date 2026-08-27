@@ -134,6 +134,12 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   });
   assert.equal(unauthenticatedSchoolSlot.status, 401);
 
+  const unauthenticatedSchoolEntitlement = await api(
+    "/api/admin/organisations/not-an-organisation/school-radio",
+    { method: "PATCH", body: { enabled: true } }
+  );
+  assert.equal(unauthenticatedSchoolEntitlement.status, 401);
+
   const unauthenticatedCampaignExport = await api("/api/reports/campaign-proof/exports", {
     method: "POST",
     body: { from: dateOffset(-1), to: dateOffset(1) }
@@ -282,12 +288,45 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   );
   assert.equal(ownerCatalogueUploadAttempt.status, 403);
 
+  const ownerSchoolEntitlementAttempt = await api(
+    `/api/admin/organisations/${accountABody.organisation.id}/school-radio`,
+    { method: "PATCH", cookie: cookieA, body: { enabled: true } }
+  );
+  assert.equal(ownerSchoolEntitlementAttempt.status, 403);
+
   const db = new PrismaClient();
   try {
     await db.user.update({
       where: { id: accountABody.user.id },
       data: { role: "SUPER_ADMIN" }
     });
+
+    const enableSchoolRadio = await api(
+      `/api/admin/organisations/${accountABody.organisation.id}/school-radio`,
+      { method: "PATCH", cookie: cookieA, body: { enabled: true } }
+    );
+    assert.equal(enableSchoolRadio.status, 200, await enableSchoolRadio.clone().text());
+    assert.equal(
+      (await enableSchoolRadio.json()).subscription.effectiveSchoolRadioEnabled,
+      true
+    );
+    assert.equal(
+      (
+        await db.subscription.findUnique({
+          where: { organisationId: accountABody.organisation.id }
+        })
+      ).schoolRadioEnabled,
+      true
+    );
+    assert.equal(
+      await db.auditLog.count({
+        where: {
+          organisationId: accountABody.organisation.id,
+          action: "SCHOOL_RADIO_ENTITLEMENT_ENABLED"
+        }
+      }),
+      1
+    );
 
     const invalidCatalogueUploadForm = new FormData();
     invalidCatalogueUploadForm.set("title", "Invalid catalogue file");
@@ -791,3 +830,4 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   assert.equal(lastResponse.status, 429);
   assert.ok(Number(lastResponse.headers.get("retry-after")) > 0);
 });
+
