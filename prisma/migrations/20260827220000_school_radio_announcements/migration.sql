@@ -62,7 +62,7 @@ ALTER TABLE "PlayoutIntent"
 ALTER TABLE "ProofOfPlayEvent"
   ADD COLUMN "schoolBroadcastSlotId" TEXT;
 
-DROP CONSTRAINT IF EXISTS "ProofOfPlayEvent_item_shape_check" ON "ProofOfPlayEvent";
+ALTER TABLE "ProofOfPlayEvent" DROP CONSTRAINT IF EXISTS "ProofOfPlayEvent_item_shape_check";
 
 ALTER TABLE "ProofOfPlayEvent" ADD CONSTRAINT "ProofOfPlayEvent_item_shape_check" CHECK (
   ("itemType" = 'MUSIC' AND "trackId" IS NOT NULL AND "campaignId" IS NULL AND "schoolBroadcastSlotId" IS NULL AND "promoVersionId" IS NULL AND "playoutIntentId" IS NULL)
