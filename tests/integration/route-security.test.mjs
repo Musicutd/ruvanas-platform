@@ -106,6 +106,12 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   );
   assert.equal(unauthenticatedOpeningHours.status, 401);
 
+  const unauthenticatedMusicMode = await api("/api/admin/music-modes", {
+    method: "POST",
+    body: { organisationId: "not-an-organisation", name: "No session" }
+  });
+  assert.equal(unauthenticatedMusicMode.status, 401);
+
   const station = await api("/api/stations", {
     method: "POST",
     cookie: cookieA,
@@ -172,12 +178,77 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   );
   assert.equal(ownerOpeningHoursAttempt.status, 403);
 
+  const ownerMusicModeAttempt = await api("/api/admin/music-modes", {
+    method: "POST",
+    cookie: cookieA,
+    body: {
+      organisationId: accountABody.organisation.id,
+      name: "Forbidden music mode"
+    }
+  });
+  assert.equal(ownerMusicModeAttempt.status, 403);
+
   const db = new PrismaClient();
   try {
     await db.user.update({
       where: { id: accountABody.user.id },
       data: { role: "SUPER_ADMIN" }
     });
+
+    const musicMode = await api("/api/admin/music-modes", {
+      method: "POST",
+      cookie: cookieA,
+      body: {
+        organisationId: accountABody.organisation.id,
+        name: `Morning Energy ${suffix}`,
+        description: "Integration draft mode",
+        tracks: []
+      }
+    });
+    assert.equal(musicMode.status, 201, await musicMode.clone().text());
+    const musicModeBody = await musicMode.json();
+    assert.equal(musicModeBody.mode.status, "DRAFT");
+    assert.equal(
+      await db.auditLog.count({
+        where: {
+          organisationId: accountABody.organisation.id,
+          action: "MUSIC_MODE_CREATED",
+          entityId: musicModeBody.mode.id
+        }
+      }),
+      1
+    );
+
+    const catalogueAsset = await db.mediaAsset.create({
+      data: {
+        name: `Rights-cleared track ${suffix}`,
+        originalName: "integration.mp3",
+        storageKey: `integration/catalogue/${suffix}.mp3`,
+        mimeType: "audio/mpeg",
+        sizeBytes: 1024n,
+        durationSeconds: 180,
+        mediaType: "MUSIC",
+        libraryType: "RUVANAS_CATALOGUE",
+        status: "READY"
+      }
+    });
+    const track = await db.track.create({
+      data: {
+        mediaAssetId: catalogueAsset.id,
+        title: `Integration Track ${suffix}`,
+        artist: "Ruvanas Test Artist",
+        status: "READY"
+      }
+    });
+    await assert.rejects(
+      db.musicModeTrack.create({
+        data: {
+          musicModeId: musicModeBody.mode.id,
+          trackId: track.id,
+          weight: 0
+        }
+      })
+    );
 
     const location = await db.location.create({
       data: {
@@ -343,3 +414,4 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   assert.equal(lastResponse.status, 429);
   assert.ok(Number(lastResponse.headers.get("retry-after")) > 0);
 });
+
