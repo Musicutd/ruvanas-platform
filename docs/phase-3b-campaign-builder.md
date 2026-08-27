@@ -37,4 +37,4 @@ Mandatory corporate campaigns can only be created, published, paused, or archive
 
 - Existing music schedules, player enrolment, heartbeat, protected media, and music playback manifests are unchanged.
 - Campaigns reference exact `PromoVersion` records and never follow a newly approved version automatically.
-- Phase 3C will merge published campaign occurrences into the player schedule/manifest and extend proof-of-play from music tracks to campaign promo versions.
+- Phase 3C merges published campaign occurrences into the player schedule/manifest and extends proof-of-play from music tracks to immutable campaign promo-version intents. See `docs/phase-3c-campaign-playout.md`.

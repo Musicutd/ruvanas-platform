@@ -7,6 +7,7 @@ import {
 } from "@/lib/playback-queue.mjs";
 
 const PLAYBACK_QUEUE_KEY = "ruvanas_proof_of_play_queue_v1";
+const PLAYED_INSERTIONS_KEY = "ruvanas_played_campaign_insertions_v1";
 
 function readPlaybackQueue() {
   try {
@@ -21,6 +22,20 @@ function writePlaybackQueue(queue) {
   window.localStorage.setItem(PLAYBACK_QUEUE_KEY, JSON.stringify(queue));
 }
 
+function readPlayedInsertions() {
+  try {
+    const value = JSON.parse(window.localStorage.getItem(PLAYED_INSERTIONS_KEY) || "[]");
+    return new Set(Array.isArray(value) ? value : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function rememberPlayedInsertion(scheduleItemId) {
+  const played = [...readPlayedInsertions(), scheduleItemId].slice(-500);
+  window.localStorage.setItem(PLAYED_INSERTIONS_KEY, JSON.stringify([...new Set(played)]));
+}
+
 export default function PlayerPage() {
   const [state, setState] = useState(null);
   const [code, setCode] = useState("");
@@ -28,9 +43,13 @@ export default function PlayerPage() {
   const [message, setMessage] = useState("");
   const [manifest, setManifest] = useState(null);
   const [trackIndex, setTrackIndex] = useState(0);
+  const [activeInsertionId, setActiveInsertionId] = useState(null);
   const [playSequence, setPlaySequence] = useState(0);
   const timer = useRef(null);
   const manifestTimer = useRef(null);
+  const insertionTimer = useRef(null);
+  const audio = useRef(null);
+  const activeItemRef = useRef(null);
   const startedPlaybackKey = useRef(null);
 
   const flushPlaybackQueue = useCallback(async () => {
@@ -63,7 +82,8 @@ export default function PlayerPage() {
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Unable to load the playback plan.");
     setManifest(data);
-    setTrackIndex(0);
+    setTrackIndex((current) => data.playlist?.length ? current % data.playlist.length : 0);
+    setActiveInsertionId((current) => data.insertions?.some((item) => item.scheduleItemId === current) ? current : null);
     setPlaySequence((current) => current + 1);
   }, []);
 
@@ -110,6 +130,41 @@ export default function PlayerPage() {
     return () => window.clearInterval(manifestTimer.current);
   }, [state, manifest?.version, manifest?.refreshAfterSeconds, loadManifest]);
 
+  useEffect(() => {
+    if (!manifest) return undefined;
+    window.clearTimeout(insertionTimer.current);
+    if (activeInsertionId) return undefined;
+    const played = readPlayedInsertions();
+    const nextInsertion = (manifest.insertions || [])
+      .filter((item) => !played.has(item.scheduleItemId))
+      .sort((left, right) => left.plannedStart.localeCompare(right.plannedStart))[0];
+    if (!nextInsertion) return undefined;
+
+    const activate = () => {
+      const current = activeItemRef.current;
+      if (current?.itemType === "MUSIC" && startedPlaybackKey.current) {
+        queuePlaybackEvent({
+          eventId: crypto.randomUUID(),
+          manifestVersion: manifest.version,
+          proofToken: current.proofToken,
+          scheduleItemId: current.scheduleItemId,
+          itemType: current.itemType,
+          trackId: current.trackId,
+          eventType: "INTERRUPTED",
+          occurredAt: new Date().toISOString(),
+          positionSeconds: Math.max(0, Math.round(audio.current?.currentTime || 0)),
+          failureReason: `Interrupted for campaign ${nextInsertion.campaignName}`
+        });
+      }
+      startedPlaybackKey.current = null;
+      setActiveInsertionId(nextInsertion.scheduleItemId);
+      setPlaySequence((current) => current + 1);
+    };
+    const delay = Math.max(0, new Date(nextInsertion.plannedStart).getTime() - Date.now());
+    insertionTimer.current = window.setTimeout(activate, delay);
+    return () => window.clearTimeout(insertionTimer.current);
+  }, [manifest, activeInsertionId, queuePlaybackEvent]);
+
   async function enrol(event) {
     event.preventDefault();
     setMessage("");
@@ -142,18 +197,23 @@ export default function PlayerPage() {
     </section></main>;
   }
 
+  const activeInsertion = manifest?.insertions?.find((item) => item.scheduleItemId === activeInsertionId) || null;
   const activeTrack = manifest?.playlist?.[trackIndex] || null;
-  const activePlaybackKey = activeTrack
-    ? `${manifest.version}:${activeTrack.trackId}:${playSequence}`
+  const activeItem = activeInsertion || activeTrack;
+  activeItemRef.current = activeItem;
+  const activePlaybackKey = activeItem
+    ? `${manifest.version}:${activeItem.scheduleItemId}:${playSequence}`
     : null;
 
   function playbackEvent(eventType, audioElement, failureReason = null) {
-    if (!activeTrack || !manifest) return;
+    if (!activeItem || !manifest) return;
     queuePlaybackEvent({
       eventId: crypto.randomUUID(),
       manifestVersion: manifest.version,
-      proofToken: activeTrack.proofToken,
-      trackId: activeTrack.trackId,
+      proofToken: activeItem.proofToken,
+      scheduleItemId: activeItem.scheduleItemId,
+      itemType: activeItem.itemType,
+      ...(activeItem.itemType === "MUSIC" ? { trackId: activeItem.trackId } : {}),
       eventType,
       occurredAt: new Date().toISOString(),
       positionSeconds: Math.max(0, Math.round(audioElement?.currentTime || 0)),
@@ -164,30 +224,36 @@ export default function PlayerPage() {
   function startTrack(event) {
     if (startedPlaybackKey.current === activePlaybackKey) return;
     startedPlaybackKey.current = activePlaybackKey;
+    if (activeItem.itemType === "PROMO") rememberPlayedInsertion(activeItem.scheduleItemId);
     playbackEvent("STARTED", event.currentTarget);
   }
 
   function finishTrack(event) {
     playbackEvent("COMPLETED", event.currentTarget);
     startedPlaybackKey.current = null;
-    setTrackIndex((current) => (current + 1) % manifest.playlist.length);
+    if (activeItem.itemType === "PROMO") setActiveInsertionId(null);
+    else setTrackIndex((current) => (current + 1) % manifest.playlist.length);
     setPlaySequence((current) => current + 1);
   }
 
   function failTrack(event) {
     playbackEvent("FAILED", event.currentTarget, "Browser audio playback failed");
     startedPlaybackKey.current = null;
-    setMessage("This track could not be played. The player will retry when the schedule refreshes.");
+    if (activeItem.itemType === "PROMO") {
+      rememberPlayedInsertion(activeItem.scheduleItemId);
+      setActiveInsertionId(null);
+    }
+    setMessage("This audio could not be played. The player will retry when the schedule refreshes.");
   }
 
   return <main style={styles.page}><section style={styles.card}>
     <p style={styles.eyebrow}>RUVANAS WEB PLAYER</p>
     <h1 style={styles.heading}>{state.player.name}</h1>
     <p style={styles.copy}>{state.player.location} / {state.player.zone}</p>
-    {activeTrack ? <>
-      <h2 style={styles.channel}>{manifest.musicMode.name}</h2>
-      <p style={styles.nowPlaying}>Now playing: <strong>{activeTrack.artist} — {activeTrack.title}</strong></p>
-      <audio key={activePlaybackKey} src={activeTrack.mediaUrl} controls autoPlay onPlay={startTrack} onEnded={finishTrack} onError={failTrack} style={{ width: "100%" }} />
+    {activeItem ? <>
+      <h2 style={styles.channel}>{activeItem.itemType === "PROMO" ? activeItem.campaignName : manifest.musicMode?.name}</h2>
+      <p style={styles.nowPlaying}>{activeItem.itemType === "PROMO" ? "Campaign playing" : "Now playing"}: <strong>{activeItem.artist} — {activeItem.title}</strong></p>
+      <audio ref={audio} key={activePlaybackKey} src={activeItem.mediaUrl} controls autoPlay onPlay={startTrack} onEnded={finishTrack} onError={failTrack} style={{ width: "100%" }} />
       <p style={styles.online}>Online — secure schedule and proof of play active</p>
     </> : state.channel?.streamUrl ? <>
       <h2 style={styles.channel}>{state.channel.name}</h2>

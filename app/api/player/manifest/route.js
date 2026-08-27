@@ -13,10 +13,11 @@ export async function GET() {
       return NextResponse.json({ error: "This player is not enrolled or has been disabled." }, { status: 401 });
     }
     const instant = new Date();
-    const { resolution } = await resolvePlayerProgramming(player, instant);
+    const { resolution, campaignPlayout } = await resolvePlayerProgramming(player, instant);
     const manifest = buildPlayerManifest({
       player,
       resolution,
+      campaignPlayout,
       instant,
       proofSecret: process.env.SESSION_SECRET
     });

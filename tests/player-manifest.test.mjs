@@ -22,8 +22,23 @@ test("manifest exposes safe same-origin media URLs without storage keys",()=>{
   assert.equal(manifest.playlist.length,2);
   assert.ok(manifest.playlist.every((track)=>track.mediaUrl.startsWith("/api/player/media/")));
   assert.ok(manifest.playlist.every((track)=>/^[0-9a-f]{64}$/.test(track.proofToken)));
+  assert.ok(manifest.playlist.every((track)=>/^[0-9a-f]{64}$/.test(track.scheduleItemId)));
   assert.equal(JSON.stringify(manifest).includes("must-not-leak"),false);
   assert.equal(manifest.expiresAt,"2026-08-31T10:05:00.000Z");
+});
+
+test("manifest includes signed campaign insertions without exposing storage details",()=>{
+  const campaignPlayout={insertions:[{
+    scheduleItemId:"c".repeat(64),campaignId:"campaign-1",campaignName:"Lunch offer",promoVersionId:"promo-version-1",
+    promoName:"Lunch promo",mediaAssetId:"promo-media-1",durationSeconds:20,plannedStart:new Date("2026-08-31T10:04:00.000Z"),
+    exactTimeHardStart:false,mandatory:false,priority:"NORMAL",sourceRevision:"revision-1"
+  }]};
+  const manifest=buildPlayerManifest({player,resolution,campaignPlayout,proofSecret,instant:new Date("2026-08-31T10:02:00.000Z")});
+  assert.equal(manifest.insertions.length,1);
+  assert.equal(manifest.insertions[0].itemType,"PROMO");
+  assert.equal(manifest.insertions[0].plannedStart,"2026-08-31T10:04:00.000Z");
+  assert.match(manifest.insertions[0].proofToken,/^[0-9a-f]{64}$/);
+  assert.equal(JSON.stringify(manifest).includes("storage"),false);
 });
 
 test("unavailable catalogue entries are removed from a manifest",()=>{

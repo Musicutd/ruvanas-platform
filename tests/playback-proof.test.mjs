@@ -9,7 +9,8 @@ const secret = "proof-of-play-test-secret-with-adequate-length";
 const input = {
   playerId: "player-1",
   manifestVersion: "1234567890abcdef12345678",
-  trackId: "track-1"
+  scheduleItemId: "a".repeat(64),
+  contentId: "track-1"
 };
 
 test("proof-of-play tokens authenticate the player, manifest, and track", () => {
@@ -20,7 +21,8 @@ test("proof-of-play tokens authenticate the player, manifest, and track", () => 
 
 test("proof-of-play tokens reject tampered attribution", () => {
   const token = createPlaybackProofToken(input, secret);
-  assert.equal(verifyPlaybackProofToken({ ...input, trackId: "track-2" }, token, secret), false);
+  assert.equal(verifyPlaybackProofToken({ ...input, contentId: "track-2" }, token, secret), false);
+  assert.equal(verifyPlaybackProofToken({ ...input, scheduleItemId: "b".repeat(64) }, token, secret), false);
   assert.equal(verifyPlaybackProofToken({ ...input, playerId: "player-2" }, token, secret), false);
   assert.equal(verifyPlaybackProofToken(input, "not-a-token", secret), false);
 });
