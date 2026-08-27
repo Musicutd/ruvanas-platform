@@ -122,6 +122,15 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   );
   assert.equal(unauthenticatedCampaignPublish.status, 401);
 
+  const unauthenticatedCampaignReport = await api("/api/reports/campaign-proof");
+  assert.equal(unauthenticatedCampaignReport.status, 401);
+
+  const unauthenticatedCampaignExport = await api("/api/reports/campaign-proof/exports", {
+    method: "POST",
+    body: { from: dateOffset(-1), to: dateOffset(1) }
+  });
+  assert.equal(unauthenticatedCampaignExport.status, 401);
+
   const invalidPlayerEnrolment = await api("/api/player/enrol", {
     method: "POST",
     body: { code: "invalid-enrolment-code" }
@@ -538,6 +547,53 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     assert.equal(storedPromoProof.promoVersionId, promoVersion.id);
     assert.equal(storedPromoProof.trackId, null);
 
+    const campaignReport = await api(
+      `/api/reports/campaign-proof?from=${dateOffset(-1)}&to=${dateOffset(1)}&campaignId=${campaignDraftBody.campaign.id}`,
+      { cookie: cookieA }
+    );
+    assert.equal(campaignReport.status, 200, await campaignReport.clone().text());
+    const campaignReportBody = await campaignReport.json();
+    assert.equal(campaignReportBody.organisation.id, accountABody.organisation.id);
+    assert.equal(campaignReportBody.report.summary.planned, 1);
+    assert.equal(campaignReportBody.report.summary.completed, 1);
+    assert.equal(campaignReportBody.report.summary.audienceMeasurement, false);
+    assert.equal(campaignReportBody.report.rows[0].campaignId, campaignDraftBody.campaign.id);
+
+    const foreignCampaignReport = await api(
+      `/api/reports/campaign-proof?from=${dateOffset(-1)}&to=${dateOffset(1)}&campaignId=${campaignDraftBody.campaign.id}`,
+      { cookie: cookieB }
+    );
+    assert.equal(foreignCampaignReport.status, 200);
+    assert.equal((await foreignCampaignReport.json()).report.summary.planned, 0);
+
+    const exportRequest = await api("/api/reports/campaign-proof/exports", {
+      method: "POST",
+      cookie: cookieA,
+      body: { from: dateOffset(-1), to: dateOffset(1), campaignId: campaignDraftBody.campaign.id }
+    });
+    assert.equal(exportRequest.status, 202, await exportRequest.clone().text());
+    const exportRequestBody = await exportRequest.json();
+    const foreignExportStatus = await api(exportRequestBody.job.statusUrl, { cookie: cookieB });
+    assert.equal(foreignExportStatus.status, 404);
+
+    let exportJob;
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      const statusResponse = await api(exportRequestBody.job.statusUrl, { cookie: cookieA });
+      assert.equal(statusResponse.status, 200, await statusResponse.clone().text());
+      exportJob = (await statusResponse.json()).job;
+      if (exportJob.status === "READY") break;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    assert.equal(exportJob.status, "READY", exportJob.error || "Export did not complete");
+    const exportDownload = await api(exportJob.downloadUrl, { cookie: cookieA });
+    assert.equal(exportDownload.status, 200, await exportDownload.clone().text());
+    assert.match(exportDownload.headers.get("content-type"), /text\/csv/);
+    assert.match(exportDownload.headers.get("content-disposition"), /attachment/);
+    const csv = await exportDownload.text();
+    assert.match(csv, /device-confirmed playback/);
+    assert.match(csv, new RegExp(campaignPayload.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.equal(await db.auditLog.count({ where: { action: "CAMPAIGN_PROOF_EXPORT_COMPLETED", entityId: exportJob.id } }), 1);
+
     const tamperedProofOfPlay = await api("/api/player/proof-of-play", {
       method: "POST",
       cookie: `ruvanas_player=${rawPlayerToken}`,
@@ -673,3 +729,4 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   assert.equal(lastResponse.status, 429);
   assert.ok(Number(lastResponse.headers.get("retry-after")) > 0);
 });
+

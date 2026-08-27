@@ -29,4 +29,5 @@ The player keeps normal music rotation active, interrupts music when a campaign 
 
 Existing catalogue playback remains compatible and now also carries a signed schedule item ID. The Proof of Play operations page distinguishes music from promotions and shows campaign attribution and planned time.
 
-Phase 3D will add organisation-scoped campaign aggregates by campaign, promo version, location, group, date, and hour, with planned-versus-started-versus-completed-versus-failed totals and asynchronous CSV export.
+Phase 3D adds organisation-scoped campaign aggregates by campaign, promo version, location, group, date, and hour, with planned-versus-started-versus-completed-versus-failed totals and asynchronous CSV export. See `docs/phase-3d-campaign-proof-reports.md`.
+

@@ -218,6 +218,14 @@ enum PlaybackItemType {
   PROMO
 }
 
+enum ReportExportStatus {
+  QUEUED
+  PROCESSING
+  READY
+  FAILED
+  EXPIRED
+}
+
 model User {
   id           String   @id @default(cuid())
   name         String?
@@ -233,6 +241,7 @@ model User {
   submittedPromoVersions PromoVersion[]       @relation("PromoVersionSubmittedBy")
   reviewedPromoVersions  PromoVersion[]       @relation("PromoVersionReviewedBy")
   publishedCampaigns     Campaign[]           @relation("CampaignPublishedBy")
+  reportExports          ReportExportJob[]    @relation("ReportExportRequestedBy")
 }
 
 model Organisation {
@@ -258,6 +267,7 @@ model Organisation {
   proofOfPlayEvents ProofOfPlayEvent[]
   campaigns         Campaign[]
   playoutIntents    PlayoutIntent[]
+  reportExports     ReportExportJob[]
   activeSessions    Session[]
 }
 
@@ -946,6 +956,10 @@ model PlayoutIntent {
   campaignId          String
   promoVersionId      String
   mediaAssetId        String
+  locationId          String
+  locationName        String
+  locationTimezone    String
+  locationGroups      Json
   publicationRevision Int
   sourceRevision      String
   plannedStart        DateTime
@@ -968,6 +982,7 @@ model PlayoutIntent {
   @@index([channelId, plannedStart])
   @@index([campaignId, plannedStart])
   @@index([promoVersionId, plannedStart])
+  @@index([locationId, plannedStart])
   @@index([expiresAt])
 }
 
@@ -1019,3 +1034,33 @@ model ProofOfPlayEvent {
   @@index([manifestVersion])
   @@index([eventType, occurredAt])
 }
+
+model ReportExportJob {
+  id                String             @id @default(cuid())
+  organisationId    String
+  requestedByUserId String
+  status            ReportExportStatus @default(QUEUED)
+  reportType        String             @default("CAMPAIGN_PROOF_CSV")
+  filters           Json
+  csvContent        String?            @db.Text
+  contentSha256     String?
+  rowCount          Int                @default(0)
+  attempts          Int                @default(0)
+  availableAt       DateTime           @default(now())
+  leaseUntil        DateTime?
+  startedAt         DateTime?
+  completedAt       DateTime?
+  expiresAt         DateTime
+  errorMessage      String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  requestedBy  User         @relation("ReportExportRequestedBy", fields: [requestedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([organisationId, createdAt])
+  @@index([requestedByUserId, createdAt])
+  @@index([status, availableAt, leaseUntil])
+  @@index([expiresAt])
+}
+

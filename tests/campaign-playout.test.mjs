@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { compileCampaignPlayout } from "../lib/campaign-playout.mjs";
+import { compileCampaignPlayout, playoutIntentCreateData } from "../lib/campaign-playout.mjs";
 
 const player = {
   id: "player-1",
@@ -9,9 +9,10 @@ const player = {
   zone: {
     location: {
       id: "location-1",
+      name: "Valletta flagship",
       brandId: "brand-1",
       timezone: "Europe/Malta",
-      groupMemberships: [{ locationGroupId: "group-1" }]
+      groupMemberships: [{ locationGroupId: "group-1", locationGroup: { name: "Flagships" } }]
     }
   }
 };
@@ -99,3 +100,17 @@ test("superseded approved versions remain pinned to already-published campaigns"
   assert.equal(result.insertions.length, 1);
   assert.equal(result.insertions[0].promoVersionId, "version-pinned");
 });
+
+test("playout intents snapshot location and group attribution", () => {
+  const insertion = compileCampaignPlayout({
+    campaigns: [campaign("snapshot")],
+    player,
+    instant: new Date("2026-08-27T08:02:00.000Z")
+  }).insertions[0];
+  const data = playoutIntentCreateData({ insertion, player, channelId: "channel-1" });
+  assert.equal(data.locationId, "location-1");
+  assert.equal(data.locationName, "Valletta flagship");
+  assert.equal(data.locationTimezone, "Europe/Malta");
+  assert.deepEqual(data.locationGroups, [{ id: "group-1", name: "Flagships" }]);
+});
+
