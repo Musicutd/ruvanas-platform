@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   normaliseProductionOrderPayload,
+  normaliseProductionScriptPayload,
   productionPermissions,
   transitionProductionOrder
 } from "../lib/production-orders.mjs";
@@ -48,7 +49,16 @@ test("platform production staff follow the controlled production sequence", () =
   const permissions = productionPermissions({ platformRole: "SUPER_ADMIN", membershipRole: "OWNER" });
   assert.equal(transitionProductionOrder({ currentStatus: "SUBMITTED", action: "START_PRODUCTION", permissions }).status, "IN_PRODUCTION");
   assert.equal(transitionProductionOrder({ currentStatus: "IN_PRODUCTION", action: "REQUEST_APPROVAL", permissions }).status, "AWAITING_CUSTOMER_APPROVAL");
+  assert.equal(transitionProductionOrder({ currentStatus: "CHANGES_REQUESTED", action: "RESUME_PRODUCTION", permissions }).status, "IN_PRODUCTION");
   assert.equal(transitionProductionOrder({ currentStatus: "APPROVED", action: "DELIVER", permissions }).status, "DELIVERED");
+});
+
+test("production scripts are immutable, bounded language versions", () => {
+  const script = normaliseProductionScriptPayload({ languageCode: "EN-mt", content: "This is a safe production script.", productionNotes: "Read warmly." });
+  assert.equal(script.languageCode, "en-mt");
+  assert.equal(script.productionNotes, "Read warmly.");
+  assert.throws(() => normaliseProductionScriptPayload({ languageCode: "invalid code", content: "This is a safe production script." }), /language code/);
+  assert.throws(() => normaliseProductionScriptPayload({ languageCode: "en", content: "short" }), /script content/);
 });
 
 test("customer approval and revision requests require manager authority", () => {
@@ -65,5 +75,4 @@ test("final production-order states cannot be reopened by an invalid transition"
   assert.throws(() => transitionProductionOrder({ currentStatus: "DELIVERED", action: "SUBMIT", permissions }), /cannot be changed/);
   assert.throws(() => transitionProductionOrder({ currentStatus: "CANCELLED", action: "START_PRODUCTION", permissions }), /cannot be changed/);
 });
-
 

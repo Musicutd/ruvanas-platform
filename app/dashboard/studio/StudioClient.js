@@ -72,11 +72,45 @@ export default function StudioClient() {
     } catch (actionError) { setError(actionError.message); } finally { setWorking(false); }
   }
 
+  async function assignOrder(event, order) {
+    event.preventDefault(); setWorking(true); setError(""); setNotice("");
+    const userId = new FormData(event.currentTarget).get("userId") || null;
+    try {
+      const response = await fetch(`/api/studio/orders/${order.id}/assignment`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId }) });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "The production assignment could not be updated.");
+      setNotice("Production assignment updated."); await load();
+    } catch (actionError) { setError(actionError.message); } finally { setWorking(false); }
+  }
+
+  async function createScript(event, order) {
+    event.preventDefault(); setWorking(true); setError(""); setNotice("");
+    const form = event.currentTarget; const payload = Object.fromEntries(new FormData(form).entries());
+    try {
+      const response = await fetch(`/api/studio/orders/${order.id}/scripts`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "The script version could not be created.");
+      form.reset(); setNotice(`Script version ${result.script.version} created.`); await load();
+    } catch (actionError) { setError(actionError.message); } finally { setWorking(false); }
+  }
+
+  async function uploadFile(event, order) {
+    event.preventDefault(); setWorking(true); setError(""); setNotice("");
+    const form = event.currentTarget; const body = new FormData(form);
+    try {
+      const response = await fetch(`/api/studio/orders/${order.id}/files`, { method: "POST", body });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "The Studio file could not be uploaded.");
+      form.reset(); setNotice("Studio file uploaded securely."); await load();
+    } catch (actionError) { setError(actionError.message); } finally { setWorking(false); }
+  }
+
   function actions(order) {
     if (!data) return null;
     const items = [];
-    if (data.permissions.canCreate && new Set(["DRAFT", "CHANGES_REQUESTED"]).has(order.status)) items.push(["SUBMIT", "Submit brief", styles.primary]);
+    if (data.permissions.canCreate && order.status === "DRAFT") items.push(["SUBMIT", "Submit brief", styles.primary]);
     if (data.permissions.canProduce && order.status === "SUBMITTED") items.push(["START_PRODUCTION", "Start production", styles.primary]);
+    if (data.permissions.canProduce && order.status === "CHANGES_REQUESTED") items.push(["RESUME_PRODUCTION", "Resume production", styles.primary]);
     if (data.permissions.canProduce && order.status === "IN_PRODUCTION") items.push(["REQUEST_APPROVAL", "Send for approval", styles.primary]);
     if (data.permissions.canManage && order.status === "AWAITING_CUSTOMER_APPROVAL") {
       items.push(["APPROVE", "Approve production", styles.approve], ["REQUEST_CHANGES", "Request changes", styles.secondary]);
@@ -130,12 +164,39 @@ export default function StudioClient() {
         <div style={styles.itemHeader}><div><h3 style={styles.itemTitle}>{order.title}</h3><p style={styles.hint}>Created by {order.createdBy.name || order.createdBy.email} · {formatDate(order.createdAt)}</p></div><Badge value={order.status} /></div>
         <p style={styles.body}>{order.promotionDetails}</p>
         <div style={styles.meta}><span><strong>Languages:</strong> {order.languageCodes.join(", ")}</span><span><strong>Priority:</strong> {order.priority}</span><span><strong>Funding:</strong> {order.fundingType.replaceAll("_", " ")}</span><span><strong>Deadline:</strong> {formatDate(order.deadlineAt, true)}</span></div>
+        <p style={styles.hint}><strong>Assigned:</strong> {order.assignedTo?.name || order.assignedTo?.email || "Not assigned"}</p>
         {order.mandatoryLegalWording ? <p style={styles.legal}><strong>Mandatory wording:</strong> {order.mandatoryLegalWording}</p> : null}
+        {data.permissions.canProduce && !FINAL_STATUSES.has(order.status) ? <form onSubmit={(event) => assignOrder(event, order)} style={styles.inlineForm}>
+          <label style={styles.compactLabel}>Production assignee<select name="userId" defaultValue={order.assignedTo?.id || ""} style={styles.input}><option value="">Not assigned</option>{data.staff.map((person) => <option key={person.id} value={person.id}>{person.name || person.email} · {person.role}</option>)}</select></label>
+          <button type="submit" disabled={working} style={styles.secondary}>Update assignment</button>
+        </form> : null}
+
+        {!FINAL_STATUSES.has(order.status) && (data.permissions.canCreate || (data.permissions.canProduce && ["IN_PRODUCTION", "AWAITING_CUSTOMER_APPROVAL", "CHANGES_REQUESTED", "APPROVED"].includes(order.status))) ? <details style={styles.workspace}><summary>Add a private file</summary><form onSubmit={(event) => uploadFile(event, order)} style={styles.nestedForm}>
+          <label style={styles.compactLabel}>File purpose<select name="kind" style={styles.input} required>
+            {data.permissions.canCreate ? <option value="BRIEF_ATTACHMENT">Brief attachment</option> : null}
+            {data.permissions.canProduce && ["IN_PRODUCTION", "AWAITING_CUSTOMER_APPROVAL", "CHANGES_REQUESTED"].includes(order.status) ? <option value="AUDIO_PREVIEW">Audio preview</option> : null}
+            {data.permissions.canProduce && order.status === "APPROVED" ? <option value="FINAL_MASTER">Final master</option> : null}
+          </select></label>
+          <label style={styles.compactLabel}>Private file<input name="file" type="file" required style={styles.input} accept=".pdf,.txt,.png,.jpg,.jpeg,.mp3,.wav,.ogg,.m4a" /></label>
+          <button type="submit" disabled={working} style={styles.secondary}>Upload securely</button>
+          <span style={styles.hint}>Briefs: PDF, TXT, PNG or JPG up to 10 MB. Audio: MP3, WAV, OGG or M4A up to 50 MB.</span>
+        </form></details> : null}
+
+        {data.permissions.canProduce && ["IN_PRODUCTION", "CHANGES_REQUESTED"].includes(order.status) ? <details style={styles.workspace} open><summary>Create immutable script version</summary><form onSubmit={(event) => createScript(event, order)} style={styles.nestedForm}>
+          <label style={styles.compactLabel}>Language code<input name="languageCode" style={styles.input} defaultValue={order.languageCodes[0] || "en"} required maxLength={35} /></label>
+          <label style={styles.compactLabel}>Script<textarea name="content" style={styles.textarea} minLength={10} maxLength={12000} required /></label>
+          <label style={styles.compactLabel}>Production notes<textarea name="productionNotes" style={styles.textareaSmall} maxLength={2000} /></label>
+          <button type="submit" disabled={working} style={styles.secondary}>Save new script version</button>
+        </form></details> : null}
+
+        {order.scripts.length ? <details style={styles.workspace}><summary>Script versions ({order.scripts.length})</summary>{order.scripts.map((script) => <article key={script.id} style={styles.subItem}><strong>Version {script.version} · {script.languageCode}</strong><p style={styles.preWrap}>{script.content}</p>{script.productionNotes ? <p style={styles.hint}>Notes: {script.productionNotes}</p> : null}<p style={styles.hint}>{script.createdBy.name || script.createdBy.email} · {formatDate(script.createdAt)}</p></article>)}</details> : null}
+        {order.files.length ? <details style={styles.workspace} open><summary>Private files ({order.files.length})</summary>{order.files.map((file) => <article key={file.id} style={styles.fileRow}><div><strong>{file.kind.replaceAll("_", " ")}</strong><p style={styles.hint}>{file.originalName} · {(Number(file.sizeBytes) / 1024 / 1024).toFixed(2)} MB · {formatDate(file.createdAt)}</p></div><a href={`/api/studio/files/${file.id}`} target="_blank" rel="noreferrer" style={styles.fileLink}>{file.kind === "BRIEF_ATTACHMENT" ? "Download" : "Open audio"}</a></article>)}</details> : null}
+        {order.revisions.length ? <details style={styles.workspace} open><summary>Revision requests ({order.revisions.length})</summary>{order.revisions.map((revision) => <article key={revision.id} style={styles.subItem}><div style={styles.itemHeader}><strong>{revision.message}</strong><Badge value={revision.status} /></div><p style={styles.hint}>Requested by {revision.requestedBy.name || revision.requestedBy.email} · {formatDate(revision.createdAt)}{revision.resolvedAt ? ` · Resolved ${formatDate(revision.resolvedAt)}` : ""}</p></article>)}</details> : null}
         {actions(order)}
         <details style={styles.history}><summary>Workflow history ({order.events.length})</summary>{order.events.map((item) => <p key={item.id} style={styles.historyItem}><strong>{item.eventType.replaceAll("_", " ")}</strong> · {formatDate(item.createdAt)} · {item.actor?.name || item.actor?.email || "System"}{item.note ? ` — ${item.note}` : ""}</p>)}</details>
       </article>)}</div>}
     </section>
-    <p style={styles.footerNote}>This first Studio milestone stores the brief and workflow history. Script versions, previews, revision assets, file attachments, staff assignment, and production-credit ledger are delivered in the next Studio increments.</p>
+    <p style={styles.footerNote}>Studio files are private to this organisation and never expose storage addresses. Production-credit accounting and campaign delivery linkage are the next Studio increments.</p>
   </main>;
 }
 
@@ -151,7 +212,7 @@ const styles = {
   primary: { border: 0, borderRadius: 8, background: "#f4b942", color: "#101827", padding: "12px 16px", fontWeight: 900, cursor: "pointer" }, approve: { border: 0, borderRadius: 7, background: "#22c55e", color: "#052e16", padding: "8px 11px", fontWeight: 900, cursor: "pointer" }, secondary: { border: "1px solid #94a3b8", borderRadius: 7, background: "transparent", color: "#e2e8f0", padding: "8px 11px", fontWeight: 800, cursor: "pointer" }, danger: { border: "1px solid #f87171", borderRadius: 7, background: "transparent", color: "#fecaca", padding: "8px 11px", fontWeight: 800, cursor: "pointer" },
   actions: { display: "flex", flexWrap: "wrap", gap: 8, marginTop: 14 }, list: { display: "grid", gap: 14 }, item: { border: "1px solid #34445f", borderRadius: 10, padding: 16, background: "#131e30" }, itemHeader: { display: "flex", justifyContent: "space-between", gap: 14 }, itemTitle: { margin: "0 0 5px" },
   badge: { display: "inline-block", borderRadius: 5, padding: "4px 8px", fontSize: 11, fontWeight: 900, whiteSpace: "nowrap" }, hint: { color: "#9facbf", lineHeight: 1.5, fontSize: 13 }, body: { color: "#d4dceb", lineHeight: 1.55 }, meta: { display: "flex", flexWrap: "wrap", gap: "8px 18px", color: "#b8c3d6", fontSize: 13 }, legal: { borderLeft: "3px solid #f4b942", paddingLeft: 10, color: "#fde68a", lineHeight: 1.5 },
+  inlineForm: { display: "grid", gridTemplateColumns: "minmax(240px,1fr) auto", gap: 10, alignItems: "end", marginTop: 14 }, compactLabel: { display: "grid", gap: 6, color: "#dce5f3", fontWeight: 800, fontSize: 12 }, workspace: { marginTop: 14, border: "1px solid #34445f", borderRadius: 8, padding: 12, color: "#d4dceb" }, nestedForm: { display: "grid", gap: 10, marginTop: 12 }, subItem: { borderTop: "1px solid #34445f", padding: "12px 0" }, fileRow: { display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", borderTop: "1px solid #34445f", padding: "10px 0" }, fileLink: { color: "#f4b942", fontWeight: 900 }, preWrap: { whiteSpace: "pre-wrap", lineHeight: 1.55, color: "#d4dceb" },
   history: { marginTop: 14, color: "#b8c3d6", cursor: "pointer" }, historyItem: { borderTop: "1px solid #34445f", paddingTop: 8, fontSize: 12, lineHeight: 1.5 }, error: { border: "1px solid #ef4444", background: "#451a1a", color: "#fecaca", borderRadius: 8, padding: 12, marginBottom: 16 }, notice: { border: "1px solid #22c55e", background: "#052e16", color: "#bbf7d0", borderRadius: 8, padding: 12, marginBottom: 16 }, footerNote: { color: "#8ea0b8", fontSize: 12, lineHeight: 1.5, marginTop: 20 }
 };
-
 

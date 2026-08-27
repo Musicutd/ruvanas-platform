@@ -149,6 +149,15 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   });
   assert.equal(unauthenticatedProductionOrderStatus.status, 401);
 
+  const unauthenticatedProductionAssignment = await api("/api/studio/orders/not-an-order/assignment", { method: "PATCH", body: { userId: null } });
+  assert.equal(unauthenticatedProductionAssignment.status, 401);
+
+  const unauthenticatedProductionScript = await api("/api/studio/orders/not-an-order/scripts", { method: "POST", body: { languageCode: "en", content: "Unauthenticated script content." } });
+  assert.equal(unauthenticatedProductionScript.status, 401);
+
+  const unauthenticatedProductionFile = await api("/api/studio/files/not-a-file");
+  assert.equal(unauthenticatedProductionFile.status, 401);
+
   const unauthenticatedSchoolEntitlement = await api(
     "/api/admin/organisations/not-an-organisation/school-radio",
     { method: "PATCH", body: { enabled: true } }
@@ -372,6 +381,21 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     });
     assert.equal(startProduction.status, 200, await startProduction.clone().text());
 
+    const assignProduction = await api(`/api/studio/orders/${productionOrder.id}/assignment`, {
+      method: "PATCH",
+      cookie: cookieA,
+      body: { userId: accountABody.user.id }
+    });
+    assert.equal(assignProduction.status, 200, await assignProduction.clone().text());
+
+    const createProductionScript = await api(`/api/studio/orders/${productionOrder.id}/scripts`, {
+      method: "POST",
+      cookie: cookieA,
+      body: { languageCode: "en", content: "This is the first immutable integration production script.", productionNotes: "Integration only." }
+    });
+    assert.equal(createProductionScript.status, 201, await createProductionScript.clone().text());
+    assert.equal((await createProductionScript.json()).script.version, 1);
+
     const requestProductionApproval = await api(`/api/studio/orders/${productionOrder.id}/status`, {
       method: "PATCH",
       cookie: cookieA,
@@ -386,13 +410,19 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     });
     assert.equal(approveProduction.status, 200, await approveProduction.clone().text());
     assert.equal((await approveProduction.json()).order.status, "APPROVED");
+    const deliverWithoutMaster = await api(`/api/studio/orders/${productionOrder.id}/status`, {
+      method: "PATCH",
+      cookie: cookieA,
+      body: { action: "DELIVER" }
+    });
+    assert.equal(deliverWithoutMaster.status, 409);
     assert.equal(
       await db.productionOrderEvent.count({ where: { orderId: productionOrder.id } }),
-      4
+      6
     );
     assert.equal(
       await db.auditLog.count({ where: { organisationId: accountABody.organisation.id, entityId: productionOrder.id, entityType: "ProductionOrder" } }),
-      4
+      5
     );
 
     const starterPlan = await db.plan.findUnique({ where: { code: "STARTER" } });
