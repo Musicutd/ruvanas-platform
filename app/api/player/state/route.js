@@ -32,7 +32,8 @@ export async function GET() {
             streamUrl: channel.station?.streamConfig?.streamUrl || null
           }
         : null,
-      heartbeatIntervalSeconds: PLAYER_HEARTBEAT_INTERVAL_SECONDS
+      heartbeatIntervalSeconds: PLAYER_HEARTBEAT_INTERVAL_SECONDS,
+      manifestUrl: "/api/player/manifest"
     });
   } catch (error) {
     console.error("Player state error:", error);
@@ -42,4 +43,3 @@ export async function GET() {
     );
   }
 }
-
