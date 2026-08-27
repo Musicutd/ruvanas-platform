@@ -42,6 +42,11 @@ const navItems = [
     label: "Promo Library"
   },
   {
+    href: "/admin/campaigns",
+    label: "Campaigns",
+    superAdminOnly: true
+  },
+  {
     href: "/admin/catalogue",
     label: "Music Catalogue",
     superAdminOnly: true

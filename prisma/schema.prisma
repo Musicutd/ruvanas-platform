@@ -144,6 +144,43 @@ enum PromoProcessingJobStatus {
   CANCELLED
 }
 
+enum CampaignStatus {
+  DRAFT
+  PUBLISHED
+  PAUSED
+  ENDED
+  ARCHIVED
+}
+
+enum CampaignPriority {
+  LOW
+  NORMAL
+  HIGH
+  VERY_HIGH
+}
+
+enum CampaignTargetType {
+  ALL_LOCATIONS
+  BRAND
+  LOCATION_GROUP
+  LOCATION
+  ZONE
+}
+
+enum CampaignSchedulingMode {
+  PLAYS_PER_HOUR
+  INTERVAL
+  EXACT_TIMES
+  ADVANCED_DAYPART
+  SMART_PRIORITY
+}
+
+enum CampaignWindowMode {
+  PLAYS_PER_HOUR
+  INTERVAL
+  EXACT_TIME
+}
+
 enum PlayerStatus {
   PENDING_ENROLMENT
   ONLINE
@@ -189,6 +226,7 @@ model User {
   sessions               Session[]
   submittedPromoVersions PromoVersion[]       @relation("PromoVersionSubmittedBy")
   reviewedPromoVersions  PromoVersion[]       @relation("PromoVersionReviewedBy")
+  publishedCampaigns     Campaign[]           @relation("CampaignPublishedBy")
 }
 
 model Organisation {
@@ -212,6 +250,7 @@ model Organisation {
   musicModes        MusicMode[]
   musicSchedules    MusicSchedule[]
   proofOfPlayEvents ProofOfPlayEvent[]
+  campaigns         Campaign[]
   activeSessions    Session[]
 }
 
@@ -268,9 +307,10 @@ model Brand {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  locations    Location[]
-  channels     Channel[]
+  organisation    Organisation     @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  locations       Location[]
+  channels        Channel[]
+  campaignTargets CampaignTarget[]
 
   @@unique([organisationId, slug])
   @@index([organisationId])
@@ -300,6 +340,7 @@ model Location {
   openingHours      LocationOpeningHour[]
   openingExceptions LocationOpeningException[]
   musicSchedules    MusicSchedule[]
+  campaignTargets   CampaignTarget[]
 
   @@unique([organisationId, slug])
   @@index([organisationId])
@@ -348,8 +389,9 @@ model LocationGroup {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  organisation Organisation          @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  locations    LocationGroupMember[]
+  organisation    Organisation          @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  locations       LocationGroupMember[]
+  campaignTargets CampaignTarget[]
 
   @@unique([organisationId, slug])
   @@index([organisationId])
@@ -381,6 +423,7 @@ model Zone {
   players            Player[]
   musicSchedules     MusicSchedule[]
   proofOfPlayEvents  ProofOfPlayEvent[]
+  campaignTargets    CampaignTarget[]
 
   @@unique([locationId, slug])
   @@index([locationId])
@@ -574,6 +617,7 @@ model PromoVersion {
   reviewedBy       User?                @relation("PromoVersionReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
   approvedForPromo PromoAsset?          @relation("CurrentApprovedPromoVersion")
   processingJobs   PromoProcessingJob[]
+  campaigns        Campaign[]
 
   @@unique([promoAssetId, version])
   @@index([promoAssetId, status])
@@ -599,6 +643,94 @@ model PromoProcessingJob {
 
   @@unique([promoVersionId, jobType])
   @@index([status, createdAt])
+}
+
+model Campaign {
+  id                         String                 @id @default(cuid())
+  organisationId             String
+  promoVersionId             String
+  name                       String
+  status                     CampaignStatus         @default(DRAFT)
+  priority                   CampaignPriority       @default(NORMAL)
+  schedulingMode             CampaignSchedulingMode
+  mandatory                  Boolean                @default(false)
+  respectOpeningHours        Boolean                @default(true)
+  effectiveFrom              DateTime               @db.Date
+  effectiveTo                DateTime               @db.Date
+  maxPromoMinutesPerHour     Int                    @default(12)
+  minSamePromoGapMinutes     Int                    @default(15)
+  minAnyPromoGapMinutes      Int                    @default(2)
+  publicationRevision        Int                    @default(0)
+  publishedConfigurationHash String?
+  publishedById              String?
+  publishedAt                DateTime?
+  createdAt                  DateTime               @default(now())
+  updatedAt                  DateTime               @updatedAt
+
+  organisation Organisation       @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  promoVersion PromoVersion       @relation(fields: [promoVersionId], references: [id], onDelete: Restrict)
+  publishedBy  User?              @relation("CampaignPublishedBy", fields: [publishedById], references: [id], onDelete: SetNull)
+  targets      CampaignTarget[]
+  rule         CampaignRule?
+  schedules    CampaignSchedule[]
+
+  @@index([organisationId, status])
+  @@index([promoVersionId, status])
+  @@index([effectiveFrom, effectiveTo])
+}
+
+model CampaignTarget {
+  id              String             @id @default(cuid())
+  campaignId      String
+  targetType      CampaignTargetType
+  brandId         String?
+  locationGroupId String?
+  locationId      String?
+  zoneId          String?
+  createdAt       DateTime           @default(now())
+
+  campaign      Campaign       @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  brand         Brand?         @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  locationGroup LocationGroup? @relation(fields: [locationGroupId], references: [id], onDelete: Cascade)
+  location      Location?      @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  zone          Zone?          @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, targetType, brandId, locationGroupId, locationId, zoneId])
+  @@index([campaignId, targetType])
+  @@index([brandId])
+  @@index([locationGroupId])
+  @@index([locationId])
+  @@index([zoneId])
+}
+
+model CampaignRule {
+  id                 String   @id @default(cuid())
+  campaignId         String   @unique
+  playsPerHour       Int?
+  intervalMinutes    Int?
+  exactTimeHardStart Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+}
+
+model CampaignSchedule {
+  id              String             @id @default(cuid())
+  campaignId      String
+  weekday         Int
+  windowMode      CampaignWindowMode
+  startMinute     Int?
+  endMinute       Int?
+  exactMinute     Int?
+  playsPerHour    Int?
+  intervalMinutes Int?
+  createdAt       DateTime           @default(now())
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId, weekday, startMinute])
+  @@index([campaignId, weekday, exactMinute])
 }
 
 model Track {
