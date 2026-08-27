@@ -134,6 +134,21 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   });
   assert.equal(unauthenticatedSchoolSlot.status, 401);
 
+  const unauthenticatedProductionOrders = await api("/api/studio/orders");
+  assert.equal(unauthenticatedProductionOrders.status, 401);
+
+  const unauthenticatedProductionOrderCreate = await api("/api/studio/orders", {
+    method: "POST",
+    body: {}
+  });
+  assert.equal(unauthenticatedProductionOrderCreate.status, 401);
+
+  const unauthenticatedProductionOrderStatus = await api("/api/studio/orders/not-an-order/status", {
+    method: "PATCH",
+    body: { action: "SUBMIT" }
+  });
+  assert.equal(unauthenticatedProductionOrderStatus.status, 401);
+
   const unauthenticatedSchoolEntitlement = await api(
     "/api/admin/organisations/not-an-organisation/school-radio",
     { method: "PATCH", body: { enabled: true } }
@@ -307,12 +322,78 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   });
   assert.equal(ownerOrganisationCreateAttempt.status, 403);
 
+  const productionOrderResponse = await api("/api/studio/orders", {
+    method: "POST",
+    cookie: cookieA,
+    body: {
+      title: "Integration production brief",
+      promotionDetails: "Create a short retail promotion for the integration test organisation.",
+      languageCodes: ["en"],
+      targetDurationSeconds: 30,
+      campaignStartsOn: dateOffset(2),
+      campaignEndsOn: dateOffset(10),
+      contactName: "Integration Owner A",
+      contactEmail: `integration-a-${suffix}@example.invalid`,
+      fundingType: "PLAN_INCLUDED",
+      priority: "STANDARD",
+      submitNow: true
+    }
+  });
+  assert.equal(productionOrderResponse.status, 201, await productionOrderResponse.clone().text());
+  const productionOrder = (await productionOrderResponse.json()).order;
+  assert.equal(productionOrder.organisationId, accountABody.organisation.id);
+  assert.equal(productionOrder.status, "SUBMITTED");
+
+  const ownerStartProductionAttempt = await api(`/api/studio/orders/${productionOrder.id}/status`, {
+    method: "PATCH",
+    cookie: cookieA,
+    body: { action: "START_PRODUCTION" }
+  });
+  assert.equal(ownerStartProductionAttempt.status, 403);
+
+  const crossTenantProductionOrderAttempt = await api(`/api/studio/orders/${productionOrder.id}/status`, {
+    method: "PATCH",
+    cookie: cookieB,
+    body: { action: "CANCEL", note: "Cross-tenant attempt" }
+  });
+  assert.equal(crossTenantProductionOrderAttempt.status, 404);
+
   const db = new PrismaClient();
   try {
     await db.user.update({
       where: { id: accountABody.user.id },
       data: { role: "SUPER_ADMIN" }
     });
+
+    const startProduction = await api(`/api/studio/orders/${productionOrder.id}/status`, {
+      method: "PATCH",
+      cookie: cookieA,
+      body: { action: "START_PRODUCTION" }
+    });
+    assert.equal(startProduction.status, 200, await startProduction.clone().text());
+
+    const requestProductionApproval = await api(`/api/studio/orders/${productionOrder.id}/status`, {
+      method: "PATCH",
+      cookie: cookieA,
+      body: { action: "REQUEST_APPROVAL" }
+    });
+    assert.equal(requestProductionApproval.status, 200, await requestProductionApproval.clone().text());
+
+    const approveProduction = await api(`/api/studio/orders/${productionOrder.id}/status`, {
+      method: "PATCH",
+      cookie: cookieA,
+      body: { action: "APPROVE" }
+    });
+    assert.equal(approveProduction.status, 200, await approveProduction.clone().text());
+    assert.equal((await approveProduction.json()).order.status, "APPROVED");
+    assert.equal(
+      await db.productionOrderEvent.count({ where: { orderId: productionOrder.id } }),
+      4
+    );
+    assert.equal(
+      await db.auditLog.count({ where: { organisationId: accountABody.organisation.id, entityId: productionOrder.id, entityType: "ProductionOrder" } }),
+      4
+    );
 
     const starterPlan = await db.plan.findUnique({ where: { code: "STARTER" } });
     assert.ok(starterPlan);
