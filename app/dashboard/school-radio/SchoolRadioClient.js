@@ -80,17 +80,26 @@ export default function SchoolRadioClient() {
 
   async function createSlot(event) {
     event.preventDefault();
-    const [targetType, targetId] = slot.target.split(":");
+    const formData = new FormData(event.currentTarget);
+    const announcementId = String(formData.get("announcementId") || "");
+    const target = String(formData.get("target") || "");
+    const startsAt = new Date(String(formData.get("startsAt") || ""));
+    const endsAt = new Date(String(formData.get("endsAt") || ""));
+    const [targetType, targetId] = target.split(":");
+    if (!announcementId || !targetId || Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime())) {
+      setError("Choose an approved announcement, target, and valid start and end times.");
+      return;
+    }
     setWorking(true); setError(""); setNotice("");
     try {
       const response = await fetch("/api/school-radio/broadcast-slots", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          announcementId: slot.announcementId,
+          announcementId,
           locationId: targetType === "location" ? targetId : null,
           zoneId: targetType === "zone" ? targetId : null,
-          startsAt: new Date(slot.startsAt).toISOString(),
-          endsAt: new Date(slot.endsAt).toISOString()
+          startsAt: startsAt.toISOString(),
+          endsAt: endsAt.toISOString()
         })
       });
       const payload = await response.json().catch(() => ({}));
@@ -137,9 +146,9 @@ export default function SchoolRadioClient() {
 
       {canManage ? <form onSubmit={createSlot} style={styles.card}>
         <p style={styles.eyebrow}>3 · SCHEDULE</p><h2 style={styles.cardTitle}>Approved broadcast slot</h2>
-        <label style={styles.label}>Announcement<select style={styles.input} value={slot.announcementId} onChange={(event) => setSlot((current) => ({ ...current, announcementId: event.target.value }))} required><option value="">Choose approved announcement…</option>{approvedAnnouncements.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>
-        <label style={styles.label}>Location or zone<select style={styles.input} value={slot.target} onChange={(event) => setSlot((current) => ({ ...current, target: event.target.value }))} required><option value="">Choose target…</option>{targets.map((target) => <option key={target.value} value={target.value}>{target.label}</option>)}</select></label>
-        <div style={styles.twoColumns}><label style={styles.label}>Starts<input style={styles.input} type="datetime-local" value={slot.startsAt} onChange={(event) => setSlot((current) => ({ ...current, startsAt: event.target.value }))} required /></label><label style={styles.label}>Ends<input style={styles.input} type="datetime-local" value={slot.endsAt} onChange={(event) => setSlot((current) => ({ ...current, endsAt: event.target.value }))} required /></label></div>
+        <label style={styles.label}>Announcement<select name="announcementId" style={styles.input} value={slot.announcementId} onChange={(event) => setSlot((current) => ({ ...current, announcementId: event.target.value }))} required><option value="">Choose approved announcement…</option>{approvedAnnouncements.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>
+        <label style={styles.label}>Location or zone<select name="target" style={styles.input} value={slot.target} onChange={(event) => setSlot((current) => ({ ...current, target: event.target.value }))} required><option value="">Choose target…</option>{targets.map((target) => <option key={target.value} value={target.value}>{target.label}</option>)}</select></label>
+        <div style={styles.twoColumns}><label style={styles.label}>Starts<input name="startsAt" style={styles.input} type="datetime-local" value={slot.startsAt} onChange={(event) => setSlot((current) => ({ ...current, startsAt: event.target.value }))} required /></label><label style={styles.label}>Ends<input name="endsAt" style={styles.input} type="datetime-local" value={slot.endsAt} onChange={(event) => setSlot((current) => ({ ...current, endsAt: event.target.value }))} required /></label></div>
         <button style={styles.primary} disabled={working || !approvedAnnouncements.length}>Approve and schedule</button>
       </form> : <section style={styles.card}><p style={styles.eyebrow}>3 · SCHEDULE</p><h2 style={styles.cardTitle}>Manager approval required</h2><p style={styles.hint}>An owner or manager reviews announcements and creates broadcast slots.</p></section>}
     </section>
@@ -177,3 +186,4 @@ const styles = {
   badge: { display: "inline-block", borderRadius: 5, padding: "4px 8px", fontSize: 11, fontWeight: 900, whiteSpace: "nowrap" },
   error: { border: "1px solid #ef4444", background: "#451a1a", color: "#fecaca", borderRadius: 8, padding: 12, marginBottom: 16 }, notice: { border: "1px solid #22c55e", background: "#052e16", color: "#bbf7d0", borderRadius: 8, padding: 12, marginBottom: 16 }, privacy: { color: "#8ea0b8", fontSize: 12, marginTop: 20 }
 };
+
