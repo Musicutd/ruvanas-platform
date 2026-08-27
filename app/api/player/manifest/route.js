@@ -14,7 +14,12 @@ export async function GET() {
     }
     const instant = new Date();
     const { resolution } = await resolvePlayerProgramming(player, instant);
-    const manifest = buildPlayerManifest({ player, resolution, instant });
+    const manifest = buildPlayerManifest({
+      player,
+      resolution,
+      instant,
+      proofSecret: process.env.SESSION_SECRET
+    });
     return NextResponse.json(manifest, {
       headers: {
         "Cache-Control": "private, no-store",

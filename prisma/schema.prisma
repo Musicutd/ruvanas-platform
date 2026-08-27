@@ -130,6 +130,12 @@ enum MusicScheduleStatus {
   ARCHIVED
 }
 
+enum ProofOfPlayEventType {
+  STARTED
+  COMPLETED
+  FAILED
+}
+
 model User {
   id           String   @id @default(cuid())
   name         String?
@@ -151,19 +157,20 @@ model Organisation {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  members        OrganisationMember[]
-  subscription   Subscription?
-  stations       Station[]
-  brands         Brand[]
-  locations      Location[]
-  locationGroups LocationGroup[]
-  channels       Channel[]
-  mediaAssets    MediaAsset[]         @relation("OrganisationMediaAssets")
-  auditLogs      AuditLog[]
-  players        Player[]
-  musicModes     MusicMode[]
-  musicSchedules MusicSchedule[]
-  activeSessions Session[]
+  members           OrganisationMember[]
+  subscription      Subscription?
+  stations          Station[]
+  brands            Brand[]
+  locations         Location[]
+  locationGroups    LocationGroup[]
+  channels          Channel[]
+  mediaAssets       MediaAsset[]         @relation("OrganisationMediaAssets")
+  auditLogs         AuditLog[]
+  players           Player[]
+  musicModes        MusicMode[]
+  musicSchedules    MusicSchedule[]
+  proofOfPlayEvents ProofOfPlayEvent[]
+  activeSessions    Session[]
 }
 
 model OrganisationMember {
@@ -331,6 +338,7 @@ model Zone {
   channelAssignments ChannelAssignment[]
   players            Player[]
   musicSchedules     MusicSchedule[]
+  proofOfPlayEvents  ProofOfPlayEvent[]
 
   @@unique([locationId, slug])
   @@index([locationId])
@@ -464,9 +472,10 @@ model MediaAsset {
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
-  organisation Organisation?     @relation("OrganisationMediaAssets", fields: [organisationId], references: [id], onDelete: Cascade)
-  genres       MediaAssetGenre[]
-  track        Track?
+  organisation      Organisation?      @relation("OrganisationMediaAssets", fields: [organisationId], references: [id], onDelete: Cascade)
+  genres            MediaAssetGenre[]
+  track             Track?
+  proofOfPlayEvents ProofOfPlayEvent[]
 
   @@index([organisationId])
   @@index([libraryType])
@@ -488,8 +497,9 @@ model Track {
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
 
-  mediaAsset MediaAsset       @relation(fields: [mediaAssetId], references: [id], onDelete: Cascade)
-  musicModes MusicModeTrack[]
+  mediaAsset        MediaAsset         @relation(fields: [mediaAssetId], references: [id], onDelete: Cascade)
+  musicModes        MusicModeTrack[]
+  proofOfPlayEvents ProofOfPlayEvent[]
 
   @@index([status])
   @@index([artist, title])
@@ -652,11 +662,46 @@ model Player {
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
 
-  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  zone         Zone         @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  organisation      Organisation       @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  zone              Zone               @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  proofOfPlayEvents ProofOfPlayEvent[]
 
   @@index([organisationId])
   @@index([zoneId])
   @@index([organisationId, status])
   @@index([lastHeartbeatAt])
+}
+
+model ProofOfPlayEvent {
+  id              String               @id @default(cuid())
+  clientEventId   String
+  organisationId  String
+  playerId        String
+  zoneId          String
+  trackId         String
+  mediaAssetId    String
+  manifestVersion String
+  eventType       ProofOfPlayEventType
+  occurredAt      DateTime
+  receivedAt      DateTime             @default(now())
+  positionSeconds Int?
+  failureReason   String?
+  playerName      String
+  locationName    String
+  zoneName        String
+  trackTitle      String
+  trackArtist     String
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  player       Player       @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  zone         Zone         @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  track        Track        @relation(fields: [trackId], references: [id], onDelete: Restrict)
+  mediaAsset   MediaAsset   @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+
+  @@unique([playerId, clientEventId])
+  @@index([organisationId, occurredAt])
+  @@index([playerId, occurredAt])
+  @@index([trackId, occurredAt])
+  @@index([manifestVersion])
+  @@index([eventType, occurredAt])
 }
