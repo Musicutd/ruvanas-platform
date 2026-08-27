@@ -153,7 +153,7 @@ export default function PlayerPage() {
           eventType: "INTERRUPTED",
           occurredAt: new Date().toISOString(),
           positionSeconds: Math.max(0, Math.round(audio.current?.currentTime || 0)),
-          failureReason: `Interrupted for campaign ${nextInsertion.campaignName}`
+          failureReason: `Interrupted for ${nextInsertion.itemType === "SCHOOL_ANNOUNCEMENT" ? `school announcement ${nextInsertion.announcementTitle}` : `campaign ${nextInsertion.campaignName}`}`
         });
       }
       startedPlaybackKey.current = null;
@@ -224,14 +224,14 @@ export default function PlayerPage() {
   function startTrack(event) {
     if (startedPlaybackKey.current === activePlaybackKey) return;
     startedPlaybackKey.current = activePlaybackKey;
-    if (activeItem.itemType === "PROMO") rememberPlayedInsertion(activeItem.scheduleItemId);
+    if (activeItem.itemType !== "MUSIC") rememberPlayedInsertion(activeItem.scheduleItemId);
     playbackEvent("STARTED", event.currentTarget);
   }
 
   function finishTrack(event) {
     playbackEvent("COMPLETED", event.currentTarget);
     startedPlaybackKey.current = null;
-    if (activeItem.itemType === "PROMO") setActiveInsertionId(null);
+    if (activeItem.itemType !== "MUSIC") setActiveInsertionId(null);
     else setTrackIndex((current) => (current + 1) % manifest.playlist.length);
     setPlaySequence((current) => current + 1);
   }
@@ -239,7 +239,7 @@ export default function PlayerPage() {
   function failTrack(event) {
     playbackEvent("FAILED", event.currentTarget, "Browser audio playback failed");
     startedPlaybackKey.current = null;
-    if (activeItem.itemType === "PROMO") {
+    if (activeItem.itemType !== "MUSIC") {
       rememberPlayedInsertion(activeItem.scheduleItemId);
       setActiveInsertionId(null);
     }
@@ -251,8 +251,8 @@ export default function PlayerPage() {
     <h1 style={styles.heading}>{state.player.name}</h1>
     <p style={styles.copy}>{state.player.location} / {state.player.zone}</p>
     {activeItem ? <>
-      <h2 style={styles.channel}>{activeItem.itemType === "PROMO" ? activeItem.campaignName : manifest.musicMode?.name}</h2>
-      <p style={styles.nowPlaying}>{activeItem.itemType === "PROMO" ? "Campaign playing" : "Now playing"}: <strong>{activeItem.artist} — {activeItem.title}</strong></p>
+      <h2 style={styles.channel}>{activeItem.itemType === "SCHOOL_ANNOUNCEMENT" ? "School Radio" : activeItem.itemType === "PROMO" ? activeItem.campaignName : manifest.musicMode?.name}</h2>
+      <p style={styles.nowPlaying}>{activeItem.itemType === "SCHOOL_ANNOUNCEMENT" ? "Announcement playing" : activeItem.itemType === "PROMO" ? "Campaign playing" : "Now playing"}: <strong>{activeItem.artist} — {activeItem.title}</strong></p>
       <audio ref={audio} key={activePlaybackKey} src={activeItem.mediaUrl} controls autoPlay onPlay={startTrack} onEnded={finishTrack} onError={failTrack} style={{ width: "100%" }} />
       <p style={styles.online}>Online — secure schedule and proof of play active</p>
     </> : state.channel?.streamUrl ? <>

@@ -30,7 +30,7 @@ export async function GET(request, { params }) {
 
     const mediaAssetId = String(params.mediaAssetId || "");
     const instant = new Date();
-    const { resolution, campaignPlayout } = await resolvePlayerProgramming(player, instant);
+    const { resolution, campaignPlayout, schoolPlayout } = await resolvePlayerProgramming(player, instant);
     const isEligibleMusic = (resolution.musicMode?.tracks || []).some(({ track }) =>
       track.status === "READY" &&
       track.mediaAsset?.id === mediaAssetId &&
@@ -41,7 +41,8 @@ export async function GET(request, { params }) {
       isCatalogueLicenceCurrent(track.licenceExpiresAt, instant)
     );
     const isCurrentPromo = (campaignPlayout.insertions || []).some((item) => item.mediaAssetId === mediaAssetId);
-    const recentPromoIntent = isCurrentPromo ? null : await prisma.playoutIntent.findFirst({
+    const isCurrentSchoolAnnouncement = (schoolPlayout.insertions || []).some((item) => item.mediaAssetId === mediaAssetId);
+    const recentInsertionIntent = isCurrentPromo || isCurrentSchoolAnnouncement ? null : await prisma.playoutIntent.findFirst({
       where: {
         playerId: player.id,
         organisationId: player.organisationId,
@@ -52,7 +53,7 @@ export async function GET(request, { params }) {
       },
       select: { id: true }
     });
-    if (!isEligibleMusic && !isCurrentPromo && !recentPromoIntent) {
+    if (!isEligibleMusic && !isCurrentPromo && !isCurrentSchoolAnnouncement && !recentInsertionIntent) {
       return NextResponse.json({ error: "This audio is not in the player's current playback plan." }, { status: 404 });
     }
 
@@ -89,4 +90,3 @@ export async function GET(request, { params }) {
     return NextResponse.json({ error: "The audio file could not be played." }, { status: 500 });
   }
 }
-

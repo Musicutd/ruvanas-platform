@@ -14,7 +14,8 @@ const plan = {
   listenerLimit: 200,
   maxBitrateKbps: 192,
   includesRuvanasCatalogue: true,
-  promoUploadEnabled: true
+  promoUploadEnabled: true,
+  schoolRadioEnabled: true
 };
 
 test("active and trial subscriptions receive plan entitlements", () => {
@@ -23,6 +24,7 @@ test("active and trial subscriptions receive plan entitlements", () => {
     assert.equal(entitlements.serviceEnabled, true);
     assert.equal(entitlements.stationLimit, 5);
     assert.equal(entitlements.promoUploadEnabled, true);
+    assert.equal(entitlements.schoolRadioEnabled, true);
   }
 });
 
@@ -37,6 +39,7 @@ test("suspended, cancelled, missing, and inactive plans deny service", () => {
     assert.equal(entitlements.serviceEnabled, false);
     assert.equal(entitlements.stationLimit, 0);
     assert.equal(entitlements.promoUploadEnabled, false);
+    assert.equal(entitlements.schoolRadioEnabled, false);
   }
 });
 
@@ -45,4 +48,3 @@ test("limit checks stop at the configured boundary", () => {
   assert.equal(isWithinLimit(5, 5), false);
   assert.equal(isWithinLimit(6, 5), false);
 });
-

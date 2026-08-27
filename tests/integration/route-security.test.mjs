@@ -125,6 +125,15 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   const unauthenticatedCampaignReport = await api("/api/reports/campaign-proof");
   assert.equal(unauthenticatedCampaignReport.status, 401);
 
+  const unauthenticatedSchoolAnnouncements = await api("/api/school-radio/announcements");
+  assert.equal(unauthenticatedSchoolAnnouncements.status, 401);
+
+  const unauthenticatedSchoolSlot = await api("/api/school-radio/broadcast-slots", {
+    method: "POST",
+    body: {}
+  });
+  assert.equal(unauthenticatedSchoolSlot.status, 401);
+
   const unauthenticatedCampaignExport = await api("/api/reports/campaign-proof/exports", {
     method: "POST",
     body: { from: dateOffset(-1), to: dateOffset(1) }
@@ -782,4 +791,3 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   assert.equal(lastResponse.status, 429);
   assert.ok(Number(lastResponse.headers.get("retry-after")) > 0);
 });
-
