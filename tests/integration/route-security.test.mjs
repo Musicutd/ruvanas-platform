@@ -86,6 +86,12 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   });
   assert.equal(unauthenticatedHeartbeat.status, 401);
 
+  const unauthenticatedProofOfPlay = await api("/api/player/proof-of-play", {
+    method: "POST",
+    body: { events: [] }
+  });
+  assert.equal(unauthenticatedProofOfPlay.status, 401);
+
   const invalidPlayerEnrolment = await api("/api/player/enrol", {
     method: "POST",
     body: { code: "invalid-enrolment-code" }
@@ -354,6 +360,41 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     assert.equal(playerManifestBody.musicMode.id, musicModeBody.mode.id);
     assert.equal(playerManifestBody.playlist[0].trackId, track.id);
     assert.equal("storageKey" in playerManifestBody.playlist[0], false);
+    assert.match(playerManifestBody.playlist[0].proofToken, /^[0-9a-f]{64}$/);
+
+    const playbackEventId = randomUUID();
+    const playbackEvent = {
+      eventId: playbackEventId,
+      manifestVersion: playerManifestBody.version,
+      proofToken: playerManifestBody.playlist[0].proofToken,
+      trackId: track.id,
+      eventType: "STARTED",
+      occurredAt: new Date().toISOString(),
+      positionSeconds: 0
+    };
+    const proofOfPlay = await api("/api/player/proof-of-play", {
+      method: "POST",
+      cookie: `ruvanas_player=${rawPlayerToken}`,
+      body: { events: [playbackEvent] }
+    });
+    assert.equal(proofOfPlay.status, 200, await proofOfPlay.clone().text());
+    assert.equal((await proofOfPlay.json()).accepted, 1);
+
+    const duplicateProofOfPlay = await api("/api/player/proof-of-play", {
+      method: "POST",
+      cookie: `ruvanas_player=${rawPlayerToken}`,
+      body: { events: [playbackEvent] }
+    });
+    assert.equal(duplicateProofOfPlay.status, 200, await duplicateProofOfPlay.clone().text());
+    assert.equal((await duplicateProofOfPlay.json()).duplicates, 1);
+    assert.equal(await db.proofOfPlayEvent.count({ where: { playerId: playerManifestBody.player.id, clientEventId: playbackEventId } }), 1);
+
+    const tamperedProofOfPlay = await api("/api/player/proof-of-play", {
+      method: "POST",
+      cookie: `ruvanas_player=${rawPlayerToken}`,
+      body: { events: [{ ...playbackEvent, eventId: randomUUID(), proofToken: "0".repeat(64) }] }
+    });
+    assert.equal(tamperedProofOfPlay.status, 400);
 
     const unavailablePlayerMedia = await api("/api/player/media/not-an-asset", { cookie: `ruvanas_player=${rawPlayerToken}` });
     assert.equal(unavailablePlayerMedia.status, 404);

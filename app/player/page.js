@@ -1,6 +1,25 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  appendPlaybackEvent,
+  removePlaybackEvents
+} from "@/lib/playback-queue.mjs";
+
+const PLAYBACK_QUEUE_KEY = "ruvanas_proof_of_play_queue_v1";
+
+function readPlaybackQueue() {
+  try {
+    const value = JSON.parse(window.localStorage.getItem(PLAYBACK_QUEUE_KEY) || "[]");
+    return Array.isArray(value) ? value : [];
+  } catch {
+    return [];
+  }
+}
+
+function writePlaybackQueue(queue) {
+  window.localStorage.setItem(PLAYBACK_QUEUE_KEY, JSON.stringify(queue));
+}
 
 export default function PlayerPage() {
   const [state, setState] = useState(null);
@@ -9,8 +28,34 @@ export default function PlayerPage() {
   const [message, setMessage] = useState("");
   const [manifest, setManifest] = useState(null);
   const [trackIndex, setTrackIndex] = useState(0);
+  const [playSequence, setPlaySequence] = useState(0);
   const timer = useRef(null);
   const manifestTimer = useRef(null);
+  const startedPlaybackKey = useRef(null);
+
+  const flushPlaybackQueue = useCallback(async () => {
+    const queued = readPlaybackQueue();
+    if (!queued.length) return;
+
+    try {
+      const response = await fetch("/api/player/proof-of-play", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ events: queued.slice(0, 100) })
+      });
+      if (!response.ok) return;
+
+      const sentIds = queued.slice(0, 100).map((event) => event.eventId);
+      writePlaybackQueue(removePlaybackEvents(readPlaybackQueue(), sentIds));
+    } catch {
+      // Keep the queue on this device and retry after connectivity returns.
+    }
+  }, []);
+
+  const queuePlaybackEvent = useCallback((event) => {
+    writePlaybackQueue(appendPlaybackEvent(readPlaybackQueue(), event));
+    flushPlaybackQueue();
+  }, [flushPlaybackQueue]);
 
   const loadManifest = useCallback(async () => {
     const response = await fetch("/api/player/manifest", { cache: "no-store" });
@@ -19,6 +64,7 @@ export default function PlayerPage() {
     if (!response.ok) throw new Error(data.error || "Unable to load the playback plan.");
     setManifest(data);
     setTrackIndex(0);
+    setPlaySequence((current) => current + 1);
   }, []);
 
   const loadState = useCallback(async () => {
@@ -43,11 +89,18 @@ export default function PlayerPage() {
     if (!state) return undefined;
     const heartbeat = async () => {
       await fetch("/api/player/heartbeat", { method: "POST" });
+      await flushPlaybackQueue();
     };
     heartbeat();
     timer.current = window.setInterval(heartbeat, state.heartbeatIntervalSeconds * 1000);
     return () => window.clearInterval(timer.current);
-  }, [state]);
+  }, [state, flushPlaybackQueue]);
+
+  useEffect(() => {
+    window.addEventListener("online", flushPlaybackQueue);
+    flushPlaybackQueue();
+    return () => window.removeEventListener("online", flushPlaybackQueue);
+  }, [flushPlaybackQueue]);
 
   useEffect(() => {
     if (!state || !manifest) return undefined;
@@ -90,6 +143,42 @@ export default function PlayerPage() {
   }
 
   const activeTrack = manifest?.playlist?.[trackIndex] || null;
+  const activePlaybackKey = activeTrack
+    ? `${manifest.version}:${activeTrack.trackId}:${playSequence}`
+    : null;
+
+  function playbackEvent(eventType, audioElement, failureReason = null) {
+    if (!activeTrack || !manifest) return;
+    queuePlaybackEvent({
+      eventId: crypto.randomUUID(),
+      manifestVersion: manifest.version,
+      proofToken: activeTrack.proofToken,
+      trackId: activeTrack.trackId,
+      eventType,
+      occurredAt: new Date().toISOString(),
+      positionSeconds: Math.max(0, Math.round(audioElement?.currentTime || 0)),
+      ...(failureReason ? { failureReason } : {})
+    });
+  }
+
+  function startTrack(event) {
+    if (startedPlaybackKey.current === activePlaybackKey) return;
+    startedPlaybackKey.current = activePlaybackKey;
+    playbackEvent("STARTED", event.currentTarget);
+  }
+
+  function finishTrack(event) {
+    playbackEvent("COMPLETED", event.currentTarget);
+    startedPlaybackKey.current = null;
+    setTrackIndex((current) => (current + 1) % manifest.playlist.length);
+    setPlaySequence((current) => current + 1);
+  }
+
+  function failTrack(event) {
+    playbackEvent("FAILED", event.currentTarget, "Browser audio playback failed");
+    startedPlaybackKey.current = null;
+    setMessage("This track could not be played. The player will retry when the schedule refreshes.");
+  }
 
   return <main style={styles.page}><section style={styles.card}>
     <p style={styles.eyebrow}>RUVANAS WEB PLAYER</p>
@@ -98,8 +187,8 @@ export default function PlayerPage() {
     {activeTrack ? <>
       <h2 style={styles.channel}>{manifest.musicMode.name}</h2>
       <p style={styles.nowPlaying}>Now playing: <strong>{activeTrack.artist} — {activeTrack.title}</strong></p>
-      <audio key={`${manifest.version}-${activeTrack.trackId}`} src={activeTrack.mediaUrl} controls autoPlay onEnded={()=>setTrackIndex((current)=>(current+1)%manifest.playlist.length)} style={{ width: "100%" }} />
-      <p style={styles.online}>Online — secure schedule active</p>
+      <audio key={activePlaybackKey} src={activeTrack.mediaUrl} controls autoPlay onPlay={startTrack} onEnded={finishTrack} onError={failTrack} style={{ width: "100%" }} />
+      <p style={styles.online}>Online — secure schedule and proof of play active</p>
     </> : state.channel?.streamUrl ? <>
       <h2 style={styles.channel}>{state.channel.name}</h2>
       <audio src={state.channel.streamUrl} controls autoPlay style={{ width: "100%" }} />

@@ -30,6 +30,10 @@ const navItems = [
     label: "Players & health"
   },
   {
+    href: "/admin/proof-of-play",
+    label: "Proof of play"
+  },
+  {
     href: "/admin/stations",
     label: "Stations"
   },
