@@ -131,6 +131,27 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   const unauthenticatedSchoolEditorial = await api("/api/school-radio/editorial");
   assert.equal(unauthenticatedSchoolEditorial.status, 401);
 
+  const unauthenticatedAudioLab = await api("/api/school-radio/audio-lab");
+  assert.equal(unauthenticatedAudioLab.status, 401);
+
+  const unauthenticatedAudioUpload = await api("/api/school-radio/audio-lab/uploads", {
+    method: "POST",
+    body: {}
+  });
+  assert.equal(unauthenticatedAudioUpload.status, 401);
+
+  const unauthenticatedAudioPart = await api("/api/school-radio/audio-lab/uploads/not-an-upload/parts/1", {
+    method: "PUT",
+    body: "audio"
+  });
+  assert.equal(unauthenticatedAudioPart.status, 401);
+
+  const unauthenticatedAudioComplete = await api("/api/school-radio/audio-lab/uploads/not-an-upload/complete", {
+    method: "POST",
+    body: {}
+  });
+  assert.equal(unauthenticatedAudioComplete.status, 401);
+
   const unauthenticatedSchoolReview = await api("/api/school-radio/episodes/not-an-episode/review", {
     method: "PATCH",
     body: { action: "APPROVE" }
@@ -1071,3 +1092,4 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   assert.equal(lastResponse.status, 429);
   assert.ok(Number(lastResponse.headers.get("retry-after")) > 0);
 });
+

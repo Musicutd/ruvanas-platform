@@ -284,6 +284,37 @@ enum ConsentRecordStatus {
   EXPIRED
 }
 
+enum AudioProjectType {
+  QUICK_RECORD
+}
+
+enum AudioProjectStatus {
+  DRAFT
+  RECORDING
+  UPLOADING
+  READY
+  SUBMITTED
+  ARCHIVED
+}
+
+enum AudioTakeStatus {
+  UPLOADING
+  PROCESSING
+  READY
+  FAILED
+  ARCHIVED
+}
+
+enum AudioUploadStatus {
+  INITIATED
+  UPLOADING
+  COMPLETING
+  COMPLETED
+  ABORTED
+  FAILED
+  EXPIRED
+}
+
 enum ReportExportStatus {
   QUEUED
   PROCESSING
@@ -390,6 +421,10 @@ model User {
   schoolSubmissions            SchoolSubmission[]            @relation("SchoolSubmissionSubmittedBy")
   schoolModerationReviews      SchoolModerationReview[]      @relation("SchoolModerationReviewer")
   recordedConsentRecords       ConsentRecord[]               @relation("ConsentRecordedBy")
+  createdAudioProjects         AudioProject[]                @relation("AudioProjectCreatedBy")
+  audioProjectVersions         AudioProjectVersion[]         @relation("AudioProjectVersionCreatedBy")
+  recordedAudioTakes           AudioTake[]                   @relation("AudioTakeRecordedBy")
+  schoolAudioUploads           SchoolAudioUploadSession[]    @relation("SchoolAudioUploadCreatedBy")
 }
 
 model Organisation {
@@ -434,6 +469,9 @@ model Organisation {
   schoolSubmissions          SchoolSubmission[]
   schoolModerationReviews    SchoolModerationReview[]
   consentRecords             ConsentRecord[]
+  audioProjects              AudioProject[]
+  audioTakes                 AudioTake[]
+  schoolAudioUploads         SchoolAudioUploadSession[]
 }
 
 model OrganisationMember {
@@ -750,6 +788,7 @@ model MediaAsset {
   genres            MediaAssetGenre[]
   track             Track?
   promoVersions     PromoVersion[]
+  audioTakes        AudioTake[]
   proofOfPlayEvents ProofOfPlayEvent[]
   playoutIntents    PlayoutIntent[]
 
@@ -811,6 +850,7 @@ model PromoVersion {
   campaigns           Campaign[]
   schoolAnnouncements SchoolAnnouncement[]
   schoolSubmissions   SchoolSubmission[]
+  audioTakes          AudioTake[]
   playoutIntents      PlayoutIntent[]
   proofOfPlayEvents   ProofOfPlayEvent[]
 
@@ -1094,11 +1134,12 @@ model StudentGroup {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  organisation Organisation         @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  supervisor   StaffSupervisor      @relation(fields: [supervisorId], references: [id], onDelete: Restrict)
-  createdBy    User                 @relation("StudentGroupCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  contributors StudentContributor[]
-  programmes   SchoolProgramme[]
+  organisation  Organisation         @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  supervisor    StaffSupervisor      @relation(fields: [supervisorId], references: [id], onDelete: Restrict)
+  createdBy     User                 @relation("StudentGroupCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  contributors  StudentContributor[]
+  programmes    SchoolProgramme[]
+  audioProjects AudioProject[]
 
   @@unique([organisationId, name, academicYear])
   @@index([organisationId, supervisorId])
@@ -1135,11 +1176,12 @@ model SchoolProgramme {
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
 
-  organisation Organisation    @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  studentGroup StudentGroup?   @relation(fields: [studentGroupId], references: [id], onDelete: SetNull)
-  supervisor   StaffSupervisor @relation(fields: [supervisorId], references: [id], onDelete: Restrict)
-  createdBy    User            @relation("SchoolProgrammeCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  episodes     SchoolEpisode[]
+  organisation  Organisation    @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  studentGroup  StudentGroup?   @relation(fields: [studentGroupId], references: [id], onDelete: SetNull)
+  supervisor    StaffSupervisor @relation(fields: [supervisorId], references: [id], onDelete: Restrict)
+  createdBy     User            @relation("SchoolProgrammeCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  episodes      SchoolEpisode[]
+  audioProjects AudioProject[]
 
   @@unique([organisationId, title])
   @@index([organisationId, status])
@@ -1167,6 +1209,7 @@ model SchoolEpisode {
   submissions    SchoolSubmission[]
   reviews        SchoolModerationReview[]
   consentRecords ConsentRecord[]
+  audioProjects  AudioProject[]
 
   @@index([organisationId, status])
   @@index([programmeId, createdAt])
@@ -1249,6 +1292,120 @@ model ConsentRecord {
 
   @@index([organisationId, contributorId, status])
   @@index([episodeId, status])
+}
+
+model AudioProject {
+  id              String             @id @default(cuid())
+  organisationId  String
+  programmeId     String?
+  episodeId       String?
+  studentGroupId  String?
+  title           String
+  type            AudioProjectType   @default(QUICK_RECORD)
+  status          AudioProjectStatus @default(DRAFT)
+  currentVersion  Int                @default(1)
+  editDecision    Json
+  createdByUserId String
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  organisation   Organisation               @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  programme      SchoolProgramme?           @relation(fields: [programmeId], references: [id], onDelete: SetNull)
+  episode        SchoolEpisode?             @relation(fields: [episodeId], references: [id], onDelete: SetNull)
+  studentGroup   StudentGroup?              @relation(fields: [studentGroupId], references: [id], onDelete: SetNull)
+  createdBy      User                       @relation("AudioProjectCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  versions       AudioProjectVersion[]
+  takes          AudioTake[]
+  uploadSessions SchoolAudioUploadSession[]
+
+  @@index([organisationId, status])
+  @@index([episodeId])
+  @@index([createdByUserId, updatedAt])
+}
+
+model AudioProjectVersion {
+  id              String   @id @default(cuid())
+  projectId       String
+  version         Int
+  state           Json
+  reason          String?
+  createdByUserId String
+  createdAt       DateTime @default(now())
+
+  project   AudioProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy User         @relation("AudioProjectVersionCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@unique([projectId, version])
+  @@index([createdByUserId, createdAt])
+}
+
+model AudioTake {
+  id                 String          @id @default(cuid())
+  organisationId     String
+  projectId          String
+  mediaAssetId       String
+  promoVersionId     String?
+  recordedByUserId   String
+  deviceLabel        String?
+  durationMs         Int?
+  status             AudioTakeStatus @default(PROCESSING)
+  sourceEditDecision Json
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  organisation Organisation  @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  project      AudioProject  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  mediaAsset   MediaAsset    @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+  promoVersion PromoVersion? @relation(fields: [promoVersionId], references: [id], onDelete: SetNull)
+  recordedBy   User          @relation("AudioTakeRecordedBy", fields: [recordedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([organisationId, createdAt])
+  @@index([projectId, createdAt])
+  @@index([mediaAssetId])
+  @@index([promoVersionId])
+}
+
+model SchoolAudioUploadSession {
+  id                String            @id @default(cuid())
+  organisationId    String
+  projectId         String
+  status            AudioUploadStatus @default(INITIATED)
+  originalName      String
+  mimeType          String
+  expectedSizeBytes BigInt
+  partSizeBytes     Int
+  partCount         Int
+  quarantineKey     String            @unique
+  multipartUploadId String            @unique
+  createdByUserId   String
+  expiresAt         DateTime
+  completedAt       DateTime?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  organisation Organisation            @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  project      AudioProject            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy    User                    @relation("SchoolAudioUploadCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  parts        SchoolAudioUploadPart[]
+
+  @@index([organisationId, status])
+  @@index([projectId, createdAt])
+  @@index([expiresAt, status])
+}
+
+model SchoolAudioUploadPart {
+  id         String   @id @default(cuid())
+  sessionId  String
+  partNumber Int
+  eTag       String
+  sizeBytes  Int
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  session SchoolAudioUploadSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, partNumber])
+  @@index([sessionId])
 }
 
 model ProductionOrder {
@@ -1672,3 +1829,4 @@ model ReportExportJob {
   @@index([status, availableAt, leaseUntil])
   @@index([expiresAt])
 }
+
