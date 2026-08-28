@@ -240,6 +240,50 @@ enum SchoolBroadcastSlotStatus {
   COMPLETED
 }
 
+enum SchoolProgrammeStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum SchoolEpisodeStatus {
+  DRAFT
+  IN_REVIEW
+  APPROVED
+  CHANGES_REQUESTED
+  REJECTED
+  ARCHIVED
+}
+
+enum SchoolPublicationScope {
+  INTERNAL_ONLY
+  PUBLIC
+}
+
+enum StudentContributorStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum SchoolSubmissionStatus {
+  SUBMITTED
+  SUPERSEDED
+  WITHDRAWN
+}
+
+enum SchoolModerationDecision {
+  APPROVED
+  CHANGES_REQUESTED
+  REJECTED
+}
+
+enum ConsentRecordStatus {
+  PENDING
+  GRANTED
+  REVOKED
+  EXPIRED
+}
+
 enum ReportExportStatus {
   QUEUED
   PROCESSING
@@ -339,6 +383,13 @@ model User {
   requestedProductionRevisions ProductionRevisionRequest[]   @relation("ProductionRevisionRequestedBy")
   resolvedProductionRevisions  ProductionRevisionRequest[]   @relation("ProductionRevisionResolvedBy")
   productionCreditEntries      ProductionCreditLedgerEntry[] @relation("ProductionCreditEntryActor")
+  schoolSupervisions           StaffSupervisor[]             @relation("SchoolSupervisorUser")
+  createdStudentGroups         StudentGroup[]                @relation("StudentGroupCreatedBy")
+  createdSchoolProgrammes      SchoolProgramme[]             @relation("SchoolProgrammeCreatedBy")
+  createdSchoolEpisodes        SchoolEpisode[]               @relation("SchoolEpisodeCreatedBy")
+  schoolSubmissions            SchoolSubmission[]            @relation("SchoolSubmissionSubmittedBy")
+  schoolModerationReviews      SchoolModerationReview[]      @relation("SchoolModerationReviewer")
+  recordedConsentRecords       ConsentRecord[]               @relation("ConsentRecordedBy")
 }
 
 model Organisation {
@@ -375,6 +426,14 @@ model Organisation {
   productionScriptVersions   ProductionScriptVersion[]
   productionRevisionRequests ProductionRevisionRequest[]
   productionCreditEntries    ProductionCreditLedgerEntry[]
+  staffSupervisors           StaffSupervisor[]
+  studentGroups              StudentGroup[]
+  studentContributors        StudentContributor[]
+  schoolProgrammes           SchoolProgramme[]
+  schoolEpisodes             SchoolEpisode[]
+  schoolSubmissions          SchoolSubmission[]
+  schoolModerationReviews    SchoolModerationReview[]
+  consentRecords             ConsentRecord[]
 }
 
 model OrganisationMember {
@@ -751,6 +810,7 @@ model PromoVersion {
   processingJobs      PromoProcessingJob[]
   campaigns           Campaign[]
   schoolAnnouncements SchoolAnnouncement[]
+  schoolSubmissions   SchoolSubmission[]
   playoutIntents      PlayoutIntent[]
   proofOfPlayEvents   ProofOfPlayEvent[]
 
@@ -1003,6 +1063,192 @@ model SchoolBroadcastSlot {
   @@index([zoneId, status, startsAt])
   @@index([announcementId])
   @@index([approvedByUserId])
+}
+
+model StaffSupervisor {
+  id             String   @id @default(cuid())
+  organisationId String
+  userId         String
+  displayTitle   String?
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organisation Organisation      @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  user         User              @relation("SchoolSupervisorUser", fields: [userId], references: [id], onDelete: Cascade)
+  groups       StudentGroup[]
+  programmes   SchoolProgramme[]
+
+  @@unique([organisationId, userId])
+  @@index([organisationId, active])
+}
+
+model StudentGroup {
+  id              String   @id @default(cuid())
+  organisationId  String
+  supervisorId    String
+  name            String
+  academicYear    String?
+  notes           String?
+  createdByUserId String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  organisation Organisation         @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  supervisor   StaffSupervisor      @relation(fields: [supervisorId], references: [id], onDelete: Restrict)
+  createdBy    User                 @relation("StudentGroupCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  contributors StudentContributor[]
+  programmes   SchoolProgramme[]
+
+  @@unique([organisationId, name, academicYear])
+  @@index([organisationId, supervisorId])
+}
+
+model StudentContributor {
+  id             String                   @id @default(cuid())
+  organisationId String
+  studentGroupId String
+  displayName    String
+  referenceCode  String?
+  status         StudentContributorStatus @default(ACTIVE)
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+
+  organisation   Organisation               @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  studentGroup   StudentGroup               @relation(fields: [studentGroupId], references: [id], onDelete: Cascade)
+  episodes       SchoolEpisodeContributor[]
+  consentRecords ConsentRecord[]
+
+  @@unique([studentGroupId, displayName])
+  @@index([organisationId, status])
+}
+
+model SchoolProgramme {
+  id              String                @id @default(cuid())
+  organisationId  String
+  studentGroupId  String?
+  supervisorId    String
+  title           String
+  description     String?
+  status          SchoolProgrammeStatus @default(ACTIVE)
+  createdByUserId String
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  organisation Organisation    @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  studentGroup StudentGroup?   @relation(fields: [studentGroupId], references: [id], onDelete: SetNull)
+  supervisor   StaffSupervisor @relation(fields: [supervisorId], references: [id], onDelete: Restrict)
+  createdBy    User            @relation("SchoolProgrammeCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  episodes     SchoolEpisode[]
+
+  @@unique([organisationId, title])
+  @@index([organisationId, status])
+  @@index([studentGroupId])
+}
+
+model SchoolEpisode {
+  id               String                 @id @default(cuid())
+  organisationId   String
+  programmeId      String
+  title            String
+  summary          String?
+  status           SchoolEpisodeStatus    @default(DRAFT)
+  publicationScope SchoolPublicationScope @default(INTERNAL_ONLY)
+  createdByUserId  String
+  submittedAt      DateTime?
+  approvedAt       DateTime?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+
+  organisation   Organisation               @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  programme      SchoolProgramme            @relation(fields: [programmeId], references: [id], onDelete: Restrict)
+  createdBy      User                       @relation("SchoolEpisodeCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  contributors   SchoolEpisodeContributor[]
+  submissions    SchoolSubmission[]
+  reviews        SchoolModerationReview[]
+  consentRecords ConsentRecord[]
+
+  @@index([organisationId, status])
+  @@index([programmeId, createdAt])
+}
+
+model SchoolEpisodeContributor {
+  episodeId     String
+  contributorId String
+  creditedAs    String?
+  createdAt     DateTime @default(now())
+
+  episode     SchoolEpisode      @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  contributor StudentContributor @relation(fields: [contributorId], references: [id], onDelete: Restrict)
+
+  @@id([episodeId, contributorId])
+  @@index([contributorId])
+}
+
+model SchoolSubmission {
+  id                String                 @id @default(cuid())
+  organisationId    String
+  episodeId         String
+  promoVersionId    String
+  revision          Int
+  notes             String?
+  status            SchoolSubmissionStatus @default(SUBMITTED)
+  submittedByUserId String
+  submittedAt       DateTime               @default(now())
+  createdAt         DateTime               @default(now())
+
+  organisation Organisation             @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  episode      SchoolEpisode            @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  promoVersion PromoVersion             @relation(fields: [promoVersionId], references: [id], onDelete: Restrict)
+  submittedBy  User                     @relation("SchoolSubmissionSubmittedBy", fields: [submittedByUserId], references: [id], onDelete: Restrict)
+  reviews      SchoolModerationReview[]
+
+  @@unique([episodeId, revision])
+  @@index([organisationId, status])
+  @@index([promoVersionId])
+}
+
+model SchoolModerationReview {
+  id             String                   @id @default(cuid())
+  organisationId String
+  episodeId      String
+  submissionId   String
+  reviewerUserId String
+  decision       SchoolModerationDecision
+  notes          String?
+  createdAt      DateTime                 @default(now())
+
+  organisation Organisation     @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  episode      SchoolEpisode    @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  submission   SchoolSubmission @relation(fields: [submissionId], references: [id], onDelete: Restrict)
+  reviewer     User             @relation("SchoolModerationReviewer", fields: [reviewerUserId], references: [id], onDelete: Restrict)
+
+  @@index([organisationId, createdAt])
+  @@index([episodeId, createdAt])
+  @@index([submissionId])
+}
+
+model ConsentRecord {
+  id               String              @id @default(cuid())
+  organisationId   String
+  contributorId    String
+  episodeId        String?
+  status           ConsentRecordStatus @default(PENDING)
+  policyVersion    String              @default("school-radio-v1")
+  notes            String?
+  recordedByUserId String
+  grantedAt        DateTime?
+  expiresAt        DateTime?
+  revokedAt        DateTime?
+  createdAt        DateTime            @default(now())
+
+  organisation Organisation       @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  contributor  StudentContributor @relation(fields: [contributorId], references: [id], onDelete: Cascade)
+  episode      SchoolEpisode?     @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  recordedBy   User               @relation("ConsentRecordedBy", fields: [recordedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([organisationId, contributorId, status])
+  @@index([episodeId, status])
 }
 
 model ProductionOrder {
@@ -1426,4 +1672,3 @@ model ReportExportJob {
   @@index([status, availableAt, leaseUntil])
   @@index([expiresAt])
 }
-
