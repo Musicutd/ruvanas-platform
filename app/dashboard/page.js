@@ -5,7 +5,7 @@ import { resolveEntitlements } from "@/lib/entitlements.mjs";
 
 export default async function DashboardPage() {
   const context = await getActiveOrganisationContext({
-    subscription: { include: { plan: true } },
+    subscription: { include: { plan: true, billingContract: true } },
     stations: true
   });
 
@@ -258,4 +258,5 @@ const styles = {
     whiteSpace: "nowrap"
   }
 };
+
 

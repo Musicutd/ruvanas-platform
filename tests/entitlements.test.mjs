@@ -28,6 +28,32 @@ test("active and trial subscriptions receive plan entitlements", () => {
   }
 });
 
+test("a configured overdue subscription only works inside its grace period", () => {
+  const now = new Date("2026-09-10T12:00:00.000Z");
+  const duringGrace = resolveEntitlements({
+    status: "PAST_DUE",
+    plan,
+    billingContract: { graceEndsAt: "2026-09-12T12:00:00.000Z" }
+  }, now);
+  const afterGrace = resolveEntitlements({
+    status: "PAST_DUE",
+    plan,
+    billingContract: { graceEndsAt: "2026-09-09T12:00:00.000Z" }
+  }, now);
+
+  assert.equal(duringGrace.serviceEnabled, true);
+  assert.equal(duringGrace.accessReason, "PAYMENT_GRACE_PERIOD");
+  assert.equal(afterGrace.serviceEnabled, false);
+  assert.equal(afterGrace.accessReason, "PAYMENT_GRACE_EXPIRED");
+  assert.equal(afterGrace.stationLimit, 0);
+});
+
+test("legacy overdue subscriptions retain access until a billing contract is attached", () => {
+  const entitlements = resolveEntitlements({ status: "PAST_DUE", plan });
+  assert.equal(entitlements.serviceEnabled, true);
+  assert.equal(entitlements.accessReason, "LEGACY_PAST_DUE_ACCESS");
+});
+
 test("an organisation subscription can override the shared School Radio plan default", () => {
   assert.equal(
     resolveEntitlements({
@@ -67,4 +93,5 @@ test("limit checks stop at the configured boundary", () => {
   assert.equal(isWithinLimit(5, 5), false);
   assert.equal(isWithinLimit(6, 5), false);
 });
+
 

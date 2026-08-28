@@ -64,7 +64,7 @@ export async function GET() {
       ? prisma.organisation.findMany({
           where: { schoolNetworkSchool: null },
           orderBy: { name: "asc" },
-          include: { subscription: { include: { plan: true } } }
+          include: { subscription: { include: { plan: true, billingContract: true } } }
         })
       : Promise.resolve([])
   ]);
@@ -123,7 +123,7 @@ export async function POST(request) {
 
     if (data.action === "ADD_SCHOOL") {
       if (user.role !== "SUPER_ADMIN") return NextResponse.json({ error: "Only a Ruvanas Super Admin can attach a school organisation to an academy network." }, { status: 403 });
-      const organisation = await prisma.organisation.findFirst({ where: { id: data.organisationId }, include: { subscription: { include: { plan: true } } } });
+      const organisation = await prisma.organisation.findFirst({ where: { id: data.organisationId }, include: { subscription: { include: { plan: true, billingContract: true } } } });
       if (!organisation || !resolveEntitlements(organisation.subscription).schoolRadioEnabled) return NextResponse.json({ error: "Choose a School Radio organisation." }, { status: 404 });
       const school = await prisma.$transaction(async (tx) => {
         const created = await tx.schoolNetworkSchool.create({ data: { schoolNetworkId: data.schoolNetworkId, organisationId: organisation.id } });

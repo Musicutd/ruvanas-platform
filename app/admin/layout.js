@@ -58,6 +58,11 @@ const navItems = [
   {
     href: "/admin/organisations",
     label: "Organisations"
+  },
+  {
+    href: "/admin/billing",
+    label: "Billing & usage",
+    superAdminOnly: true
   }
 ];
 
@@ -155,3 +160,4 @@ export default async function AdminLayout({ children }) {
     </div>
   );
 }
+

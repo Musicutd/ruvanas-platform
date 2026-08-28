@@ -162,7 +162,8 @@ export async function POST(request) {
       include: {
         subscription: {
           include: {
-            plan: true
+            plan: true,
+            billingContract: true
           }
         }
       }
@@ -473,3 +474,4 @@ export async function POST(request) {
     );
   }
 }
+
