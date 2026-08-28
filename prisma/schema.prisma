@@ -291,6 +291,30 @@ enum SchoolSubmissionStatus {
   WITHDRAWN
 }
 
+enum AssignmentStatus {
+  DRAFT
+  OPEN
+  CLOSED
+  ARCHIVED
+}
+
+enum AssignmentSubmissionStatus {
+  SUBMITTED
+  REVISION_REQUESTED
+  ASSESSED
+  WITHDRAWN
+}
+
+enum AssessmentStatus {
+  DRAFT
+  RELEASED
+}
+
+enum PortfolioEntryStatus {
+  PRIVATE
+  ARCHIVED
+}
+
 enum SchoolModerationDecision {
   APPROVED
   CHANGES_REQUESTED
@@ -507,47 +531,51 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  memberships                  OrganisationMember[]
-  auditLogs                    AuditLog[]                    @relation("AuditActor")
-  sessions                     Session[]
-  submittedPromoVersions       PromoVersion[]                @relation("PromoVersionSubmittedBy")
-  reviewedPromoVersions        PromoVersion[]                @relation("PromoVersionReviewedBy")
-  publishedCampaigns           Campaign[]                    @relation("CampaignPublishedBy")
-  reportExports                ReportExportJob[]             @relation("ReportExportRequestedBy")
-  confirmedTrackRights         Track[]                       @relation("TrackRightsConfirmedBy")
-  createdSchoolAnnouncements   SchoolAnnouncement[]          @relation("SchoolAnnouncementCreatedBy")
-  reviewedSchoolAnnouncements  SchoolAnnouncement[]          @relation("SchoolAnnouncementReviewedBy")
-  approvedSchoolSlots          SchoolBroadcastSlot[]         @relation("SchoolBroadcastSlotApprovedBy")
-  createdProductionOrders      ProductionOrder[]             @relation("ProductionOrderCreatedBy")
-  assignedProductionOrders     ProductionOrder[]             @relation("ProductionOrderAssignedTo")
-  productionOrderEvents        ProductionOrderEvent[]        @relation("ProductionOrderEventActor")
-  productionOrderFiles         ProductionOrderFile[]         @relation("ProductionOrderFileUploadedBy")
-  productionScriptVersions     ProductionScriptVersion[]     @relation("ProductionScriptVersionCreatedBy")
-  requestedProductionRevisions ProductionRevisionRequest[]   @relation("ProductionRevisionRequestedBy")
-  resolvedProductionRevisions  ProductionRevisionRequest[]   @relation("ProductionRevisionResolvedBy")
-  productionCreditEntries      ProductionCreditLedgerEntry[] @relation("ProductionCreditEntryActor")
-  schoolSupervisions           StaffSupervisor[]             @relation("SchoolSupervisorUser")
-  createdStudentGroups         StudentGroup[]                @relation("StudentGroupCreatedBy")
-  createdSchoolProgrammes      SchoolProgramme[]             @relation("SchoolProgrammeCreatedBy")
-  createdSchoolEpisodes        SchoolEpisode[]               @relation("SchoolEpisodeCreatedBy")
-  schoolSubmissions            SchoolSubmission[]            @relation("SchoolSubmissionSubmittedBy")
-  schoolModerationReviews      SchoolModerationReview[]      @relation("SchoolModerationReviewer")
-  recordedConsentRecords       ConsentRecord[]               @relation("ConsentRecordedBy")
-  createdAudioProjects         AudioProject[]                @relation("AudioProjectCreatedBy")
-  audioProjectVersions         AudioProjectVersion[]         @relation("AudioProjectVersionCreatedBy")
-  recordedAudioTakes           AudioTake[]                   @relation("AudioTakeRecordedBy")
-  schoolAudioUploads           SchoolAudioUploadSession[]    @relation("SchoolAudioUploadCreatedBy")
-  createdAudioMarkers          AudioMarker[]                 @relation("AudioMarkerCreatedBy")
-  requestedAudioRenders        AudioRender[]                 @relation("AudioRenderRequestedBy")
-  createdSchoolRundowns        SchoolRundown[]               @relation("SchoolRundownCreatedBy")
-  reviewedSchoolRundowns       SchoolRundown[]               @relation("SchoolRundownReviewedBy")
-  createdPodcastSeries         SchoolPodcastSeries[]         @relation("SchoolPodcastSeriesCreatedBy")
-  createdPodcastEpisodes       SchoolPodcastEpisode[]        @relation("SchoolPodcastEpisodeCreatedBy")
-  reviewedPodcastEpisodes      SchoolPodcastEpisode[]        @relation("SchoolPodcastEpisodeReviewedBy")
-  createdNewsStories           SchoolNewsStory[]             @relation("SchoolNewsStoryCreatedBy")
-  assignedNewsStories          SchoolNewsStory[]             @relation("SchoolNewsStoryAssignedTo")
-  reviewedNewsStories          SchoolNewsStory[]             @relation("SchoolNewsStoryReviewedBy")
-  supervisedLiveSessions       LiveStudioSession[]           @relation("LiveStudioSupervisor")
+  memberships                   OrganisationMember[]
+  auditLogs                     AuditLog[]                    @relation("AuditActor")
+  sessions                      Session[]
+  submittedPromoVersions        PromoVersion[]                @relation("PromoVersionSubmittedBy")
+  reviewedPromoVersions         PromoVersion[]                @relation("PromoVersionReviewedBy")
+  publishedCampaigns            Campaign[]                    @relation("CampaignPublishedBy")
+  reportExports                 ReportExportJob[]             @relation("ReportExportRequestedBy")
+  confirmedTrackRights          Track[]                       @relation("TrackRightsConfirmedBy")
+  createdSchoolAnnouncements    SchoolAnnouncement[]          @relation("SchoolAnnouncementCreatedBy")
+  reviewedSchoolAnnouncements   SchoolAnnouncement[]          @relation("SchoolAnnouncementReviewedBy")
+  approvedSchoolSlots           SchoolBroadcastSlot[]         @relation("SchoolBroadcastSlotApprovedBy")
+  createdProductionOrders       ProductionOrder[]             @relation("ProductionOrderCreatedBy")
+  assignedProductionOrders      ProductionOrder[]             @relation("ProductionOrderAssignedTo")
+  productionOrderEvents         ProductionOrderEvent[]        @relation("ProductionOrderEventActor")
+  productionOrderFiles          ProductionOrderFile[]         @relation("ProductionOrderFileUploadedBy")
+  productionScriptVersions      ProductionScriptVersion[]     @relation("ProductionScriptVersionCreatedBy")
+  requestedProductionRevisions  ProductionRevisionRequest[]   @relation("ProductionRevisionRequestedBy")
+  resolvedProductionRevisions   ProductionRevisionRequest[]   @relation("ProductionRevisionResolvedBy")
+  productionCreditEntries       ProductionCreditLedgerEntry[] @relation("ProductionCreditEntryActor")
+  schoolSupervisions            StaffSupervisor[]             @relation("SchoolSupervisorUser")
+  createdStudentGroups          StudentGroup[]                @relation("StudentGroupCreatedBy")
+  createdSchoolProgrammes       SchoolProgramme[]             @relation("SchoolProgrammeCreatedBy")
+  createdSchoolEpisodes         SchoolEpisode[]               @relation("SchoolEpisodeCreatedBy")
+  schoolSubmissions             SchoolSubmission[]            @relation("SchoolSubmissionSubmittedBy")
+  schoolModerationReviews       SchoolModerationReview[]      @relation("SchoolModerationReviewer")
+  recordedConsentRecords        ConsentRecord[]               @relation("ConsentRecordedBy")
+  createdAudioProjects          AudioProject[]                @relation("AudioProjectCreatedBy")
+  audioProjectVersions          AudioProjectVersion[]         @relation("AudioProjectVersionCreatedBy")
+  recordedAudioTakes            AudioTake[]                   @relation("AudioTakeRecordedBy")
+  schoolAudioUploads            SchoolAudioUploadSession[]    @relation("SchoolAudioUploadCreatedBy")
+  createdAudioMarkers           AudioMarker[]                 @relation("AudioMarkerCreatedBy")
+  requestedAudioRenders         AudioRender[]                 @relation("AudioRenderRequestedBy")
+  createdSchoolRundowns         SchoolRundown[]               @relation("SchoolRundownCreatedBy")
+  reviewedSchoolRundowns        SchoolRundown[]               @relation("SchoolRundownReviewedBy")
+  createdPodcastSeries          SchoolPodcastSeries[]         @relation("SchoolPodcastSeriesCreatedBy")
+  createdPodcastEpisodes        SchoolPodcastEpisode[]        @relation("SchoolPodcastEpisodeCreatedBy")
+  reviewedPodcastEpisodes       SchoolPodcastEpisode[]        @relation("SchoolPodcastEpisodeReviewedBy")
+  createdNewsStories            SchoolNewsStory[]             @relation("SchoolNewsStoryCreatedBy")
+  assignedNewsStories           SchoolNewsStory[]             @relation("SchoolNewsStoryAssignedTo")
+  reviewedNewsStories           SchoolNewsStory[]             @relation("SchoolNewsStoryReviewedBy")
+  supervisedLiveSessions        LiveStudioSession[]           @relation("LiveStudioSupervisor")
+  createdAssignments            Assignment[]                  @relation("AssignmentCreatedBy")
+  recordedAssignmentSubmissions AssignmentSubmission[]        @relation("AssignmentSubmissionRecordedBy")
+  assignmentAssessments         Assessment[]                  @relation("AssessmentAssessedBy")
+  createdPortfolioEntries       PortfolioEntry[]              @relation("PortfolioEntryCreatedBy")
 }
 
 model Organisation {
@@ -602,6 +630,10 @@ model Organisation {
   transcripts                Transcript[]
   schoolNewsStories          SchoolNewsStory[]
   liveStudioSessions         LiveStudioSession[]
+  assignments                Assignment[]
+  assignmentSubmissions      AssignmentSubmission[]
+  assessments                Assessment[]
+  portfolioEntries           PortfolioEntry[]
 }
 
 model OrganisationMember {
@@ -1285,6 +1317,7 @@ model StudentGroup {
   contributors  StudentContributor[]
   programmes    SchoolProgramme[]
   audioProjects AudioProject[]
+  assignments   Assignment[]
 
   @@unique([organisationId, name, academicYear])
   @@index([organisationId, supervisorId])
@@ -1300,10 +1333,12 @@ model StudentContributor {
   createdAt      DateTime                 @default(now())
   updatedAt      DateTime                 @updatedAt
 
-  organisation   Organisation               @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  studentGroup   StudentGroup               @relation(fields: [studentGroupId], references: [id], onDelete: Cascade)
-  episodes       SchoolEpisodeContributor[]
-  consentRecords ConsentRecord[]
+  organisation          Organisation                      @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  studentGroup          StudentGroup                      @relation(fields: [studentGroupId], references: [id], onDelete: Cascade)
+  episodes              SchoolEpisodeContributor[]
+  consentRecords        ConsentRecord[]
+  assignmentSubmissions AssignmentSubmissionContributor[]
+  portfolioEntries      PortfolioEntry[]
 
   @@unique([studentGroupId, displayName])
   @@index([organisationId, status])
@@ -1330,6 +1365,7 @@ model SchoolProgramme {
   podcastSeries SchoolPodcastSeries[]
   newsStories   SchoolNewsStory[]
   liveSessions  LiveStudioSession[]
+  assignments   Assignment[]
 
   @@unique([organisationId, title])
   @@index([organisationId, status])
@@ -1350,20 +1386,21 @@ model SchoolEpisode {
   createdAt        DateTime               @default(now())
   updatedAt        DateTime               @updatedAt
 
-  organisation   Organisation               @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  programme      SchoolProgramme            @relation(fields: [programmeId], references: [id], onDelete: Restrict)
-  createdBy      User                       @relation("SchoolEpisodeCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  contributors   SchoolEpisodeContributor[]
-  submissions    SchoolSubmission[]
-  reviews        SchoolModerationReview[]
-  consentRecords ConsentRecord[]
-  audioProjects  AudioProject[]
-  rundown        SchoolRundown?
-  broadcastSlots SchoolBroadcastSlot[]
-  podcastEpisode SchoolPodcastEpisode?
-  transcripts    Transcript[]
-  newsStories    SchoolNewsStory[]
-  liveSessions   LiveStudioSession[]
+  organisation          Organisation               @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  programme             SchoolProgramme            @relation(fields: [programmeId], references: [id], onDelete: Restrict)
+  createdBy             User                       @relation("SchoolEpisodeCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  contributors          SchoolEpisodeContributor[]
+  submissions           SchoolSubmission[]
+  reviews               SchoolModerationReview[]
+  consentRecords        ConsentRecord[]
+  audioProjects         AudioProject[]
+  rundown               SchoolRundown?
+  broadcastSlots        SchoolBroadcastSlot[]
+  podcastEpisode        SchoolPodcastEpisode?
+  transcripts           Transcript[]
+  newsStories           SchoolNewsStory[]
+  liveSessions          LiveStudioSession[]
+  assignmentSubmissions AssignmentSubmission[]
 
   @@index([organisationId, status])
   @@index([programmeId, createdAt])
@@ -1524,18 +1561,19 @@ model AudioProject {
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
 
-  organisation   Organisation               @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  programme      SchoolProgramme?           @relation(fields: [programmeId], references: [id], onDelete: SetNull)
-  episode        SchoolEpisode?             @relation(fields: [episodeId], references: [id], onDelete: SetNull)
-  studentGroup   StudentGroup?              @relation(fields: [studentGroupId], references: [id], onDelete: SetNull)
-  createdBy      User                       @relation("AudioProjectCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  versions       AudioProjectVersion[]
-  takes          AudioTake[]
-  uploadSessions SchoolAudioUploadSession[]
-  tracks         AudioTrack[]
-  markers        AudioMarker[]
-  renders        AudioRender[]
-  transcripts    Transcript[]
+  organisation          Organisation               @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  programme             SchoolProgramme?           @relation(fields: [programmeId], references: [id], onDelete: SetNull)
+  episode               SchoolEpisode?             @relation(fields: [episodeId], references: [id], onDelete: SetNull)
+  studentGroup          StudentGroup?              @relation(fields: [studentGroupId], references: [id], onDelete: SetNull)
+  createdBy             User                       @relation("AudioProjectCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  versions              AudioProjectVersion[]
+  takes                 AudioTake[]
+  uploadSessions        SchoolAudioUploadSession[]
+  tracks                AudioTrack[]
+  markers               AudioMarker[]
+  renders               AudioRender[]
+  transcripts           Transcript[]
+  assignmentSubmissions AssignmentSubmission[]
 
   @@index([organisationId, status])
   @@index([episodeId])
@@ -1557,6 +1595,182 @@ model AudioProjectVersion {
 
   @@unique([projectId, version])
   @@index([createdByUserId, createdAt])
+}
+
+model Assignment {
+  id              String           @id @default(cuid())
+  organisationId  String
+  studentGroupId  String
+  programmeId     String?
+  title           String
+  brief           String?
+  templateCode    String
+  allowedTools    Json?
+  dueAt           DateTime?
+  status          AssignmentStatus @default(DRAFT)
+  createdByUserId String
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  organisation Organisation           @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  studentGroup StudentGroup           @relation(fields: [studentGroupId], references: [id], onDelete: Restrict)
+  programme    SchoolProgramme?       @relation(fields: [programmeId], references: [id], onDelete: SetNull)
+  createdBy    User                   @relation("AssignmentCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  rubric       Rubric?
+  submissions  AssignmentSubmission[]
+
+  @@index([organisationId, status, dueAt])
+  @@index([studentGroupId, status])
+  @@index([programmeId])
+}
+
+model Rubric {
+  id           String   @id @default(cuid())
+  assignmentId String   @unique
+  title        String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  assignment Assignment        @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  criteria   RubricCriterion[]
+}
+
+model RubricCriterion {
+  id          String   @id @default(cuid())
+  rubricId    String
+  label       String
+  description String?
+  maxScore    Int
+  position    Int
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  rubric           Rubric            @relation(fields: [rubricId], references: [id], onDelete: Cascade)
+  assessmentScores AssessmentScore[]
+
+  @@unique([rubricId, position])
+  @@index([rubricId])
+}
+
+model AssignmentSubmission {
+  id               String                     @id @default(cuid())
+  organisationId   String
+  assignmentId     String
+  audioProjectId   String?
+  episodeId        String?
+  status           AssignmentSubmissionStatus @default(SUBMITTED)
+  revision         Int                        @default(1)
+  reflection       String?
+  recordedByUserId String
+  submittedAt      DateTime                   @default(now())
+  createdAt        DateTime                   @default(now())
+  updatedAt        DateTime                   @updatedAt
+
+  organisation Organisation                      @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  assignment   Assignment                        @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  audioProject AudioProject?                     @relation(fields: [audioProjectId], references: [id], onDelete: SetNull)
+  episode      SchoolEpisode?                    @relation(fields: [episodeId], references: [id], onDelete: SetNull)
+  recordedBy   User                              @relation("AssignmentSubmissionRecordedBy", fields: [recordedByUserId], references: [id], onDelete: Restrict)
+  contributors AssignmentSubmissionContributor[]
+  assessment   Assessment?
+  portfolios   PortfolioEntry[]
+
+  @@index([organisationId, status, submittedAt])
+  @@index([assignmentId, revision])
+  @@index([audioProjectId])
+  @@index([episodeId])
+}
+
+model AssignmentSubmissionContributor {
+  submissionId  String
+  contributorId String
+  projectRole   String?
+  createdAt     DateTime @default(now())
+
+  submission  AssignmentSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  contributor StudentContributor   @relation(fields: [contributorId], references: [id], onDelete: Restrict)
+
+  @@id([submissionId, contributorId])
+  @@index([contributorId])
+}
+
+model Assessment {
+  id               String           @id @default(cuid())
+  organisationId   String
+  submissionId     String           @unique
+  status           AssessmentStatus @default(DRAFT)
+  totalScore       Int
+  maximumScore     Int
+  narrativeNotes   String?
+  revisionRequest  String?
+  assessedByUserId String
+  assessedAt       DateTime         @default(now())
+  releasedAt       DateTime?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  organisation Organisation           @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  submission   AssignmentSubmission   @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  assessedBy   User                   @relation("AssessmentAssessedBy", fields: [assessedByUserId], references: [id], onDelete: Restrict)
+  scores       AssessmentScore[]
+  annotations  AssessmentAnnotation[]
+  portfolios   PortfolioEntry[]
+
+  @@index([organisationId, status, assessedAt])
+  @@index([assessedByUserId])
+}
+
+model AssessmentScore {
+  assessmentId String
+  criterionId  String
+  score        Int
+  notes        String?
+
+  assessment Assessment      @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  criterion  RubricCriterion @relation(fields: [criterionId], references: [id], onDelete: Restrict)
+
+  @@id([assessmentId, criterionId])
+  @@index([criterionId])
+}
+
+model AssessmentAnnotation {
+  id           String   @id @default(cuid())
+  assessmentId String
+  positionMs   Int
+  endMs        Int?
+  note         String
+  createdAt    DateTime @default(now())
+
+  assessment Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@index([assessmentId, positionMs])
+}
+
+model PortfolioEntry {
+  id              String               @id @default(cuid())
+  organisationId  String
+  contributorId   String
+  submissionId    String
+  assessmentId    String?
+  title           String
+  projectRole     String?
+  reflection      String?
+  skillsJson      Json?
+  status          PortfolioEntryStatus @default(PRIVATE)
+  createdByUserId String
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  organisation Organisation         @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  contributor  StudentContributor   @relation(fields: [contributorId], references: [id], onDelete: Restrict)
+  submission   AssignmentSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  assessment   Assessment?          @relation(fields: [assessmentId], references: [id], onDelete: SetNull)
+  createdBy    User                 @relation("PortfolioEntryCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@unique([submissionId, contributorId])
+  @@index([organisationId, status, updatedAt])
+  @@index([contributorId, status])
+  @@index([assessmentId])
 }
 
 model AudioTake {
@@ -2304,4 +2518,3 @@ model ReportExportJob {
   @@index([status, availableAt, leaseUntil])
   @@index([expiresAt])
 }
-
