@@ -491,6 +491,33 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
       1
     );
 
+    const enableSchoolRadio = await api(
+      `/api/admin/organisations/${accountABody.organisation.id}/school-radio`,
+      { method: "PATCH", cookie: cookieA, body: { enabled: true } }
+    );
+    assert.equal(enableSchoolRadio.status, 200, await enableSchoolRadio.clone().text());
+    assert.equal(
+      (await enableSchoolRadio.json()).subscription.effectiveSchoolRadioEnabled,
+      true
+    );
+    assert.equal(
+      (
+        await db.subscription.findUnique({
+          where: { organisationId: accountABody.organisation.id }
+        })
+      ).schoolRadioEnabled,
+      true
+    );
+    assert.equal(
+      await db.auditLog.count({
+        where: {
+          organisationId: accountABody.organisation.id,
+          action: "SCHOOL_RADIO_ENTITLEMENT_ENABLED"
+        }
+      }),
+      1
+    );
+
     const schoolGroupResponse = await api("/api/school-radio/editorial", {
       method: "POST", cookie: cookieA,
       body: { action: "CREATE_GROUP", name: `Integration Radio Club ${suffix}`, academicYear: "2026/27" }
@@ -541,33 +568,6 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
       method: "POST", cookie: cookieA, body: { organisationId: accountABody.organisation.id }
     });
     assert.equal(switchBackToAccountA.status, 200);
-
-    const enableSchoolRadio = await api(
-      `/api/admin/organisations/${accountABody.organisation.id}/school-radio`,
-      { method: "PATCH", cookie: cookieA, body: { enabled: true } }
-    );
-    assert.equal(enableSchoolRadio.status, 200, await enableSchoolRadio.clone().text());
-    assert.equal(
-      (await enableSchoolRadio.json()).subscription.effectiveSchoolRadioEnabled,
-      true
-    );
-    assert.equal(
-      (
-        await db.subscription.findUnique({
-          where: { organisationId: accountABody.organisation.id }
-        })
-      ).schoolRadioEnabled,
-      true
-    );
-    assert.equal(
-      await db.auditLog.count({
-        where: {
-          organisationId: accountABody.organisation.id,
-          action: "SCHOOL_RADIO_ENTITLEMENT_ENABLED"
-        }
-      }),
-      1
-    );
 
     const invalidCatalogueUploadForm = new FormData();
     invalidCatalogueUploadForm.set("title", "Invalid catalogue file");
