@@ -25,13 +25,6 @@ export async function PATCH(request, { params }) {
   if (parsed.data.action === "DELIVER" && order._count.files < 1) {
     return NextResponse.json({ error: "Upload a final master before marking this order as delivered." }, { status: 409 });
   }
-  if (new Set(["START_PRODUCTION", "RESUME_PRODUCTION"]).has(parsed.data.action) && !fundingAllowsProduction(order.fundingStatus)) {
-    return NextResponse.json({ error: order.fundingType === "PAID_ADD_ON" ? "Authorise the paid add-on before starting production." : "Reserve a production credit before starting production." }, { status: 409 });
-  }
-  if (parsed.data.action === "DELIVER" && !fundingAllowsDelivery(order.fundingStatus)) {
-    return NextResponse.json({ error: "This order must have reserved production funding before delivery." }, { status: 409 });
-  }
-
   let transition;
   try {
     transition = transitionProductionOrder({
@@ -43,6 +36,12 @@ export async function PATCH(request, { params }) {
   } catch (error) {
     const message = error instanceof Error ? error.message : "This production action is not allowed.";
     return NextResponse.json({ error: message }, { status: message.includes("permission") ? 403 : 409 });
+  }
+  if (new Set(["START_PRODUCTION", "RESUME_PRODUCTION"]).has(parsed.data.action) && !fundingAllowsProduction(order.fundingStatus)) {
+    return NextResponse.json({ error: order.fundingType === "PAID_ADD_ON" ? "Authorise the paid add-on before starting production." : "Reserve a production credit before starting production." }, { status: 409 });
+  }
+  if (parsed.data.action === "DELIVER" && !fundingAllowsDelivery(order.fundingStatus)) {
+    return NextResponse.json({ error: "This order must have reserved production funding before delivery." }, { status: 409 });
   }
 
   const { note, ...statusData } = transition;
