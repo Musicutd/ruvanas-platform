@@ -72,6 +72,11 @@ const navItems = [
   {
     href: "/admin/compliance",
     label: "Compliance & support"
+  },
+  {
+    href: "/admin/ai",
+    label: "AI draft workspace",
+    superAdminOnly: true
   }
 ];
 

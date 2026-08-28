@@ -1,5 +1,9 @@
 # Database migration operations
 
+## Stage 6A governed AI assistance
+
+Migration `20260906000000_stage_6a_ai_governance` is additive. It adds tenant-scoped assistant jobs, provider/provenance metadata, and human recommendation feedback. No existing content is changed and no generated artifact is connected directly to a publication or scheduling record.
+
 ## Stage 5E enterprise identity and security
 
 Migration `20260904000000_stage_5e_enterprise_identity_security` is additive. It adds organisation security policy, identity-provider and identity-link records, service accounts, hashed API keys, revocable session metadata, and service-account audit attribution. Existing sessions receive safe defaults and existing password login remains compatible.
@@ -39,4 +43,5 @@ Prisma migrations are forward-only operationally. For a failed release:
 4. Record the incident and create a new corrective migration; never edit a migration that has already been applied.
 
 The initial baseline only creates objects in an empty database. Its recovery path is to discard the failed empty database and recreate it. Never run a broad drop script against a database that may contain user data.
+
 

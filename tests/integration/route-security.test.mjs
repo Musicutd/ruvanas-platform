@@ -257,6 +257,18 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   });
   assert.equal(unauthenticatedCompliance.status, 401);
 
+  const unauthenticatedAIDraft = await api("/api/admin/ai/jobs", {
+    method: "POST",
+    body: { organisationId: "not-an-organisation" }
+  });
+  assert.equal(unauthenticatedAIDraft.status, 401);
+
+  const unauthenticatedAIReview = await api("/api/admin/ai/jobs/not-a-job/review", {
+    method: "PATCH",
+    body: { decision: "APPROVED", editedText: "Unauthenticated review attempt." }
+  });
+  assert.equal(unauthenticatedAIReview.status, 401);
+
   const unauthenticatedSupportTicket = await api("/api/admin/support/tickets", {
     method: "POST",
     body: { subject: "No session", description: "No session", priority: "NORMAL" }
@@ -426,6 +438,21 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   });
   assert.equal(ownerComplianceAttempt.status, 403);
 
+  const ownerAIDraftAttempt = await api("/api/admin/ai/jobs", {
+    method: "POST",
+    cookie: cookieA,
+    body: {
+      organisationId: accountABody.organisation.id,
+      assistantType: "PROMO_SCRIPT",
+      dataClassification: "INTERNAL",
+      title: "Forbidden draft",
+      audience: "Customers",
+      brief: "An organisation owner must not use this platform-admin route.",
+      durationSeconds: 30
+    }
+  });
+  assert.equal(ownerAIDraftAttempt.status, 403);
+
   const ownerNetworkCreateAttempt = await api("/api/school-radio/network", {
     method: "POST",
     cookie: cookieA,
@@ -476,6 +503,44 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
       where: { id: accountABody.user.id },
       data: { role: "SUPER_ADMIN" }
     });
+
+    const aiDraftResponse = await api("/api/admin/ai/jobs", {
+      method: "POST",
+      cookie: cookieA,
+      body: {
+        organisationId: accountABody.organisation.id,
+        assistantType: "PROMO_SCRIPT",
+        dataClassification: "CUSTOMER_CONTENT",
+        title: "Integration weekend offer",
+        audience: "Retail visitors",
+        brief: "Create an editable draft using only the verified offer information supplied by the administrator.",
+        callToAction: "Ask a team member for details.",
+        tone: "friendly and concise",
+        durationSeconds: 30
+      }
+    });
+    assert.equal(aiDraftResponse.status, 201, await aiDraftResponse.clone().text());
+    const aiDraftBody = await aiDraftResponse.json();
+    assert.equal(aiDraftBody.job.status, "NEEDS_REVIEW");
+    assert.equal(aiDraftBody.job.privateDataSent, false);
+    assert.match(aiDraftBody.job.draftText, /DRAFT PROMO SCRIPT/);
+    assert.equal(await db.auditLog.count({ where: { action: "AI_DRAFT_CREATED", entityId: aiDraftBody.job.id } }), 1);
+
+    const aiReviewResponse = await api(`/api/admin/ai/jobs/${aiDraftBody.job.id}/review`, {
+      method: "PATCH",
+      cookie: cookieA,
+      body: {
+        decision: "APPROVED",
+        editedText: `${aiDraftBody.job.draftText}\n\nHuman editor: facts checked.`,
+        reviewNote: "Integration human review"
+      }
+    });
+    assert.equal(aiReviewResponse.status, 200, await aiReviewResponse.clone().text());
+    const aiReviewBody = await aiReviewResponse.json();
+    assert.equal(aiReviewBody.job.status, "APPROVED");
+    assert.match(aiReviewBody.job.approvedText, /Human editor: facts checked/);
+    assert.equal(await db.recommendationFeedback.count({ where: { aiJobId: aiDraftBody.job.id, decision: "APPROVED" } }), 1);
+    assert.equal(await db.auditLog.count({ where: { action: "AI_DRAFT_APPROVED", entityId: aiDraftBody.job.id } }), 1);
 
     const saveRetentionPolicy = await api("/api/admin/compliance", {
       method: "POST",
