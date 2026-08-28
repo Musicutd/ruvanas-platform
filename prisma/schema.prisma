@@ -16,6 +16,27 @@ enum UserRole {
   VIEWER
 }
 
+enum EnterpriseIdentityProtocol {
+  OIDC
+  SAML
+}
+
+enum EnterpriseIdentityProviderStatus {
+  DRAFT
+  READY
+  DISABLED
+}
+
+enum ServiceAccountStatus {
+  ACTIVE
+  REVOKED
+}
+
+enum ApiKeyStatus {
+  ACTIVE
+  REVOKED
+}
+
 enum SchoolNetworkRole {
   OWNER
   ADMIN
@@ -611,6 +632,8 @@ model User {
   createdPortfolioEntries       PortfolioEntry[]              @relation("PortfolioEntryCreatedBy")
   createdSchoolNetworks         SchoolNetwork[]               @relation("SchoolNetworkCreatedBy")
   schoolNetworkMemberships      SchoolNetworkMember[]
+  enterpriseIdentityLinks       EnterpriseIdentityLink[]
+  createdServiceAccounts        ServiceAccount[]              @relation("ServiceAccountCreatedBy")
 }
 
 model Organisation {
@@ -620,61 +643,64 @@ model Organisation {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  members                    OrganisationMember[]
-  subscription               Subscription?
-  stations                   Station[]
-  brands                     Brand[]
-  locations                  Location[]
-  locationGroups             LocationGroup[]
-  channels                   Channel[]
-  mediaAssets                MediaAsset[]                  @relation("OrganisationMediaAssets")
-  promoAssets                PromoAsset[]
-  auditLogs                  AuditLog[]
-  players                    Player[]
-  musicModes                 MusicMode[]
-  musicSchedules             MusicSchedule[]
-  proofOfPlayEvents          ProofOfPlayEvent[]
-  campaigns                  Campaign[]
-  playoutIntents             PlayoutIntent[]
-  reportExports              ReportExportJob[]
-  analyticsHourlyAggregates  AnalyticsHourlyAggregate[]
-  analyticsAggregationCursor AnalyticsAggregationCursor?
-  activeSessions             Session[]
-  schoolProfile              SchoolProfile?
-  schoolAnnouncements        SchoolAnnouncement[]
-  schoolBroadcastSlots       SchoolBroadcastSlot[]
-  productionOrders           ProductionOrder[]
-  productionOrderEvents      ProductionOrderEvent[]
-  productionOrderFiles       ProductionOrderFile[]
-  productionScriptVersions   ProductionScriptVersion[]
-  productionRevisionRequests ProductionRevisionRequest[]
-  productionCreditEntries    ProductionCreditLedgerEntry[]
-  staffSupervisors           StaffSupervisor[]
-  studentGroups              StudentGroup[]
-  studentContributors        StudentContributor[]
-  schoolProgrammes           SchoolProgramme[]
-  schoolEpisodes             SchoolEpisode[]
-  schoolSubmissions          SchoolSubmission[]
-  schoolModerationReviews    SchoolModerationReview[]
-  consentRecords             ConsentRecord[]
-  audioProjects              AudioProject[]
-  audioTakes                 AudioTake[]
-  schoolAudioUploads         SchoolAudioUploadSession[]
-  audioRenders               AudioRender[]
-  schoolRundowns             SchoolRundown[]
-  schoolPodcastSeries        SchoolPodcastSeries[]
-  schoolPodcastEpisodes      SchoolPodcastEpisode[]
-  transcripts                Transcript[]
-  schoolNewsStories          SchoolNewsStory[]
-  liveStudioSessions         LiveStudioSession[]
-  assignments                Assignment[]
-  assignmentSubmissions      AssignmentSubmission[]
-  billingAccount             BillingAccount?
-  billingInvoices            BillingInvoice[]
-  billingReconciliations     BillingUsageReconciliation[]
-  assessments                Assessment[]
-  portfolioEntries           PortfolioEntry[]
-  schoolNetworkSchool        SchoolNetworkSchool?
+  members                     OrganisationMember[]
+  subscription                Subscription?
+  stations                    Station[]
+  brands                      Brand[]
+  locations                   Location[]
+  locationGroups              LocationGroup[]
+  channels                    Channel[]
+  mediaAssets                 MediaAsset[]                  @relation("OrganisationMediaAssets")
+  promoAssets                 PromoAsset[]
+  auditLogs                   AuditLog[]
+  players                     Player[]
+  musicModes                  MusicMode[]
+  musicSchedules              MusicSchedule[]
+  proofOfPlayEvents           ProofOfPlayEvent[]
+  campaigns                   Campaign[]
+  playoutIntents              PlayoutIntent[]
+  reportExports               ReportExportJob[]
+  analyticsHourlyAggregates   AnalyticsHourlyAggregate[]
+  analyticsAggregationCursor  AnalyticsAggregationCursor?
+  activeSessions              Session[]
+  schoolProfile               SchoolProfile?
+  schoolAnnouncements         SchoolAnnouncement[]
+  schoolBroadcastSlots        SchoolBroadcastSlot[]
+  productionOrders            ProductionOrder[]
+  productionOrderEvents       ProductionOrderEvent[]
+  productionOrderFiles        ProductionOrderFile[]
+  productionScriptVersions    ProductionScriptVersion[]
+  productionRevisionRequests  ProductionRevisionRequest[]
+  productionCreditEntries     ProductionCreditLedgerEntry[]
+  staffSupervisors            StaffSupervisor[]
+  studentGroups               StudentGroup[]
+  studentContributors         StudentContributor[]
+  schoolProgrammes            SchoolProgramme[]
+  schoolEpisodes              SchoolEpisode[]
+  schoolSubmissions           SchoolSubmission[]
+  schoolModerationReviews     SchoolModerationReview[]
+  consentRecords              ConsentRecord[]
+  audioProjects               AudioProject[]
+  audioTakes                  AudioTake[]
+  schoolAudioUploads          SchoolAudioUploadSession[]
+  audioRenders                AudioRender[]
+  schoolRundowns              SchoolRundown[]
+  schoolPodcastSeries         SchoolPodcastSeries[]
+  schoolPodcastEpisodes       SchoolPodcastEpisode[]
+  transcripts                 Transcript[]
+  schoolNewsStories           SchoolNewsStory[]
+  liveStudioSessions          LiveStudioSession[]
+  assignments                 Assignment[]
+  assignmentSubmissions       AssignmentSubmission[]
+  billingAccount              BillingAccount?
+  billingInvoices             BillingInvoice[]
+  billingReconciliations      BillingUsageReconciliation[]
+  assessments                 Assessment[]
+  portfolioEntries            PortfolioEntry[]
+  schoolNetworkSchool         SchoolNetworkSchool?
+  enterpriseSecurityPolicy    EnterpriseSecurityPolicy?
+  enterpriseIdentityProviders EnterpriseIdentityProvider[]
+  serviceAccounts             ServiceAccount[]
 }
 
 model OrganisationMember {
@@ -2529,32 +2555,38 @@ model MediaAssetGenre {
 }
 
 model AuditLog {
-  id              String   @id @default(cuid())
-  organisationId  String?
-  schoolNetworkId String?
-  actorUserId     String?
-  action          String
-  entityType      String
-  entityId        String?
-  details         Json?
-  createdAt       DateTime @default(now())
+  id                    String   @id @default(cuid())
+  organisationId        String?
+  schoolNetworkId       String?
+  actorUserId           String?
+  actorServiceAccountId String?
+  action                String
+  entityType            String
+  entityId              String?
+  details               Json?
+  createdAt             DateTime @default(now())
 
-  organisation  Organisation?  @relation(fields: [organisationId], references: [id], onDelete: SetNull)
-  schoolNetwork SchoolNetwork? @relation(fields: [schoolNetworkId], references: [id], onDelete: SetNull)
-  actor         User?          @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  organisation        Organisation?   @relation(fields: [organisationId], references: [id], onDelete: SetNull)
+  schoolNetwork       SchoolNetwork?  @relation(fields: [schoolNetworkId], references: [id], onDelete: SetNull)
+  actor               User?           @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  actorServiceAccount ServiceAccount? @relation(fields: [actorServiceAccountId], references: [id], onDelete: SetNull)
 
   @@index([organisationId])
   @@index([schoolNetworkId])
   @@index([actorUserId])
+  @@index([actorServiceAccountId])
 }
 
 model Session {
-  id                   String   @id @default(cuid())
+  id                   String    @id @default(cuid())
   userId               String
   activeOrganisationId String?
-  tokenHash            String   @unique
+  tokenHash            String    @unique
   expiresAt            DateTime
-  createdAt            DateTime @default(now())
+  lastSeenAt           DateTime  @default(now())
+  revokedAt            DateTime?
+  authMethod           String    @default("PASSWORD")
+  createdAt            DateTime  @default(now())
 
   user               User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   activeOrganisation Organisation? @relation(fields: [activeOrganisationId], references: [id], onDelete: SetNull)
@@ -2562,6 +2594,101 @@ model Session {
   @@index([userId])
   @@index([activeOrganisationId])
   @@index([expiresAt])
+  @@index([revokedAt])
+}
+
+model EnterpriseSecurityPolicy {
+  id                   String   @id @default(cuid())
+  organisationId       String   @unique
+  ssoRequired          Boolean  @default(false)
+  passwordFallback     Boolean  @default(true)
+  sessionMaxAgeMinutes Int      @default(43200)
+  idleTimeoutMinutes   Int      @default(1440)
+  allowedEmailDomains  String[] @default([])
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+}
+
+model EnterpriseIdentityProvider {
+  id             String                           @id @default(cuid())
+  organisationId String
+  name           String
+  protocol       EnterpriseIdentityProtocol
+  status         EnterpriseIdentityProviderStatus @default(DRAFT)
+  issuer         String
+  clientId       String?
+  metadataUrl    String?
+  emailDomain    String?
+  createdAt      DateTime                         @default(now())
+  updatedAt      DateTime                         @updatedAt
+
+  organisation  Organisation             @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  identityLinks EnterpriseIdentityLink[]
+
+  @@unique([organisationId, issuer])
+  @@index([organisationId, status])
+}
+
+model EnterpriseIdentityLink {
+  id                  String    @id @default(cuid())
+  providerId          String
+  userId              String
+  subject             String
+  emailAtProvider     String?
+  lastAuthenticatedAt DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  provider EnterpriseIdentityProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  user     User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, subject])
+  @@unique([providerId, userId])
+  @@index([userId])
+}
+
+model ServiceAccount {
+  id              String               @id @default(cuid())
+  organisationId  String
+  createdByUserId String
+  name            String
+  description     String?
+  status          ServiceAccountStatus @default(ACTIVE)
+  scopes          String[]             @default([])
+  expiresAt       DateTime?
+  lastUsedAt      DateTime?
+  revokedAt       DateTime?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation("ServiceAccountCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  apiKeys      ApiKey[]
+  auditLogs    AuditLog[]
+
+  @@unique([organisationId, name])
+  @@index([organisationId, status])
+  @@index([createdByUserId])
+}
+
+model ApiKey {
+  id               String       @id @default(cuid())
+  serviceAccountId String
+  name             String
+  prefix           String
+  tokenHash        String       @unique
+  status           ApiKeyStatus @default(ACTIVE)
+  expiresAt        DateTime?
+  lastUsedAt       DateTime?
+  revokedAt        DateTime?
+  createdAt        DateTime     @default(now())
+
+  serviceAccount ServiceAccount @relation(fields: [serviceAccountId], references: [id], onDelete: Cascade)
+
+  @@index([serviceAccountId, status])
+  @@index([prefix])
 }
 
 model RateLimitBucket {
@@ -2773,4 +2900,3 @@ model AnalyticsAggregationCursor {
 
   organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
 }
-

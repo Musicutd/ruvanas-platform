@@ -1,5 +1,9 @@
 # Database migration operations
 
+## Stage 5E enterprise identity and security
+
+Migration `20260904000000_stage_5e_enterprise_identity_security` is additive. It adds organisation security policy, identity-provider and identity-link records, service accounts, hashed API keys, revocable session metadata, and service-account audit attribution. Existing sessions receive safe defaults and existing password login remains compatible.
+
 ## Initial baseline
 
 The migration in `prisma/migrations/20260824190000_initial_schema` creates the schema represented by `prisma/schema.prisma`. It is verified automatically against an empty PostgreSQL 16 database in CI.
