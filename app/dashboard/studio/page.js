@@ -6,11 +6,12 @@ import StudioClient from "./StudioClient";
 export const dynamic = "force-dynamic";
 
 export default async function StudioPage() {
-  const context = await getActiveOrganisationContext({ subscription: { include: { plan: true } } });
+  const context = await getActiveOrganisationContext({ subscription: { include: { plan: true, billingContract: true } } });
   if (!context) redirect("/login");
   if (!context.membership) redirect("/dashboard");
   if (!resolveEntitlements(context.membership.organisation.subscription).serviceEnabled) redirect("/dashboard");
   return <StudioClient />;
 }
+
 
 

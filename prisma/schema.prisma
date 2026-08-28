@@ -30,6 +30,33 @@ enum SubscriptionStatus {
   SUSPENDED
 }
 
+enum BillingProvider {
+  MANUAL
+  GENERIC_HMAC
+}
+
+enum BillingInvoiceStatus {
+  DRAFT
+  OPEN
+  PAID
+  VOID
+  UNCOLLECTIBLE
+}
+
+enum BillingWebhookStatus {
+  RECEIVED
+  PROCESSED
+  IGNORED
+  FAILED
+}
+
+enum BillingReconciliationStatus {
+  PENDING
+  MATCHED
+  MISMATCHED
+  RESOLVED
+}
+
 enum StationStatus {
   DRAFT
   PENDING_SETUP
@@ -642,6 +669,9 @@ model Organisation {
   liveStudioSessions         LiveStudioSession[]
   assignments                Assignment[]
   assignmentSubmissions      AssignmentSubmission[]
+  billingAccount             BillingAccount?
+  billingInvoices            BillingInvoice[]
+  billingReconciliations     BillingUsageReconciliation[]
   assessments                Assessment[]
   portfolioEntries           PortfolioEntry[]
   schoolNetworkSchool        SchoolNetworkSchool?
@@ -737,8 +767,127 @@ model Subscription {
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
 
-  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  plan         Plan         @relation(fields: [planId], references: [id])
+  organisation           Organisation                 @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  plan                   Plan                         @relation(fields: [planId], references: [id])
+  billingContract        BillingContract?
+  billingInvoices        BillingInvoice[]
+  billingReconciliations BillingUsageReconciliation[]
+}
+
+model BillingAccount {
+  id                 String          @id @default(cuid())
+  organisationId     String          @unique
+  provider           BillingProvider @default(MANUAL)
+  externalCustomerId String?
+  active             Boolean         @default(true)
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  organisation    Organisation                 @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  contract        BillingContract?
+  invoices        BillingInvoice[]
+  reconciliations BillingUsageReconciliation[]
+
+  @@unique([provider, externalCustomerId])
+  @@index([provider, active])
+}
+
+model BillingContract {
+  id                     String    @id @default(cuid())
+  billingAccountId       String    @unique
+  subscriptionId         String    @unique
+  externalSubscriptionId String?
+  providerStatus         String?
+  currentPeriodStart     DateTime?
+  currentPeriodEnd       DateTime?
+  graceEndsAt            DateTime?
+  cancelAtPeriodEnd      Boolean   @default(false)
+  lastReconciledAt       DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  billingAccount BillingAccount @relation(fields: [billingAccountId], references: [id], onDelete: Cascade)
+  subscription   Subscription   @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@unique([billingAccountId, externalSubscriptionId])
+  @@index([providerStatus])
+  @@index([graceEndsAt])
+}
+
+model BillingInvoice {
+  id                String               @id @default(cuid())
+  organisationId    String
+  billingAccountId  String
+  subscriptionId    String?
+  externalInvoiceId String?
+  status            BillingInvoiceStatus @default(DRAFT)
+  currency          String               @default("EUR")
+  amountDueCents    Int                  @default(0)
+  amountPaidCents   Int                  @default(0)
+  periodStart       DateTime?
+  periodEnd         DateTime?
+  dueAt             DateTime?
+  paidAt            DateTime?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  organisation    Organisation                 @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  billingAccount  BillingAccount               @relation(fields: [billingAccountId], references: [id], onDelete: Cascade)
+  subscription    Subscription?                @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  reconciliations BillingUsageReconciliation[]
+
+  @@unique([billingAccountId, externalInvoiceId])
+  @@index([organisationId, status])
+  @@index([subscriptionId])
+  @@index([periodStart, periodEnd])
+}
+
+model BillingWebhookEvent {
+  id                String               @id @default(cuid())
+  provider          BillingProvider
+  externalEventId   String
+  eventType         String
+  payloadSha256     String
+  signatureVerified Boolean              @default(false)
+  status            BillingWebhookStatus @default(RECEIVED)
+  errorMessage      String?
+  receivedAt        DateTime             @default(now())
+  processedAt       DateTime?
+
+  @@unique([provider, externalEventId])
+  @@index([status, receivedAt])
+}
+
+model BillingUsageReconciliation {
+  id                 String                      @id @default(cuid())
+  organisationId     String
+  subscriptionId     String
+  billingAccountId   String?
+  invoiceId          String?
+  periodStart        DateTime
+  periodEnd          DateTime
+  locationCount      Int
+  zoneCount          Int
+  stationCount       Int
+  storageBytes       BigInt
+  schoolRadioEnabled Boolean
+  providerUsage      Json?
+  discrepancies      Json?
+  status             BillingReconciliationStatus @default(PENDING)
+  resolvedAt         DateTime?
+  createdAt          DateTime                    @default(now())
+  updatedAt          DateTime                    @updatedAt
+
+  organisation   Organisation    @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  subscription   Subscription    @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  billingAccount BillingAccount? @relation(fields: [billingAccountId], references: [id], onDelete: SetNull)
+  invoice        BillingInvoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+
+  @@unique([organisationId, periodStart, periodEnd])
+  @@index([status, createdAt])
+  @@index([subscriptionId])
+  @@index([billingAccountId])
+  @@index([invoiceId])
 }
 
 model Brand {
@@ -2624,3 +2773,4 @@ model AnalyticsAggregationCursor {
 
   organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
 }
+

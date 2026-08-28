@@ -24,7 +24,7 @@ export async function POST(request) {
   }
 
   const include = {
-    subscription: { include: { plan: true } },
+    subscription: { include: { plan: true, billingContract: true } },
     stations: true
   };
   const activeContext = organisationId
@@ -105,4 +105,5 @@ export async function POST(request) {
 
   return NextResponse.json({ success: true, station });
 }
+
 
