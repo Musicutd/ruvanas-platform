@@ -307,6 +307,7 @@ enum ConsentRecordStatus {
 enum AudioProjectType {
   QUICK_RECORD
   VOICE_TRACK
+  MULTITRACK
 }
 
 enum AudioProjectStatus {
@@ -1526,6 +1527,8 @@ model AudioTrack {
   pan             Float          @default(0)
   muted           Boolean        @default(false)
   solo            Boolean        @default(false)
+  armed           Boolean        @default(false)
+  locked          Boolean        @default(false)
   effectChainJson Json?
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
@@ -2073,4 +2076,3 @@ model ReportExportJob {
   @@index([status, availableAt, leaseUntil])
   @@index([expiresAt])
 }
-
