@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildRenderGraph, parseLoudnessReport, reducePcmPeaks } from "../lib/audio-worker.mjs";
+import { buildMultitrackRenderGraph, buildRenderGraph, parseLoudnessReport, reducePcmPeaks } from "../lib/audio-worker.mjs";
 
 test("audio worker builds an authoritative source-and-silence render graph", () => {
   const graph = buildRenderGraph([
@@ -23,3 +23,19 @@ test("audio worker reduces PCM safely and parses loudness", () => {
   assert.deepEqual(parseLoudnessReport("I: -16.2 LUFS\nLRA: 4.5 LU\nPeak: -1.2 dBFS"), { integratedLufs: -16.2, truePeakDbfs: -1.2, loudnessRangeLu: 4.5 });
 });
 
+test("audio worker builds overlapping multitrack buses with deterministic music ducking", () => {
+  const graph = buildMultitrackRenderGraph({
+    mode: "ADVANCED",
+    tracks: [
+      { clientId: "voice", name: "Voice", kind: "VOICE", preset: "SPEECH_CLEANUP", clips: [{ clientId: "v1", mediaAssetId: "voice-asset", sourceStartMs: 0, sourceEndMs: 8_000, timelineStartMs: 2_000, fadeInMs: 100, fadeOutMs: 200 }], automation: [{ timeMs: 3_000, value: -2 }] },
+      { clientId: "music", name: "Music", kind: "MUSIC", clips: [{ clientId: "m1", mediaAssetId: "music-asset", sourceStartMs: 0, sourceEndMs: 15_000, timelineStartMs: 0, fadeInMs: 500, fadeOutMs: 800 }] }
+    ],
+    ducking: { enabled: true, attackMs: 120, releaseMs: 700 },
+    master: { normalize: true, targetLufs: -16, limiter: true }
+  });
+  assert.deepEqual(graph.inputs.map((input) => input.mediaAssetId), ["voice-asset", "music-asset"]);
+  assert.match(graph.filterComplex, /adelay=2000\|2000/);
+  assert.match(graph.filterComplex, /sidechaincompress/);
+  assert.match(graph.filterComplex, /enable='between\(t,3\.000,86400\)'/);
+  assert.match(graph.filterComplex, /loudnorm=I=-16/);
+});

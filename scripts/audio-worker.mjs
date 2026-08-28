@@ -10,7 +10,7 @@ import { PrismaClient } from "@prisma/client";
 import ffmpegPath from "ffmpeg-static";
 import ffprobeStatic from "ffprobe-static";
 import { S3Client } from "@aws-sdk/client-s3";
-import { buildRenderGraph, parseLoudnessReport, reducePcmPeaks } from "../lib/audio-worker.mjs";
+import { buildMultitrackRenderGraph, buildRenderGraph, parseLoudnessReport, reducePcmPeaks } from "../lib/audio-worker.mjs";
 
 const prisma = new PrismaClient();
 const intervalMs = Math.max(2000, Number(process.env.AUDIO_WORKER_INTERVAL_MS || 5000));
@@ -82,8 +82,9 @@ async function processRender() {
   if (!claimed.count) return true;
   const directory = await mkdtemp(path.join(tmpdir(), "ruvanas-render-"));
   try {
-    const state = render.version.state?.editor;
-    const graph = buildRenderGraph(state?.clips, state || {});
+    const multitrack = render.version.state?.multitrack;
+    const state = multitrack || render.version.state?.editor;
+    const graph = multitrack ? buildMultitrackRenderGraph(multitrack) : buildRenderGraph(state?.clips, state || {});
     const sourceIds = graph.inputs.map((input) => input.mediaAssetId);
     const assets = await prisma.mediaAsset.findMany({ where: { id: { in: [...new Set(sourceIds)] }, organisationId: render.organisationId } });
     const byId = new Map(assets.map((asset) => [asset.id, asset]));
@@ -109,15 +110,19 @@ async function processRender() {
     const report = parseLoudnessReport(loudness.stderr);
     const durationSeconds = Math.max(1, Math.round(Number(probe.stdout.toString("utf8").trim()) || 1));
     const key = `organisations/${render.organisationId}/school-audio/renders/${render.projectId}/${crypto.randomUUID()}.${extension}`;
-    await storage.client.send(new PutObjectCommand({ Bucket: storage.bucketName, Key: key, Body: createReadStream(output), ContentLength: fileInfo.size, ContentType: mimeType, Metadata: { source: "waveform-editor", project: render.projectId, version: String(render.version.version) } }));
+    await storage.client.send(new PutObjectCommand({ Bucket: storage.bucketName, Key: key, Body: createReadStream(output), ContentLength: fileInfo.size, ContentType: mimeType, Metadata: { source: multitrack ? "multitrack-studio" : "waveform-editor", project: render.projectId, version: String(render.version.version) } }));
 
     const sourceTake = await prisma.audioTake.findFirst({ where: { projectId: render.projectId, mediaAssetId: { in: sourceIds }, promoVersionId: { not: null } }, include: { promoVersion: { include: { promoAsset: { include: { versions: { select: { version: true } } } } } } } });
+    const priorOutput = multitrack ? await prisma.audioRender.findFirst({ where: { projectId: render.projectId, id: { not: render.id }, outputPromoVersionId: { not: null } }, orderBy: { completedAt: "desc" }, include: { outputPromoVersion: { include: { promoAsset: { include: { versions: { select: { version: true } } } } } } } }) : null;
     const result = await prisma.$transaction(async (tx) => {
       const mediaAsset = await tx.mediaAsset.create({ data: { organisationId: render.organisationId, libraryType: "ORGANISATION_PROMO", name: `${render.project.title} final`, originalName: `${render.project.title}.${extension}`, storageKey: key, mimeType, sizeBytes: BigInt(fileInfo.size), durationSeconds, mediaType: "ANNOUNCEMENT", status: "READY" } });
       let promoVersion = null;
-      if (sourceTake?.promoVersion?.promoAsset) {
-        const nextVersion = Math.max(0, ...sourceTake.promoVersion.promoAsset.versions.map((item) => item.version)) + 1;
-        promoVersion = await tx.promoVersion.create({ data: { promoAssetId: sourceTake.promoVersion.promoAssetId, mediaAssetId: mediaAsset.id, version: nextVersion, status: "IN_REVIEW", qcStatus: "PENDING", sourceType: "STUDIO", sourceReference: `audio-render:${render.id}`, languageCode: sourceTake.promoVersion.languageCode, durationSeconds, loudnessLufs: report.integratedLufs, submittedById: render.requestedByUserId, submittedAt: new Date(), processingJobs: { create: ["PREVIEW", "TRANSCODE", "LOUDNESS_ANALYSIS"].map((jobType) => ({ jobType, status: "QUEUED" })) } } });
+      const existingPromo = priorOutput?.outputPromoVersion?.promoAsset || sourceTake?.promoVersion?.promoAsset || null;
+      if (existingPromo || multitrack) {
+        const promoAsset = existingPromo || await tx.promoAsset.create({ data: { organisationId: render.organisationId, name: render.project.title, mediaType: "ANNOUNCEMENT", languageCode: "und" } });
+        const nextVersion = Math.max(0, ...(promoAsset.versions || []).map((item) => item.version)) + 1;
+        const processingJobs = multitrack ? undefined : { create: ["PREVIEW", "TRANSCODE", "LOUDNESS_ANALYSIS"].map((jobType) => ({ jobType, status: "QUEUED" })) };
+        promoVersion = await tx.promoVersion.create({ data: { promoAssetId: promoAsset.id, mediaAssetId: mediaAsset.id, version: nextVersion, status: "IN_REVIEW", qcStatus: multitrack ? "PASSED" : "PENDING", sourceType: "STUDIO", sourceReference: `audio-render:${render.id}`, languageCode: sourceTake?.promoVersion?.languageCode || "und", durationSeconds, loudnessLufs: report.integratedLufs, submittedById: render.requestedByUserId, submittedAt: new Date(), ...(processingJobs ? { processingJobs } : {}) } });
       }
       await tx.audioRender.update({ where: { id: render.id }, data: { status: "SUCCEEDED", completedAt: new Date(), outputMediaAssetId: mediaAsset.id, outputPromoVersionId: promoVersion?.id || null, loudnessLufs: report.integratedLufs, resultJson: { ...report, durationSeconds, immutableSource: true, version: render.version.version } } });
       return { mediaAsset, promoVersion };
@@ -140,4 +145,3 @@ while (!stopping) {
   if (!worked) await new Promise((resolve) => setTimeout(resolve, intervalMs));
 }
 await prisma.$disconnect();
-
