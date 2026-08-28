@@ -316,6 +316,7 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   });
   assert.equal(accountB.status, 201, await accountB.clone().text());
   const cookieB = sessionCookie(accountB);
+  const accountBBody = await accountB.json();
 
   const crossTenantOrganisationSwitch = await api("/api/me/organisation", {
     method: "POST",
@@ -666,6 +667,11 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     const viewerActiveOrganisation = await api("/api/me", { cookie: cookieB });
     assert.equal((await viewerActiveOrganisation.json()).organisation.id, accountABody.organisation.id);
     assert.equal(await db.auditLog.count({ where: { schoolNetworkId: schoolNetwork.id, action: "SCHOOL_NETWORK_SCHOOL_ACCESS_GRANTED" } }), 1);
+
+    const restoreViewerOrganisation = await api("/api/me/organisation", {
+      method: "POST", cookie: cookieB, body: { organisationId: accountBBody.organisation.id }
+    });
+    assert.equal(restoreViewerOrganisation.status, 200, await restoreViewerOrganisation.clone().text());
 
     const switchToSecondSchool = await api("/api/me/organisation", {
       method: "POST", cookie: cookieA, body: { organisationId: createdOrganisation.id }
