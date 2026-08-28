@@ -37,6 +37,34 @@ enum ApiKeyStatus {
   REVOKED
 }
 
+enum IntegrationKind {
+  OUTGOING_WEBHOOK
+  POS_METRICS
+  INVENTORY_METRICS
+  FOOTFALL_METRICS
+}
+
+enum IntegrationConnectionStatus {
+  CONNECTED
+  DEGRADED
+  DISCONNECTED
+  REVOKED
+}
+
+enum IntegrationSyncRunStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+enum WebhookDeliveryStatus {
+  PENDING
+  DELIVERED
+  FAILED
+  ABANDONED
+}
+
 enum AIAssistantType {
   PROMO_SCRIPT
   SCHEDULE_RULES
@@ -709,6 +737,7 @@ model User {
   requestedAIJobs               AIJob[]                       @relation("AIJobRequestedBy")
   reviewedAIJobs                AIJob[]                       @relation("AIJobReviewedBy")
   recommendationFeedback        RecommendationFeedback[]
+  createdIntegrationConnections IntegrationConnection[]       @relation("IntegrationConnectionCreatedBy")
 }
 
 model Organisation {
@@ -783,6 +812,9 @@ model Organisation {
   supportTickets              SupportTicket[]
   auditExportSeals            AuditExportSeal[]
   aiJobs                      AIJob[]
+  integrationConnections      IntegrationConnection[]
+  integrationSyncRuns         IntegrationSyncRun[]
+  outgoingWebhookEvents       OutgoingWebhookEvent[]
 }
 
 model OrganisationMember {
@@ -2771,6 +2803,94 @@ model ApiKey {
 
   @@index([serviceAccountId, status])
   @@index([prefix])
+}
+
+model IntegrationConnection {
+  id                   String                      @id @default(cuid())
+  organisationId       String
+  createdByUserId      String
+  name                 String
+  kind                 IntegrationKind             @default(OUTGOING_WEBHOOK)
+  providerKey          String                      @default("GENERIC_WEBHOOK_V1")
+  status               IntegrationConnectionStatus @default(CONNECTED)
+  endpointUrl          String?
+  encryptedSecret      String?
+  subscribedEventTypes String[]                    @default([])
+  configuration        Json?
+  lastSuccessfulSyncAt DateTime?
+  lastErrorAt          DateTime?
+  lastErrorMessage     String?
+  disconnectedAt       DateTime?
+  revokedAt            DateTime?
+  createdAt            DateTime                    @default(now())
+  updatedAt            DateTime                    @updatedAt
+
+  organisation Organisation           @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  createdBy    User                   @relation("IntegrationConnectionCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  syncRuns     IntegrationSyncRun[]
+  events       OutgoingWebhookEvent[]
+
+  @@unique([organisationId, name])
+  @@index([organisationId, status])
+  @@index([kind, status])
+}
+
+model IntegrationSyncRun {
+  id              String                   @id @default(cuid())
+  organisationId  String
+  connectionId    String
+  status          IntegrationSyncRunStatus @default(PENDING)
+  sourceTimestamp DateTime?
+  summary         Json?
+  errorMessage    String?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime                 @default(now())
+
+  organisation Organisation          @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  connection   IntegrationConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@index([organisationId, createdAt])
+  @@index([connectionId, status, createdAt])
+}
+
+model OutgoingWebhookEvent {
+  id             String                @id @default(cuid())
+  organisationId String
+  connectionId   String
+  eventType      String
+  idempotencyKey String
+  payload        Json
+  status         WebhookDeliveryStatus @default(PENDING)
+  attemptCount   Int                   @default(0)
+  nextAttemptAt  DateTime              @default(now())
+  deliveredAt    DateTime?
+  lastError      String?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  organisation Organisation             @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  connection   IntegrationConnection    @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  attempts     WebhookDeliveryAttempt[]
+
+  @@unique([connectionId, idempotencyKey])
+  @@index([organisationId, status, nextAttemptAt])
+  @@index([connectionId, createdAt])
+}
+
+model WebhookDeliveryAttempt {
+  id             String   @id @default(cuid())
+  eventId        String
+  attemptNumber  Int
+  requestSha256  String
+  responseStatus Int?
+  errorMessage   String?
+  attemptedAt    DateTime @default(now())
+
+  event OutgoingWebhookEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, attemptNumber])
+  @@index([eventId, attemptedAt])
 }
 
 model RateLimitBucket {

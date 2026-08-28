@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentPlayer } from "@/lib/player-auth";
 import { analyticsHourBucket } from "@/lib/operational-analytics.mjs";
+import { queueOutgoingWebhookEvent } from "@/lib/outgoing-webhook-service";
 
 export async function POST(request) {
   try {
@@ -70,6 +71,15 @@ export async function POST(request) {
         },
         data: { firstHeartbeatAt: now }
       });
+      if (player.status !== "ONLINE") {
+        await queueOutgoingWebhookEvent(tx, {
+          organisationId: player.organisationId,
+          eventType: "player.health_changed",
+          sourceId: player.id,
+          version: now.toISOString(),
+          payload: { playerId: player.id, locationId: player.zone.location.id, zoneId: player.zone.id, status: "ONLINE", changedAt: now.toISOString() }
+        });
+      }
     });
 
     return NextResponse.json({ ok: true, receivedAt: now });
@@ -81,4 +91,5 @@ export async function POST(request) {
     );
   }
 }
+
 

@@ -6,6 +6,7 @@ import { productionPermissions, transitionProductionOrder } from "@/lib/producti
 import { appendProductionCreditEntry } from "@/lib/production-credit-service";
 import { fundingAllowsDelivery, fundingAllowsProduction } from "@/lib/production-credits.mjs";
 import { requireActiveStudio } from "@/lib/studio-access";
+import { queueOutgoingWebhookEvent } from "@/lib/outgoing-webhook-service";
 
 const actionSchema = z.object({
   action: z.enum(["SUBMIT", "START_PRODUCTION", "RESUME_PRODUCTION", "REQUEST_APPROVAL", "REQUEST_CHANGES", "APPROVE", "DELIVER", "CANCEL"]),
@@ -139,6 +140,13 @@ export async function PATCH(request, { params }) {
           details: { fromStatus: order.status, toStatus: item.status, fundingStatus: item.fundingStatus, note }
         }
       });
+      await queueOutgoingWebhookEvent(tx, {
+        organisationId: access.organisation.id,
+        eventType: "production.status_changed",
+        sourceId: order.id,
+        version: `${order.status}:${item.status}:${item.updatedAt.toISOString()}`,
+        payload: { orderId: order.id, fromStatus: order.status, toStatus: item.status, changedAt: item.updatedAt.toISOString() }
+      });
       return item;
     });
     return NextResponse.json({ order: updated });
@@ -152,4 +160,5 @@ export async function PATCH(request, { params }) {
     throw error;
   }
 }
+
 

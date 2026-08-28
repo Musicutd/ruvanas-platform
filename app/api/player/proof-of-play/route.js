@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentPlayer } from "@/lib/player-auth";
 import { verifyPlaybackProofToken } from "@/lib/playback-proof.mjs";
+import { queueOutgoingWebhookEvent } from "@/lib/outgoing-webhook-service";
 
 export const runtime = "nodejs";
 
@@ -142,6 +143,15 @@ export async function POST(request) {
       });
 
       await tx.player.update({ where: { id: player.id }, data: { status: "ONLINE", lastHeartbeatAt: now } });
+      if (inserted.count > 0) {
+        await queueOutgoingWebhookEvent(tx, {
+          organisationId: player.organisationId,
+          eventType: "proof.accepted",
+          sourceId: events.map((event) => event.eventId).sort().join(","),
+          version: String(inserted.count),
+          payload: { playerId: player.id, acceptedCount: inserted.count, receivedAt: now.toISOString() }
+        });
+      }
       return inserted;
     });
 
@@ -156,4 +166,5 @@ export async function POST(request) {
     return NextResponse.json({ error: "Unable to record playback confirmation." }, { status: 500 });
   }
 }
+
 
