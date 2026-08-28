@@ -130,6 +130,7 @@ export async function POST(request) {
         await tx.schoolSubmission.updateMany({ where: { episodeId: episode.id, status: "SUBMITTED" }, data: { status: "SUPERSEDED" } });
         entity = await tx.schoolSubmission.create({ data: { organisationId, episodeId: episode.id, promoVersionId: version.id, revision: (episode.submissions[0]?.revision || 0) + 1, notes: data.notes || null, submittedByUserId: access.user.id } });
         await tx.schoolEpisode.update({ where: { id: episode.id }, data: transition });
+        await tx.audioProject.updateMany({ where: { organisationId, episodeId: episode.id, takes: { some: { promoVersionId: version.id } } }, data: { status: "SUBMITTED" } });
       } else {
         const contributor = await tx.studentContributor.findFirst({ where: { id: data.contributorId, organisationId }, select: { id: true } });
         if (!contributor) throw notFound("The contributor was not found.");
@@ -150,3 +151,4 @@ export async function POST(request) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "The editorial action could not be completed." }, { status: error?.status || 409 });
   }
 }
+
