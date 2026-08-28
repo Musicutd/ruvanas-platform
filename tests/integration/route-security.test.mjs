@@ -134,6 +134,9 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   const unauthenticatedAudioLab = await api("/api/school-radio/audio-lab");
   assert.equal(unauthenticatedAudioLab.status, 401);
 
+  const unauthenticatedShowBuilder = await api("/api/school-radio/show-builder");
+  assert.equal(unauthenticatedShowBuilder.status, 401);
+
   const unauthenticatedWaveformEditor = await api("/api/school-radio/audio-lab/projects/not-a-project/editor");
   assert.equal(unauthenticatedWaveformEditor.status, 401);
 
