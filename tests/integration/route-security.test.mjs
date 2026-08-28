@@ -155,6 +155,9 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   const unauthenticatedLearningWorkspace = await api("/api/school-radio/learning");
   assert.equal(unauthenticatedLearningWorkspace.status, 401);
 
+  const unauthenticatedSchoolNetwork = await api("/api/school-radio/network");
+  assert.equal(unauthenticatedSchoolNetwork.status, 401);
+
   const unauthenticatedWaveformEditor = await api("/api/school-radio/audio-lab/projects/not-a-project/editor");
   assert.equal(unauthenticatedWaveformEditor.status, 401);
 
@@ -394,6 +397,13 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   });
   assert.equal(ownerOrganisationCreateAttempt.status, 403);
 
+  const ownerNetworkCreateAttempt = await api("/api/school-radio/network", {
+    method: "POST",
+    cookie: cookieA,
+    body: { action: "CREATE_NETWORK", name: "Forbidden academy" }
+  });
+  assert.equal(ownerNetworkCreateAttempt.status, 403);
+
   const productionOrderResponse = await api("/api/studio/orders", {
     method: "POST",
     cookie: cookieA,
@@ -590,6 +600,73 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
       { method: "PATCH", cookie: cookieA, body: { enabled: true } }
     );
     assert.equal(enableSecondSchoolRadio.status, 200, await enableSecondSchoolRadio.clone().text());
+
+    const createSchoolNetwork = await api("/api/school-radio/network", {
+      method: "POST",
+      cookie: cookieA,
+      body: { action: "CREATE_NETWORK", name: `Integration Academy ${suffix}` }
+    });
+    assert.equal(createSchoolNetwork.status, 201, await createSchoolNetwork.clone().text());
+    const schoolNetwork = (await createSchoolNetwork.json()).result;
+
+    for (const organisationId of [accountABody.organisation.id, createdOrganisation.id]) {
+      const addSchool = await api("/api/school-radio/network", {
+        method: "POST",
+        cookie: cookieA,
+        body: { action: "ADD_SCHOOL", schoolNetworkId: schoolNetwork.id, organisationId }
+      });
+      assert.equal(addSchool.status, 201, await addSchool.clone().text());
+    }
+
+    const createHiddenNetwork = await api("/api/school-radio/network", {
+      method: "POST",
+      cookie: cookieA,
+      body: { action: "CREATE_NETWORK", name: `Hidden Academy ${suffix}` }
+    });
+    assert.equal(createHiddenNetwork.status, 201, await createHiddenNetwork.clone().text());
+
+    const addNetworkViewer = await api("/api/school-radio/network", {
+      method: "POST",
+      cookie: cookieA,
+      body: { action: "ADD_MEMBER", schoolNetworkId: schoolNetwork.id, email: `integration-b-${suffix}@example.invalid`, role: "VIEWER" }
+    });
+    assert.equal(addNetworkViewer.status, 201, await addNetworkViewer.clone().text());
+    const networkViewer = (await addNetworkViewer.json()).result;
+
+    const viewerNetworkRollup = await api("/api/school-radio/network", { cookie: cookieB });
+    assert.equal(viewerNetworkRollup.status, 200, await viewerNetworkRollup.clone().text());
+    const viewerRollupBody = await viewerNetworkRollup.json();
+    assert.equal(viewerRollupBody.networks.length, 1);
+    assert.equal(viewerRollupBody.networks[0].id, schoolNetwork.id);
+    assert.equal(viewerRollupBody.networks[0].schools.length, 2);
+    assert.deepEqual(viewerRollupBody.networks[0].members, []);
+    assert.equal(JSON.stringify(viewerRollupBody).includes(`Integration Radio Club ${suffix}`), false);
+    assert.equal(viewerRollupBody.safety.studentIdentityVisibleAcrossSchools, false);
+
+    const viewerPauseAttempt = await api("/api/school-radio/network", {
+      method: "POST",
+      cookie: cookieB,
+      body: { action: "SET_SCHOOL_STATUS", schoolNetworkId: schoolNetwork.id, networkSchoolId: viewerRollupBody.networks[0].schools[0].id, active: false }
+    });
+    assert.equal(viewerPauseAttempt.status, 403);
+
+    const grantViewerSchoolAccess = await api("/api/school-radio/network", {
+      method: "POST",
+      cookie: cookieA,
+      body: { action: "GRANT_SCHOOL_ACCESS", schoolNetworkId: schoolNetwork.id, networkMemberId: networkViewer.id, organisationId: accountABody.organisation.id, organisationRole: "VIEWER" }
+    });
+    assert.equal(grantViewerSchoolAccess.status, 200, await grantViewerSchoolAccess.clone().text());
+
+    const viewerSwitchSchool = await api("/api/school-radio/network", {
+      method: "POST",
+      cookie: cookieB,
+      body: { action: "SWITCH_SCHOOL", schoolNetworkId: schoolNetwork.id, organisationId: accountABody.organisation.id }
+    });
+    assert.equal(viewerSwitchSchool.status, 200, await viewerSwitchSchool.clone().text());
+    const viewerActiveOrganisation = await api("/api/me", { cookie: cookieB });
+    assert.equal((await viewerActiveOrganisation.json()).organisation.id, accountABody.organisation.id);
+    assert.equal(await db.auditLog.count({ where: { schoolNetworkId: schoolNetwork.id, action: "SCHOOL_NETWORK_SCHOOL_ACCESS_GRANTED" } }), 1);
+
     const switchToSecondSchool = await api("/api/me/organisation", {
       method: "POST", cookie: cookieA, body: { organisationId: createdOrganisation.id }
     });
@@ -1116,3 +1193,4 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   assert.equal(lastResponse.status, 429);
   assert.ok(Number(lastResponse.headers.get("retry-after")) > 0);
 });
+

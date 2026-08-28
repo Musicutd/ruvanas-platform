@@ -16,6 +16,12 @@ enum UserRole {
   VIEWER
 }
 
+enum SchoolNetworkRole {
+  OWNER
+  ADMIN
+  VIEWER
+}
+
 enum SubscriptionStatus {
   TRIAL
   ACTIVE
@@ -576,6 +582,8 @@ model User {
   recordedAssignmentSubmissions AssignmentSubmission[]        @relation("AssignmentSubmissionRecordedBy")
   assignmentAssessments         Assessment[]                  @relation("AssessmentAssessedBy")
   createdPortfolioEntries       PortfolioEntry[]              @relation("PortfolioEntryCreatedBy")
+  createdSchoolNetworks         SchoolNetwork[]               @relation("SchoolNetworkCreatedBy")
+  schoolNetworkMemberships      SchoolNetworkMember[]
 }
 
 model Organisation {
@@ -634,6 +642,7 @@ model Organisation {
   assignmentSubmissions      AssignmentSubmission[]
   assessments                Assessment[]
   portfolioEntries           PortfolioEntry[]
+  schoolNetworkSchool        SchoolNetworkSchool?
 }
 
 model OrganisationMember {
@@ -648,6 +657,53 @@ model OrganisationMember {
 
   @@unique([userId, organisationId])
   @@index([organisationId])
+}
+
+model SchoolNetwork {
+  id              String   @id @default(cuid())
+  name            String
+  slug            String   @unique
+  createdByUserId String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  createdBy User                  @relation("SchoolNetworkCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  members   SchoolNetworkMember[]
+  schools   SchoolNetworkSchool[]
+  auditLogs AuditLog[]
+
+  @@index([createdByUserId])
+}
+
+model SchoolNetworkMember {
+  id              String            @id @default(cuid())
+  schoolNetworkId String
+  userId          String
+  role            SchoolNetworkRole @default(VIEWER)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  schoolNetwork SchoolNetwork @relation(fields: [schoolNetworkId], references: [id], onDelete: Cascade)
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolNetworkId, userId])
+  @@index([userId])
+  @@index([schoolNetworkId, role])
+}
+
+model SchoolNetworkSchool {
+  id              String   @id @default(cuid())
+  schoolNetworkId String
+  organisationId  String   @unique
+  active          Boolean  @default(true)
+  joinedAt        DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  schoolNetwork SchoolNetwork @relation(fields: [schoolNetworkId], references: [id], onDelete: Cascade)
+  organisation  Organisation  @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolNetworkId, organisationId])
+  @@index([schoolNetworkId, active])
 }
 
 model Plan {
@@ -2322,19 +2378,22 @@ model MediaAssetGenre {
 }
 
 model AuditLog {
-  id             String   @id @default(cuid())
-  organisationId String?
-  actorUserId    String?
-  action         String
-  entityType     String
-  entityId       String?
-  details        Json?
-  createdAt      DateTime @default(now())
+  id              String   @id @default(cuid())
+  organisationId  String?
+  schoolNetworkId String?
+  actorUserId     String?
+  action          String
+  entityType      String
+  entityId        String?
+  details         Json?
+  createdAt       DateTime @default(now())
 
-  organisation Organisation? @relation(fields: [organisationId], references: [id], onDelete: SetNull)
-  actor        User?         @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  organisation  Organisation?  @relation(fields: [organisationId], references: [id], onDelete: SetNull)
+  schoolNetwork SchoolNetwork? @relation(fields: [schoolNetworkId], references: [id], onDelete: SetNull)
+  actor         User?          @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
 
   @@index([organisationId])
+  @@index([schoolNetworkId])
   @@index([actorUserId])
 }
 
@@ -2518,3 +2577,4 @@ model ReportExportJob {
   @@index([status, availableAt, leaseUntil])
   @@index([expiresAt])
 }
+
