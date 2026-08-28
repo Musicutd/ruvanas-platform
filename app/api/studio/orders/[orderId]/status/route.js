@@ -3,6 +3,8 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { ORGANISATION_MEMBER_ROLES } from "@/lib/permissions.mjs";
 import { productionPermissions, transitionProductionOrder } from "@/lib/production-orders.mjs";
+import { appendProductionCreditEntry } from "@/lib/production-credit-service";
+import { fundingAllowsDelivery, fundingAllowsProduction } from "@/lib/production-credits.mjs";
 import { requireActiveStudio } from "@/lib/studio-access";
 
 const actionSchema = z.object({
@@ -17,11 +19,17 @@ export async function PATCH(request, { params }) {
   if (!parsed.success) return NextResponse.json({ error: "Choose a valid production action." }, { status: 400 });
   const order = await prisma.productionOrder.findFirst({
     where: { id: String(params.orderId || ""), organisationId: access.organisation.id },
-    select: { id: true, status: true, _count: { select: { files: { where: { kind: "FINAL_MASTER" } } } } }
+    select: { id: true, status: true, fundingType: true, fundingStatus: true, _count: { select: { files: { where: { kind: "FINAL_MASTER" } } } } }
   });
   if (!order) return NextResponse.json({ error: "The production order was not found." }, { status: 404 });
   if (parsed.data.action === "DELIVER" && order._count.files < 1) {
     return NextResponse.json({ error: "Upload a final master before marking this order as delivered." }, { status: 409 });
+  }
+  if (new Set(["START_PRODUCTION", "RESUME_PRODUCTION"]).has(parsed.data.action) && !fundingAllowsProduction(order.fundingStatus)) {
+    return NextResponse.json({ error: order.fundingType === "PAID_ADD_ON" ? "Authorise the paid add-on before starting production." : "Reserve a production credit before starting production." }, { status: 409 });
+  }
+  if (parsed.data.action === "DELIVER" && !fundingAllowsDelivery(order.fundingStatus)) {
+    return NextResponse.json({ error: "This order must have reserved production funding before delivery." }, { status: 409 });
   }
 
   let transition;
@@ -40,9 +48,50 @@ export async function PATCH(request, { params }) {
   const { note, ...statusData } = transition;
   try {
     const updated = await prisma.$transaction(async (tx) => {
+      let fundingStatus = order.fundingStatus;
+      let fundingNote = null;
+      if (parsed.data.action === "SUBMIT" && order.fundingType === "PLAN_INCLUDED" && order.fundingStatus === "PENDING") {
+        await appendProductionCreditEntry(tx, {
+          organisationId: access.organisation.id,
+          orderId: order.id,
+          actorUserId: access.user.id,
+          entryType: "RESERVE",
+          quantity: 1,
+          idempotencyKey: `production-order:${order.id}:reserve`
+        });
+        fundingStatus = "RESERVED";
+        fundingNote = "One plan-included production credit reserved.";
+      }
+      if (parsed.data.action === "DELIVER" && order.fundingStatus === "RESERVED") {
+        await appendProductionCreditEntry(tx, {
+          organisationId: access.organisation.id,
+          orderId: order.id,
+          actorUserId: access.user.id,
+          entryType: "CONSUME",
+          quantity: 1,
+          idempotencyKey: `production-order:${order.id}:consume`
+        });
+        fundingStatus = "CONSUMED";
+        fundingNote = "Reserved production credit consumed on delivery.";
+      }
+      if (parsed.data.action === "CANCEL" && order.fundingStatus === "RESERVED") {
+        await appendProductionCreditEntry(tx, {
+          organisationId: access.organisation.id,
+          orderId: order.id,
+          actorUserId: access.user.id,
+          entryType: "RELEASE",
+          quantity: 1,
+          idempotencyKey: `production-order:${order.id}:release`
+        });
+        fundingStatus = "RELEASED";
+        fundingNote = "Reserved production credit released after cancellation.";
+      } else if (parsed.data.action === "CANCEL" && order.fundingStatus === "PENDING") {
+        fundingStatus = "RELEASED";
+        fundingNote = "Pending production funding closed without moving a credit.";
+      }
       const result = await tx.productionOrder.updateMany({
         where: { id: order.id, organisationId: access.organisation.id, status: order.status },
-        data: statusData
+        data: { ...statusData, fundingStatus }
       });
       if (result.count !== 1) throw new Error("ORDER_CHANGED");
       const item = await tx.productionOrder.findUniqueOrThrow({ where: { id: order.id } });
@@ -76,6 +125,11 @@ export async function PATCH(request, { params }) {
           });
         }
       }
+      if (fundingNote) {
+        await tx.productionOrderEvent.create({
+          data: { organisationId: access.organisation.id, orderId: order.id, actorUserId: access.user.id, eventType: "FUNDING_CHANGED", fromStatus: order.status, toStatus: item.status, note: fundingNote }
+        });
+      }
       await tx.auditLog.create({
         data: {
           organisationId: access.organisation.id,
@@ -83,7 +137,7 @@ export async function PATCH(request, { params }) {
           action: `PRODUCTION_ORDER_${parsed.data.action}`,
           entityType: "ProductionOrder",
           entityId: order.id,
-          details: { fromStatus: order.status, toStatus: item.status, note }
+          details: { fromStatus: order.status, toStatus: item.status, fundingStatus: item.fundingStatus, note }
         }
       });
       return item;
@@ -92,6 +146,9 @@ export async function PATCH(request, { params }) {
   } catch (error) {
     if (error instanceof Error && error.message === "ORDER_CHANGED") {
       return NextResponse.json({ error: "This order changed while you were reviewing it. Refresh and try again." }, { status: 409 });
+    }
+    if (error instanceof Error && error.message.includes("production credits")) {
+      return NextResponse.json({ error: error.message }, { status: 409 });
     }
     throw error;
   }
