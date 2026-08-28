@@ -1,5 +1,13 @@
 # Phase 0 security controls
 
+## Stage 5E enterprise identity boundary
+
+- Session validation now honours revocation, maximum age, and organisation idle timeout.
+- SSO enforcement is fail-closed until an identity provider has completed verification; draft provider metadata cannot change login behaviour.
+- Service API keys are high-entropy bearer credentials stored only as HMAC-SHA-256 hashes.
+- Service accounts are tenant-scoped, allow-listed to explicit scopes, expirable, rotatable, and revocable.
+- Enterprise security mutations are Super Admin-only and recorded in the audit log without raw credentials.
+
 ## Browser origin and CSRF policy
 
 All unsafe `/api/*` requests (`POST`, `PUT`, `PATCH`, and `DELETE`) must carry an
