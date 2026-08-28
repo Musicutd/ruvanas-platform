@@ -36,6 +36,10 @@ function managerRequired(access) {
     : NextResponse.json({ error: "An organisation owner or manager must complete this action." }, { status: 403 });
 }
 
+function notFound(message) {
+  return Object.assign(new Error(message), { status: 404 });
+}
+
 async function currentSupervisor(tx, access) {
   return tx.staffSupervisor.upsert({
     where: { organisationId_userId: { organisationId: access.organisation.id, userId: access.user.id } },
@@ -95,18 +99,18 @@ export async function POST(request) {
         entity = await tx.studentGroup.create({ data: { organisationId, supervisorId: supervisor.id, name: data.name, academicYear: data.academicYear || null, notes: data.notes || null, createdByUserId: access.user.id } });
       } else if (data.action === "CREATE_CONTRIBUTOR") {
         const group = await tx.studentGroup.findFirst({ where: { id: data.studentGroupId, organisationId }, select: { id: true } });
-        if (!group) throw new Error("The student group was not found.");
+        if (!group) throw notFound("The student group was not found.");
         entity = await tx.studentContributor.create({ data: { organisationId, studentGroupId: group.id, displayName: data.displayName, referenceCode: data.referenceCode || null } });
       } else if (data.action === "CREATE_PROGRAMME") {
         if (data.studentGroupId) {
           const group = await tx.studentGroup.findFirst({ where: { id: data.studentGroupId, organisationId }, select: { id: true } });
-          if (!group) throw new Error("The student group was not found.");
+          if (!group) throw notFound("The student group was not found.");
         }
         const supervisor = await currentSupervisor(tx, access);
         entity = await tx.schoolProgramme.create({ data: { organisationId, studentGroupId: data.studentGroupId || null, supervisorId: supervisor.id, title: data.title, description: data.description || null, status: "ACTIVE", createdByUserId: access.user.id } });
       } else if (data.action === "CREATE_EPISODE") {
         const programme = await tx.schoolProgramme.findFirst({ where: { id: data.programmeId, organisationId, status: "ACTIVE" }, select: { id: true } });
-        if (!programme) throw new Error("Choose an active programme.");
+        if (!programme) throw notFound("Choose an active programme.");
         const contributorIds = [...new Set(data.contributorIds)];
         if (contributorIds.length) {
           const count = await tx.studentContributor.count({ where: { id: { in: contributorIds }, organisationId, status: "ACTIVE" } });
@@ -120,7 +124,7 @@ export async function POST(request) {
           tx.schoolEpisode.findFirst({ where: { id: data.episodeId, organisationId }, include: { submissions: { orderBy: { revision: "desc" }, take: 1 } } }),
           tx.promoVersion.findFirst({ where: { id: data.promoVersionId, status: { in: ["IN_REVIEW", "APPROVED"] }, mediaAsset: { organisationId, status: "READY" }, promoAsset: { organisationId, status: "ACTIVE" } }, select: { id: true } })
         ]);
-        if (!episode) throw new Error("The episode was not found.");
+        if (!episode) throw notFound("The episode was not found.");
         if (!version) throw new Error("Choose school audio that is ready or approved for this organisation.");
         const transition = transitionSchoolEpisode({ currentStatus: episode.status, action: "SUBMIT", hasSubmission: true });
         await tx.schoolSubmission.updateMany({ where: { episodeId: episode.id, status: "SUBMITTED" }, data: { status: "SUPERSEDED" } });
@@ -128,10 +132,10 @@ export async function POST(request) {
         await tx.schoolEpisode.update({ where: { id: episode.id }, data: transition });
       } else {
         const contributor = await tx.studentContributor.findFirst({ where: { id: data.contributorId, organisationId }, select: { id: true } });
-        if (!contributor) throw new Error("The contributor was not found.");
+        if (!contributor) throw notFound("The contributor was not found.");
         if (data.episodeId) {
           const episode = await tx.schoolEpisode.findFirst({ where: { id: data.episodeId, organisationId, contributors: { some: { contributorId: contributor.id } } }, select: { id: true } });
-          if (!episode) throw new Error("The contributor is not assigned to that episode.");
+          if (!episode) throw notFound("The contributor is not assigned to that episode.");
         }
         const now = new Date();
         entity = await tx.consentRecord.create({ data: { organisationId, contributorId: contributor.id, episodeId: data.episodeId || null, status: data.status, notes: data.notes || null, policyVersion: SCHOOL_RADIO_POLICY_VERSION, recordedByUserId: access.user.id, grantedAt: data.status === "GRANTED" ? now : null, revokedAt: data.status === "REVOKED" ? now : null, expiresAt: data.expiresAt ? new Date(data.expiresAt) : null } });
@@ -143,6 +147,6 @@ export async function POST(request) {
     return NextResponse.json({ result }, { status: 201 });
   } catch (error) {
     if (error?.code === "P2002") return NextResponse.json({ error: "That school editorial record already exists." }, { status: 409 });
-    return NextResponse.json({ error: error instanceof Error ? error.message : "The editorial action could not be completed." }, { status: 409 });
+    return NextResponse.json({ error: error instanceof Error ? error.message : "The editorial action could not be completed." }, { status: error?.status || 409 });
   }
 }

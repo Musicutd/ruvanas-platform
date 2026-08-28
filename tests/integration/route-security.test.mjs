@@ -133,8 +133,7 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
 
   const unauthenticatedSchoolReview = await api("/api/school-radio/episodes/not-an-episode/review", {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "APPROVE" })
+    body: { action: "APPROVE" }
   });
   assert.equal(unauthenticatedSchoolReview.status, 401);
 
@@ -491,6 +490,57 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
       }),
       1
     );
+
+    const schoolGroupResponse = await api("/api/school-radio/editorial", {
+      method: "POST", cookie: cookieA,
+      body: { action: "CREATE_GROUP", name: `Integration Radio Club ${suffix}`, academicYear: "2026/27" }
+    });
+    assert.equal(schoolGroupResponse.status, 201, await schoolGroupResponse.clone().text());
+    const schoolGroup = (await schoolGroupResponse.json()).result;
+
+    const schoolProgrammeResponse = await api("/api/school-radio/editorial", {
+      method: "POST", cookie: cookieA,
+      body: { action: "CREATE_PROGRAMME", title: `Integration Student Voices ${suffix}`, studentGroupId: schoolGroup.id }
+    });
+    assert.equal(schoolProgrammeResponse.status, 201, await schoolProgrammeResponse.clone().text());
+    const schoolProgramme = (await schoolProgrammeResponse.json()).result;
+
+    const schoolEpisodeResponse = await api("/api/school-radio/editorial", {
+      method: "POST", cookie: cookieA,
+      body: { action: "CREATE_EPISODE", programmeId: schoolProgramme.id, title: "First supervised episode", contributorIds: [] }
+    });
+    assert.equal(schoolEpisodeResponse.status, 201, await schoolEpisodeResponse.clone().text());
+    const schoolEpisode = (await schoolEpisodeResponse.json()).result;
+    assert.equal(schoolEpisode.publicationScope, "INTERNAL_ONLY");
+
+    const enableSecondSchoolRadio = await api(
+      `/api/admin/organisations/${createdOrganisation.id}/school-radio`,
+      { method: "PATCH", cookie: cookieA, body: { enabled: true } }
+    );
+    assert.equal(enableSecondSchoolRadio.status, 200, await enableSecondSchoolRadio.clone().text());
+    const switchToSecondSchool = await api("/api/me/organisation", {
+      method: "POST", cookie: cookieA, body: { organisationId: createdOrganisation.id }
+    });
+    assert.equal(switchToSecondSchool.status, 200);
+
+    const isolatedEditorial = await api("/api/school-radio/editorial", { cookie: cookieA });
+    assert.equal(isolatedEditorial.status, 200, await isolatedEditorial.clone().text());
+    assert.deepEqual((await isolatedEditorial.json()).groups, []);
+    const crossTenantContributor = await api("/api/school-radio/editorial", {
+      method: "POST", cookie: cookieA,
+      body: { action: "CREATE_CONTRIBUTOR", studentGroupId: schoolGroup.id, displayName: "Must not cross tenants" }
+    });
+    assert.equal(crossTenantContributor.status, 404);
+    const crossTenantEpisodeReview = await api(`/api/school-radio/episodes/${schoolEpisode.id}/review`, {
+      method: "PATCH", cookie: cookieA, body: { action: "APPROVE" }
+    });
+    assert.equal(crossTenantEpisodeReview.status, 404);
+    assert.equal(await db.schoolEpisode.count({ where: { organisationId: createdOrganisation.id } }), 0);
+
+    const switchBackToAccountA = await api("/api/me/organisation", {
+      method: "POST", cookie: cookieA, body: { organisationId: accountABody.organisation.id }
+    });
+    assert.equal(switchBackToAccountA.status, 200);
 
     const enableSchoolRadio = await api(
       `/api/admin/organisations/${accountABody.organisation.id}/school-radio`,
