@@ -610,6 +610,8 @@ model Organisation {
   campaigns                  Campaign[]
   playoutIntents             PlayoutIntent[]
   reportExports              ReportExportJob[]
+  analyticsHourlyAggregates  AnalyticsHourlyAggregate[]
+  analyticsAggregationCursor AnalyticsAggregationCursor?
   activeSessions             Session[]
   schoolProfile              SchoolProfile?
   schoolAnnouncements        SchoolAnnouncement[]
@@ -2578,3 +2580,47 @@ model ReportExportJob {
   @@index([expiresAt])
 }
 
+model AnalyticsHourlyAggregate {
+  id                       String    @id @default(cuid())
+  organisationId           String
+  playerId                 String
+  playerName               String
+  locationId               String
+  locationName             String
+  zoneId                   String
+  zoneName                 String
+  bucketStart              DateTime
+  plannedCount             Int       @default(0)
+  campaignPlannedCount     Int       @default(0)
+  schoolPlannedCount       Int       @default(0)
+  playbackStartedCount     Int       @default(0)
+  playbackCompletedCount   Int       @default(0)
+  playbackFailedCount      Int       @default(0)
+  playbackInterruptedCount Int       @default(0)
+  musicCompletedCount      Int       @default(0)
+  promoCompletedCount      Int       @default(0)
+  schoolCompletedCount     Int       @default(0)
+  heartbeatCount           Int       @default(0)
+  firstHeartbeatAt         DateTime?
+  lastHeartbeatAt          DateTime?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+
+  @@unique([organisationId, playerId, bucketStart])
+  @@index([organisationId, bucketStart])
+  @@index([organisationId, locationId, bucketStart])
+  @@index([organisationId, zoneId, bucketStart])
+}
+
+model AnalyticsAggregationCursor {
+  organisationId      String    @id
+  lastIntentCreatedAt DateTime?
+  lastIntentId        String?
+  lastProofReceivedAt DateTime?
+  lastProofEventId    String?
+  updatedAt           DateTime  @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+}
