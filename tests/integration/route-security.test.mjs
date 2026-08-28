@@ -128,6 +128,16 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   const unauthenticatedSchoolAnnouncements = await api("/api/school-radio/announcements");
   assert.equal(unauthenticatedSchoolAnnouncements.status, 401);
 
+  const unauthenticatedSchoolEditorial = await api("/api/school-radio/editorial");
+  assert.equal(unauthenticatedSchoolEditorial.status, 401);
+
+  const unauthenticatedSchoolReview = await api("/api/school-radio/episodes/not-an-episode/review", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "APPROVE" })
+  });
+  assert.equal(unauthenticatedSchoolReview.status, 401);
+
   const unauthenticatedSchoolSlot = await api("/api/school-radio/broadcast-slots", {
     method: "POST",
     body: {}
@@ -1011,4 +1021,3 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   assert.equal(lastResponse.status, 429);
   assert.ok(Number(lastResponse.headers.get("retry-after")) > 0);
 });
-

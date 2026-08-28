@@ -4,7 +4,10 @@ import {
   compileSchoolRadioPlayout,
   mergeSharedInsertions,
   schoolPlayoutIntentCreateData,
+  consentIsCurrent,
   transitionSchoolAnnouncement,
+  transitionSchoolEpisode,
+  validateEpisodePublication,
   validateSchoolBroadcastSlot
 } from "../lib/school-radio.mjs";
 
@@ -92,4 +95,26 @@ test("approved school announcements take precedence in the shared insertion sche
   assert.deepEqual(merged.campaignPlayout.insertions, []);
   assert.deepEqual(merged.campaignPlayout.discarded, [campaign]);
   assert.equal(merged.schoolPlayout.insertions.length, 1);
+});
+
+test("episode submissions must exist before staff moderation", () => {
+  assert.throws(() => transitionSchoolEpisode({ currentStatus: "DRAFT", action: "SUBMIT" }), /audio submission/);
+  assert.equal(transitionSchoolEpisode({ currentStatus: "DRAFT", action: "SUBMIT", hasSubmission: true }).status, "IN_REVIEW");
+  assert.equal(transitionSchoolEpisode({ currentStatus: "IN_REVIEW", action: "APPROVE", hasSubmission: true }).status, "APPROVED");
+  assert.throws(() => transitionSchoolEpisode({ currentStatus: "IN_REVIEW", action: "REQUEST_CHANGES", hasSubmission: true }), /notes are required/);
+});
+
+test("consent records expire and revocation takes effect immediately", () => {
+  const instant = new Date("2026-09-01T00:00:00.000Z");
+  assert.equal(consentIsCurrent({ status: "GRANTED", expiresAt: "2026-09-02T00:00:00.000Z", revokedAt: null }, instant), true);
+  assert.equal(consentIsCurrent({ status: "GRANTED", expiresAt: "2026-08-31T00:00:00.000Z", revokedAt: null }, instant), false);
+  assert.equal(consentIsCurrent({ status: "GRANTED", expiresAt: null, revokedAt: instant }, instant), false);
+});
+
+test("school episodes remain private unless entitlement, approval, and every consent are present", () => {
+  assert.deepEqual(validateEpisodePublication({ publicationScope: "INTERNAL_ONLY", episodeStatus: "DRAFT" }), { allowed: true, scope: "INTERNAL_ONLY" });
+  assert.throws(() => validateEpisodePublication({ publicationScope: "PUBLIC", episodeStatus: "APPROVED", contributorConsents: [{ status: "GRANTED" }] }), /not enabled/);
+  assert.throws(() => validateEpisodePublication({ publicationScope: "PUBLIC", episodeStatus: "IN_REVIEW", publicPublishingEnabled: true, contributorConsents: [{ status: "GRANTED" }] }), /staff-approved/);
+  assert.throws(() => validateEpisodePublication({ publicationScope: "PUBLIC", episodeStatus: "APPROVED", publicPublishingEnabled: true, contributorConsents: [{ status: "PENDING" }] }), /Every student/);
+  assert.equal(validateEpisodePublication({ publicationScope: "PUBLIC", episodeStatus: "APPROVED", publicPublishingEnabled: true, contributorConsents: [{ status: "GRANTED", expiresAt: null, revokedAt: null }] }).scope, "PUBLIC");
 });
