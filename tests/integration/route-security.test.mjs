@@ -152,6 +152,9 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   const unauthenticatedLiveStudio = await api("/api/school-radio/live-studio");
   assert.equal(unauthenticatedLiveStudio.status, 401);
 
+  const unauthenticatedLearningWorkspace = await api("/api/school-radio/learning");
+  assert.equal(unauthenticatedLearningWorkspace.status, 401);
+
   const unauthenticatedWaveformEditor = await api("/api/school-radio/audio-lab/projects/not-a-project/editor");
   assert.equal(unauthenticatedWaveformEditor.status, 401);
 
@@ -1113,4 +1116,3 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   assert.equal(lastResponse.status, 429);
   assert.ok(Number(lastResponse.headers.get("retry-after")) > 0);
 });
-
