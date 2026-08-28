@@ -513,6 +513,46 @@ enum ReportExportStatus {
   EXPIRED
 }
 
+enum DataRequestType {
+  EXPORT
+  CORRECTION
+  DELETION
+  RESTRICTION
+}
+
+enum DataRequestStatus {
+  OPEN
+  IN_REVIEW
+  AWAITING_INFORMATION
+  APPROVED
+  COMPLETED
+  REJECTED
+  CANCELLED
+}
+
+enum RetentionJobStatus {
+  QUEUED
+  DRY_RUN_READY
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum SupportTicketPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum SupportTicketStatus {
+  OPEN
+  IN_PROGRESS
+  WAITING_CUSTOMER
+  RESOLVED
+  CLOSED
+}
+
 enum ProductionOrderStatus {
   DRAFT
   SUBMITTED
@@ -634,6 +674,15 @@ model User {
   schoolNetworkMemberships      SchoolNetworkMember[]
   enterpriseIdentityLinks       EnterpriseIdentityLink[]
   createdServiceAccounts        ServiceAccount[]              @relation("ServiceAccountCreatedBy")
+  createdCompliancePolicies     CompliancePolicy[]            @relation("CompliancePolicyCreatedBy")
+  policyAcceptances             PolicyAcceptance[]            @relation("PolicyAcceptanceAcceptedBy")
+  requestedDataRequests         DataRequest[]                 @relation("DataRequestRequestedBy")
+  subjectDataRequests           DataRequest[]                 @relation("DataRequestSubjectUser")
+  completedDataRequests         DataRequest[]                 @relation("DataRequestCompletedBy")
+  reviewedRetentionPolicies     RetentionPolicy[]             @relation("RetentionPolicyReviewedBy")
+  requestedRetentionJobs        RetentionJob[]                @relation("RetentionJobRequestedBy")
+  createdSupportTickets         SupportTicket[]               @relation("SupportTicketCreatedBy")
+  assignedSupportTickets        SupportTicket[]               @relation("SupportTicketAssignedTo")
 }
 
 model Organisation {
@@ -643,64 +692,70 @@ model Organisation {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  members                    OrganisationMember[]
-  subscription               Subscription?
-  stations                   Station[]
-  brands                     Brand[]
-  locations                  Location[]
-  locationGroups             LocationGroup[]
-  channels                   Channel[]
-  mediaAssets                MediaAsset[]                  @relation("OrganisationMediaAssets")
-  promoAssets                PromoAsset[]
-  auditLogs                  AuditLog[]
-  players                    Player[]
-  musicModes                 MusicMode[]
-  musicSchedules             MusicSchedule[]
-  proofOfPlayEvents          ProofOfPlayEvent[]
-  campaigns                  Campaign[]
-  playoutIntents             PlayoutIntent[]
-  reportExports              ReportExportJob[]
-  analyticsHourlyAggregates  AnalyticsHourlyAggregate[]
-  analyticsAggregationCursor AnalyticsAggregationCursor?
-  activeSessions             Session[]
-  schoolProfile              SchoolProfile?
-  schoolAnnouncements        SchoolAnnouncement[]
-  schoolBroadcastSlots       SchoolBroadcastSlot[]
-  productionOrders           ProductionOrder[]
-  productionOrderEvents      ProductionOrderEvent[]
-  productionOrderFiles       ProductionOrderFile[]
-  productionScriptVersions   ProductionScriptVersion[]
-  productionRevisionRequests ProductionRevisionRequest[]
-  productionCreditEntries    ProductionCreditLedgerEntry[]
-  staffSupervisors           StaffSupervisor[]
-  studentGroups              StudentGroup[]
-  studentContributors        StudentContributor[]
-  schoolProgrammes           SchoolProgramme[]
-  schoolEpisodes             SchoolEpisode[]
-  schoolSubmissions          SchoolSubmission[]
-  schoolModerationReviews    SchoolModerationReview[]
-  consentRecords             ConsentRecord[]
-  audioProjects              AudioProject[]
-  audioTakes                 AudioTake[]
-  schoolAudioUploads         SchoolAudioUploadSession[]
-  audioRenders               AudioRender[]
-  schoolRundowns             SchoolRundown[]
-  schoolPodcastSeries        SchoolPodcastSeries[]
-  schoolPodcastEpisodes      SchoolPodcastEpisode[]
-  transcripts                Transcript[]
-  schoolNewsStories          SchoolNewsStory[]
-  liveStudioSessions         LiveStudioSession[]
-  assignments                Assignment[]
-  assignmentSubmissions      AssignmentSubmission[]
-  billingAccount             BillingAccount?
-  billingInvoices            BillingInvoice[]
-  billingReconciliations     BillingUsageReconciliation[]
-  assessments                Assessment[]
-  portfolioEntries           PortfolioEntry[]
-  schoolNetworkSchool        SchoolNetworkSchool?
-  enterpriseSecurityPolicy   EnterpriseSecurityPolicy?
+  members                     OrganisationMember[]
+  subscription                Subscription?
+  stations                    Station[]
+  brands                      Brand[]
+  locations                   Location[]
+  locationGroups              LocationGroup[]
+  channels                    Channel[]
+  mediaAssets                 MediaAsset[]                  @relation("OrganisationMediaAssets")
+  promoAssets                 PromoAsset[]
+  auditLogs                   AuditLog[]
+  players                     Player[]
+  musicModes                  MusicMode[]
+  musicSchedules              MusicSchedule[]
+  proofOfPlayEvents           ProofOfPlayEvent[]
+  campaigns                   Campaign[]
+  playoutIntents              PlayoutIntent[]
+  reportExports               ReportExportJob[]
+  analyticsHourlyAggregates   AnalyticsHourlyAggregate[]
+  analyticsAggregationCursor  AnalyticsAggregationCursor?
+  activeSessions              Session[]
+  schoolProfile               SchoolProfile?
+  schoolAnnouncements         SchoolAnnouncement[]
+  schoolBroadcastSlots        SchoolBroadcastSlot[]
+  productionOrders            ProductionOrder[]
+  productionOrderEvents       ProductionOrderEvent[]
+  productionOrderFiles        ProductionOrderFile[]
+  productionScriptVersions    ProductionScriptVersion[]
+  productionRevisionRequests  ProductionRevisionRequest[]
+  productionCreditEntries     ProductionCreditLedgerEntry[]
+  staffSupervisors            StaffSupervisor[]
+  studentGroups               StudentGroup[]
+  studentContributors         StudentContributor[]
+  schoolProgrammes            SchoolProgramme[]
+  schoolEpisodes              SchoolEpisode[]
+  schoolSubmissions           SchoolSubmission[]
+  schoolModerationReviews     SchoolModerationReview[]
+  consentRecords              ConsentRecord[]
+  audioProjects               AudioProject[]
+  audioTakes                  AudioTake[]
+  schoolAudioUploads          SchoolAudioUploadSession[]
+  audioRenders                AudioRender[]
+  schoolRundowns              SchoolRundown[]
+  schoolPodcastSeries         SchoolPodcastSeries[]
+  schoolPodcastEpisodes       SchoolPodcastEpisode[]
+  transcripts                 Transcript[]
+  schoolNewsStories           SchoolNewsStory[]
+  liveStudioSessions          LiveStudioSession[]
+  assignments                 Assignment[]
+  assignmentSubmissions       AssignmentSubmission[]
+  billingAccount              BillingAccount?
+  billingInvoices             BillingInvoice[]
+  billingReconciliations      BillingUsageReconciliation[]
+  assessments                 Assessment[]
+  portfolioEntries            PortfolioEntry[]
+  schoolNetworkSchool         SchoolNetworkSchool?
+  enterpriseSecurityPolicy    EnterpriseSecurityPolicy?
   enterpriseIdentityProviders EnterpriseIdentityProvider[]
-  serviceAccounts            ServiceAccount[]
+  serviceAccounts             ServiceAccount[]
+  policyAcceptances           PolicyAcceptance[]
+  dataRequests                DataRequest[]
+  retentionPolicy             RetentionPolicy?
+  retentionJobs               RetentionJob[]
+  supportTickets              SupportTicket[]
+  auditExportSeals            AuditExportSeal[]
 }
 
 model OrganisationMember {
@@ -2566,9 +2621,9 @@ model AuditLog {
   details               Json?
   createdAt             DateTime @default(now())
 
-  organisation       Organisation?  @relation(fields: [organisationId], references: [id], onDelete: SetNull)
-  schoolNetwork      SchoolNetwork? @relation(fields: [schoolNetworkId], references: [id], onDelete: SetNull)
-  actor              User?          @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  organisation        Organisation?   @relation(fields: [organisationId], references: [id], onDelete: SetNull)
+  schoolNetwork       SchoolNetwork?  @relation(fields: [schoolNetworkId], references: [id], onDelete: SetNull)
+  actor               User?           @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
   actorServiceAccount ServiceAccount? @relation(fields: [actorServiceAccountId], references: [id], onDelete: SetNull)
 
   @@index([organisationId])
@@ -2578,15 +2633,15 @@ model AuditLog {
 }
 
 model Session {
-  id                   String   @id @default(cuid())
+  id                   String    @id @default(cuid())
   userId               String
   activeOrganisationId String?
-  tokenHash            String   @unique
+  tokenHash            String    @unique
   expiresAt            DateTime
-  lastSeenAt           DateTime @default(now())
+  lastSeenAt           DateTime  @default(now())
   revokedAt            DateTime?
-  authMethod           String   @default("PASSWORD")
-  createdAt            DateTime @default(now())
+  authMethod           String    @default("PASSWORD")
+  createdAt            DateTime  @default(now())
 
   user               User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   activeOrganisation Organisation? @relation(fields: [activeOrganisationId], references: [id], onDelete: SetNull)
@@ -2624,7 +2679,7 @@ model EnterpriseIdentityProvider {
   createdAt      DateTime                         @default(now())
   updatedAt      DateTime                         @updatedAt
 
-  organisation Organisation             @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  organisation  Organisation             @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   identityLinks EnterpriseIdentityLink[]
 
   @@unique([organisationId, issuer])
@@ -2632,14 +2687,14 @@ model EnterpriseIdentityProvider {
 }
 
 model EnterpriseIdentityLink {
-  id                  String   @id @default(cuid())
+  id                  String    @id @default(cuid())
   providerId          String
   userId              String
   subject             String
   emailAtProvider     String?
   lastAuthenticatedAt DateTime?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
   provider EnterpriseIdentityProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
   user     User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -2847,13 +2902,157 @@ model ReportExportJob {
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
 
-  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  requestedBy  User         @relation("ReportExportRequestedBy", fields: [requestedByUserId], references: [id], onDelete: Restrict)
+  organisation Organisation     @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  requestedBy  User             @relation("ReportExportRequestedBy", fields: [requestedByUserId], references: [id], onDelete: Restrict)
+  auditSeal    AuditExportSeal?
 
   @@index([organisationId, createdAt])
   @@index([requestedByUserId, createdAt])
   @@index([status, availableAt, leaseUntil])
   @@index([expiresAt])
+}
+
+model CompliancePolicy {
+  id              String   @id @default(cuid())
+  key             String
+  version         String
+  title           String
+  contentSha256   String
+  effectiveAt     DateTime
+  active          Boolean  @default(true)
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+
+  createdBy   User?              @relation("CompliancePolicyCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  acceptances PolicyAcceptance[]
+
+  @@unique([key, version])
+  @@index([active, effectiveAt])
+}
+
+model PolicyAcceptance {
+  id               String   @id @default(cuid())
+  organisationId   String
+  policyId         String
+  acceptedByUserId String
+  acceptedAt       DateTime @default(now())
+  evidence         Json?
+
+  organisation Organisation     @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  policy       CompliancePolicy @relation(fields: [policyId], references: [id], onDelete: Restrict)
+  acceptedBy   User             @relation("PolicyAcceptanceAcceptedBy", fields: [acceptedByUserId], references: [id], onDelete: Restrict)
+
+  @@unique([organisationId, policyId, acceptedByUserId])
+  @@index([organisationId, acceptedAt])
+  @@index([policyId])
+}
+
+model DataRequest {
+  id                String            @id @default(cuid())
+  organisationId    String
+  requestedByUserId String
+  subjectUserId     String?
+  subjectEmail      String?
+  type              DataRequestType
+  status            DataRequestStatus @default(OPEN)
+  reference         String            @unique
+  notes             String?           @db.Text
+  dueAt             DateTime
+  completedByUserId String?
+  completedAt       DateTime?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  requestedBy  User         @relation("DataRequestRequestedBy", fields: [requestedByUserId], references: [id], onDelete: Restrict)
+  subjectUser  User?        @relation("DataRequestSubjectUser", fields: [subjectUserId], references: [id], onDelete: SetNull)
+  completedBy  User?        @relation("DataRequestCompletedBy", fields: [completedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([organisationId, status, dueAt])
+  @@index([subjectUserId])
+}
+
+model RetentionPolicy {
+  id                  String    @id @default(cuid())
+  organisationId      String    @unique
+  rawPlaybackDays     Int       @default(395)
+  playerHeartbeatDays Int       @default(90)
+  audioProjectDays    Int       @default(730)
+  supportTicketDays   Int       @default(730)
+  auditDays           Int       @default(2555)
+  reviewedByUserId    String?
+  reviewedAt          DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  reviewedBy   User?        @relation("RetentionPolicyReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+}
+
+model RetentionJob {
+  id                String             @id @default(cuid())
+  organisationId    String
+  requestedByUserId String
+  status            RetentionJobStatus @default(QUEUED)
+  dryRun            Boolean            @default(true)
+  policySnapshot    Json
+  cutoffs           Json
+  candidateCounts   Json?
+  errorMessage      String?
+  completedAt       DateTime?
+  createdAt         DateTime           @default(now())
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  requestedBy  User         @relation("RetentionJobRequestedBy", fields: [requestedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([organisationId, createdAt])
+  @@index([status, createdAt])
+}
+
+model SupportTicket {
+  id                String                @id @default(cuid())
+  organisationId    String?
+  createdByUserId   String
+  assignedToUserId  String?
+  priority          SupportTicketPriority @default(NORMAL)
+  status            SupportTicketStatus   @default(OPEN)
+  reference         String                @unique
+  subject           String
+  description       String                @db.Text
+  linkedEntityType  String?
+  linkedEntityId    String?
+  incidentStartedAt DateTime?
+  resolvedAt        DateTime?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  organisation Organisation? @relation(fields: [organisationId], references: [id], onDelete: SetNull)
+  createdBy    User          @relation("SupportTicketCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  assignedTo   User?         @relation("SupportTicketAssignedTo", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+
+  @@index([organisationId, status, createdAt])
+  @@index([assignedToUserId, status])
+  @@index([linkedEntityType, linkedEntityId])
+}
+
+model AuditExportSeal {
+  id               String   @id @default(cuid())
+  sequence         Int      @unique @default(autoincrement())
+  organisationId   String
+  exportJobId      String   @unique
+  previousSealHash String?
+  contentSha256    String
+  sealHash         String   @unique
+  rowCount         Int
+  fromAt           DateTime
+  untilAt          DateTime
+  createdAt        DateTime @default(now())
+
+  organisation Organisation    @relation(fields: [organisationId], references: [id], onDelete: Restrict)
+  exportJob    ReportExportJob @relation(fields: [exportJobId], references: [id], onDelete: Restrict)
+
+  @@index([organisationId, sequence])
+  @@index([organisationId, createdAt])
 }
 
 model AnalyticsHourlyAggregate {

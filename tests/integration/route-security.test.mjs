@@ -251,6 +251,18 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   });
   assert.equal(unauthenticatedOperationalExport.status, 401);
 
+  const unauthenticatedCompliance = await api("/api/admin/compliance", {
+    method: "POST",
+    body: { action: "PREVIEW_RETENTION", organisationId: "not-an-organisation" }
+  });
+  assert.equal(unauthenticatedCompliance.status, 401);
+
+  const unauthenticatedSupportTicket = await api("/api/admin/support/tickets", {
+    method: "POST",
+    body: { subject: "No session", description: "No session", priority: "NORMAL" }
+  });
+  assert.equal(unauthenticatedSupportTicket.status, 401);
+
   const invalidPlayerEnrolment = await api("/api/player/enrol", {
     method: "POST",
     body: { code: "invalid-enrolment-code" }
@@ -407,6 +419,13 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   });
   assert.equal(ownerOrganisationCreateAttempt.status, 403);
 
+  const ownerComplianceAttempt = await api("/api/admin/compliance", {
+    method: "POST",
+    cookie: cookieA,
+    body: { action: "PREVIEW_RETENTION", organisationId: accountABody.organisation.id }
+  });
+  assert.equal(ownerComplianceAttempt.status, 403);
+
   const ownerNetworkCreateAttempt = await api("/api/school-radio/network", {
     method: "POST",
     cookie: cookieA,
@@ -457,6 +476,55 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
       where: { id: accountABody.user.id },
       data: { role: "SUPER_ADMIN" }
     });
+
+    const saveRetentionPolicy = await api("/api/admin/compliance", {
+      method: "POST",
+      cookie: cookieA,
+      body: {
+        action: "UPDATE_RETENTION",
+        organisationId: accountABody.organisation.id,
+        rawPlaybackDays: 395,
+        playerHeartbeatDays: 90,
+        audioProjectDays: 730,
+        supportTicketDays: 730,
+        auditDays: 2555
+      }
+    });
+    assert.equal(saveRetentionPolicy.status, 200, await saveRetentionPolicy.clone().text());
+
+    const retentionPreview = await api("/api/admin/compliance", {
+      method: "POST",
+      cookie: cookieA,
+      body: { action: "PREVIEW_RETENTION", organisationId: accountABody.organisation.id }
+    });
+    assert.equal(retentionPreview.status, 201, await retentionPreview.clone().text());
+    assert.equal((await retentionPreview.json()).job.dryRun, true);
+
+    const supportTicketResponse = await api("/api/admin/support/tickets", {
+      method: "POST",
+      cookie: cookieA,
+      body: { organisationId: accountABody.organisation.id, subject: "Integration player incident", description: "Linked operational support case.", linkedEntityType: "Organisation", linkedEntityId: accountABody.organisation.id, priority: "HIGH" }
+    });
+    assert.equal(supportTicketResponse.status, 201, await supportTicketResponse.clone().text());
+    assert.equal((await supportTicketResponse.json()).ticket.organisationId, accountABody.organisation.id);
+
+    const dataRequestResponse = await api("/api/admin/compliance", {
+      method: "POST",
+      cookie: cookieA,
+      body: { action: "CREATE_DATA_REQUEST", organisationId: accountABody.organisation.id, type: "EXPORT", subjectEmail: `integration-a-${suffix}@example.invalid` }
+    });
+    assert.equal(dataRequestResponse.status, 201, await dataRequestResponse.clone().text());
+
+    const auditExportResponse = await api("/api/admin/compliance", {
+      method: "POST",
+      cookie: cookieA,
+      body: { action: "CREATE_AUDIT_EXPORT", organisationId: accountABody.organisation.id }
+    });
+    assert.equal(auditExportResponse.status, 201, await auditExportResponse.clone().text());
+    const auditExportBody = await auditExportResponse.json();
+    assert.equal(auditExportBody.job.status, "READY");
+    assert.ok(auditExportBody.job.auditSeal.sealHash);
+    assert.match(auditExportBody.downloadUrl, /organisationId=/);
 
     const authorisePaidAddon = await api(`/api/studio/orders/${productionOrder.id}/funding`, {
       method: "PATCH",
@@ -1258,3 +1326,4 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   assert.equal(lastResponse.status, 429);
   assert.ok(Number(lastResponse.headers.get("retry-after")) > 0);
 });
+

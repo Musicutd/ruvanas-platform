@@ -68,6 +68,10 @@ const navItems = [
     href: "/admin/security",
     label: "Identity & security",
     superAdminOnly: true
+  },
+  {
+    href: "/admin/compliance",
+    label: "Compliance & support"
   }
 ];
 
@@ -165,3 +169,4 @@ export default async function AdminLayout({ children }) {
     </div>
   );
 }
+
