@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentPlayer } from "@/lib/player-auth";
+import { analyticsHourBucket } from "@/lib/operational-analytics.mjs";
 
 export async function POST(request) {
   try {
@@ -18,14 +19,57 @@ export async function POST(request) {
     const userAgent = request.headers.get("user-agent")?.slice(0, 500) || null;
     const now = new Date();
 
-    await prisma.player.update({
-      where: { id: player.id },
-      data: {
-        status: "ONLINE",
-        lastHeartbeatAt: now,
-        lastIpAddress: ipAddress,
-        lastUserAgent: userAgent
-      }
+    const bucketStart = analyticsHourBucket(now);
+    await prisma.$transaction(async (tx) => {
+      await tx.player.update({
+        where: { id: player.id },
+        data: {
+          status: "ONLINE",
+          lastHeartbeatAt: now,
+          lastIpAddress: ipAddress,
+          lastUserAgent: userAgent
+        }
+      });
+      await tx.analyticsHourlyAggregate.upsert({
+        where: {
+          organisationId_playerId_bucketStart: {
+            organisationId: player.organisationId,
+            playerId: player.id,
+            bucketStart
+          }
+        },
+        create: {
+          organisationId: player.organisationId,
+          playerId: player.id,
+          playerName: player.name,
+          locationId: player.zone.location.id,
+          locationName: player.zone.location.name,
+          zoneId: player.zone.id,
+          zoneName: player.zone.name,
+          bucketStart,
+          heartbeatCount: 1,
+          firstHeartbeatAt: now,
+          lastHeartbeatAt: now
+        },
+        update: {
+          playerName: player.name,
+          locationId: player.zone.location.id,
+          locationName: player.zone.location.name,
+          zoneId: player.zone.id,
+          zoneName: player.zone.name,
+          heartbeatCount: { increment: 1 },
+          lastHeartbeatAt: now
+        }
+      });
+      await tx.analyticsHourlyAggregate.updateMany({
+        where: {
+          organisationId: player.organisationId,
+          playerId: player.id,
+          bucketStart,
+          firstHeartbeatAt: null
+        },
+        data: { firstHeartbeatAt: now }
+      });
     });
 
     return NextResponse.json({ ok: true, receivedAt: now });

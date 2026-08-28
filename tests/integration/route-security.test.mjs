@@ -242,6 +242,15 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   });
   assert.equal(unauthenticatedCampaignExport.status, 401);
 
+  const unauthenticatedOperationalAnalytics = await api(`/api/reports/operational?from=${dateOffset(-1)}&to=${dateOffset(1)}`);
+  assert.equal(unauthenticatedOperationalAnalytics.status, 401);
+
+  const unauthenticatedOperationalExport = await api("/api/reports/operational/exports", {
+    method: "POST",
+    body: { from: dateOffset(-1), to: dateOffset(1) }
+  });
+  assert.equal(unauthenticatedOperationalExport.status, 401);
+
   const invalidPlayerEnrolment = await api("/api/player/enrol", {
     method: "POST",
     body: { code: "invalid-enrolment-code" }
@@ -668,6 +677,18 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     assert.equal((await viewerActiveOrganisation.json()).organisation.id, accountABody.organisation.id);
     assert.equal(await db.auditLog.count({ where: { schoolNetworkId: schoolNetwork.id, action: "SCHOOL_NETWORK_SCHOOL_ACCESS_GRANTED" } }), 1);
 
+    const viewerOperationalAnalytics = await api(`/api/reports/operational?from=${dateOffset(-1)}&to=${dateOffset(1)}`, { cookie: cookieB });
+    assert.equal(viewerOperationalAnalytics.status, 200, await viewerOperationalAnalytics.clone().text());
+    const viewerAnalyticsBody = await viewerOperationalAnalytics.json();
+    assert.equal(viewerAnalyticsBody.canExport, false);
+    assert.equal(viewerAnalyticsBody.report.school.studentIdentitiesIncluded, false);
+    assert.equal(JSON.stringify(viewerAnalyticsBody).includes(`Integration Radio Club ${suffix}`), false);
+
+    const viewerOperationalExport = await api("/api/reports/operational/exports", {
+      method: "POST", cookie: cookieB, body: { from: dateOffset(-1), to: dateOffset(1) }
+    });
+    assert.equal(viewerOperationalExport.status, 403);
+
     const restoreViewerOrganisation = await api("/api/me/organisation", {
       method: "POST", cookie: cookieB, body: { organisationId: accountBBody.organisation.id }
     });
@@ -1064,6 +1085,44 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     assert.match(csv, new RegExp(campaignPayload.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
     assert.equal(await db.auditLog.count({ where: { action: "CAMPAIGN_PROOF_EXPORT_COMPLETED", entityId: exportJob.id } }), 1);
 
+    const operationalReport = await api(`/api/reports/operational?from=${dateOffset(-1)}&to=${dateOffset(1)}`, { cookie: cookieA });
+    assert.equal(operationalReport.status, 200, await operationalReport.clone().text());
+    const operationalBody = await operationalReport.json();
+    assert.equal(operationalBody.organisation.id, accountABody.organisation.id);
+    assert.equal(operationalBody.canExport, true);
+    assert.ok(operationalBody.report.summary.playbackCompletedCount >= 1);
+    assert.equal(operationalBody.report.school.studentIdentitiesIncluded, false);
+
+    const operationalExportRequest = await api("/api/reports/operational/exports", {
+      method: "POST", cookie: cookieA, body: { from: dateOffset(-1), to: dateOffset(1) }
+    });
+    assert.equal(operationalExportRequest.status, 202, await operationalExportRequest.clone().text());
+    const operationalExportRequestBody = await operationalExportRequest.json();
+    const foreignOperationalExportStatus = await api(operationalExportRequestBody.job.statusUrl, { cookie: cookieB });
+    assert.equal(foreignOperationalExportStatus.status, 404);
+
+    let operationalExportJob;
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      const statusResponse = await api(operationalExportRequestBody.job.statusUrl, { cookie: cookieA });
+      assert.equal(statusResponse.status, 200, await statusResponse.clone().text());
+      operationalExportJob = (await statusResponse.json()).job;
+      if (operationalExportJob.status === "READY") break;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    assert.equal(operationalExportJob.status, "READY", operationalExportJob.error || "Operational export did not complete");
+    const invalidOperationalUrl = operationalExportJob.downloadUrl.replace(
+      /token=([0-9a-f])/,
+      (_match, firstCharacter) => `token=${firstCharacter === "0" ? "1" : "0"}`
+    );
+    const invalidOperationalDownload = await api(invalidOperationalUrl, { cookie: cookieA });
+    assert.equal(invalidOperationalDownload.status, 403);
+    const operationalDownload = await api(operationalExportJob.downloadUrl, { cookie: cookieA });
+    assert.equal(operationalDownload.status, 200, await operationalDownload.clone().text());
+    const operationalCsv = await operationalDownload.text();
+    assert.match(operationalCsv, /Device-confirmed operational evidence/);
+    assert.match(operationalCsv, /Audience measured/);
+    assert.equal(await db.auditLog.count({ where: { action: "OPERATIONAL_ANALYTICS_EXPORT_COMPLETED", entityId: operationalExportJob.id } }), 1);
+
     const tamperedProofOfPlay = await api("/api/player/proof-of-play", {
       method: "POST",
       cookie: `ruvanas_player=${rawPlayerToken}`,
@@ -1199,4 +1258,3 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   assert.equal(lastResponse.status, 429);
   assert.ok(Number(lastResponse.headers.get("retry-after")) > 0);
 });
-
