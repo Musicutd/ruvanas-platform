@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import SchoolEditorialClient from "./SchoolEditorialClient";
 import AudioLabClient from "./AudioLabClient";
 import WaveformEditorClient from "./WaveformEditorClient";
+import ShowBuilderClient from "./ShowBuilderClient";
 
 const managerRoles = new Set(["OWNER", "MANAGER"]);
 
@@ -139,6 +140,7 @@ export default function SchoolRadioClient() {
 
     <AudioLabClient />
     <WaveformEditorClient />
+    <ShowBuilderClient />
     <SchoolEditorialClient />
 
     <section style={styles.grid}>

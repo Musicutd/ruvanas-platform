@@ -69,7 +69,8 @@ export async function POST(request) {
         },
         include: {
           campaign: { select: { id: true, name: true } },
-          schoolBroadcastSlot: { include: { announcement: { select: { id: true, title: true } } } },
+          schoolBroadcastSlot: { include: { announcement: { select: { id: true, title: true } }, episode: { select: { id: true, title: true } } } },
+          schoolRundownItem: { select: { id: true, label: true, type: true } },
           promoVersion: { include: { promoAsset: { select: { id: true, name: true } } } },
           mediaAsset: true
         }
@@ -84,7 +85,7 @@ export async function POST(request) {
       const age = now.getTime() - occurredAt.getTime();
       const track = event.itemType === "MUSIC" ? tracksById.get(event.trackId) : null;
       const intent = event.itemType !== "MUSIC" ? intentsByScheduleItemId.get(event.scheduleItemId) : null;
-      const contentId = track?.id || intent?.promoVersionId;
+      const contentId = track?.id || intent?.promoVersionId || intent?.mediaAssetId;
       const validIntentType = !intent || (
         (event.itemType === "PROMO" && Boolean(intent.campaignId) && !intent.schoolBroadcastSlotId) ||
         (event.itemType === "SCHOOL_ANNOUNCEMENT" && Boolean(intent.schoolBroadcastSlotId) && !intent.campaignId)
@@ -133,8 +134,8 @@ export async function POST(request) {
             playerName: player.name,
             locationName: player.zone.location.name,
             zoneName: player.zone.name,
-            trackTitle: track?.title || intent?.schoolBroadcastSlot?.announcement?.title || intent?.promoVersion.promoAsset.name,
-            trackArtist: track?.artist || (event.itemType === "SCHOOL_ANNOUNCEMENT" ? "School announcement" : "Promotion")
+            trackTitle: track?.title || intent?.schoolRundownItem?.label || intent?.schoolBroadcastSlot?.announcement?.title || intent?.schoolBroadcastSlot?.episode?.title || intent?.promoVersion?.promoAsset?.name || "Scheduled audio",
+            trackArtist: track?.artist || (event.itemType === "SCHOOL_ANNOUNCEMENT" ? (intent?.schoolRundownItem ? "School programme" : "School announcement") : "Promotion")
           };
         }),
         skipDuplicates: true
@@ -155,3 +156,4 @@ export async function POST(request) {
     return NextResponse.json({ error: "Unable to record playback confirmation." }, { status: 500 });
   }
 }
+

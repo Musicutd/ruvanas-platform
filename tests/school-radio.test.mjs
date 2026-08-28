@@ -88,6 +88,28 @@ test("school playout intents are tenant snapshots without a campaign", () => {
   assert.equal(data.locationId, "location-1");
 });
 
+test("approved show rundowns compile into an ordered school player sequence", () => {
+  const episodeSlot = approvedSlot({
+    announcementId: null,
+    announcement: null,
+    episodeId: "episode-1",
+    startsAt: new Date("2026-09-01T08:00:00.000Z"),
+    endsAt: new Date("2026-09-01T08:10:00.000Z"),
+    episode: {
+      id: "episode-1", organisationId: "org-1", title: "Breakfast show", status: "APPROVED",
+      rundown: { id: "rundown-1", status: "APPROVED", revision: 3, approvedRevision: 3, items: [
+        { id: "track-item", type: "MUSIC_TRACK", label: "Opening song", position: 0, transitionPreset: "CLEAN", sourceTrack: { artist: "Artist", status: "READY", licenceExpiresAt: null, mediaAsset: { id: "catalogue-1", organisationId: null, libraryType: "RUVANAS_CATALOGUE", status: "READY", durationSeconds: 120 } } },
+        { id: "voice-item", type: "VOICE_TRACK", label: "Presenter link", position: 1, transitionPreset: "DUCK_VOICE", sourceTake: { durationMs: 15_000, promoVersionId: "promo-voice", mediaAsset: { id: "voice-1", organisationId: "org-1", status: "READY", durationSeconds: 15 } } }
+      ] }
+    }
+  });
+  const result = compileSchoolRadioPlayout({ slots: [episodeSlot], player, instant: new Date("2026-09-01T08:00:30.000Z") });
+  assert.equal(result.insertions.length, 2);
+  assert.deepEqual(result.insertions.map((entry) => entry.displayTitle), ["Opening song", "Presenter link"]);
+  assert.equal(result.insertions[0].promoVersionId, null);
+  assert.equal(result.insertions[1].plannedStart.toISOString(), "2026-09-01T08:02:00.000Z");
+});
+
 test("approved school announcements take precedence in the shared insertion scheduler", () => {
   const schoolPlayout = compileSchoolRadioPlayout({ slots: [approvedSlot()], player, instant: new Date("2026-09-01T08:02:00.000Z") });
   const campaign = { scheduleItemId: "campaign", plannedStart: new Date("2026-09-01T08:01:30.000Z") };
@@ -118,3 +140,4 @@ test("school episodes remain private unless entitlement, approval, and every con
   assert.throws(() => validateEpisodePublication({ publicationScope: "PUBLIC", episodeStatus: "APPROVED", publicPublishingEnabled: true, contributorConsents: [{ status: "PENDING" }] }), /Every student/);
   assert.equal(validateEpisodePublication({ publicationScope: "PUBLIC", episodeStatus: "APPROVED", publicPublishingEnabled: true, contributorConsents: [{ status: "GRANTED", expiresAt: null, revokedAt: null }] }).scope, "PUBLIC");
 });
+

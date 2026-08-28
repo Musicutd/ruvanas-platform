@@ -98,6 +98,11 @@ export default function AudioLabClient() {
   }, []);
 
   useEffect(() => { load().catch((loadError) => setError(loadError.message)); }, [load]);
+  useEffect(() => {
+    const refresh = (event) => load().then(() => { if (event.detail?.projectId) setProjectId(event.detail.projectId); }).catch((loadError) => setError(loadError.message));
+    window.addEventListener("ruvanas:audiolab-refresh", refresh);
+    return () => window.removeEventListener("ruvanas:audiolab-refresh", refresh);
+  }, [load]);
   useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, [previewUrl]);
   useEffect(() => () => {
     clearInterval(timerRef.current);
@@ -294,7 +299,7 @@ export default function AudioLabClient() {
   }
 
   if (!data) return <section style={s.panel}><p style={s.hint}>{error || "Loading AudioLab…"}</p></section>;
-  return <section style={s.panel}>
+  return <section id="audio-lab-quick-record" style={s.panel}>
     <div style={s.heading}><div><p style={s.eyebrow}>STAGE 4C · AUDIOLAB QUICK RECORD</p><h2 style={s.title}>Record safely in the browser</h2><p style={s.hint}>Immutable source takes, local recovery, resumable protected uploads, non-destructive edits, and teacher preview.</p></div><span style={s.autosave}>{autosave}</span></div>
     {error ? <div style={s.error}>{error}</div> : null}{notice ? <div style={s.notice}>{notice}</div> : null}
     <div style={s.grid}>
