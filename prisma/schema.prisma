@@ -315,6 +315,48 @@ enum AudioUploadStatus {
   EXPIRED
 }
 
+enum AudioWaveformStatus {
+  PENDING
+  RUNNING
+  READY
+  FAILED
+}
+
+enum AudioTrackKind {
+  VOICE
+  MUSIC
+  EFFECT
+  MIXED
+}
+
+enum AudioClipKind {
+  SOURCE
+  SILENCE
+}
+
+enum AudioMarkerType {
+  INTRO
+  INTERVIEW
+  AD_PSA
+  CHAPTER
+  EDIT_NOTE
+  TEACHER_FEEDBACK
+}
+
+enum AudioRenderPreset {
+  SCHOOL_RADIO_MP3
+  SPEECH_MP3
+  WAV_MASTER
+}
+
+enum AudioRenderStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+}
+
 enum ReportExportStatus {
   QUEUED
   PROCESSING
@@ -425,6 +467,8 @@ model User {
   audioProjectVersions         AudioProjectVersion[]         @relation("AudioProjectVersionCreatedBy")
   recordedAudioTakes           AudioTake[]                   @relation("AudioTakeRecordedBy")
   schoolAudioUploads           SchoolAudioUploadSession[]    @relation("SchoolAudioUploadCreatedBy")
+  createdAudioMarkers          AudioMarker[]                 @relation("AudioMarkerCreatedBy")
+  requestedAudioRenders        AudioRender[]                 @relation("AudioRenderRequestedBy")
 }
 
 model Organisation {
@@ -472,6 +516,7 @@ model Organisation {
   audioProjects              AudioProject[]
   audioTakes                 AudioTake[]
   schoolAudioUploads         SchoolAudioUploadSession[]
+  audioRenders               AudioRender[]
 }
 
 model OrganisationMember {
@@ -784,13 +829,15 @@ model MediaAsset {
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
-  organisation      Organisation?      @relation("OrganisationMediaAssets", fields: [organisationId], references: [id], onDelete: Cascade)
-  genres            MediaAssetGenre[]
-  track             Track?
-  promoVersions     PromoVersion[]
-  audioTakes        AudioTake[]
-  proofOfPlayEvents ProofOfPlayEvent[]
-  playoutIntents    PlayoutIntent[]
+  organisation       Organisation?      @relation("OrganisationMediaAssets", fields: [organisationId], references: [id], onDelete: Cascade)
+  genres             MediaAssetGenre[]
+  track              Track?
+  promoVersions      PromoVersion[]
+  audioTakes         AudioTake[]
+  audioClips         AudioClip[]
+  audioRenderOutputs AudioRender[]      @relation("AudioRenderOutput")
+  proofOfPlayEvents  ProofOfPlayEvent[]
+  playoutIntents     PlayoutIntent[]
 
   @@index([organisationId])
   @@index([libraryType])
@@ -841,18 +888,19 @@ model PromoVersion {
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
 
-  promoAsset          PromoAsset           @relation("PromoAssetVersions", fields: [promoAssetId], references: [id], onDelete: Cascade)
-  mediaAsset          MediaAsset           @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
-  submittedBy         User?                @relation("PromoVersionSubmittedBy", fields: [submittedById], references: [id], onDelete: SetNull)
-  reviewedBy          User?                @relation("PromoVersionReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
-  approvedForPromo    PromoAsset?          @relation("CurrentApprovedPromoVersion")
-  processingJobs      PromoProcessingJob[]
-  campaigns           Campaign[]
-  schoolAnnouncements SchoolAnnouncement[]
-  schoolSubmissions   SchoolSubmission[]
-  audioTakes          AudioTake[]
-  playoutIntents      PlayoutIntent[]
-  proofOfPlayEvents   ProofOfPlayEvent[]
+  promoAsset            PromoAsset           @relation("PromoAssetVersions", fields: [promoAssetId], references: [id], onDelete: Cascade)
+  mediaAsset            MediaAsset           @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+  submittedBy           User?                @relation("PromoVersionSubmittedBy", fields: [submittedById], references: [id], onDelete: SetNull)
+  reviewedBy            User?                @relation("PromoVersionReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+  approvedForPromo      PromoAsset?          @relation("CurrentApprovedPromoVersion")
+  processingJobs        PromoProcessingJob[]
+  campaigns             Campaign[]
+  schoolAnnouncements   SchoolAnnouncement[]
+  schoolSubmissions     SchoolSubmission[]
+  audioTakes            AudioTake[]
+  renderedAudioVersions AudioRender[]        @relation("AudioRenderPromoVersion")
+  playoutIntents        PlayoutIntent[]
+  proofOfPlayEvents     ProofOfPlayEvent[]
 
   @@unique([promoAssetId, version])
   @@unique([promoAssetId, sourceReference])
@@ -1317,6 +1365,9 @@ model AudioProject {
   versions       AudioProjectVersion[]
   takes          AudioTake[]
   uploadSessions SchoolAudioUploadSession[]
+  tracks         AudioTrack[]
+  markers        AudioMarker[]
+  renders        AudioRender[]
 
   @@index([organisationId, status])
   @@index([episodeId])
@@ -1332,26 +1383,30 @@ model AudioProjectVersion {
   createdByUserId String
   createdAt       DateTime @default(now())
 
-  project   AudioProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  createdBy User         @relation("AudioProjectVersionCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  project   AudioProject  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy User          @relation("AudioProjectVersionCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  renders   AudioRender[]
 
   @@unique([projectId, version])
   @@index([createdByUserId, createdAt])
 }
 
 model AudioTake {
-  id                 String          @id @default(cuid())
-  organisationId     String
-  projectId          String
-  mediaAssetId       String
-  promoVersionId     String?
-  recordedByUserId   String
-  deviceLabel        String?
-  durationMs         Int?
-  status             AudioTakeStatus @default(PROCESSING)
-  sourceEditDecision Json
-  createdAt          DateTime        @default(now())
-  updatedAt          DateTime        @updatedAt
+  id                  String              @id @default(cuid())
+  organisationId      String
+  projectId           String
+  mediaAssetId        String
+  promoVersionId      String?
+  recordedByUserId    String
+  deviceLabel         String?
+  durationMs          Int?
+  status              AudioTakeStatus     @default(PROCESSING)
+  waveformStatus      AudioWaveformStatus @default(PENDING)
+  waveformPeaks       Json?
+  waveformGeneratedAt DateTime?
+  sourceEditDecision  Json
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
 
   organisation Organisation  @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   project      AudioProject  @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -1363,6 +1418,97 @@ model AudioTake {
   @@index([projectId, createdAt])
   @@index([mediaAssetId])
   @@index([promoVersionId])
+  @@index([waveformStatus, createdAt])
+}
+
+model AudioTrack {
+  id              String         @id @default(cuid())
+  projectId       String
+  kind            AudioTrackKind @default(VOICE)
+  name            String
+  order           Int            @default(0)
+  gainDb          Float          @default(0)
+  pan             Float          @default(0)
+  muted           Boolean        @default(false)
+  solo            Boolean        @default(false)
+  effectChainJson Json?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  project AudioProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  clips   AudioClip[]
+
+  @@index([projectId, order])
+}
+
+model AudioClip {
+  id              String        @id @default(cuid())
+  trackId         String
+  mediaAssetId    String?
+  kind            AudioClipKind @default(SOURCE)
+  sourceStartMs   Int           @default(0)
+  sourceEndMs     Int
+  timelineStartMs Int           @default(0)
+  gainDb          Float         @default(0)
+  fadeInMs        Int           @default(0)
+  fadeOutMs       Int           @default(0)
+  fadeInCurve     String        @default("linear")
+  fadeOutCurve    String        @default("linear")
+  locked          Boolean       @default(false)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  track      AudioTrack  @relation(fields: [trackId], references: [id], onDelete: Cascade)
+  mediaAsset MediaAsset? @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+
+  @@index([trackId, timelineStartMs])
+  @@index([mediaAssetId])
+}
+
+model AudioMarker {
+  id              String          @id @default(cuid())
+  projectId       String
+  positionMs      Int
+  type            AudioMarkerType
+  label           String
+  createdByUserId String
+  createdAt       DateTime        @default(now())
+
+  project   AudioProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy User         @relation("AudioMarkerCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@index([projectId, positionMs])
+}
+
+model AudioRender {
+  id                   String            @id @default(cuid())
+  organisationId       String
+  projectId            String
+  versionId            String
+  outputMediaAssetId   String?
+  outputPromoVersionId String?
+  requestedByUserId    String
+  preset               AudioRenderPreset
+  status               AudioRenderStatus @default(QUEUED)
+  loudnessLufs         Float?
+  resultJson           Json?
+  errorMessage         String?
+  startedAt            DateTime?
+  completedAt          DateTime?
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+
+  organisation       Organisation        @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  project            AudioProject        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  version            AudioProjectVersion @relation(fields: [versionId], references: [id], onDelete: Restrict)
+  outputMediaAsset   MediaAsset?         @relation("AudioRenderOutput", fields: [outputMediaAssetId], references: [id], onDelete: SetNull)
+  outputPromoVersion PromoVersion?       @relation("AudioRenderPromoVersion", fields: [outputPromoVersionId], references: [id], onDelete: SetNull)
+  requestedBy        User                @relation("AudioRenderRequestedBy", fields: [requestedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([organisationId, createdAt])
+  @@index([projectId, createdAt])
+  @@index([status, createdAt])
+  @@index([versionId])
 }
 
 model SchoolAudioUploadSession {
