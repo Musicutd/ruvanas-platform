@@ -77,6 +77,11 @@ const navItems = [
     href: "/admin/ai",
     label: "AI draft workspace",
     superAdminOnly: true
+  },
+  {
+    href: "/admin/integrations",
+    label: "API & integrations",
+    superAdminOnly: true
   }
 ];
 

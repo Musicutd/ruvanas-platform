@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-const AVAILABLE_SCOPES = ["organisation:read", "analytics:read", "reports:read", "media:read"];
+const AVAILABLE_SCOPES = ["organisation:read", "analytics:read", "reports:read", "media:read", "locations:read"];
 
 async function callApi(url, options = {}) {
   const response = await fetch(url, {
@@ -186,3 +186,4 @@ const styles = {
   account: { display: "flex", justifyContent: "space-between", gap: 12, padding: 12, border: "1px solid #e2e8f0", borderRadius: 7, alignItems: "center", flexWrap: "wrap" },
   actions: { display: "flex", gap: 8 }
 };
+

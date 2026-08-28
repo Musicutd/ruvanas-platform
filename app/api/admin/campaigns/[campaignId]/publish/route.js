@@ -11,6 +11,7 @@ import {
   prepareCampaignPreview
 } from "@/lib/campaign-service";
 import { getCurrentUser } from "@/lib/auth";
+import { queueOutgoingWebhookEvent } from "@/lib/outgoing-webhook-service";
 
 export const dynamic = "force-dynamic";
 
@@ -71,6 +72,13 @@ export async function PATCH(_request, { params }) {
           warnings: prepared.preview.warnings
         }
       } });
+      await queueOutgoingWebhookEvent(tx, {
+        organisationId: record.organisationId,
+        eventType: "campaign.published",
+        sourceId: record.id,
+        version: String(record.publicationRevision + 1),
+        payload: { campaignId: record.id, publicationRevision: record.publicationRevision + 1, publishedAt: new Date().toISOString() }
+      });
       return tx.campaign.findUnique({ where: { id: record.id } });
     });
     return NextResponse.json({ ok: true, campaign: published, preview: prepared.preview });
@@ -79,3 +87,4 @@ export async function PATCH(_request, { params }) {
     return NextResponse.json({ error: error.message || "Unable to publish the campaign." }, { status: 409 });
   }
 }
+

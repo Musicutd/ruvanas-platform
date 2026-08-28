@@ -6,8 +6,8 @@ import { hashPlayerToken } from "../../lib/player-tokens.mjs";
 
 const baseUrl = process.env.INTEGRATION_BASE_URL || "http://127.0.0.1:3100";
 
-async function api(path, { method = "GET", body, cookie, origin = baseUrl } = {}) {
-  const headers = {};
+async function api(path, { method = "GET", body, cookie, origin = baseUrl, headers: extraHeaders = {} } = {}) {
+  const headers = { ...extraHeaders };
   if (origin !== null) headers.origin = origin;
   if (cookie) headers.cookie = cookie;
   if (body !== undefined) headers["content-type"] = "application/json";
@@ -97,6 +97,12 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     body: { events: [] }
   });
   assert.equal(unauthenticatedProofOfPlay.status, 401);
+
+  const unauthenticatedPublicLocations = await api("/api/v1/locations");
+  assert.equal(unauthenticatedPublicLocations.status, 401);
+
+  const unauthenticatedIntegrationCreate = await api("/api/admin/integrations/connections", { method: "POST", body: {} });
+  assert.equal(unauthenticatedIntegrationCreate.status, 401);
 
   const unauthenticatedPromoArchive = await api(
     "/api/admin/promos/example/status",
@@ -453,6 +459,13 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   });
   assert.equal(ownerAIDraftAttempt.status, 403);
 
+  const ownerIntegrationAttempt = await api("/api/admin/integrations/connections", {
+    method: "POST",
+    cookie: cookieA,
+    body: { organisationId: accountABody.organisation.id, name: "Forbidden connection", endpointUrl: "https://partner.example/hooks", subscribedEventTypes: ["campaign.published"] }
+  });
+  assert.equal(ownerIntegrationAttempt.status, 403);
+
   const ownerNetworkCreateAttempt = await api("/api/school-radio/network", {
     method: "POST",
     cookie: cookieA,
@@ -503,6 +516,32 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
       where: { id: accountABody.user.id },
       data: { role: "SUPER_ADMIN" }
     });
+
+    const integrationResponse = await api("/api/admin/integrations/connections", {
+      method: "POST",
+      cookie: cookieA,
+      body: { organisationId: accountABody.organisation.id, name: `Integration webhook ${suffix}`, endpointUrl: "https://partner.example/webhooks/ruvanas", subscribedEventTypes: ["campaign.published", "player.health_changed", "proof.accepted", "production.status_changed"] }
+    });
+    assert.equal(integrationResponse.status, 201, await integrationResponse.clone().text());
+    const integrationBody = await integrationResponse.json();
+    assert.match(integrationBody.secret, /^rvwhsec_[a-f0-9]{64}$/);
+    const storedIntegration = await db.integrationConnection.findUnique({ where: { id: integrationBody.connection.id } });
+    assert.notEqual(storedIntegration.encryptedSecret, integrationBody.secret);
+
+    const serviceAccountResponse = await api("/api/admin/security/service-accounts", {
+      method: "POST",
+      cookie: cookieA,
+      body: { organisationId: accountABody.organisation.id, name: `Integration API ${suffix}`, scopes: ["organisation:read", "locations:read"] }
+    });
+    assert.equal(serviceAccountResponse.status, 201, await serviceAccountResponse.clone().text());
+    const serviceAccountBody = await serviceAccountResponse.json();
+    const publicIdentity = await api("/api/v1/service-account", { headers: { authorization: `Bearer ${serviceAccountBody.apiKey}` } });
+    assert.equal(publicIdentity.status, 200, await publicIdentity.clone().text());
+    assert.equal((await publicIdentity.json()).organisation.id, accountABody.organisation.id);
+    assert.ok(Number(publicIdentity.headers.get("x-ratelimit-remaining")) < 120);
+    const publicLocations = await api("/api/v1/locations?limit=10", { headers: { authorization: `Bearer ${serviceAccountBody.apiKey}` } });
+    assert.equal(publicLocations.status, 200, await publicLocations.clone().text());
+    assert.ok(Array.isArray((await publicLocations.json()).data));
 
     const aiDraftResponse = await api("/api/admin/ai/jobs", {
       method: "POST",
@@ -648,6 +687,10 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     assert.equal(
       await db.auditLog.count({ where: { organisationId: accountABody.organisation.id, entityId: productionOrder.id, entityType: "ProductionOrder" } }),
       6
+    );
+    assert.equal(
+      await db.outgoingWebhookEvent.count({ where: { connectionId: integrationBody.connection.id, eventType: "production.status_changed" } }),
+      3
     );
 
     const starterPlan = await db.plan.findUnique({ where: { code: "STARTER" } });

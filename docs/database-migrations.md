@@ -1,5 +1,9 @@
 # Database migration operations
 
+## Stage 6B API and integrations
+
+Migration `20260907000000_stage_6b_integrations` is additive. It adds tenant-scoped integration connections, encrypted-secret references, sync-run history, idempotent outgoing webhook events, and immutable delivery attempts. Existing organisations, playback records, campaigns, and production orders are not modified.
+
 ## Stage 6A governed AI assistance
 
 Migration `20260906000000_stage_6a_ai_governance` is additive. It adds tenant-scoped assistant jobs, provider/provenance metadata, and human recommendation feedback. No existing content is changed and no generated artifact is connected directly to a publication or scheduling record.
