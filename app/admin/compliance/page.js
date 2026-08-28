@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getAdminUser } from "@/lib/requireAdmin";
 import ComplianceOperations from "./ComplianceOperations";
@@ -8,6 +9,7 @@ function serializable(value) {
 
 export default async function CompliancePage() {
   const adminUser = await getAdminUser();
+  if (!adminUser) redirect("/login");
   const canManageCompliance = adminUser?.role === "SUPER_ADMIN";
   const organisations = await prisma.organisation.findMany({
     include: canManageCompliance ? {
@@ -59,5 +61,4 @@ const styles = {
   description: { maxWidth: 900, margin: "10px 0 16px", color: "#475569", fontSize: 15, lineHeight: 1.55 },
   notice: { marginBottom: 24, padding: 14, border: "1px solid #f0b429", borderRadius: 9, background: "#fff8e6", color: "#6b4700", fontSize: 14, lineHeight: 1.5 }
 };
-
 
