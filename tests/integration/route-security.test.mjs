@@ -137,6 +137,9 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   const unauthenticatedProductionOrders = await api("/api/studio/orders");
   assert.equal(unauthenticatedProductionOrders.status, 401);
 
+  const unauthenticatedProductionCredits = await api("/api/studio/credits");
+  assert.equal(unauthenticatedProductionCredits.status, 401);
+
   const unauthenticatedProductionOrderCreate = await api("/api/studio/orders", {
     method: "POST",
     body: {}
@@ -151,6 +154,12 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
 
   const unauthenticatedProductionAssignment = await api("/api/studio/orders/not-an-order/assignment", { method: "PATCH", body: { userId: null } });
   assert.equal(unauthenticatedProductionAssignment.status, 401);
+
+  const unauthenticatedProductionFunding = await api("/api/studio/orders/not-an-order/funding", { method: "PATCH", body: { action: "AUTHORISE_PAID_ADD_ON", externalReference: "test" } });
+  assert.equal(unauthenticatedProductionFunding.status, 401);
+
+  const unauthenticatedPromoHandoff = await api("/api/studio/orders/not-an-order/promo-handoff", { method: "POST", body: { name: "Test", mediaType: "COMMERCIAL", languageCode: "en" } });
+  assert.equal(unauthenticatedPromoHandoff.status, 401);
 
   const unauthenticatedProductionScript = await api("/api/studio/orders/not-an-order/scripts", { method: "POST", body: { languageCode: "en", content: "Unauthenticated script content." } });
   assert.equal(unauthenticatedProductionScript.status, 401);
@@ -343,7 +352,7 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
       campaignEndsOn: dateOffset(10),
       contactName: "Integration Owner A",
       contactEmail: `integration-a-${suffix}@example.invalid`,
-      fundingType: "PLAN_INCLUDED",
+      fundingType: "PAID_ADD_ON",
       priority: "STANDARD",
       submitNow: true
     }
@@ -352,6 +361,7 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   const productionOrder = (await productionOrderResponse.json()).order;
   assert.equal(productionOrder.organisationId, accountABody.organisation.id);
   assert.equal(productionOrder.status, "SUBMITTED");
+  assert.equal(productionOrder.fundingStatus, "PENDING");
 
   const ownerStartProductionAttempt = await api(`/api/studio/orders/${productionOrder.id}/status`, {
     method: "PATCH",
@@ -373,6 +383,14 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
       where: { id: accountABody.user.id },
       data: { role: "SUPER_ADMIN" }
     });
+
+    const authorisePaidAddon = await api(`/api/studio/orders/${productionOrder.id}/funding`, {
+      method: "PATCH",
+      cookie: cookieA,
+      body: { action: "AUTHORISE_PAID_ADD_ON", externalReference: `integration-${suffix}` }
+    });
+    assert.equal(authorisePaidAddon.status, 200, await authorisePaidAddon.clone().text());
+    assert.equal((await authorisePaidAddon.json()).order.fundingStatus, "RESERVED");
 
     const startProduction = await api(`/api/studio/orders/${productionOrder.id}/status`, {
       method: "PATCH",
@@ -418,11 +436,11 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     assert.equal(deliverWithoutMaster.status, 409);
     assert.equal(
       await db.productionOrderEvent.count({ where: { orderId: productionOrder.id } }),
-      6
+      7
     );
     assert.equal(
       await db.auditLog.count({ where: { organisationId: accountABody.organisation.id, entityId: productionOrder.id, entityType: "ProductionOrder" } }),
-      5
+      6
     );
 
     const starterPlan = await db.plan.findUnique({ where: { code: "STARTER" } });

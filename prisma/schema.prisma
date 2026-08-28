@@ -270,6 +270,24 @@ enum ProductionFundingType {
   PAID_ADD_ON
 }
 
+enum ProductionFundingStatus {
+  LEGACY_UNMETERED
+  PENDING
+  RESERVED
+  CONSUMED
+  RELEASED
+}
+
+enum ProductionCreditEntryType {
+  GRANT
+  PURCHASE
+  RESERVE
+  CONSUME
+  RELEASE
+  EXPIRY
+  ADJUSTMENT
+}
+
 enum ProductionOrderEventType {
   CREATED
   STATUS_CHANGED
@@ -278,6 +296,8 @@ enum ProductionOrderEventType {
   SCRIPT_VERSION_CREATED
   REVISION_REQUESTED
   REVISION_RESOLVED
+  FUNDING_CHANGED
+  PROMO_HANDOFF_CREATED
 }
 
 enum ProductionOrderFileKind {
@@ -301,23 +321,24 @@ model User {
   updatedAt    DateTime @updatedAt
 
   memberships                  OrganisationMember[]
-  auditLogs                    AuditLog[]                  @relation("AuditActor")
+  auditLogs                    AuditLog[]                    @relation("AuditActor")
   sessions                     Session[]
-  submittedPromoVersions       PromoVersion[]              @relation("PromoVersionSubmittedBy")
-  reviewedPromoVersions        PromoVersion[]              @relation("PromoVersionReviewedBy")
-  publishedCampaigns           Campaign[]                  @relation("CampaignPublishedBy")
-  reportExports                ReportExportJob[]           @relation("ReportExportRequestedBy")
-  confirmedTrackRights         Track[]                     @relation("TrackRightsConfirmedBy")
-  createdSchoolAnnouncements   SchoolAnnouncement[]        @relation("SchoolAnnouncementCreatedBy")
-  reviewedSchoolAnnouncements  SchoolAnnouncement[]        @relation("SchoolAnnouncementReviewedBy")
-  approvedSchoolSlots          SchoolBroadcastSlot[]       @relation("SchoolBroadcastSlotApprovedBy")
-  createdProductionOrders      ProductionOrder[]           @relation("ProductionOrderCreatedBy")
-  assignedProductionOrders     ProductionOrder[]           @relation("ProductionOrderAssignedTo")
-  productionOrderEvents        ProductionOrderEvent[]      @relation("ProductionOrderEventActor")
-  productionOrderFiles         ProductionOrderFile[]       @relation("ProductionOrderFileUploadedBy")
-  productionScriptVersions     ProductionScriptVersion[]   @relation("ProductionScriptVersionCreatedBy")
-  requestedProductionRevisions ProductionRevisionRequest[] @relation("ProductionRevisionRequestedBy")
-  resolvedProductionRevisions  ProductionRevisionRequest[] @relation("ProductionRevisionResolvedBy")
+  submittedPromoVersions       PromoVersion[]                @relation("PromoVersionSubmittedBy")
+  reviewedPromoVersions        PromoVersion[]                @relation("PromoVersionReviewedBy")
+  publishedCampaigns           Campaign[]                    @relation("CampaignPublishedBy")
+  reportExports                ReportExportJob[]             @relation("ReportExportRequestedBy")
+  confirmedTrackRights         Track[]                       @relation("TrackRightsConfirmedBy")
+  createdSchoolAnnouncements   SchoolAnnouncement[]          @relation("SchoolAnnouncementCreatedBy")
+  reviewedSchoolAnnouncements  SchoolAnnouncement[]          @relation("SchoolAnnouncementReviewedBy")
+  approvedSchoolSlots          SchoolBroadcastSlot[]         @relation("SchoolBroadcastSlotApprovedBy")
+  createdProductionOrders      ProductionOrder[]             @relation("ProductionOrderCreatedBy")
+  assignedProductionOrders     ProductionOrder[]             @relation("ProductionOrderAssignedTo")
+  productionOrderEvents        ProductionOrderEvent[]        @relation("ProductionOrderEventActor")
+  productionOrderFiles         ProductionOrderFile[]         @relation("ProductionOrderFileUploadedBy")
+  productionScriptVersions     ProductionScriptVersion[]     @relation("ProductionScriptVersionCreatedBy")
+  requestedProductionRevisions ProductionRevisionRequest[]   @relation("ProductionRevisionRequestedBy")
+  resolvedProductionRevisions  ProductionRevisionRequest[]   @relation("ProductionRevisionResolvedBy")
+  productionCreditEntries      ProductionCreditLedgerEntry[] @relation("ProductionCreditEntryActor")
 }
 
 model Organisation {
@@ -334,7 +355,7 @@ model Organisation {
   locations                  Location[]
   locationGroups             LocationGroup[]
   channels                   Channel[]
-  mediaAssets                MediaAsset[]                @relation("OrganisationMediaAssets")
+  mediaAssets                MediaAsset[]                  @relation("OrganisationMediaAssets")
   promoAssets                PromoAsset[]
   auditLogs                  AuditLog[]
   players                    Player[]
@@ -353,6 +374,7 @@ model Organisation {
   productionOrderFiles       ProductionOrderFile[]
   productionScriptVersions   ProductionScriptVersion[]
   productionRevisionRequests ProductionRevisionRequest[]
+  productionCreditEntries    ProductionCreditLedgerEntry[]
 }
 
 model OrganisationMember {
@@ -691,9 +713,10 @@ model PromoAsset {
   createdAt                DateTime         @default(now())
   updatedAt                DateTime         @updatedAt
 
-  organisation           Organisation   @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  versions               PromoVersion[] @relation("PromoAssetVersions")
-  currentApprovedVersion PromoVersion?  @relation("CurrentApprovedPromoVersion", fields: [currentApprovedVersionId], references: [id], onDelete: SetNull)
+  organisation           Organisation     @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  versions               PromoVersion[]   @relation("PromoAssetVersions")
+  currentApprovedVersion PromoVersion?    @relation("CurrentApprovedPromoVersion", fields: [currentApprovedVersionId], references: [id], onDelete: SetNull)
+  productionOrder        ProductionOrder? @relation("ProductionOrderPromoAsset")
 
   @@index([organisationId, status])
   @@index([organisationId, name])
@@ -732,6 +755,7 @@ model PromoVersion {
   proofOfPlayEvents   ProofOfPlayEvent[]
 
   @@unique([promoAssetId, version])
+  @@unique([promoAssetId, sourceReference])
   @@index([promoAssetId, status])
   @@index([mediaAssetId])
   @@index([status, qcStatus])
@@ -1000,6 +1024,8 @@ model ProductionOrder {
   contactName           String
   contactEmail          String
   fundingType           ProductionFundingType
+  fundingStatus         ProductionFundingStatus @default(PENDING)
+  promoAssetId          String?                 @unique
   priority              ProductionOrderPriority @default(STANDARD)
   deadlineAt            DateTime?
   status                ProductionOrderStatus   @default(DRAFT)
@@ -1010,18 +1036,50 @@ model ProductionOrder {
   createdAt             DateTime                @default(now())
   updatedAt             DateTime                @updatedAt
 
-  organisation Organisation                @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  createdBy    User                        @relation("ProductionOrderCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  assignedTo   User?                       @relation("ProductionOrderAssignedTo", fields: [assignedToUserId], references: [id], onDelete: SetNull)
-  events       ProductionOrderEvent[]
-  files        ProductionOrderFile[]
-  scripts      ProductionScriptVersion[]
-  revisions    ProductionRevisionRequest[]
+  organisation  Organisation                  @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  createdBy     User                          @relation("ProductionOrderCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  assignedTo    User?                         @relation("ProductionOrderAssignedTo", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+  events        ProductionOrderEvent[]
+  files         ProductionOrderFile[]
+  scripts       ProductionScriptVersion[]
+  revisions     ProductionRevisionRequest[]
+  creditEntries ProductionCreditLedgerEntry[]
+  promoAsset    PromoAsset?                   @relation("ProductionOrderPromoAsset", fields: [promoAssetId], references: [id], onDelete: SetNull)
 
   @@index([organisationId, status, createdAt])
   @@index([createdByUserId])
   @@index([assignedToUserId, status])
+  @@index([organisationId, fundingStatus])
   @@index([deadlineAt])
+}
+
+model ProductionCreditLedgerEntry {
+  id                String                    @id @default(cuid())
+  organisationId    String
+  orderId           String?
+  actorUserId       String?
+  sequence          Int
+  entryType         ProductionCreditEntryType
+  quantity          Int
+  availableDelta    Int
+  reservedDelta     Int
+  availableAfter    Int
+  reservedAfter     Int
+  idempotencyKey    String                    @unique
+  externalReference String?
+  note              String?
+  expiresAt         DateTime?
+  createdAt         DateTime                  @default(now())
+
+  organisation Organisation     @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  order        ProductionOrder? @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  actor        User?            @relation("ProductionCreditEntryActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@unique([organisationId, sequence])
+  @@index([organisationId, createdAt])
+  @@index([orderId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([entryType, createdAt])
 }
 
 model ProductionOrderFile {

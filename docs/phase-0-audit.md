@@ -54,7 +54,7 @@ A full restart should be reconsidered only if production data proves that tenant
 | Radio programming | Station and media concepts are partial | Add MusicMode, Track, curated Station, StationTrack, MusicSchedule, ScheduleSlot, TrackBlock |
 | Promotion library | MediaAsset covers uploads | Add PromoAsset/PromoVersion semantics, validation, versioning, retention, and content status |
 | Campaigns and targeting | Missing | Add Campaign, CampaignTarget, CampaignSchedule, CampaignRule, preview/conflict validation |
-| Ruvanas Studio | Missing | Add ProductionOrder, brief, scripts, previews, revision requests, and credit ledger |
+| Ruvanas Studio | Retail ProductionOrder foundation complete through credits and promo handoff | Continue with automated audio processing, then School Programme/Episode and AudioLab milestones |
 | Proof of play | PlayoutEvent is an early foundation | Separate scheduled intent from confirmed playback; support idempotent event ingestion |
 | Player/stream health | Missing | Add PlayerHeartbeat, HealthIncident, classifications, alert routing, and diagnostics |
 | Compliance | Missing | Add consent, policy acceptance, retention, data requests, rights metadata, and append-only evidence |

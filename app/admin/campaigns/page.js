@@ -3,7 +3,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import CampaignBuilder from "./CampaignBuilder";
 
-export default async function CampaignsPage() {
+export default async function CampaignsPage({ searchParams }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (user.role !== "SUPER_ADMIN") redirect("/admin/media");
@@ -45,5 +45,13 @@ export default async function CampaignsPage() {
     orderBy: { name: "asc" }
   });
 
-  return <CampaignBuilder organisations={organisations} />;
+  const query = await searchParams;
+  return <CampaignBuilder organisations={organisations} initialSelection={{
+    organisationId: String(query?.organisationId || ""),
+    promoVersionId: String(query?.promoVersionId || ""),
+    name: String(query?.name || "").slice(0, 120),
+    effectiveFrom: String(query?.effectiveFrom || ""),
+    effectiveTo: String(query?.effectiveTo || "")
+  }} />;
 }
+

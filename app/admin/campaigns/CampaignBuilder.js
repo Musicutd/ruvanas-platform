@@ -11,17 +11,21 @@ function Badge({ value }) {
   return <span style={{ ...styles.badge, background: colours[0], color: colours[1] }}>{String(value).replaceAll("_", " ")}</span>;
 }
 
-export default function CampaignBuilder({ organisations }) {
+export default function CampaignBuilder({ organisations, initialSelection = {} }) {
+  const selectedOrganisation = organisations.find((item) => item.id === initialSelection.organisationId) || organisations[0];
+  const selectedPromoVersion = selectedOrganisation?.promoAssets.flatMap((asset) => asset.versions).find((version) => version.id === initialSelection.promoVersionId);
+  const today = new Date().toISOString().slice(0, 10);
+  const nextWeek = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
   const [form, setForm] = useState({
-    organisationId: organisations[0]?.id || "",
-    promoVersionId: "",
-    name: "",
+    organisationId: selectedOrganisation?.id || "",
+    promoVersionId: selectedPromoVersion?.id || "",
+    name: initialSelection.name || "",
     priority: "NORMAL",
     schedulingMode: "PLAYS_PER_HOUR",
     playsPerHour: 2,
     intervalMinutes: 30,
-    effectiveFrom: new Date().toISOString().slice(0, 10),
-    effectiveTo: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
+    effectiveFrom: /^\d{4}-\d{2}-\d{2}$/.test(initialSelection.effectiveFrom) ? initialSelection.effectiveFrom : today,
+    effectiveTo: /^\d{4}-\d{2}-\d{2}$/.test(initialSelection.effectiveTo) ? initialSelection.effectiveTo : nextWeek,
     maxPromoMinutesPerHour: 12,
     minSamePromoGapMinutes: 15,
     minAnyPromoGapMinutes: 2,
@@ -181,3 +185,4 @@ const styles = {
   header: { marginBottom: 22 }, eyebrow: { margin: "0 0 8px", color: "#9a6400", fontWeight: 900, textTransform: "uppercase" }, title: { margin: 0, fontSize: 32 }, copy: { maxWidth: 800, color: "#475569", lineHeight: 1.55 },
   message: { marginBottom: 18, padding: 12, border: "1px solid #93c5fd", borderRadius: 8, background: "#eff6ff", color: "#1e3a8a", fontWeight: 700 }, panel: { display: "grid", gap: 16, marginBottom: 18, padding: 22, border: "1px solid #cbd5e1", borderRadius: 12, background: "#f8fafc" }, sectionTitle: { margin: 0, fontSize: 20 }, grid: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(230px,1fr))", gap: 14 }, label: { display: "grid", gap: 7, fontWeight: 800 }, input: { minWidth: 0, padding: 10, border: "1px solid #94a3b8", borderRadius: 7, background: "#fff", font: "inherit" }, small: { width: 88, padding: 10, border: "1px solid #94a3b8", borderRadius: 7 }, checks: { display: "flex", gap: 20, flexWrap: "wrap", fontWeight: 800 }, check: { display: "flex", gap: 8, alignItems: "center", fontWeight: 800 }, row: { display: "grid", gridTemplateColumns: "minmax(180px,.8fr) minmax(260px,1.5fr) auto", gap: 10, alignItems: "center" }, scheduleRow: { display: "grid", gridTemplateColumns: "minmax(130px,1fr) repeat(4,minmax(90px,.8fr)) auto", gap: 8, alignItems: "center" }, coverage: { padding: 10, color: "#475569" }, actions: { display: "flex", gap: 12, margin: "22px 0", flexWrap: "wrap" }, primary: { border: 0, borderRadius: 7, padding: "11px 15px", background: "#f4b942", color: "#172033", fontWeight: 900, cursor: "pointer" }, secondary: { border: "1px solid #94a3b8", borderRadius: 7, padding: "9px 13px", background: "#fff", color: "#172033", fontWeight: 800, cursor: "pointer" }, previewGood: { padding: 20, border: "1px solid #86efac", borderRadius: 10, background: "#f0fdf4" }, previewBad: { padding: 20, border: "1px solid #fca5a5", borderRadius: 10, background: "#fef2f2" }, summary: { marginTop: 10, color: "#334155" }, error: { color: "#991b1b", fontWeight: 700 }, warning: { color: "#92400e", fontWeight: 700 }, empty: { marginTop: 16, padding: 24, border: "1px dashed #94a3b8", borderRadius: 10 }, cards: { display: "grid", gap: 12, marginTop: 16 }, card: { display: "grid", gridTemplateColumns: "minmax(240px,1.5fr) auto minmax(220px,1fr) auto", gap: 16, alignItems: "center", padding: 18, border: "1px solid #cbd5e1", borderRadius: 10 }, muted: { margin: "6px 0 0", color: "#64748b", fontWeight: 600 }, badge: { display: "inline-block", padding: "5px 8px", borderRadius: 999, fontSize: 12, fontWeight: 900 }, cardActions: { display: "flex", gap: 8, flexWrap: "wrap" }
 };
+
