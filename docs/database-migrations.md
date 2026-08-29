@@ -1,5 +1,11 @@
 # Database migration operations
 
+## Stage 11A Player Health History and Incidents
+
+Migration `20260923000000_stage_11a_player_health_incidents` is additive. It adds five-minute player heartbeat samples and a platform-admin incident register with severity, acknowledgement, resolution, operator attribution, and historical location/zone identifiers. A partial unique index permits only one unresolved missed-heartbeat incident per player.
+
+The migration does not change player enrolment tokens, session cookies, playback manifests, scheduling, proof-of-play, or customer content. Once operational evidence exists, retain both tables during application rollback. Before evidence exists, rollback may remove `PlayerHealthIncident`, then `PlayerHeartbeatSample`, followed by the four Stage 11A enums.
+
 ## Stage 10C School Pilot Operations and Incident Readiness
 
 Migration `20260922000000_stage_10c_school_pilot_operations` is additive. It adds tenant-scoped supervised pilot runs and privacy-safe drill/incident evidence. It enforces valid planned windows, one active or paused pilot per organisation, and valid drill outcomes. It does not modify school content, public delivery, safeguarding, retention, or student-access data.

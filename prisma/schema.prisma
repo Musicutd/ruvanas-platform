@@ -415,6 +415,31 @@ enum PlayerStatus {
   DISABLED
 }
 
+enum PlayerHeartbeatSampleKind {
+  PERIODIC
+  RECOVERY
+}
+
+enum PlayerHealthIncidentKind {
+  HEARTBEAT_MISSED
+  SOURCE_ERROR
+  PLAYBACK_ERROR
+  MANUAL
+}
+
+enum PlayerHealthIncidentSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum PlayerHealthIncidentStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+}
+
 enum TrackStatus {
   DRAFT
   READY
@@ -899,99 +924,101 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  memberships                      OrganisationMember[]
-  auditLogs                        AuditLog[]                       @relation("AuditActor")
-  sessions                         Session[]
-  submittedPromoVersions           PromoVersion[]                   @relation("PromoVersionSubmittedBy")
-  reviewedPromoVersions            PromoVersion[]                   @relation("PromoVersionReviewedBy")
-  publishedCampaigns               Campaign[]                       @relation("CampaignPublishedBy")
-  reportExports                    ReportExportJob[]                @relation("ReportExportRequestedBy")
-  confirmedTrackRights             Track[]                          @relation("TrackRightsConfirmedBy")
-  createdSchoolAnnouncements       SchoolAnnouncement[]             @relation("SchoolAnnouncementCreatedBy")
-  reviewedSchoolAnnouncements      SchoolAnnouncement[]             @relation("SchoolAnnouncementReviewedBy")
-  createdSchoolNoticeboardPosts    SchoolNoticeboardPost[]          @relation("SchoolNoticeboardCreatedBy")
-  cancelledSchoolNoticeboardPosts  SchoolNoticeboardPost[]          @relation("SchoolNoticeboardCancelledBy")
-  approvedSchoolSlots              SchoolBroadcastSlot[]            @relation("SchoolBroadcastSlotApprovedBy")
-  createdProductionOrders          ProductionOrder[]                @relation("ProductionOrderCreatedBy")
-  assignedProductionOrders         ProductionOrder[]                @relation("ProductionOrderAssignedTo")
-  productionOrderEvents            ProductionOrderEvent[]           @relation("ProductionOrderEventActor")
-  productionOrderFiles             ProductionOrderFile[]            @relation("ProductionOrderFileUploadedBy")
-  productionScriptVersions         ProductionScriptVersion[]        @relation("ProductionScriptVersionCreatedBy")
-  requestedProductionRevisions     ProductionRevisionRequest[]      @relation("ProductionRevisionRequestedBy")
-  resolvedProductionRevisions      ProductionRevisionRequest[]      @relation("ProductionRevisionResolvedBy")
-  productionCreditEntries          ProductionCreditLedgerEntry[]    @relation("ProductionCreditEntryActor")
-  schoolSupervisions               StaffSupervisor[]                @relation("SchoolSupervisorUser")
-  createdStudentGroups             StudentGroup[]                   @relation("StudentGroupCreatedBy")
-  createdSchoolProgrammes          SchoolProgramme[]                @relation("SchoolProgrammeCreatedBy")
-  createdSchoolEpisodes            SchoolEpisode[]                  @relation("SchoolEpisodeCreatedBy")
-  schoolSubmissions                SchoolSubmission[]               @relation("SchoolSubmissionSubmittedBy")
-  schoolModerationReviews          SchoolModerationReview[]         @relation("SchoolModerationReviewer")
-  recordedConsentRecords           ConsentRecord[]                  @relation("ConsentRecordedBy")
-  createdAudioProjects             AudioProject[]                   @relation("AudioProjectCreatedBy")
-  audioProjectVersions             AudioProjectVersion[]            @relation("AudioProjectVersionCreatedBy")
-  recordedAudioTakes               AudioTake[]                      @relation("AudioTakeRecordedBy")
-  schoolAudioUploads               SchoolAudioUploadSession[]       @relation("SchoolAudioUploadCreatedBy")
-  createdAudioMarkers              AudioMarker[]                    @relation("AudioMarkerCreatedBy")
-  requestedAudioRenders            AudioRender[]                    @relation("AudioRenderRequestedBy")
-  createdSchoolRundowns            SchoolRundown[]                  @relation("SchoolRundownCreatedBy")
-  reviewedSchoolRundowns           SchoolRundown[]                  @relation("SchoolRundownReviewedBy")
-  createdPodcastSeries             SchoolPodcastSeries[]            @relation("SchoolPodcastSeriesCreatedBy")
-  createdPodcastEpisodes           SchoolPodcastEpisode[]           @relation("SchoolPodcastEpisodeCreatedBy")
-  reviewedPodcastEpisodes          SchoolPodcastEpisode[]           @relation("SchoolPodcastEpisodeReviewedBy")
-  schoolPublicationDecisions       SchoolPublicationDecision[]      @relation("SchoolPublicationDecisionActor")
-  createdNewsStories               SchoolNewsStory[]                @relation("SchoolNewsStoryCreatedBy")
-  assignedNewsStories              SchoolNewsStory[]                @relation("SchoolNewsStoryAssignedTo")
-  reviewedNewsStories              SchoolNewsStory[]                @relation("SchoolNewsStoryReviewedBy")
-  supervisedLiveSessions           LiveStudioSession[]              @relation("LiveStudioSupervisor")
-  createdAssignments               Assignment[]                     @relation("AssignmentCreatedBy")
-  recordedAssignmentSubmissions    AssignmentSubmission[]           @relation("AssignmentSubmissionRecordedBy")
-  assignmentAssessments            Assessment[]                     @relation("AssessmentAssessedBy")
-  createdPortfolioEntries          PortfolioEntry[]                 @relation("PortfolioEntryCreatedBy")
-  createdSchoolNetworks            SchoolNetwork[]                  @relation("SchoolNetworkCreatedBy")
-  schoolNetworkMemberships         SchoolNetworkMember[]
-  createdSchoolEpisodeExchanges    SchoolEpisodeExchangeOffer[]     @relation("SchoolEpisodeExchangeCreatedBy")
-  requestedSchoolEpisodeExchanges  SchoolEpisodeExchangeRequest[]   @relation("SchoolEpisodeExchangeRequestedBy")
-  decidedSchoolEpisodeExchanges    SchoolEpisodeExchangeRequest[]   @relation("SchoolEpisodeExchangeDecidedBy")
-  importedSchoolEpisodeExchanges   SchoolEpisodeExchangeRequest[]   @relation("SchoolEpisodeExchangeImportedBy")
-  schoolSafeguardingReviews        SchoolSafeguardingReview[]       @relation("SchoolSafeguardingReviewReviewer")
-  createdSchoolRetentionHolds      SchoolRetentionHold[]            @relation("SchoolRetentionHoldCreatedBy")
-  releasedSchoolRetentionHolds     SchoolRetentionHold[]            @relation("SchoolRetentionHoldReleasedBy")
-  updatedSchoolPilotReadiness      SchoolPilotReadiness[]           @relation("SchoolPilotReadinessUpdatedBy")
-  createdSchoolPilotRuns           SchoolPilotRun[]                 @relation("SchoolPilotRunCreatedBy")
-  updatedSchoolPilotRuns           SchoolPilotRun[]                 @relation("SchoolPilotRunUpdatedBy")
-  createdSchoolPilotEvents         SchoolPilotEvent[]               @relation("SchoolPilotEventCreatedBy")
-  acknowledgedSchoolPilotEvents    SchoolPilotEvent[]               @relation("SchoolPilotEventAcknowledgedBy")
-  resolvedSchoolPilotEvents        SchoolPilotEvent[]               @relation("SchoolPilotEventResolvedBy")
-  schoolStudentAccess              SchoolStudentAccess?             @relation("SchoolStudentAccessUser")
-  invitedSchoolStudentAccess       SchoolStudentAccess[]            @relation("SchoolStudentAccessInvitedBy")
-  enterpriseIdentityLinks          EnterpriseIdentityLink[]
-  createdServiceAccounts           ServiceAccount[]                 @relation("ServiceAccountCreatedBy")
-  createdCompliancePolicies        CompliancePolicy[]               @relation("CompliancePolicyCreatedBy")
-  policyAcceptances                PolicyAcceptance[]               @relation("PolicyAcceptanceAcceptedBy")
-  requestedDataRequests            DataRequest[]                    @relation("DataRequestRequestedBy")
-  subjectDataRequests              DataRequest[]                    @relation("DataRequestSubjectUser")
-  completedDataRequests            DataRequest[]                    @relation("DataRequestCompletedBy")
-  reviewedRetentionPolicies        RetentionPolicy[]                @relation("RetentionPolicyReviewedBy")
-  requestedRetentionJobs           RetentionJob[]                   @relation("RetentionJobRequestedBy")
-  createdSupportTickets            SupportTicket[]                  @relation("SupportTicketCreatedBy")
-  assignedSupportTickets           SupportTicket[]                  @relation("SupportTicketAssignedTo")
-  requestedAIJobs                  AIJob[]                          @relation("AIJobRequestedBy")
-  reviewedAIJobs                   AIJob[]                          @relation("AIJobReviewedBy")
-  recommendationFeedback           RecommendationFeedback[]
-  createdIntegrationConnections    IntegrationConnection[]          @relation("IntegrationConnectionCreatedBy")
-  createdRetailMediaInventory      RetailMediaInventoryPackage[]    @relation("RetailMediaInventoryCreatedBy")
-  approvedRetailMediaOrders        RetailMediaOrder[]               @relation("RetailMediaOrderApprovedBy")
-  fulfilledRetailMediaOrders       RetailMediaOrder[]               @relation("RetailMediaOrderFulfilledBy")
-  reviewedRetailMediaCreatives     RetailMediaOrderCreative[]       @relation("RetailMediaCreativeReviewedBy")
-  reviewedRetailMediaVisuals       RetailMediaOrderVisualCreative[] @relation("RetailMediaVisualCreativeReviewedBy")
-  uploadedDigitalSignageAssets     DigitalSignageAsset[]            @relation("DigitalSignageAssetUploadedBy")
-  createdDigitalSignageLayouts     DigitalSignageLayout[]           @relation("DigitalSignageLayoutCreatedBy")
-  createdDigitalSignageDevices     DigitalSignageDevice[]           @relation("DigitalSignageDeviceCreatedBy")
-  createdDigitalSignagePlaylists   DigitalSignagePlaylist[]         @relation("DigitalSignagePlaylistCreatedBy")
-  publishedDigitalSignagePlaylists DigitalSignagePlaylist[]         @relation("DigitalSignagePlaylistPublishedBy")
-  createdDigitalSignageTakeovers   DigitalSignageTakeover[]         @relation("DigitalSignageTakeoverCreatedBy")
-  activatedDigitalSignageTakeovers DigitalSignageTakeover[]         @relation("DigitalSignageTakeoverActivatedBy")
-  endedDigitalSignageTakeovers     DigitalSignageTakeover[]         @relation("DigitalSignageTakeoverEndedBy")
+  memberships                       OrganisationMember[]
+  auditLogs                         AuditLog[]                       @relation("AuditActor")
+  sessions                          Session[]
+  submittedPromoVersions            PromoVersion[]                   @relation("PromoVersionSubmittedBy")
+  reviewedPromoVersions             PromoVersion[]                   @relation("PromoVersionReviewedBy")
+  publishedCampaigns                Campaign[]                       @relation("CampaignPublishedBy")
+  reportExports                     ReportExportJob[]                @relation("ReportExportRequestedBy")
+  confirmedTrackRights              Track[]                          @relation("TrackRightsConfirmedBy")
+  createdSchoolAnnouncements        SchoolAnnouncement[]             @relation("SchoolAnnouncementCreatedBy")
+  reviewedSchoolAnnouncements       SchoolAnnouncement[]             @relation("SchoolAnnouncementReviewedBy")
+  createdSchoolNoticeboardPosts     SchoolNoticeboardPost[]          @relation("SchoolNoticeboardCreatedBy")
+  cancelledSchoolNoticeboardPosts   SchoolNoticeboardPost[]          @relation("SchoolNoticeboardCancelledBy")
+  approvedSchoolSlots               SchoolBroadcastSlot[]            @relation("SchoolBroadcastSlotApprovedBy")
+  createdProductionOrders           ProductionOrder[]                @relation("ProductionOrderCreatedBy")
+  assignedProductionOrders          ProductionOrder[]                @relation("ProductionOrderAssignedTo")
+  productionOrderEvents             ProductionOrderEvent[]           @relation("ProductionOrderEventActor")
+  productionOrderFiles              ProductionOrderFile[]            @relation("ProductionOrderFileUploadedBy")
+  productionScriptVersions          ProductionScriptVersion[]        @relation("ProductionScriptVersionCreatedBy")
+  requestedProductionRevisions      ProductionRevisionRequest[]      @relation("ProductionRevisionRequestedBy")
+  resolvedProductionRevisions       ProductionRevisionRequest[]      @relation("ProductionRevisionResolvedBy")
+  productionCreditEntries           ProductionCreditLedgerEntry[]    @relation("ProductionCreditEntryActor")
+  schoolSupervisions                StaffSupervisor[]                @relation("SchoolSupervisorUser")
+  createdStudentGroups              StudentGroup[]                   @relation("StudentGroupCreatedBy")
+  createdSchoolProgrammes           SchoolProgramme[]                @relation("SchoolProgrammeCreatedBy")
+  createdSchoolEpisodes             SchoolEpisode[]                  @relation("SchoolEpisodeCreatedBy")
+  schoolSubmissions                 SchoolSubmission[]               @relation("SchoolSubmissionSubmittedBy")
+  schoolModerationReviews           SchoolModerationReview[]         @relation("SchoolModerationReviewer")
+  recordedConsentRecords            ConsentRecord[]                  @relation("ConsentRecordedBy")
+  createdAudioProjects              AudioProject[]                   @relation("AudioProjectCreatedBy")
+  audioProjectVersions              AudioProjectVersion[]            @relation("AudioProjectVersionCreatedBy")
+  recordedAudioTakes                AudioTake[]                      @relation("AudioTakeRecordedBy")
+  schoolAudioUploads                SchoolAudioUploadSession[]       @relation("SchoolAudioUploadCreatedBy")
+  createdAudioMarkers               AudioMarker[]                    @relation("AudioMarkerCreatedBy")
+  requestedAudioRenders             AudioRender[]                    @relation("AudioRenderRequestedBy")
+  createdSchoolRundowns             SchoolRundown[]                  @relation("SchoolRundownCreatedBy")
+  reviewedSchoolRundowns            SchoolRundown[]                  @relation("SchoolRundownReviewedBy")
+  createdPodcastSeries              SchoolPodcastSeries[]            @relation("SchoolPodcastSeriesCreatedBy")
+  createdPodcastEpisodes            SchoolPodcastEpisode[]           @relation("SchoolPodcastEpisodeCreatedBy")
+  reviewedPodcastEpisodes           SchoolPodcastEpisode[]           @relation("SchoolPodcastEpisodeReviewedBy")
+  schoolPublicationDecisions        SchoolPublicationDecision[]      @relation("SchoolPublicationDecisionActor")
+  createdNewsStories                SchoolNewsStory[]                @relation("SchoolNewsStoryCreatedBy")
+  assignedNewsStories               SchoolNewsStory[]                @relation("SchoolNewsStoryAssignedTo")
+  reviewedNewsStories               SchoolNewsStory[]                @relation("SchoolNewsStoryReviewedBy")
+  supervisedLiveSessions            LiveStudioSession[]              @relation("LiveStudioSupervisor")
+  createdAssignments                Assignment[]                     @relation("AssignmentCreatedBy")
+  recordedAssignmentSubmissions     AssignmentSubmission[]           @relation("AssignmentSubmissionRecordedBy")
+  assignmentAssessments             Assessment[]                     @relation("AssessmentAssessedBy")
+  createdPortfolioEntries           PortfolioEntry[]                 @relation("PortfolioEntryCreatedBy")
+  createdSchoolNetworks             SchoolNetwork[]                  @relation("SchoolNetworkCreatedBy")
+  schoolNetworkMemberships          SchoolNetworkMember[]
+  createdSchoolEpisodeExchanges     SchoolEpisodeExchangeOffer[]     @relation("SchoolEpisodeExchangeCreatedBy")
+  requestedSchoolEpisodeExchanges   SchoolEpisodeExchangeRequest[]   @relation("SchoolEpisodeExchangeRequestedBy")
+  decidedSchoolEpisodeExchanges     SchoolEpisodeExchangeRequest[]   @relation("SchoolEpisodeExchangeDecidedBy")
+  importedSchoolEpisodeExchanges    SchoolEpisodeExchangeRequest[]   @relation("SchoolEpisodeExchangeImportedBy")
+  schoolSafeguardingReviews         SchoolSafeguardingReview[]       @relation("SchoolSafeguardingReviewReviewer")
+  createdSchoolRetentionHolds       SchoolRetentionHold[]            @relation("SchoolRetentionHoldCreatedBy")
+  releasedSchoolRetentionHolds      SchoolRetentionHold[]            @relation("SchoolRetentionHoldReleasedBy")
+  updatedSchoolPilotReadiness       SchoolPilotReadiness[]           @relation("SchoolPilotReadinessUpdatedBy")
+  createdSchoolPilotRuns            SchoolPilotRun[]                 @relation("SchoolPilotRunCreatedBy")
+  updatedSchoolPilotRuns            SchoolPilotRun[]                 @relation("SchoolPilotRunUpdatedBy")
+  createdSchoolPilotEvents          SchoolPilotEvent[]               @relation("SchoolPilotEventCreatedBy")
+  acknowledgedSchoolPilotEvents     SchoolPilotEvent[]               @relation("SchoolPilotEventAcknowledgedBy")
+  resolvedSchoolPilotEvents         SchoolPilotEvent[]               @relation("SchoolPilotEventResolvedBy")
+  schoolStudentAccess               SchoolStudentAccess?             @relation("SchoolStudentAccessUser")
+  invitedSchoolStudentAccess        SchoolStudentAccess[]            @relation("SchoolStudentAccessInvitedBy")
+  enterpriseIdentityLinks           EnterpriseIdentityLink[]
+  createdServiceAccounts            ServiceAccount[]                 @relation("ServiceAccountCreatedBy")
+  createdCompliancePolicies         CompliancePolicy[]               @relation("CompliancePolicyCreatedBy")
+  policyAcceptances                 PolicyAcceptance[]               @relation("PolicyAcceptanceAcceptedBy")
+  requestedDataRequests             DataRequest[]                    @relation("DataRequestRequestedBy")
+  subjectDataRequests               DataRequest[]                    @relation("DataRequestSubjectUser")
+  completedDataRequests             DataRequest[]                    @relation("DataRequestCompletedBy")
+  reviewedRetentionPolicies         RetentionPolicy[]                @relation("RetentionPolicyReviewedBy")
+  requestedRetentionJobs            RetentionJob[]                   @relation("RetentionJobRequestedBy")
+  createdSupportTickets             SupportTicket[]                  @relation("SupportTicketCreatedBy")
+  assignedSupportTickets            SupportTicket[]                  @relation("SupportTicketAssignedTo")
+  requestedAIJobs                   AIJob[]                          @relation("AIJobRequestedBy")
+  reviewedAIJobs                    AIJob[]                          @relation("AIJobReviewedBy")
+  recommendationFeedback            RecommendationFeedback[]
+  createdIntegrationConnections     IntegrationConnection[]          @relation("IntegrationConnectionCreatedBy")
+  createdRetailMediaInventory       RetailMediaInventoryPackage[]    @relation("RetailMediaInventoryCreatedBy")
+  approvedRetailMediaOrders         RetailMediaOrder[]               @relation("RetailMediaOrderApprovedBy")
+  fulfilledRetailMediaOrders        RetailMediaOrder[]               @relation("RetailMediaOrderFulfilledBy")
+  reviewedRetailMediaCreatives      RetailMediaOrderCreative[]       @relation("RetailMediaCreativeReviewedBy")
+  reviewedRetailMediaVisuals        RetailMediaOrderVisualCreative[] @relation("RetailMediaVisualCreativeReviewedBy")
+  uploadedDigitalSignageAssets      DigitalSignageAsset[]            @relation("DigitalSignageAssetUploadedBy")
+  createdDigitalSignageLayouts      DigitalSignageLayout[]           @relation("DigitalSignageLayoutCreatedBy")
+  createdDigitalSignageDevices      DigitalSignageDevice[]           @relation("DigitalSignageDeviceCreatedBy")
+  createdDigitalSignagePlaylists    DigitalSignagePlaylist[]         @relation("DigitalSignagePlaylistCreatedBy")
+  publishedDigitalSignagePlaylists  DigitalSignagePlaylist[]         @relation("DigitalSignagePlaylistPublishedBy")
+  createdDigitalSignageTakeovers    DigitalSignageTakeover[]         @relation("DigitalSignageTakeoverCreatedBy")
+  activatedDigitalSignageTakeovers  DigitalSignageTakeover[]         @relation("DigitalSignageTakeoverActivatedBy")
+  endedDigitalSignageTakeovers      DigitalSignageTakeover[]         @relation("DigitalSignageTakeoverEndedBy")
+  acknowledgedPlayerHealthIncidents PlayerHealthIncident[]           @relation("PlayerHealthIncidentAcknowledgedBy")
+  resolvedPlayerHealthIncidents     PlayerHealthIncident[]           @relation("PlayerHealthIncidentResolvedBy")
 }
 
 model Organisation {
@@ -1082,6 +1109,8 @@ model Organisation {
   integrationSyncRuns              IntegrationSyncRun[]
   integrationMetricSummaries       IntegrationMetricSummary[]
   outgoingWebhookEvents            OutgoingWebhookEvent[]
+  playerHeartbeatSamples           PlayerHeartbeatSample[]
+  playerHealthIncidents            PlayerHealthIncident[]
   retailMediaPartners              RetailMediaPartner[]
   retailMediaInventory             RetailMediaInventoryPackage[]
   retailMediaOrders                RetailMediaOrder[]
@@ -4058,15 +4087,74 @@ model Player {
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
 
-  organisation      Organisation       @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  zone              Zone               @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  organisation      Organisation            @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  zone              Zone                    @relation(fields: [zoneId], references: [id], onDelete: Cascade)
   proofOfPlayEvents ProofOfPlayEvent[]
   playoutIntents    PlayoutIntent[]
+  heartbeatSamples  PlayerHeartbeatSample[]
+  healthIncidents   PlayerHealthIncident[]
 
   @@index([organisationId])
   @@index([zoneId])
   @@index([organisationId, status])
   @@index([lastHeartbeatAt])
+}
+
+model PlayerHeartbeatSample {
+  id              String                    @id @default(cuid())
+  organisationId  String
+  playerId        String
+  locationId      String
+  zoneId          String
+  kind            PlayerHeartbeatSampleKind @default(PERIODIC)
+  bucketStart     DateTime
+  observedAt      DateTime
+  appVersion      String?
+  manifestVersion String?
+  sourceStatus    String?
+  createdAt       DateTime                  @default(now())
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  player       Player       @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([playerId, bucketStart])
+  @@index([organisationId, observedAt])
+  @@index([locationId, observedAt])
+  @@index([zoneId, observedAt])
+}
+
+model PlayerHealthIncident {
+  id                  String                       @id @default(cuid())
+  organisationId      String
+  playerId            String
+  locationId          String
+  zoneId              String
+  kind                PlayerHealthIncidentKind     @default(HEARTBEAT_MISSED)
+  severity            PlayerHealthIncidentSeverity @default(LOW)
+  status              PlayerHealthIncidentStatus   @default(OPEN)
+  firstObservedAt     DateTime
+  lastObservedAt      DateTime
+  summary             String
+  details             Json?
+  acknowledgedAt      DateTime?
+  acknowledgedById    String?
+  acknowledgementNote String?
+  resolutionNote      String?
+  resolvedAt          DateTime?
+  resolvedById        String?
+  createdAt           DateTime                     @default(now())
+  updatedAt           DateTime                     @updatedAt
+
+  organisation   Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  player         Player       @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  acknowledgedBy User?        @relation("PlayerHealthIncidentAcknowledgedBy", fields: [acknowledgedById], references: [id], onDelete: SetNull)
+  resolvedBy     User?        @relation("PlayerHealthIncidentResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull)
+
+  @@index([organisationId, status, severity])
+  @@index([playerId, status])
+  @@index([locationId, firstObservedAt])
+  @@index([zoneId, firstObservedAt])
+  @@index([firstObservedAt])
 }
 
 model PlayoutIntent {

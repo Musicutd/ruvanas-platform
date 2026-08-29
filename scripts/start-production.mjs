@@ -10,6 +10,9 @@ const start = (command, args) => {
 
 const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
 const web = start(npmCommand, ["run", "start:web", "--", ...process.argv.slice(2)]);
+if (process.env.DATABASE_URL?.trim()) {
+  start(process.execPath, ["scripts/operations-worker.mjs"]);
+}
 if (requiredWorkerEnvironment.every((name) => process.env[name]?.trim())) {
   start(process.execPath, ["scripts/audio-worker.mjs"]);
 } else {

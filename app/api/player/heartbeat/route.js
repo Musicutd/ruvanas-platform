@@ -3,6 +3,9 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentPlayer } from "@/lib/player-auth";
 import { analyticsHourBucket } from "@/lib/operational-analytics.mjs";
 import { queueOutgoingWebhookEvent } from "@/lib/outgoing-webhook-service";
+import { effectivePlayerStatus } from "@/lib/player-tokens.mjs";
+import { normalizeHeartbeatDiagnostics } from "@/lib/player-health.mjs";
+import { recordHeartbeatOperationalEvidence } from "@/lib/player-health-service";
 
 export async function POST(request) {
   try {
@@ -19,9 +22,11 @@ export async function POST(request) {
     const ipAddress = forwardedFor?.split(",")[0]?.trim() || null;
     const userAgent = request.headers.get("user-agent")?.slice(0, 500) || null;
     const now = new Date();
+    const diagnostics = normalizeHeartbeatDiagnostics(await request.json().catch(() => ({})));
+    const previousHealth = effectivePlayerStatus(player, now);
 
     const bucketStart = analyticsHourBucket(now);
-    await prisma.$transaction(async (tx) => {
+    const operationalEvidence = await prisma.$transaction(async (tx) => {
       await tx.player.update({
         where: { id: player.id },
         data: {
@@ -31,6 +36,7 @@ export async function POST(request) {
           lastUserAgent: userAgent
         }
       });
+      const evidence = await recordHeartbeatOperationalEvidence(tx, { player, now, diagnostics });
       await tx.analyticsHourlyAggregate.upsert({
         where: {
           organisationId_playerId_bucketStart: {
@@ -71,7 +77,7 @@ export async function POST(request) {
         },
         data: { firstHeartbeatAt: now }
       });
-      if (player.status !== "ONLINE") {
+      if (previousHealth !== "ONLINE") {
         await queueOutgoingWebhookEvent(tx, {
           organisationId: player.organisationId,
           eventType: "player.health_changed",
@@ -80,9 +86,10 @@ export async function POST(request) {
           payload: { playerId: player.id, locationId: player.zone.location.id, zoneId: player.zone.id, status: "ONLINE", changedAt: now.toISOString() }
         });
       }
+      return evidence;
     });
 
-    return NextResponse.json({ ok: true, receivedAt: now });
+    return NextResponse.json({ ok: true, receivedAt: now, recovered: operationalEvidence.recovered });
   } catch (error) {
     console.error("Player heartbeat error:", error);
     return NextResponse.json(
