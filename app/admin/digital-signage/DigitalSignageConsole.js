@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-const emptyData = { assets: [], layouts: [], devices: [] };
+const emptyData = { assets: [], layouts: [], devices: [], playlists: [] };
 
 export default function DigitalSignageConsole({ organisations, showOrganisationSelector = true }) {
   const enabledOrganisations = organisations.filter((item) => item.digitalSignageEnabled);
@@ -19,15 +19,16 @@ export default function DigitalSignageConsole({ organisations, showOrganisationS
     setLoading(true); setMessage("");
     try {
       const query = `?organisationId=${encodeURIComponent(organisationId)}`;
-      const [assetsResponse, layoutsResponse, devicesResponse] = await Promise.all([
+      const [assetsResponse, layoutsResponse, devicesResponse, playlistsResponse] = await Promise.all([
         fetch(`/api/admin/digital-signage/assets${query}`),
         fetch(`/api/admin/digital-signage/layouts${query}`),
-        fetch(`/api/admin/digital-signage/devices${query}`)
+        fetch(`/api/admin/digital-signage/devices${query}`),
+        fetch(`/api/admin/digital-signage/playlists${query}`)
       ]);
-      const [assets, layouts, devices] = await Promise.all([assetsResponse.json(), layoutsResponse.json(), devicesResponse.json()]);
-      const failed = [[assetsResponse, assets], [layoutsResponse, layouts], [devicesResponse, devices]].find(([response]) => !response.ok);
+      const [assets, layouts, devices, playlists] = await Promise.all([assetsResponse.json(), layoutsResponse.json(), devicesResponse.json(), playlistsResponse.json()]);
+      const failed = [[assetsResponse, assets], [layoutsResponse, layouts], [devicesResponse, devices], [playlistsResponse, playlists]].find(([response]) => !response.ok);
       if (failed) throw new Error(failed[1].error || "Unable to load the signage workspace.");
-      setData({ assets: assets.assets, layouts: layouts.layouts, devices: devices.devices });
+      setData({ assets: assets.assets, layouts: layouts.layouts, devices: devices.devices, playlists: playlists.playlists });
     } catch (error) { setMessage(error instanceof Error ? error.message : "Unable to load the signage workspace."); }
     finally { setLoading(false); }
   }
@@ -91,10 +92,46 @@ export default function DigitalSignageConsole({ organisations, showOrganisationS
     finally { setBusy(""); }
   }
 
+  async function createPlaylist(event) {
+    event.preventDefault(); setBusy("playlist"); setMessage("");
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    const layout = data.layouts.find((item) => item.id === formData.get("layoutId"));
+    try {
+      if (!layout?.regions?.[0]) throw new Error("Create a layout with at least one region first.");
+      const response = await fetch("/api/admin/digital-signage/playlists", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+        organisationId,
+        name: formData.get("name"),
+        layoutId: layout.id,
+        deviceIds: [formData.get("deviceId")],
+        activeDays: [0, 1, 2, 3, 4, 5, 6],
+        dailyStart: formData.get("dailyStart"),
+        dailyEnd: formData.get("dailyEnd"),
+        priority: Number(formData.get("priority")),
+        items: [{ regionId: layout.regions[0].id, assetId: formData.get("assetId"), durationSeconds: Number(formData.get("durationSeconds")) }]
+      }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Unable to create the visual playlist.");
+      form.reset(); await load(); setMessage("Visual playlist saved as a draft. Review it, then publish it to the assigned display.");
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Unable to create the visual playlist."); }
+    finally { setBusy(""); }
+  }
+
+  async function updatePlaylist(playlistId, action) {
+    setBusy(playlistId); setMessage("");
+    try {
+      const response = await fetch(`/api/admin/digital-signage/playlists/${playlistId}/publish`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Unable to update the visual playlist.");
+      await load(); setMessage(action === "PUBLISH" ? "Visual playlist published. Assigned displays will receive it securely." : "Visual playlist paused.");
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Unable to update the visual playlist."); }
+    finally { setBusy(""); }
+  }
+
   return <main style={styles.page}>
-    <p style={styles.eyebrow}>Stage 7B</p>
-    <h1 style={styles.title}>Digital Signage foundation</h1>
-    <p style={styles.copy}>Prepare approved visual assets, reusable screen layouts, and tenant-owned display devices. Scheduling and combined audio/visual proof remain gated for the next stage.</p>
+    <p style={styles.eyebrow}>Stage 7C</p>
+    <h1 style={styles.title}>Digital Signage delivery</h1>
+    <p style={styles.copy}>Prepare approved visuals and layouts, register tenant-owned displays, then publish time-windowed playlists through a separate secure display player with offline-safe delivery and device-confirmed evidence.</p>
 
     {showOrganisationSelector ? <label style={styles.label}>Organisation
       <select value={organisationId} onChange={(event) => setOrganisationId(event.target.value)} style={styles.input}>
@@ -139,6 +176,23 @@ export default function DigitalSignageConsole({ organisations, showOrganisationS
           <p style={styles.count}>{data.devices.length} registered device{data.devices.length === 1 ? "" : "s"}</p>
           {data.devices.slice(0, 5).map((device) => <div key={device.id} style={styles.row}><strong>{device.name}</strong><span>{device.zone.location.name} · {device.status}</span></div>)}
         </form>
+
+        <form onSubmit={createPlaylist} style={styles.card}>
+          <h2 style={styles.cardTitle}>Scheduled visual playlists</h2>
+          <p style={styles.small}>Create a reviewed draft, assign it to one display, and publish it when ready. The first safe workflow uses the layout's primary region; multi-region delivery is supported by the manifest.</p>
+          <label style={styles.label}>Playlist name<input name="name" required maxLength={200} style={styles.input} /></label>
+          <label style={styles.label}>Layout<select name="layoutId" required style={styles.input}><option value="">Select a layout</option>{data.layouts.map((layout) => <option key={layout.id} value={layout.id}>{layout.name}</option>)}</select></label>
+          <label style={styles.label}>Visual asset<select name="assetId" required style={styles.input}><option value="">Select an image</option>{data.assets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}</select></label>
+          <label style={styles.label}>Display device<select name="deviceId" required style={styles.input}><option value="">Select a display</option>{data.devices.map((device) => <option key={device.id} value={device.id}>{device.name} — {device.zone.location.name}</option>)}</select></label>
+          <div style={styles.two}><label style={styles.label}>Daily start<input name="dailyStart" type="time" defaultValue="06:00" required style={styles.input} /></label><label style={styles.label}>Daily end<input name="dailyEnd" type="time" defaultValue="23:00" required style={styles.input} /></label></div>
+          <div style={styles.two}><label style={styles.label}>Seconds per visual<input name="durationSeconds" type="number" min="3" max="86400" defaultValue="10" required style={styles.input} /></label><label style={styles.label}>Priority<input name="priority" type="number" min="0" max="100" defaultValue="0" required style={styles.input} /></label></div>
+          <button disabled={busy === "playlist" || !data.assets.length || !data.layouts.length || !data.devices.length} style={styles.button}>{busy === "playlist" ? "Creating…" : "Create playlist draft"}</button>
+          <p style={styles.count}>{data.playlists.length} visual playlist{data.playlists.length === 1 ? "" : "s"}</p>
+          {data.playlists.slice(0, 8).map((playlist) => <div key={playlist.id} style={styles.row}>
+            <strong>{playlist.name}</strong><span>{playlist.layout.name} · {playlist.status} · priority {playlist.priority}</span>
+            <button type="button" disabled={busy === playlist.id} onClick={() => updatePlaylist(playlist.id, playlist.status === "PUBLISHED" ? "PAUSE" : "PUBLISH")} style={styles.smallButton}>{playlist.status === "PUBLISHED" ? "Pause" : "Publish"}</button>
+          </div>)}
+        </form>
       </section>
     </>}
   </main>;
@@ -159,6 +213,7 @@ const styles = {
   input: { minHeight: 41, border: "1px solid #94a3b8", borderRadius: 7, padding: "8px 10px", background: "#fff", color: "#0f172a" },
   two: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 },
   button: { minHeight: 42, border: 0, borderRadius: 7, padding: "10px 14px", background: "#0f172a", color: "#fff", fontWeight: 900, cursor: "pointer" },
+  smallButton: { justifySelf: "start", minHeight: 34, border: "1px solid #0f172a", borderRadius: 6, padding: "6px 10px", background: "#fff", color: "#0f172a", fontWeight: 800, cursor: "pointer" },
   count: { margin: "8px 0 0", color: "#9a6400", fontSize: 12, fontWeight: 900, textTransform: "uppercase" },
   row: { display: "grid", gap: 3, paddingTop: 10, borderTop: "1px solid #e2e8f0", color: "#334155", fontSize: 13 }
 };
