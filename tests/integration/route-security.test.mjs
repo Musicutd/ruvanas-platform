@@ -899,12 +899,48 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
       assert.equal(addSchool.status, 201, await addSchool.clone().text());
     }
 
+    const exchangeMedia = await db.mediaAsset.create({
+      data: {
+        organisationId: accountABody.organisation.id,
+        name: `School exchange episode ${suffix}`,
+        originalName: "school-exchange-episode.mp3",
+        storageKey: `integration/school-exchange/${suffix}.mp3`,
+        mimeType: "audio/mpeg",
+        sizeBytes: 4096n,
+        durationSeconds: 180,
+        mediaType: "ANNOUNCEMENT",
+        libraryType: "ORGANISATION_PROMO",
+        status: "READY"
+      }
+    });
+    const exchangePromoAsset = await db.promoAsset.create({
+      data: {
+        organisationId: accountABody.organisation.id,
+        name: `School exchange episode ${suffix}`,
+        mediaType: "ANNOUNCEMENT",
+        languageCode: "en"
+      }
+    });
+    const exchangePromoVersion = await db.promoVersion.create({
+      data: {
+        promoAssetId: exchangePromoAsset.id,
+        mediaAssetId: exchangeMedia.id,
+        version: 1,
+        status: "APPROVED",
+        qcStatus: "PASSED",
+        languageCode: "en",
+        durationSeconds: 180,
+        reviewedAt: new Date()
+      }
+    });
+    await db.promoAsset.update({ where: { id: exchangePromoAsset.id }, data: { currentApprovedVersionId: exchangePromoVersion.id } });
+
     await db.schoolEpisode.update({ where: { id: schoolEpisode.id }, data: { status: "APPROVED", approvedAt: new Date() } });
     await db.schoolSubmission.create({
       data: {
         organisationId: accountABody.organisation.id,
         episodeId: schoolEpisode.id,
-        promoVersionId: promoVersion.id,
+        promoVersionId: exchangePromoVersion.id,
         revision: 1,
         status: "SUBMITTED",
         submittedByUserId: accountABody.user.id
@@ -1009,7 +1045,7 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     assert.equal(targetExchangeBody.offers.length, 1);
     assert.equal(targetExchangeBody.offers[0].sourceSchool.id, accountABody.organisation.id);
     assert.equal(JSON.stringify(targetExchangeBody).includes(schoolEpisode.id), false);
-    assert.equal(JSON.stringify(targetExchangeBody).includes(promoVersion.id), false);
+    assert.equal(JSON.stringify(targetExchangeBody).includes(exchangePromoVersion.id), false);
     assert.equal(targetExchangeBody.safety.studentIdentitiesShared, false);
 
     const requestExchangeAccess = await api("/api/school-radio/network/exchange", {
@@ -1040,7 +1076,7 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     assert.equal(importExchange.status, 201, await importExchange.clone().text());
     const importedAnnouncement = (await importExchange.json()).result;
     assert.equal(importedAnnouncement.organisationId, createdOrganisation.id);
-    assert.equal(importedAnnouncement.promoVersionId, promoVersion.id);
+    assert.equal(importedAnnouncement.promoVersionId, exchangePromoVersion.id);
     assert.equal(importedAnnouncement.status, "IN_REVIEW");
 
     const returnToExchangeSource = await api("/api/me/organisation", {
