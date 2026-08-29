@@ -15,6 +15,10 @@ export default async function DashboardPage() {
 
   const { user, membership, memberships } = context;
 
+  if (user.role === "STUDENT") {
+    redirect("/school-student");
+  }
+
   if (!membership) {
     redirect("/register");
   }

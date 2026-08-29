@@ -28,7 +28,7 @@ export default async function SchoolSafeguardingReviewPage() {
     <p style={styles.eyebrow}>Stage 9B1 · Controlled safeguarding decisions</p>
     <h1 style={styles.title}>School safeguarding review</h1>
     <p style={styles.description}>Review submitted school policy packs, request precise changes, and preserve an auditable snapshot of each decision.</p>
-    <div style={styles.notice}><strong>Safety boundary:</strong> approval confirms the readiness pack only. It does not enable student accounts, direct messaging, or public publishing.</div>
+    <div style={styles.notice}><strong>Safety boundary:</strong> approval confirms the readiness pack and may unlock the separate invitation workflow. It never creates student accounts automatically and does not enable direct messaging, public publishing, or staff permissions.</div>
     <SchoolSafeguardingReviewConsole readinessPacks={serializable(readinessPacks)} />
   </main>;
 }

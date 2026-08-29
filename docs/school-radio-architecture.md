@@ -52,6 +52,7 @@ The initial model should be added only after the core organisation and schedulin
 - `Episode`: an individual production with status, media, contributors, and publication settings.
 - `BroadcastSlot`: a scheduled occurrence that links an approved episode or live programme to an existing Ruvanas channel.
 - `StudentContributor`: a school-managed, minimal profile or pseudonym. It should not automatically be a normal platform user.
+- `SchoolStudentAccess`: an optional, separately approved invitation link between one contributor and a least-privilege student user. It never creates organisation membership.
 - `StaffSupervisor`: a link between an existing authorised membership and the programmes or groups they supervise.
 - `ConsentRecord`: minimal evidence of the applicable school or guardian consent, its scope, expiry, and revocation. Avoid storing document contents unless required.
 - `Submission`: an uploaded recording, script, artwork, or metadata revision awaiting review.
@@ -87,7 +88,7 @@ Existing platform administrators may grant roles but should not silently receive
 ## Safeguarding and privacy requirements
 
 - Default student identities to private, school-managed display names or pseudonyms.
-- Do not require student email addresses or direct student logins for the first release.
+- Do not require student email addresses or direct student logins for staff-managed participation. A later guarded workspace may collect an invitation email only after the school's safeguarding approval and current consent.
 - Never expose a minor's personal data in public programme, episode, player, or analytics responses.
 - Require staff approval before scheduling or publishing student-created material.
 - Keep an immutable audit history of submissions, decisions, schedule changes, and publication changes.
@@ -102,7 +103,7 @@ Legal and safeguarding requirements vary by country and school. Product discover
 
 - Reuse existing `Channel`, player enrolment, streaming, media storage, and scheduling services.
 - Extend the shared schedule through `BroadcastSlot`; do not build a second playback scheduler.
-- Reuse organisation membership for adult staff. Keep student contributor identity separate until a guarded student-access design is approved.
+- Reuse organisation membership for adult staff. Keep student contributor identity and guarded student access separate from organisation membership.
 - Add capability checks at navigation, page, API, and service layers. Hiding a menu item is not access control.
 - Keep School Radio APIs under an explicit namespace and include organisation-scoping tests for every operation.
 

@@ -128,7 +128,7 @@ export default function SchoolSafeguardingReadinessClient() {
       {data.gaps.length ? <div style={styles.gaps}><strong>Still needed before review</strong><ul>{data.gaps.map((gap) => <li key={gap}>{gap}</li>)}</ul></div> : <p style={styles.ready}>All required policy details are present. An owner or manager can submit the pack for review.</p>}
       {canManage ? <div style={styles.actions}><button type="button" style={styles.secondary} disabled={working} onClick={() => save("SAVE_DRAFT")}>Save draft</button><button type="button" style={styles.primary} disabled={working} onClick={() => save("SUBMIT_FOR_REVIEW")}>Submit for review</button></div> : <p style={styles.muted}>{data.permissions.locked ? "This policy pack is read-only while its reviewed state is preserved." : "An organisation owner or manager maintains this policy pack."}</p>}
     </div>
-    <p style={styles.privacy}>Safety boundary: this is a readiness record only. Direct student access requires a separate reviewed release and remains hard-disabled.</p>
+    <p style={styles.privacy}>Safety boundary: safeguarding approval unlocks only the separate Stage 9B2 invitation workflow. Staff permissions, direct messaging, public publishing, and cross-school authority remain disabled for students.</p>
   </section>;
 }
 

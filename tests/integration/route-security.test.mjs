@@ -218,6 +218,15 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   const unauthenticatedSafeguardingDecision = await api("/api/admin/school-safeguarding", { method: "POST", body: { readinessId: "not-a-readiness", decision: "APPROVED" } });
   assert.equal(unauthenticatedSafeguardingDecision.status, 401);
 
+  const unauthenticatedStudentAccess = await api("/api/school-radio/student-access");
+  assert.equal(unauthenticatedStudentAccess.status, 401);
+
+  const unauthenticatedStudentInvitationAccept = await api("/api/school-student/accept", { method: "POST", body: { token: "a".repeat(64), password: "student-password-123" } });
+  assert.equal(unauthenticatedStudentInvitationAccept.status, 410);
+
+  const unauthenticatedStudentWorkspace = await api("/api/school-student/workspace");
+  assert.equal(unauthenticatedStudentWorkspace.status, 401);
+
   const unauthenticatedWaveformEditor = await api("/api/school-radio/audio-lab/projects/not-a-project/editor");
   assert.equal(unauthenticatedWaveformEditor.status, 401);
 
@@ -928,6 +937,69 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     });
     assert.equal(schoolGroupResponse.status, 201, await schoolGroupResponse.clone().text());
     const schoolGroup = (await schoolGroupResponse.json()).result;
+
+    const schoolContributorResponse = await api("/api/school-radio/editorial", {
+      method: "POST", cookie: cookieA,
+      body: { action: "CREATE_CONTRIBUTOR", studentGroupId: schoolGroup.id, displayName: "Integration Student", referenceCode: `student-${suffix}` }
+    });
+    assert.equal(schoolContributorResponse.status, 201, await schoolContributorResponse.clone().text());
+    const schoolContributor = (await schoolContributorResponse.json()).result;
+    const studentEmail = `integration-student-${suffix}@example.invalid`;
+
+    const inviteWithoutConsent = await api("/api/school-radio/student-access", {
+      method: "POST", cookie: cookieA,
+      body: { action: "INVITE", contributorId: schoolContributor.id, email: studentEmail }
+    });
+    assert.equal(inviteWithoutConsent.status, 409);
+
+    const schoolConsentResponse = await api("/api/school-radio/editorial", {
+      method: "POST", cookie: cookieA,
+      body: { action: "RECORD_CONSENT", contributorId: schoolContributor.id, status: "GRANTED", notes: "Integration school-level consent." }
+    });
+    assert.equal(schoolConsentResponse.status, 201, await schoolConsentResponse.clone().text());
+
+    const studentInvitationResponse = await api("/api/school-radio/student-access", {
+      method: "POST", cookie: cookieA,
+      body: { action: "INVITE", contributorId: schoolContributor.id, email: studentEmail }
+    });
+    assert.equal(studentInvitationResponse.status, 201, await studentInvitationResponse.clone().text());
+    const studentInvitation = await studentInvitationResponse.json();
+    assert.match(studentInvitation.invitationPath, /^\/school-student\/accept#token=[a-f0-9]{64}$/);
+    assert.equal(await db.schoolStudentAccess.count({ where: { contributorId: schoolContributor.id, status: "INVITED" } }), 1);
+
+    const studentToken = new URLSearchParams(new URL(studentInvitation.invitationPath, baseUrl).hash.slice(1)).get("token");
+    const acceptStudentInvitation = await api("/api/school-student/accept", {
+      method: "POST",
+      body: { token: studentToken, password: "student-password-123" }
+    });
+    assert.equal(acceptStudentInvitation.status, 200, await acceptStudentInvitation.clone().text());
+    const studentCookie = sessionCookie(acceptStudentInvitation);
+    assert.ok(studentCookie);
+
+    const studentWorkspace = await api("/api/school-student/workspace", { cookie: studentCookie });
+    assert.equal(studentWorkspace.status, 200, await studentWorkspace.clone().text());
+    const studentWorkspaceBody = await studentWorkspace.json();
+    assert.equal(studentWorkspaceBody.student.displayName, "Integration Student");
+    assert.equal(studentWorkspaceBody.safety.staffDashboardAccess, false);
+    assert.equal(studentWorkspaceBody.safety.directMessagingEnabled, false);
+    assert.equal(studentWorkspaceBody.safety.publicPublishingEnabled, false);
+
+    const studentStaffApiAttempt = await api("/api/school-radio/editorial", { cookie: studentCookie });
+    assert.equal(studentStaffApiAttempt.status, 403);
+    const studentMeAttempt = await api("/api/me", { cookie: studentCookie });
+    assert.equal(studentMeAttempt.status, 403);
+
+    const activeStudentAccess = await db.schoolStudentAccess.findUnique({ where: { contributorId: schoolContributor.id } });
+    assert.equal(activeStudentAccess.status, "ACTIVE");
+    assert.equal(activeStudentAccess.invitationTokenHash, null);
+    const revokeStudentAccess = await api("/api/school-radio/student-access", {
+      method: "POST", cookie: cookieA,
+      body: { action: "REVOKE", accessId: activeStudentAccess.id, reason: "Integration safeguarding revocation." }
+    });
+    assert.equal(revokeStudentAccess.status, 200, await revokeStudentAccess.clone().text());
+    assert.equal((await api("/api/school-student/workspace", { cookie: studentCookie })).status, 401);
+    assert.equal(await db.auditLog.count({ where: { organisationId: accountABody.organisation.id, action: "SCHOOL_STUDENT_INVITATION_ACCEPTED" } }), 1);
+    assert.equal(await db.auditLog.count({ where: { organisationId: accountABody.organisation.id, action: "SCHOOL_STUDENT_ACCESS_REVOKED" } }), 1);
 
     const schoolProgrammeResponse = await api("/api/school-radio/editorial", {
       method: "POST", cookie: cookieA,
