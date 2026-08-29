@@ -15,7 +15,8 @@ const plan = {
   maxBitrateKbps: 192,
   includesRuvanasCatalogue: true,
   promoUploadEnabled: true,
-  schoolRadioEnabled: true
+  schoolRadioEnabled: true,
+  retailMediaEnabled: true
 };
 
 test("active and trial subscriptions receive plan entitlements", () => {
@@ -25,6 +26,7 @@ test("active and trial subscriptions receive plan entitlements", () => {
     assert.equal(entitlements.stationLimit, 5);
     assert.equal(entitlements.promoUploadEnabled, true);
     assert.equal(entitlements.schoolRadioEnabled, true);
+    assert.equal(entitlements.retailMediaEnabled, true);
   }
 });
 
@@ -73,6 +75,25 @@ test("an organisation subscription can override the shared School Radio plan def
   );
 });
 
+test("an organisation subscription can override the shared Retail Media plan default", () => {
+  assert.equal(
+    resolveEntitlements({
+      status: "ACTIVE",
+      retailMediaEnabled: false,
+      plan
+    }).retailMediaEnabled,
+    false
+  );
+  assert.equal(
+    resolveEntitlements({
+      status: "ACTIVE",
+      retailMediaEnabled: true,
+      plan: { ...plan, retailMediaEnabled: false }
+    }).retailMediaEnabled,
+    true
+  );
+});
+
 test("suspended, cancelled, missing, and inactive plans deny service", () => {
   for (const subscription of [
     { status: "SUSPENDED", plan },
@@ -85,6 +106,7 @@ test("suspended, cancelled, missing, and inactive plans deny service", () => {
     assert.equal(entitlements.stationLimit, 0);
     assert.equal(entitlements.promoUploadEnabled, false);
     assert.equal(entitlements.schoolRadioEnabled, false);
+    assert.equal(entitlements.retailMediaEnabled, false);
   }
 });
 

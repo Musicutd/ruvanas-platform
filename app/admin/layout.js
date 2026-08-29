@@ -82,6 +82,11 @@ const navItems = [
     href: "/admin/integrations",
     label: "API & integrations",
     superAdminOnly: true
+  },
+  {
+    href: "/admin/retail-media",
+    label: "Retail media",
+    superAdminOnly: true
   }
 ];
 

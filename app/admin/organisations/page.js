@@ -2,10 +2,11 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getAdminUser } from "@/lib/requireAdmin";
 import SchoolRadioEntitlementControl from "./SchoolRadioEntitlementControl";
+import RetailMediaEntitlementControl from "./RetailMediaEntitlementControl";
 
 export default async function AdminOrganisationsPage() {
   const adminUser = await getAdminUser();
-  const canManageSchoolRadio = adminUser?.role === "SUPER_ADMIN";
+  const canManageEntitlements = adminUser?.role === "SUPER_ADMIN";
   const organisations = await prisma.organisation.findMany({
     include: {
       subscription: {
@@ -61,6 +62,7 @@ export default async function AdminOrganisationsPage() {
                   <th style={styles.tableHeader}>Plan</th>
                   <th style={styles.tableHeader}>Subscription</th>
                   <th style={styles.tableHeader}>School Radio</th>
+                  <th style={styles.tableHeader}>Retail Media</th>
                   <th style={styles.tableHeader}>Members</th>
                   <th style={styles.tableHeader}>Brands</th>
                   <th style={styles.tableHeader}>Locations</th>
@@ -96,7 +98,24 @@ export default async function AdminOrganisationsPage() {
                           )}
                           overrideEnabled={organisation.subscription.schoolRadioEnabled}
                           planDefaultEnabled={organisation.subscription.plan.schoolRadioEnabled}
-                          canManage={canManageSchoolRadio}
+                          canManage={canManageEntitlements}
+                        />
+                      ) : (
+                        <span style={styles.muted}>Unavailable</span>
+                      )}
+                    </td>
+
+                    <td style={styles.tableCellFeature}>
+                      {organisation.subscription ? (
+                        <RetailMediaEntitlementControl
+                          organisationId={organisation.id}
+                          effectiveEnabled={Boolean(
+                            organisation.subscription.retailMediaEnabled ??
+                            organisation.subscription.plan.retailMediaEnabled
+                          )}
+                          overrideEnabled={organisation.subscription.retailMediaEnabled}
+                          planDefaultEnabled={organisation.subscription.plan.retailMediaEnabled}
+                          canManage={canManageEntitlements}
                         />
                       ) : (
                         <span style={styles.muted}>Unavailable</span>
@@ -214,7 +233,7 @@ const styles = {
   },
   table: {
     width: "100%",
-    minWidth: 1230,
+    minWidth: 1460,
     borderCollapse: "collapse"
   },
   tableHeader: {

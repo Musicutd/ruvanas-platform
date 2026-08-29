@@ -22,7 +22,12 @@ export async function PATCH(_request, { params }) {
     const { campaignId } = await params;
     const record = await prisma.campaign.findUnique({
       where: { id: campaignId },
-      include: { targets: true, rule: true, schedules: true }
+      include: {
+        targets: true,
+        rule: true,
+        schedules: true,
+        retailMediaOrder: { select: { id: true, status: true } }
+      }
     });
     if (!record) return NextResponse.json({ error: "Campaign not found." }, { status: 404 });
 
@@ -33,6 +38,11 @@ export async function PATCH(_request, { params }) {
     }
     if (record.status !== "DRAFT") {
       return NextResponse.json({ error: "Only a campaign draft can be published." }, { status: 409 });
+    }
+    if (record.retailMediaOrder && record.retailMediaOrder.status !== "APPROVED") {
+      return NextResponse.json({
+        error: "The linked retail-media order must receive subscriber approval before this campaign can be published."
+      }, { status: 409 });
     }
 
     const campaign = persistedCampaignToInput(record);
@@ -69,6 +79,7 @@ export async function PATCH(_request, { params }) {
           promoVersionId: record.promoVersionId,
           targetZoneCount: prepared.preview.targetZoneCount,
           estimatedTotalPlays: prepared.preview.estimatedTotalPlays,
+          retailMediaOrderId: record.retailMediaOrder?.id || null,
           warnings: prepared.preview.warnings
         }
       } });

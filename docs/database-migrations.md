@@ -1,5 +1,9 @@
 # Database migration operations
 
+## Stage 7A retail-media foundation
+
+Migration `20260909000000_stage_7a_retail_media_foundation` is additive. It adds opt-in Retail Media entitlements, tenant-owned advertiser and agency records, inventory packages and targeting windows, supplier campaign orders, creative review, and subscriber approval records. Existing campaigns remain unchanged unless an order is explicitly linked; linked campaigns gain an application-level approval gate before publication.
+
 ## Stage 6B API and integrations
 
 Migration `20260907000000_stage_6b_integrations` is additive. It adds tenant-scoped integration connections, encrypted-secret references, sync-run history, idempotent outgoing webhook events, and immutable delivery attempts. Existing organisations, playback records, campaigns, and production orders are not modified.
