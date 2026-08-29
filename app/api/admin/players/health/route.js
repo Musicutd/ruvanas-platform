@@ -16,4 +16,3 @@ export async function GET() {
     return NextResponse.json({ error: "Unable to load player health operations." }, { status: 500 });
   }
 }
-
