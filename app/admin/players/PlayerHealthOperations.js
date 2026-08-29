@@ -144,4 +144,3 @@ const styles = {
   td: { padding: 10, borderBottom: "1px solid #e2e8f0", color: "#334155", verticalAlign: "top" },
   tdStrong: { padding: 10, borderBottom: "1px solid #e2e8f0", fontWeight: 800, verticalAlign: "top" }
 };
-
