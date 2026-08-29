@@ -1640,8 +1640,8 @@ model RetailMediaInventoryDaypart {
 
   inventoryPackage RetailMediaInventoryPackage @relation(fields: [inventoryPackageId], references: [id], onDelete: Cascade)
 
-  @@unique([inventoryPackageId, weekday, startMinute, endMinute])
-  @@index([inventoryPackageId, weekday, startMinute])
+  @@unique([inventoryPackageId, weekday, startMinute, endMinute], map: "RetailMediaDaypart_package_window_key")
+  @@index([inventoryPackageId, weekday, startMinute], map: "RetailMediaDaypart_package_weekday_idx")
 }
 
 model RetailMediaOrder {

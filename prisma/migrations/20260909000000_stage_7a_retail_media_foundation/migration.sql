@@ -110,8 +110,8 @@ CREATE INDEX "RetailMediaInventoryTarget_zoneId_idx" ON "RetailMediaInventoryTar
 CREATE UNIQUE INDEX "RetailMediaInventoryTarget_package_brand_key" ON "RetailMediaInventoryTarget"("inventoryPackageId", "brandId") WHERE "brandId" IS NOT NULL;
 CREATE UNIQUE INDEX "RetailMediaInventoryTarget_package_group_key" ON "RetailMediaInventoryTarget"("inventoryPackageId", "locationGroupId") WHERE "locationGroupId" IS NOT NULL;
 CREATE UNIQUE INDEX "RetailMediaInventoryTarget_package_zone_key" ON "RetailMediaInventoryTarget"("inventoryPackageId", "zoneId") WHERE "zoneId" IS NOT NULL;
-CREATE UNIQUE INDEX "RetailMediaInventoryDaypart_inventoryPackageId_weekday_startMinute_endMinute_key" ON "RetailMediaInventoryDaypart"("inventoryPackageId", "weekday", "startMinute", "endMinute");
-CREATE INDEX "RetailMediaInventoryDaypart_inventoryPackageId_weekday_startMinute_idx" ON "RetailMediaInventoryDaypart"("inventoryPackageId", "weekday", "startMinute");
+CREATE UNIQUE INDEX "RetailMediaDaypart_package_window_key" ON "RetailMediaInventoryDaypart"("inventoryPackageId", "weekday", "startMinute", "endMinute");
+CREATE INDEX "RetailMediaDaypart_package_weekday_idx" ON "RetailMediaInventoryDaypart"("inventoryPackageId", "weekday", "startMinute");
 CREATE UNIQUE INDEX "RetailMediaOrder_campaignId_key" ON "RetailMediaOrder"("campaignId");
 CREATE INDEX "RetailMediaOrder_organisationId_status_createdAt_idx" ON "RetailMediaOrder"("organisationId", "status", "createdAt");
 CREATE INDEX "RetailMediaOrder_advertiserId_idx" ON "RetailMediaOrder"("advertiserId");
