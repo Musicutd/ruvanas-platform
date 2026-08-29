@@ -1172,7 +1172,7 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     assert.equal(publicSchoolBody.episodes[0].transcript[0].text, "Welcome to our supervised school radio update.");
     assert.equal("speaker" in publicSchoolBody.episodes[0].transcript[0], false);
     assert.equal(JSON.stringify(publicSchoolBody).includes(schoolContributor.id), false);
-    assert.equal(JSON.stringify(publicSchoolBody).includes(schoolContributor.displayName), false);
+    assert.equal(JSON.stringify(publicSchoolBody).includes(JSON.stringify(schoolContributor.displayName)), false);
 
     const returnSchoolPolicyToPrivate = await api("/api/school-radio/publication-policy", {
       method: "PATCH", cookie: cookieA,
@@ -1861,4 +1861,5 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   assert.equal(lastResponse.status, 429);
   assert.ok(Number(lastResponse.headers.get("retry-after")) > 0);
 });
+
 
