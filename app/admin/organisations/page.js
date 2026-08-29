@@ -2,6 +2,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getAdminUser } from "@/lib/requireAdmin";
 import SchoolRadioEntitlementControl from "./SchoolRadioEntitlementControl";
+import SchoolPublicPublishingEntitlementControl from "./SchoolPublicPublishingEntitlementControl";
 import RetailMediaEntitlementControl from "./RetailMediaEntitlementControl";
 import DigitalSignageEntitlementControl from "./DigitalSignageEntitlementControl";
 
@@ -63,6 +64,7 @@ export default async function AdminOrganisationsPage() {
                   <th style={styles.tableHeader}>Plan</th>
                   <th style={styles.tableHeader}>Subscription</th>
                   <th style={styles.tableHeader}>School Radio</th>
+                  <th style={styles.tableHeader}>School Public Publishing</th>
                   <th style={styles.tableHeader}>Retail Media</th>
                   <th style={styles.tableHeader}>Digital Signage</th>
                   <th style={styles.tableHeader}>Members</th>
@@ -100,6 +102,23 @@ export default async function AdminOrganisationsPage() {
                           )}
                           overrideEnabled={organisation.subscription.schoolRadioEnabled}
                           planDefaultEnabled={organisation.subscription.plan.schoolRadioEnabled}
+                          canManage={canManageEntitlements}
+                        />
+                      ) : (
+                        <span style={styles.muted}>Unavailable</span>
+                      )}
+                    </td>
+
+                    <td style={styles.tableCellFeature}>
+                      {organisation.subscription ? (
+                        <SchoolPublicPublishingEntitlementControl
+                          organisationId={organisation.id}
+                          effectiveEnabled={Boolean(
+                            organisation.subscription.schoolPublicPublishingEnabled ??
+                            organisation.subscription.plan.schoolPublicPublishingEnabled
+                          )}
+                          overrideEnabled={organisation.subscription.schoolPublicPublishingEnabled}
+                          planDefaultEnabled={organisation.subscription.plan.schoolPublicPublishingEnabled}
                           canManage={canManageEntitlements}
                         />
                       ) : (
@@ -252,7 +271,7 @@ const styles = {
   },
   table: {
     width: "100%",
-    minWidth: 1690,
+    minWidth: 1940,
     borderCollapse: "collapse"
   },
   tableHeader: {

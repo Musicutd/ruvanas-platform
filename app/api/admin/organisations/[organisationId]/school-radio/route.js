@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requirePlatformAdmin } from "@/lib/access-control";
 import { accessDenied } from "@/lib/api-response";
+import { SCHOOL_PUBLICATION_POLICY_VERSION } from "@/lib/school-publication.mjs";
 
 const schema = z.object({ enabled: z.boolean().nullable() });
 
@@ -24,9 +25,10 @@ export async function PATCH(request, { params }) {
         { status: 400 }
       );
     }
+    const { organisationId } = await params;
 
     const organisation = await prisma.organisation.findUnique({
-      where: { id: String(params.organisationId || "") },
+      where: { id: String(organisationId || "") },
       include: { subscription: { include: { plan: true } } }
     });
     if (!organisation) {
@@ -47,12 +49,37 @@ export async function PATCH(request, { params }) {
     const nextEffective = Boolean(
       nextOverride ?? organisation.subscription.plan.schoolRadioEnabled
     );
+    const now = new Date();
 
-    const subscription = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       const updated = await tx.subscription.update({
         where: { id: organisation.subscription.id },
         data: { schoolRadioEnabled: nextOverride }
       });
+      const withdrawn = !nextEffective
+        ? await tx.schoolPodcastEpisode.findMany({
+            where: { organisationId: organisation.id, status: "PUBLISHED", publicationScope: "PUBLIC" },
+            select: { id: true, publicationRevision: true }
+          })
+        : [];
+      if (withdrawn.length) {
+        const reason = "School Radio capability disabled.";
+        await tx.schoolPodcastEpisode.updateMany({
+          where: { id: { in: withdrawn.map((item) => item.id) } },
+          data: { status: "UNPUBLISHED", unpublishedAt: now, lastPolicyCheckAt: now, unpublishReason: reason }
+        });
+        await tx.schoolPublicationDecision.createMany({
+          data: withdrawn.map((item) => ({
+            organisationId: organisation.id,
+            podcastEpisodeId: item.id,
+            actorUserId: access.user.id,
+            decision: "AUTO_WITHDRAWN",
+            reason,
+            policyVersion: SCHOOL_PUBLICATION_POLICY_VERSION,
+            policySnapshot: { previousEffective, nextEffective, publicationRevision: item.publicationRevision }
+          }))
+        });
+      }
       await tx.auditLog.create({
         data: {
           organisationId: organisation.id,
@@ -71,21 +98,23 @@ export async function PATCH(request, { params }) {
             previousOverride,
             nextOverride,
             previousEffective,
-            nextEffective
+            nextEffective,
+            withdrawnPodcastCount: withdrawn.length
           }
         }
       });
-      return updated;
+      return { updated, withdrawnCount: withdrawn.length };
     });
 
     return NextResponse.json({
       ok: true,
       organisation: { id: organisation.id, name: organisation.name },
       subscription: {
-        id: subscription.id,
-        schoolRadioEnabled: subscription.schoolRadioEnabled,
+        id: result.updated.id,
+        schoolRadioEnabled: result.updated.schoolRadioEnabled,
         effectiveSchoolRadioEnabled: nextEffective
-      }
+      },
+      withdrawnPodcastCount: result.withdrawnCount
     });
   } catch (error) {
     console.error("Update School Radio entitlement error:", error);

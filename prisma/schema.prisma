@@ -553,6 +553,12 @@ enum SchoolStudentAccessStatus {
   REVOKED
 }
 
+enum SchoolPublicationDecisionType {
+  PUBLISHED
+  UNPUBLISHED
+  AUTO_WITHDRAWN
+}
+
 enum SchoolSubmissionStatus {
   SUBMITTED
   SUPERSEDED
@@ -878,6 +884,7 @@ model User {
   createdPodcastSeries             SchoolPodcastSeries[]            @relation("SchoolPodcastSeriesCreatedBy")
   createdPodcastEpisodes           SchoolPodcastEpisode[]           @relation("SchoolPodcastEpisodeCreatedBy")
   reviewedPodcastEpisodes          SchoolPodcastEpisode[]           @relation("SchoolPodcastEpisodeReviewedBy")
+  schoolPublicationDecisions       SchoolPublicationDecision[]       @relation("SchoolPublicationDecisionActor")
   createdNewsStories               SchoolNewsStory[]                @relation("SchoolNewsStoryCreatedBy")
   assignedNewsStories              SchoolNewsStory[]                @relation("SchoolNewsStoryAssignedTo")
   reviewedNewsStories              SchoolNewsStory[]                @relation("SchoolNewsStoryReviewedBy")
@@ -980,6 +987,7 @@ model Organisation {
   schoolRundowns               SchoolRundown[]
   schoolPodcastSeries          SchoolPodcastSeries[]
   schoolPodcastEpisodes        SchoolPodcastEpisode[]
+  schoolPublicationDecisions   SchoolPublicationDecision[]
   transcripts                  Transcript[]
   schoolNewsStories            SchoolNewsStory[]
   liveStudioSessions           LiveStudioSession[]
@@ -1157,6 +1165,7 @@ model Plan {
   includesRuvanasCatalogue Boolean  @default(false)
   promoUploadEnabled       Boolean  @default(true)
   schoolRadioEnabled       Boolean  @default(false)
+  schoolPublicPublishingEnabled Boolean @default(false)
   retailMediaEnabled       Boolean  @default(false)
   digitalSignageEnabled    Boolean  @default(false)
   active                   Boolean  @default(true)
@@ -1173,6 +1182,7 @@ model Subscription {
   status                SubscriptionStatus @default(TRIAL)
   currentPeriodEnd      DateTime?
   schoolRadioEnabled    Boolean?
+  schoolPublicPublishingEnabled Boolean?
   retailMediaEnabled    Boolean?
   digitalSignageEnabled Boolean?
   createdAt             DateTime           @default(now())
@@ -3106,6 +3116,10 @@ model SchoolPodcastEpisode {
   reviewedByUserId      String?
   publishedAt           DateTime?
   unpublishedAt         DateTime?
+  publicationRevision   Int                    @default(0)
+  publicationPolicyVersion String?
+  lastPolicyCheckAt     DateTime?
+  unpublishReason       String?
   createdAt             DateTime               @default(now())
   updatedAt             DateTime               @updatedAt
 
@@ -3115,9 +3129,30 @@ model SchoolPodcastEpisode {
   createdBy    User                @relation("SchoolPodcastEpisodeCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
   reviewedBy   User?               @relation("SchoolPodcastEpisodeReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
   transcript   Transcript?
+  publicationDecisions SchoolPublicationDecision[]
 
   @@index([organisationId, status, updatedAt])
   @@index([seriesId, createdAt])
+}
+
+model SchoolPublicationDecision {
+  id                String                        @id @default(cuid())
+  organisationId    String
+  podcastEpisodeId  String
+  actorUserId       String?
+  decision          SchoolPublicationDecisionType
+  policyVersion     String                        @default("school-publication-v1")
+  policySnapshot    Json
+  reason            String?
+  createdAt         DateTime                      @default(now())
+
+  organisation   Organisation        @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  podcastEpisode SchoolPodcastEpisode @relation(fields: [podcastEpisodeId], references: [id], onDelete: Cascade)
+  actor          User?                @relation("SchoolPublicationDecisionActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([organisationId, createdAt])
+  @@index([podcastEpisodeId, createdAt])
+  @@index([actorUserId])
 }
 
 model Transcript {

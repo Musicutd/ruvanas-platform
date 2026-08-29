@@ -16,6 +16,7 @@ const plan = {
   includesRuvanasCatalogue: true,
   promoUploadEnabled: true,
   schoolRadioEnabled: true,
+  schoolPublicPublishingEnabled: false,
   retailMediaEnabled: true,
   digitalSignageEnabled: true
 };
@@ -27,6 +28,7 @@ test("active and trial subscriptions receive plan entitlements", () => {
     assert.equal(entitlements.stationLimit, 5);
     assert.equal(entitlements.promoUploadEnabled, true);
     assert.equal(entitlements.schoolRadioEnabled, true);
+    assert.equal(entitlements.schoolPublicPublishingEnabled, false);
     assert.equal(entitlements.retailMediaEnabled, true);
     assert.equal(entitlements.digitalSignageEnabled, true);
   }
@@ -74,6 +76,34 @@ test("an organisation subscription can override the shared School Radio plan def
       plan: { ...plan, schoolRadioEnabled: false }
     }).schoolRadioEnabled,
     true
+  );
+});
+
+test("controlled public School Radio publishing is separately entitled", () => {
+  assert.equal(
+    resolveEntitlements({
+      status: "ACTIVE",
+      schoolPublicPublishingEnabled: true,
+      plan
+    }).schoolPublicPublishingEnabled,
+    true
+  );
+  assert.equal(
+    resolveEntitlements({
+      status: "ACTIVE",
+      schoolPublicPublishingEnabled: false,
+      plan: { ...plan, schoolPublicPublishingEnabled: true }
+    }).schoolPublicPublishingEnabled,
+    false
+  );
+  assert.equal(
+    resolveEntitlements({
+      status: "ACTIVE",
+      schoolRadioEnabled: false,
+      schoolPublicPublishingEnabled: true,
+      plan
+    }).schoolPublicPublishingEnabled,
+    false
   );
 });
 
@@ -127,6 +157,7 @@ test("suspended, cancelled, missing, and inactive plans deny service", () => {
     assert.equal(entitlements.stationLimit, 0);
     assert.equal(entitlements.promoUploadEnabled, false);
     assert.equal(entitlements.schoolRadioEnabled, false);
+    assert.equal(entitlements.schoolPublicPublishingEnabled, false);
     assert.equal(entitlements.retailMediaEnabled, false);
     assert.equal(entitlements.digitalSignageEnabled, false);
   }
