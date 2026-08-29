@@ -224,6 +224,15 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   const unauthenticatedSchoolRetentionHoldRelease = await api("/api/school-radio/retention-holds/not-a-hold", { method: "PATCH", body: {} });
   assert.equal(unauthenticatedSchoolRetentionHoldRelease.status, 401);
 
+  const unauthenticatedSchoolPilotOperations = await api("/api/school-radio/pilot-operations");
+  assert.equal(unauthenticatedSchoolPilotOperations.status, 401);
+
+  const unauthenticatedSchoolPilotOperationCreate = await api("/api/school-radio/pilot-operations", { method: "POST", body: {} });
+  assert.equal(unauthenticatedSchoolPilotOperationCreate.status, 401);
+
+  const unauthenticatedSchoolPilotOperationUpdate = await api("/api/school-radio/pilot-operations/not-a-record", { method: "PATCH", body: {} });
+  assert.equal(unauthenticatedSchoolPilotOperationUpdate.status, 401);
+
   const unavailablePublicSchoolPage = await api("/api/public/school-radio/not-a-school/episodes");
   assert.equal(unavailablePublicSchoolPage.status, 404);
 

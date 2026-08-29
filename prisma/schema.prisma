@@ -477,6 +477,47 @@ enum SchoolPilotReadinessStatus {
   READY
 }
 
+enum SchoolPilotRunStatus {
+  PLANNED
+  ACTIVE
+  PAUSED
+  COMPLETED
+  CANCELLED
+}
+
+enum SchoolPilotEventKind {
+  DRILL
+  INCIDENT
+}
+
+enum SchoolPilotEventCategory {
+  EMERGENCY_WITHDRAWAL
+  SERVICE_RECOVERY
+  SUPPORT_ESCALATION
+  CONTENT_SAFETY
+  PLATFORM_AVAILABILITY
+  OTHER
+}
+
+enum SchoolPilotEventSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum SchoolPilotEventStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+}
+
+enum SchoolPilotEventOutcome {
+  PASSED
+  NEEDS_ACTION
+  NOT_APPLICABLE
+}
+
 enum SchoolConsentModel {
   SCHOOL_POLICY
   PARENT_OR_GUARDIAN
@@ -913,9 +954,14 @@ model User {
   decidedSchoolEpisodeExchanges    SchoolEpisodeExchangeRequest[]   @relation("SchoolEpisodeExchangeDecidedBy")
   importedSchoolEpisodeExchanges   SchoolEpisodeExchangeRequest[]   @relation("SchoolEpisodeExchangeImportedBy")
   schoolSafeguardingReviews        SchoolSafeguardingReview[]       @relation("SchoolSafeguardingReviewReviewer")
-  createdSchoolRetentionHolds      SchoolRetentionHold[]             @relation("SchoolRetentionHoldCreatedBy")
-  releasedSchoolRetentionHolds     SchoolRetentionHold[]             @relation("SchoolRetentionHoldReleasedBy")
-  updatedSchoolPilotReadiness      SchoolPilotReadiness[]            @relation("SchoolPilotReadinessUpdatedBy")
+  createdSchoolRetentionHolds      SchoolRetentionHold[]            @relation("SchoolRetentionHoldCreatedBy")
+  releasedSchoolRetentionHolds     SchoolRetentionHold[]            @relation("SchoolRetentionHoldReleasedBy")
+  updatedSchoolPilotReadiness      SchoolPilotReadiness[]           @relation("SchoolPilotReadinessUpdatedBy")
+  createdSchoolPilotRuns           SchoolPilotRun[]                 @relation("SchoolPilotRunCreatedBy")
+  updatedSchoolPilotRuns           SchoolPilotRun[]                 @relation("SchoolPilotRunUpdatedBy")
+  createdSchoolPilotEvents         SchoolPilotEvent[]               @relation("SchoolPilotEventCreatedBy")
+  acknowledgedSchoolPilotEvents    SchoolPilotEvent[]               @relation("SchoolPilotEventAcknowledgedBy")
+  resolvedSchoolPilotEvents        SchoolPilotEvent[]               @relation("SchoolPilotEventResolvedBy")
   schoolStudentAccess              SchoolStudentAccess?             @relation("SchoolStudentAccessUser")
   invitedSchoolStudentAccess       SchoolStudentAccess[]            @relation("SchoolStudentAccessInvitedBy")
   enterpriseIdentityLinks          EnterpriseIdentityLink[]
@@ -980,6 +1026,8 @@ model Organisation {
   schoolSafeguardingReviews        SchoolSafeguardingReview[]
   schoolRetentionHolds             SchoolRetentionHold[]
   schoolPilotReadiness             SchoolPilotReadiness?
+  schoolPilotRuns                  SchoolPilotRun[]
+  schoolPilotEvents                SchoolPilotEvent[]
   schoolAnnouncements              SchoolAnnouncement[]
   schoolNoticeboardPosts           SchoolNoticeboardPost[]
   schoolBroadcastSlots             SchoolBroadcastSlot[]
@@ -2398,6 +2446,67 @@ model SchoolPilotReadiness {
 
   @@index([status, updatedAt])
   @@index([updatedByUserId])
+}
+
+model SchoolPilotRun {
+  id                String               @id @default(cuid())
+  organisationId    String
+  title             String
+  status            SchoolPilotRunStatus @default(PLANNED)
+  plannedStartAt    DateTime
+  plannedEndAt      DateTime
+  startedAt         DateTime?
+  endedAt           DateTime?
+  notes             String?
+  transitionReason  String?
+  readinessSnapshot Json                 @default("{}")
+  createdByUserId   String
+  updatedByUserId   String
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  organisation Organisation       @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  createdBy    User               @relation("SchoolPilotRunCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  updatedBy    User               @relation("SchoolPilotRunUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: Restrict)
+  events       SchoolPilotEvent[]
+
+  @@index([organisationId, status, plannedStartAt])
+  @@index([createdByUserId])
+  @@index([updatedByUserId])
+}
+
+model SchoolPilotEvent {
+  id                   String                   @id @default(cuid())
+  organisationId       String
+  pilotRunId           String
+  kind                 SchoolPilotEventKind
+  category             SchoolPilotEventCategory
+  severity             SchoolPilotEventSeverity
+  status               SchoolPilotEventStatus   @default(OPEN)
+  outcome              SchoolPilotEventOutcome?
+  summary              String
+  responseActions      String?
+  resolutionNotes      String?
+  occurredAt           DateTime
+  acknowledgedAt       DateTime?
+  acknowledgedByUserId String?
+  resolvedAt           DateTime?
+  resolvedByUserId     String?
+  createdByUserId      String
+  createdAt            DateTime                 @default(now())
+  updatedAt            DateTime                 @updatedAt
+
+  organisation   Organisation   @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  pilotRun       SchoolPilotRun @relation(fields: [pilotRunId], references: [id], onDelete: Cascade)
+  createdBy      User           @relation("SchoolPilotEventCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  acknowledgedBy User?          @relation("SchoolPilotEventAcknowledgedBy", fields: [acknowledgedByUserId], references: [id], onDelete: SetNull)
+  resolvedBy     User?          @relation("SchoolPilotEventResolvedBy", fields: [resolvedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([organisationId, status, occurredAt])
+  @@index([pilotRunId, occurredAt])
+  @@index([createdByUserId])
+  @@index([acknowledgedByUserId])
+  @@index([resolvedByUserId])
 }
 
 model SchoolAnnouncement {

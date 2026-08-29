@@ -1,5 +1,11 @@
 # Database migration operations
 
+## Stage 10C School Pilot Operations and Incident Readiness
+
+Migration `20260922000000_stage_10c_school_pilot_operations` is additive. It adds tenant-scoped supervised pilot runs and privacy-safe drill/incident evidence. It enforces valid planned windows, one active or paused pilot per organisation, and valid drill outcomes. It does not modify school content, public delivery, safeguarding, retention, or student-access data.
+
+Before pilot evidence is accepted, rollback may remove `SchoolPilotEvent`, then `SchoolPilotRun`, followed by the six Stage 10C enums. After evidence exists, retain the tables and roll back only the application surface so operational history is preserved.
+
 ## Stage 7C Digital Signage delivery
 
 Migration `20260911000000_stage_7c_digital_signage_delivery` is additive. It adds publishable, time-windowed visual playlists, ordered asset-to-region items, device assignments, and idempotent device-confirmed display evidence. Existing audio schedules, players, manifests, proof records, Retail Media orders, and Stage 7B visual assets/layouts/devices are not rewritten.
