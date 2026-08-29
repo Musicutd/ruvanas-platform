@@ -36,4 +36,3 @@ Ruvanas severity is an operational indicator, not proof that emergency services,
 ## 5. Record follow-up
 
 If the same device repeatedly fails, create a support ticket linked to the player ID and record the proposed replacement or local remediation. Stage 11A does not execute restart or replacement commands.
-
