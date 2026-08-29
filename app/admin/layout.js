@@ -74,6 +74,11 @@ const navItems = [
     label: "Compliance & support"
   },
   {
+    href: "/admin/school-safeguarding",
+    label: "School safeguarding",
+    superAdminOnly: true
+  },
+  {
     href: "/admin/ai",
     label: "AI draft workspace",
     superAdminOnly: true

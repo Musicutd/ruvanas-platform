@@ -215,6 +215,9 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   const unauthenticatedSafeguardingReadiness = await api("/api/school-radio/safeguarding-readiness");
   assert.equal(unauthenticatedSafeguardingReadiness.status, 401);
 
+  const unauthenticatedSafeguardingDecision = await api("/api/admin/school-safeguarding", { method: "POST", body: { readinessId: "not-a-readiness", decision: "APPROVED" } });
+  assert.equal(unauthenticatedSafeguardingDecision.status, 401);
+
   const unauthenticatedWaveformEditor = await api("/api/school-radio/audio-lab/projects/not-a-project/editor");
   assert.equal(unauthenticatedWaveformEditor.status, 401);
 
@@ -431,6 +434,13 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     body: { name: "Forbidden admin action" }
   });
   assert.equal(ownerAdminAttempt.status, 403);
+
+  const ownerSafeguardingDecisionAttempt = await api("/api/admin/school-safeguarding", {
+    method: "POST",
+    cookie: cookieA,
+    body: { readinessId: "not-a-readiness", decision: "APPROVED" }
+  });
+  assert.equal(ownerSafeguardingDecisionAttempt.status, 403);
 
   const ownerBulkAssignmentAttempt = await api(
     "/api/admin/location-groups/not-a-group/channel",
@@ -891,6 +901,26 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     assert.equal(submittedReadinessBody.safety.directStudentAccessEnabled, false);
     assert.equal(submittedReadinessBody.safety.publicPublishingEnabled, false);
     assert.equal(await db.auditLog.count({ where: { organisationId: accountABody.organisation.id, action: "SCHOOL_SAFEGUARDING_READINESS_SUBMITTED" } }), 1);
+
+    const approveSafeguardingReadiness = await api("/api/admin/school-safeguarding", {
+      method: "POST",
+      cookie: cookieA,
+      body: { readinessId: submittedReadinessBody.readiness.id, decision: "APPROVED", notes: "Integration policy pack reviewed." }
+    });
+    assert.equal(approveSafeguardingReadiness.status, 201, await approveSafeguardingReadiness.clone().text());
+    const approvedReadinessBody = await approveSafeguardingReadiness.json();
+    assert.equal(approvedReadinessBody.studentAccessEnabled, false);
+    assert.equal(approvedReadinessBody.publicPublishingEnabled, false);
+    assert.equal((await db.schoolSafeguardingReadiness.findUnique({ where: { id: submittedReadinessBody.readiness.id } })).status, "APPROVED");
+    assert.equal(await db.schoolSafeguardingReview.count({ where: { readinessId: submittedReadinessBody.readiness.id, decision: "APPROVED" } }), 1);
+    assert.equal(await db.auditLog.count({ where: { organisationId: accountABody.organisation.id, action: "SCHOOL_SAFEGUARDING_READINESS_APPROVED" } }), 1);
+
+    const approvedPackEdit = await api("/api/school-radio/safeguarding-readiness", {
+      method: "POST",
+      cookie: cookieA,
+      body: { action: "SAVE_DRAFT", targetCountries: ["MT"] }
+    });
+    assert.equal(approvedPackEdit.status, 409);
 
     const schoolGroupResponse = await api("/api/school-radio/editorial", {
       method: "POST", cookie: cookieA,

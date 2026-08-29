@@ -35,8 +35,9 @@ function formFromReadiness(value) {
 }
 
 function Badge({ value }) {
-  const ready = value === "READY_FOR_REVIEW";
-  return <span style={{ ...styles.badge, background: ready ? "#dcfce7" : "#fef3c7", color: ready ? "#166534" : "#92400e" }}>{ready ? "READY FOR REVIEW" : "DRAFT"}</span>;
+  const labels = { DRAFT: "DRAFT", READY_FOR_REVIEW: "UNDER REVIEW", CHANGES_REQUESTED: "CHANGES REQUESTED", APPROVED: "APPROVED" };
+  const palette = value === "APPROVED" ? ["#dcfce7", "#166534"] : value === "CHANGES_REQUESTED" ? ["#ffedd5", "#9a3412"] : value === "READY_FOR_REVIEW" ? ["#dbeafe", "#1d4ed8"] : ["#fef3c7", "#92400e"];
+  return <span style={{ ...styles.badge, background: palette[0], color: palette[1] }}>{labels[value] || value}</span>;
 }
 
 export default function SchoolSafeguardingReadinessClient() {
@@ -91,6 +92,8 @@ export default function SchoolSafeguardingReadinessClient() {
     </div>
     {error ? <div style={styles.error}>{error}</div> : null}
     {notice ? <div style={styles.notice}>{notice}</div> : null}
+    {data.permissions.lockedReason ? <div style={styles.reviewNotice}>{data.permissions.lockedReason}</div> : null}
+    {data.readiness.reviews?.[0] ? <div style={styles.reviewDecision}><strong>Latest Ruvanas decision: {data.readiness.reviews[0].decision.replaceAll("_", " ")}</strong><span>{data.readiness.reviews[0].notes || "No additional notes."}</span><small>{new Date(data.readiness.reviews[0].createdAt).toLocaleString()} · {data.readiness.reviews[0].reviewer?.name || "Ruvanas reviewer"}</small></div> : null}
 
     <div style={styles.lockGrid}>
       <div style={styles.lock}><strong>Student login</strong><span>Locked</span></div>
@@ -123,7 +126,7 @@ export default function SchoolSafeguardingReadinessClient() {
       <label style={styles.check}><input type="checkbox" checked={form.noDirectMessagingConfirmed} onChange={(event) => setField("noDirectMessagingConfirmed", event.target.checked)} disabled={disabled} /><span>Direct messaging between students or between students and external users remains disabled.</span></label>
       <label style={styles.check}><input type="checkbox" checked={form.privateByDefaultConfirmed} onChange={(event) => setField("privateByDefaultConfirmed", event.target.checked)} disabled={disabled} /><span>Student work and portfolios remain private by default.</span></label>
       {data.gaps.length ? <div style={styles.gaps}><strong>Still needed before review</strong><ul>{data.gaps.map((gap) => <li key={gap}>{gap}</li>)}</ul></div> : <p style={styles.ready}>All required policy details are present. An owner or manager can submit the pack for review.</p>}
-      {canManage ? <div style={styles.actions}><button type="button" style={styles.secondary} disabled={working} onClick={() => save("SAVE_DRAFT")}>Save draft</button><button type="button" style={styles.primary} disabled={working} onClick={() => save("SUBMIT_FOR_REVIEW")}>Submit for review</button></div> : <p style={styles.muted}>An organisation owner or manager maintains this policy pack.</p>}
+      {canManage ? <div style={styles.actions}><button type="button" style={styles.secondary} disabled={working} onClick={() => save("SAVE_DRAFT")}>Save draft</button><button type="button" style={styles.primary} disabled={working} onClick={() => save("SUBMIT_FOR_REVIEW")}>Submit for review</button></div> : <p style={styles.muted}>{data.permissions.locked ? "This policy pack is read-only while its reviewed state is preserved." : "An organisation owner or manager maintains this policy pack."}</p>}
     </div>
     <p style={styles.privacy}>Safety boundary: this is a readiness record only. Direct student access requires a separate reviewed release and remains hard-disabled.</p>
   </section>;
@@ -150,5 +153,7 @@ const styles = {
   secondary: { border: "1px solid #94a3b8", borderRadius: 8, background: "transparent", color: "#e2e8f0", padding: "10px 14px", fontWeight: 800, cursor: "pointer" },
   error: { border: "1px solid #ef4444", background: "#451a1a", color: "#fecaca", borderRadius: 8, padding: 11, marginBottom: 14 },
   notice: { border: "1px solid #22c55e", background: "#052e16", color: "#bbf7d0", borderRadius: 8, padding: 11, marginBottom: 14 },
+  reviewNotice: { border: "1px solid #60a5fa", background: "#172554", color: "#bfdbfe", borderRadius: 8, padding: 11, marginBottom: 14 },
+  reviewDecision: { display: "grid", gap: 5, border: "1px solid #475569", background: "#18243a", color: "#dce5f3", borderRadius: 8, padding: 12, marginBottom: 14, fontSize: 13 },
   privacy: { color: "#8ea0b8", fontSize: 12, margin: "6px 0 0" }
 };

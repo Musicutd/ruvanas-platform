@@ -2,8 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   assertSchoolSafeguardingReadyForReview,
+  isSchoolSafeguardingPackLocked,
   normalizeSchoolSafeguardingReadiness,
+  normalizeSchoolSafeguardingReview,
   normalizeTargetCountries,
+  schoolSafeguardingPolicySnapshot,
   schoolSafeguardingReadinessGaps,
   schoolStudentAccessSafetyState
 } from "../lib/school-safeguarding-readiness.mjs";
@@ -54,4 +57,23 @@ test("a completed readiness pack never enables student or public access", () => 
   assert.equal(safety.directStudentAccessEnabled, false);
   assert.equal(safety.publicPublishingEnabled, false);
   assert.equal(safety.directMessagingEnabled, false);
+});
+
+test("change requests require actionable review notes", () => {
+  assert.throws(() => normalizeSchoolSafeguardingReview({ decision: "CHANGES_REQUESTED" }), /Explain/);
+  assert.deepEqual(normalizeSchoolSafeguardingReview({ decision: "CHANGES_REQUESTED", notes: " Add the policy approval date. " }), {
+    decision: "CHANGES_REQUESTED",
+    notes: "Add the policy approval date."
+  });
+  assert.deepEqual(normalizeSchoolSafeguardingReview({ decision: "APPROVED" }), { decision: "APPROVED", notes: null });
+});
+
+test("review snapshots preserve submitted policy evidence without changing access", () => {
+  const snapshot = schoolSafeguardingPolicySnapshot({ ...complete, submittedAt: new Date("2026-09-17T10:00:00.000Z"), submittedByUserId: "user-1" });
+  assert.deepEqual(snapshot.targetCountries, ["MT", "GB"]);
+  assert.equal(snapshot.localPolicyReference, complete.localPolicyReference);
+  assert.equal(snapshot.submittedAt, "2026-09-17T10:00:00.000Z");
+  assert.equal(isSchoolSafeguardingPackLocked("READY_FOR_REVIEW"), true);
+  assert.equal(isSchoolSafeguardingPackLocked("APPROVED"), true);
+  assert.equal(isSchoolSafeguardingPackLocked("CHANGES_REQUESTED"), false);
 });

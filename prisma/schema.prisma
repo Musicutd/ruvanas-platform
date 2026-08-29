@@ -454,6 +454,13 @@ enum SchoolPublishingPolicy {
 enum SchoolSafeguardingReadinessStatus {
   DRAFT
   READY_FOR_REVIEW
+  CHANGES_REQUESTED
+  APPROVED
+}
+
+enum SchoolSafeguardingReviewDecision {
+  CHANGES_REQUESTED
+  APPROVED
 }
 
 enum SchoolConsentModel {
@@ -878,6 +885,7 @@ model User {
   requestedSchoolEpisodeExchanges  SchoolEpisodeExchangeRequest[]   @relation("SchoolEpisodeExchangeRequestedBy")
   decidedSchoolEpisodeExchanges    SchoolEpisodeExchangeRequest[]   @relation("SchoolEpisodeExchangeDecidedBy")
   importedSchoolEpisodeExchanges   SchoolEpisodeExchangeRequest[]   @relation("SchoolEpisodeExchangeImportedBy")
+  schoolSafeguardingReviews         SchoolSafeguardingReview[]        @relation("SchoolSafeguardingReviewReviewer")
   enterpriseIdentityLinks          EnterpriseIdentityLink[]
   createdServiceAccounts           ServiceAccount[]                 @relation("ServiceAccountCreatedBy")
   createdCompliancePolicies        CompliancePolicy[]               @relation("CompliancePolicyCreatedBy")
@@ -937,6 +945,7 @@ model Organisation {
   activeSessions               Session[]
   schoolProfile                SchoolProfile?
   schoolSafeguardingReadiness  SchoolSafeguardingReadiness?
+  schoolSafeguardingReviews    SchoolSafeguardingReview[]
   schoolAnnouncements          SchoolAnnouncement[]
   schoolNoticeboardPosts       SchoolNoticeboardPost[]
   schoolBroadcastSlots         SchoolBroadcastSlot[]
@@ -2282,8 +2291,29 @@ model SchoolSafeguardingReadiness {
   updatedAt                    DateTime                          @updatedAt
 
   organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  reviews      SchoolSafeguardingReview[]
 
   @@index([status])
+}
+
+model SchoolSafeguardingReview {
+  id             String                              @id @default(cuid())
+  readinessId    String
+  organisationId String
+  reviewerUserId String
+  decision       SchoolSafeguardingReviewDecision
+  notes          String?
+  policyVersion  String                              @default("school-safeguarding-readiness-v1")
+  policySnapshot Json
+  createdAt      DateTime                            @default(now())
+
+  readiness   SchoolSafeguardingReadiness @relation(fields: [readinessId], references: [id], onDelete: Cascade)
+  organisation Organisation                @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  reviewer     User                        @relation("SchoolSafeguardingReviewReviewer", fields: [reviewerUserId], references: [id], onDelete: Restrict)
+
+  @@index([readinessId, createdAt])
+  @@index([organisationId, createdAt])
+  @@index([reviewerUserId])
 }
 
 model SchoolAnnouncement {
