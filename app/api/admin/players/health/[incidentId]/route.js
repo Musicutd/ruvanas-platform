@@ -46,4 +46,3 @@ export async function PATCH(request, { params }) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to update the health incident." }, { status: 409 });
   }
 }
-
