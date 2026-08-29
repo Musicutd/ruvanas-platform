@@ -884,7 +884,7 @@ model User {
   createdPodcastSeries             SchoolPodcastSeries[]            @relation("SchoolPodcastSeriesCreatedBy")
   createdPodcastEpisodes           SchoolPodcastEpisode[]           @relation("SchoolPodcastEpisodeCreatedBy")
   reviewedPodcastEpisodes          SchoolPodcastEpisode[]           @relation("SchoolPodcastEpisodeReviewedBy")
-  schoolPublicationDecisions       SchoolPublicationDecision[]       @relation("SchoolPublicationDecisionActor")
+  schoolPublicationDecisions       SchoolPublicationDecision[]      @relation("SchoolPublicationDecisionActor")
   createdNewsStories               SchoolNewsStory[]                @relation("SchoolNewsStoryCreatedBy")
   assignedNewsStories              SchoolNewsStory[]                @relation("SchoolNewsStoryAssignedTo")
   reviewedNewsStories              SchoolNewsStory[]                @relation("SchoolNewsStoryReviewedBy")
@@ -899,9 +899,9 @@ model User {
   requestedSchoolEpisodeExchanges  SchoolEpisodeExchangeRequest[]   @relation("SchoolEpisodeExchangeRequestedBy")
   decidedSchoolEpisodeExchanges    SchoolEpisodeExchangeRequest[]   @relation("SchoolEpisodeExchangeDecidedBy")
   importedSchoolEpisodeExchanges   SchoolEpisodeExchangeRequest[]   @relation("SchoolEpisodeExchangeImportedBy")
-  schoolSafeguardingReviews         SchoolSafeguardingReview[]        @relation("SchoolSafeguardingReviewReviewer")
-  schoolStudentAccess               SchoolStudentAccess?              @relation("SchoolStudentAccessUser")
-  invitedSchoolStudentAccess        SchoolStudentAccess[]             @relation("SchoolStudentAccessInvitedBy")
+  schoolSafeguardingReviews        SchoolSafeguardingReview[]       @relation("SchoolSafeguardingReviewReviewer")
+  schoolStudentAccess              SchoolStudentAccess?             @relation("SchoolStudentAccessUser")
+  invitedSchoolStudentAccess       SchoolStudentAccess[]            @relation("SchoolStudentAccessInvitedBy")
   enterpriseIdentityLinks          EnterpriseIdentityLink[]
   createdServiceAccounts           ServiceAccount[]                 @relation("ServiceAccountCreatedBy")
   createdCompliancePolicies        CompliancePolicy[]               @relation("CompliancePolicyCreatedBy")
@@ -939,91 +939,92 @@ model Organisation {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  members                      OrganisationMember[]
-  subscription                 Subscription?
-  stations                     Station[]
-  brands                       Brand[]
-  locations                    Location[]
-  locationGroups               LocationGroup[]
-  channels                     Channel[]
-  mediaAssets                  MediaAsset[]                   @relation("OrganisationMediaAssets")
-  promoAssets                  PromoAsset[]
-  auditLogs                    AuditLog[]
-  players                      Player[]
-  musicModes                   MusicMode[]
-  musicSchedules               MusicSchedule[]
-  proofOfPlayEvents            ProofOfPlayEvent[]
-  campaigns                    Campaign[]
-  playoutIntents               PlayoutIntent[]
-  reportExports                ReportExportJob[]
-  analyticsHourlyAggregates    AnalyticsHourlyAggregate[]
-  analyticsAggregationCursor   AnalyticsAggregationCursor?
-  activeSessions               Session[]
-  schoolProfile                SchoolProfile?
-  schoolSafeguardingReadiness  SchoolSafeguardingReadiness?
-  schoolSafeguardingReviews    SchoolSafeguardingReview[]
-  schoolAnnouncements          SchoolAnnouncement[]
-  schoolNoticeboardPosts       SchoolNoticeboardPost[]
-  schoolBroadcastSlots         SchoolBroadcastSlot[]
-  productionOrders             ProductionOrder[]
-  productionOrderEvents        ProductionOrderEvent[]
-  productionOrderFiles         ProductionOrderFile[]
-  productionScriptVersions     ProductionScriptVersion[]
-  productionRevisionRequests   ProductionRevisionRequest[]
-  productionCreditEntries      ProductionCreditLedgerEntry[]
-  staffSupervisors             StaffSupervisor[]
-  studentGroups                StudentGroup[]
-  studentContributors          StudentContributor[]
-  schoolStudentAccess          SchoolStudentAccess[]
-  schoolProgrammes             SchoolProgramme[]
-  schoolEpisodes               SchoolEpisode[]
-  schoolSubmissions            SchoolSubmission[]
-  schoolModerationReviews      SchoolModerationReview[]
-  consentRecords               ConsentRecord[]
-  audioProjects                AudioProject[]
-  audioTakes                   AudioTake[]
-  schoolAudioUploads           SchoolAudioUploadSession[]
-  audioRenders                 AudioRender[]
-  schoolRundowns               SchoolRundown[]
-  schoolPodcastSeries          SchoolPodcastSeries[]
-  schoolPodcastEpisodes        SchoolPodcastEpisode[]
-  schoolPublicationDecisions   SchoolPublicationDecision[]
-  transcripts                  Transcript[]
-  schoolNewsStories            SchoolNewsStory[]
-  liveStudioSessions           LiveStudioSession[]
-  assignments                  Assignment[]
-  assignmentSubmissions        AssignmentSubmission[]
-  billingAccount               BillingAccount?
-  billingInvoices              BillingInvoice[]
-  billingReconciliations       BillingUsageReconciliation[]
-  assessments                  Assessment[]
-  portfolioEntries             PortfolioEntry[]
-  schoolNetworkSchool          SchoolNetworkSchool?
-  sourceSchoolEpisodeExchanges SchoolEpisodeExchangeOffer[]   @relation("SchoolEpisodeExchangeSource")
-  targetSchoolEpisodeRequests  SchoolEpisodeExchangeRequest[] @relation("SchoolEpisodeExchangeTarget")
-  enterpriseSecurityPolicy     EnterpriseSecurityPolicy?
-  enterpriseIdentityProviders  EnterpriseIdentityProvider[]
-  serviceAccounts              ServiceAccount[]
-  policyAcceptances            PolicyAcceptance[]
-  dataRequests                 DataRequest[]
-  retentionPolicy              RetentionPolicy?
-  retentionJobs                RetentionJob[]
-  supportTickets               SupportTicket[]
-  auditExportSeals             AuditExportSeal[]
-  aiJobs                       AIJob[]
-  integrationConnections       IntegrationConnection[]
-  integrationSyncRuns          IntegrationSyncRun[]
-  integrationMetricSummaries   IntegrationMetricSummary[]
-  outgoingWebhookEvents        OutgoingWebhookEvent[]
-  retailMediaPartners          RetailMediaPartner[]
-  retailMediaInventory         RetailMediaInventoryPackage[]
-  retailMediaOrders            RetailMediaOrder[]
-  digitalSignageAssets         DigitalSignageAsset[]
-  digitalSignageLayouts        DigitalSignageLayout[]
-  digitalSignageDevices        DigitalSignageDevice[]
-  digitalSignagePlaylists      DigitalSignagePlaylist[]
-  digitalSignageDeliveryProofs DigitalSignageDeliveryProof[]
-  digitalSignageTakeovers      DigitalSignageTakeover[]
+  members                          OrganisationMember[]
+  subscription                     Subscription?
+  stations                         Station[]
+  brands                           Brand[]
+  locations                        Location[]
+  locationGroups                   LocationGroup[]
+  channels                         Channel[]
+  mediaAssets                      MediaAsset[]                      @relation("OrganisationMediaAssets")
+  promoAssets                      PromoAsset[]
+  auditLogs                        AuditLog[]
+  players                          Player[]
+  musicModes                       MusicMode[]
+  musicSchedules                   MusicSchedule[]
+  proofOfPlayEvents                ProofOfPlayEvent[]
+  campaigns                        Campaign[]
+  playoutIntents                   PlayoutIntent[]
+  reportExports                    ReportExportJob[]
+  analyticsHourlyAggregates        AnalyticsHourlyAggregate[]
+  analyticsAggregationCursor       AnalyticsAggregationCursor?
+  activeSessions                   Session[]
+  schoolProfile                    SchoolProfile?
+  schoolSafeguardingReadiness      SchoolSafeguardingReadiness?
+  schoolSafeguardingReviews        SchoolSafeguardingReview[]
+  schoolAnnouncements              SchoolAnnouncement[]
+  schoolNoticeboardPosts           SchoolNoticeboardPost[]
+  schoolBroadcastSlots             SchoolBroadcastSlot[]
+  productionOrders                 ProductionOrder[]
+  productionOrderEvents            ProductionOrderEvent[]
+  productionOrderFiles             ProductionOrderFile[]
+  productionScriptVersions         ProductionScriptVersion[]
+  productionRevisionRequests       ProductionRevisionRequest[]
+  productionCreditEntries          ProductionCreditLedgerEntry[]
+  staffSupervisors                 StaffSupervisor[]
+  studentGroups                    StudentGroup[]
+  studentContributors              StudentContributor[]
+  schoolStudentAccess              SchoolStudentAccess[]
+  schoolProgrammes                 SchoolProgramme[]
+  schoolEpisodes                   SchoolEpisode[]
+  schoolSubmissions                SchoolSubmission[]
+  schoolModerationReviews          SchoolModerationReview[]
+  consentRecords                   ConsentRecord[]
+  audioProjects                    AudioProject[]
+  audioTakes                       AudioTake[]
+  schoolAudioUploads               SchoolAudioUploadSession[]
+  audioRenders                     AudioRender[]
+  schoolRundowns                   SchoolRundown[]
+  schoolPodcastSeries              SchoolPodcastSeries[]
+  schoolPodcastEpisodes            SchoolPodcastEpisode[]
+  schoolPublicationDecisions       SchoolPublicationDecision[]
+  schoolPublicationDailyAggregates SchoolPublicationDailyAggregate[]
+  transcripts                      Transcript[]
+  schoolNewsStories                SchoolNewsStory[]
+  liveStudioSessions               LiveStudioSession[]
+  assignments                      Assignment[]
+  assignmentSubmissions            AssignmentSubmission[]
+  billingAccount                   BillingAccount?
+  billingInvoices                  BillingInvoice[]
+  billingReconciliations           BillingUsageReconciliation[]
+  assessments                      Assessment[]
+  portfolioEntries                 PortfolioEntry[]
+  schoolNetworkSchool              SchoolNetworkSchool?
+  sourceSchoolEpisodeExchanges     SchoolEpisodeExchangeOffer[]      @relation("SchoolEpisodeExchangeSource")
+  targetSchoolEpisodeRequests      SchoolEpisodeExchangeRequest[]    @relation("SchoolEpisodeExchangeTarget")
+  enterpriseSecurityPolicy         EnterpriseSecurityPolicy?
+  enterpriseIdentityProviders      EnterpriseIdentityProvider[]
+  serviceAccounts                  ServiceAccount[]
+  policyAcceptances                PolicyAcceptance[]
+  dataRequests                     DataRequest[]
+  retentionPolicy                  RetentionPolicy?
+  retentionJobs                    RetentionJob[]
+  supportTickets                   SupportTicket[]
+  auditExportSeals                 AuditExportSeal[]
+  aiJobs                           AIJob[]
+  integrationConnections           IntegrationConnection[]
+  integrationSyncRuns              IntegrationSyncRun[]
+  integrationMetricSummaries       IntegrationMetricSummary[]
+  outgoingWebhookEvents            OutgoingWebhookEvent[]
+  retailMediaPartners              RetailMediaPartner[]
+  retailMediaInventory             RetailMediaInventoryPackage[]
+  retailMediaOrders                RetailMediaOrder[]
+  digitalSignageAssets             DigitalSignageAsset[]
+  digitalSignageLayouts            DigitalSignageLayout[]
+  digitalSignageDevices            DigitalSignageDevice[]
+  digitalSignagePlaylists          DigitalSignagePlaylist[]
+  digitalSignageDeliveryProofs     DigitalSignageDeliveryProof[]
+  digitalSignageTakeovers          DigitalSignageTakeover[]
 }
 
 model OrganisationMember {
@@ -1154,39 +1155,39 @@ model SchoolEpisodeExchangeRequest {
 }
 
 model Plan {
-  id                       String   @id @default(cuid())
-  name                     String   @unique
-  code                     String   @unique
-  monthlyPriceCents        Int
-  stationLimit             Int      @default(1)
-  storageLimitGb           Int
-  listenerLimit            Int
-  maxBitrateKbps           Int
-  includesRuvanasCatalogue Boolean  @default(false)
-  promoUploadEnabled       Boolean  @default(true)
-  schoolRadioEnabled       Boolean  @default(false)
-  schoolPublicPublishingEnabled Boolean @default(false)
-  retailMediaEnabled       Boolean  @default(false)
-  digitalSignageEnabled    Boolean  @default(false)
-  active                   Boolean  @default(true)
-  createdAt                DateTime @default(now())
-  updatedAt                DateTime @updatedAt
+  id                            String   @id @default(cuid())
+  name                          String   @unique
+  code                          String   @unique
+  monthlyPriceCents             Int
+  stationLimit                  Int      @default(1)
+  storageLimitGb                Int
+  listenerLimit                 Int
+  maxBitrateKbps                Int
+  includesRuvanasCatalogue      Boolean  @default(false)
+  promoUploadEnabled            Boolean  @default(true)
+  schoolRadioEnabled            Boolean  @default(false)
+  schoolPublicPublishingEnabled Boolean  @default(false)
+  retailMediaEnabled            Boolean  @default(false)
+  digitalSignageEnabled         Boolean  @default(false)
+  active                        Boolean  @default(true)
+  createdAt                     DateTime @default(now())
+  updatedAt                     DateTime @updatedAt
 
   subscriptions Subscription[]
 }
 
 model Subscription {
-  id                    String             @id @default(cuid())
-  organisationId        String             @unique
-  planId                String
-  status                SubscriptionStatus @default(TRIAL)
-  currentPeriodEnd      DateTime?
-  schoolRadioEnabled    Boolean?
+  id                            String             @id @default(cuid())
+  organisationId                String             @unique
+  planId                        String
+  status                        SubscriptionStatus @default(TRIAL)
+  currentPeriodEnd              DateTime?
+  schoolRadioEnabled            Boolean?
   schoolPublicPublishingEnabled Boolean?
-  retailMediaEnabled    Boolean?
-  digitalSignageEnabled Boolean?
-  createdAt             DateTime           @default(now())
-  updatedAt             DateTime           @updatedAt
+  retailMediaEnabled            Boolean?
+  digitalSignageEnabled         Boolean?
+  createdAt                     DateTime           @default(now())
+  updatedAt                     DateTime           @updatedAt
 
   organisation           Organisation                 @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   plan                   Plan                         @relation(fields: [planId], references: [id])
@@ -2310,24 +2311,24 @@ model SchoolSafeguardingReadiness {
   createdAt                    DateTime                          @default(now())
   updatedAt                    DateTime                          @updatedAt
 
-  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  organisation Organisation               @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   reviews      SchoolSafeguardingReview[]
 
   @@index([status])
 }
 
 model SchoolSafeguardingReview {
-  id             String                              @id @default(cuid())
+  id             String                           @id @default(cuid())
   readinessId    String
   organisationId String
   reviewerUserId String
   decision       SchoolSafeguardingReviewDecision
   notes          String?
-  policyVersion  String                              @default("school-safeguarding-readiness-v1")
+  policyVersion  String                           @default("school-safeguarding-readiness-v1")
   policySnapshot Json
-  createdAt      DateTime                            @default(now())
+  createdAt      DateTime                         @default(now())
 
-  readiness   SchoolSafeguardingReadiness @relation(fields: [readinessId], references: [id], onDelete: Cascade)
+  readiness    SchoolSafeguardingReadiness @relation(fields: [readinessId], references: [id], onDelete: Cascade)
   organisation Organisation                @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   reviewer     User                        @relation("SchoolSafeguardingReviewReviewer", fields: [reviewerUserId], references: [id], onDelete: Restrict)
 
@@ -2503,19 +2504,19 @@ model StudentContributor {
 }
 
 model SchoolStudentAccess {
-  id                     String                    @id @default(cuid())
-  organisationId         String
-  contributorId          String                    @unique
-  userId                  String?                   @unique
-  email                   String                    @unique
-  status                  SchoolStudentAccessStatus @default(INVITED)
-  invitationTokenHash     String?                   @unique
-  invitationExpiresAt     DateTime?
-  invitedByUserId         String
-  acceptedAt              DateTime?
-  revokedAt               DateTime?
-  createdAt               DateTime                  @default(now())
-  updatedAt               DateTime                  @updatedAt
+  id                  String                    @id @default(cuid())
+  organisationId      String
+  contributorId       String                    @unique
+  userId              String?                   @unique
+  email               String                    @unique
+  status              SchoolStudentAccessStatus @default(INVITED)
+  invitationTokenHash String?                   @unique
+  invitationExpiresAt DateTime?
+  invitedByUserId     String
+  acceptedAt          DateTime?
+  revokedAt           DateTime?
+  createdAt           DateTime                  @default(now())
+  updatedAt           DateTime                  @updatedAt
 
   organisation Organisation       @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   contributor  StudentContributor @relation(fields: [contributorId], references: [id], onDelete: Cascade)
@@ -3104,55 +3105,77 @@ model SchoolPodcastSeries {
 }
 
 model SchoolPodcastEpisode {
-  id                    String                 @id @default(cuid())
-  organisationId        String
-  seriesId              String
-  episodeId             String                 @unique
-  status                SchoolPodcastStatus    @default(DRAFT)
-  publicationScope      SchoolPublicationScope @default(INTERNAL_ONLY)
-  accessibleDescription String?
-  chaptersJson          Json?
-  createdByUserId       String
-  reviewedByUserId      String?
-  publishedAt           DateTime?
-  unpublishedAt         DateTime?
-  publicationRevision   Int                    @default(0)
+  id                       String                 @id @default(cuid())
+  organisationId           String
+  seriesId                 String
+  episodeId                String                 @unique
+  status                   SchoolPodcastStatus    @default(DRAFT)
+  publicationScope         SchoolPublicationScope @default(INTERNAL_ONLY)
+  accessibleDescription    String?
+  chaptersJson             Json?
+  createdByUserId          String
+  reviewedByUserId         String?
+  publishedAt              DateTime?
+  unpublishedAt            DateTime?
+  publicationRevision      Int                    @default(0)
   publicationPolicyVersion String?
-  lastPolicyCheckAt     DateTime?
-  unpublishReason       String?
-  createdAt             DateTime               @default(now())
-  updatedAt             DateTime               @updatedAt
+  lastPolicyCheckAt        DateTime?
+  unpublishReason          String?
+  createdAt                DateTime               @default(now())
+  updatedAt                DateTime               @updatedAt
 
-  organisation Organisation        @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  series       SchoolPodcastSeries @relation(fields: [seriesId], references: [id], onDelete: Cascade)
-  episode      SchoolEpisode       @relation(fields: [episodeId], references: [id], onDelete: Restrict)
-  createdBy    User                @relation("SchoolPodcastEpisodeCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  reviewedBy   User?               @relation("SchoolPodcastEpisodeReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
-  transcript   Transcript?
-  publicationDecisions SchoolPublicationDecision[]
+  organisation               Organisation                      @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  series                     SchoolPodcastSeries               @relation(fields: [seriesId], references: [id], onDelete: Cascade)
+  episode                    SchoolEpisode                     @relation(fields: [episodeId], references: [id], onDelete: Restrict)
+  createdBy                  User                              @relation("SchoolPodcastEpisodeCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  reviewedBy                 User?                             @relation("SchoolPodcastEpisodeReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+  transcript                 Transcript?
+  publicationDecisions       SchoolPublicationDecision[]
+  publicationDailyAggregates SchoolPublicationDailyAggregate[]
 
   @@index([organisationId, status, updatedAt])
   @@index([seriesId, createdAt])
 }
 
 model SchoolPublicationDecision {
-  id                String                        @id @default(cuid())
-  organisationId    String
-  podcastEpisodeId  String
-  actorUserId       String?
-  decision          SchoolPublicationDecisionType
-  policyVersion     String                        @default("school-publication-v1")
-  policySnapshot    Json
-  reason            String?
-  createdAt         DateTime                      @default(now())
+  id               String                        @id @default(cuid())
+  organisationId   String
+  podcastEpisodeId String
+  actorUserId      String?
+  decision         SchoolPublicationDecisionType
+  policyVersion    String                        @default("school-publication-v1")
+  policySnapshot   Json
+  reason           String?
+  createdAt        DateTime                      @default(now())
 
-  organisation   Organisation        @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  organisation   Organisation         @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   podcastEpisode SchoolPodcastEpisode @relation(fields: [podcastEpisodeId], references: [id], onDelete: Cascade)
   actor          User?                @relation("SchoolPublicationDecisionActor", fields: [actorUserId], references: [id], onDelete: SetNull)
 
   @@index([organisationId, createdAt])
   @@index([podcastEpisodeId, createdAt])
   @@index([actorUserId])
+}
+
+model SchoolPublicationDailyAggregate {
+  id                     String   @id @default(cuid())
+  organisationId         String
+  podcastEpisodeId       String
+  bucketStart            DateTime
+  metadataListingCount   Int      @default(0)
+  audioRequestCount      Int      @default(0)
+  audioBytesOffered      BigInt   @default(0)
+  fullAudioRequestCount  Int      @default(0)
+  rangeAudioRequestCount Int      @default(0)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  organisation   Organisation         @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  podcastEpisode SchoolPodcastEpisode @relation(fields: [podcastEpisodeId], references: [id], onDelete: Cascade)
+
+  @@unique([organisationId, podcastEpisodeId, bucketStart])
+  @@index([organisationId, bucketStart])
+  @@index([podcastEpisodeId, bucketStart])
 }
 
 model Transcript {

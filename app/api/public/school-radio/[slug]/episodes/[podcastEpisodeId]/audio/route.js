@@ -2,6 +2,7 @@ import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { NextResponse } from "next/server";
 import { getR2Storage } from "@/lib/r2";
 import { loadPublicSchoolPodcastAudio } from "@/lib/public-school-podcast";
+import { recordPublicAudioDelivery } from "@/lib/school-publication-operations-service";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -18,8 +19,9 @@ function parseRange(value, total) {
 export async function GET(request, { params }) {
   try {
     const { slug, podcastEpisodeId } = await params;
-    const asset = await loadPublicSchoolPodcastAudio(String(slug || "").toLowerCase(), String(podcastEpisodeId || ""));
-    if (!asset) return NextResponse.json({ error: "This school podcast audio is not publicly available." }, { status: 404 });
+    const publication = await loadPublicSchoolPodcastAudio(String(slug || "").toLowerCase(), String(podcastEpisodeId || ""));
+    if (!publication) return NextResponse.json({ error: "This school podcast audio is not publicly available." }, { status: 404 });
+    const { asset } = publication;
     const total = Number(asset.sizeBytes);
     if (!Number.isFinite(total) || total <= 0) return NextResponse.json({ error: "The published audio has an invalid size." }, { status: 500 });
     const range = parseRange(request.headers.get("range"), total);
@@ -31,6 +33,11 @@ export async function GET(request, { params }) {
     const length = range ? range.end - range.start + 1 : total;
     const headers = new Headers({ "Accept-Ranges": "bytes", "Content-Type": object.ContentType || asset.mimeType || "audio/mpeg", "Content-Length": String(length), "Cache-Control": "public, max-age=300", "Content-Disposition": "inline" });
     if (range) headers.set("Content-Range", `bytes ${range.start}-${range.end}/${total}`);
+    try {
+      await recordPublicAudioDelivery({ organisationId: publication.organisationId, podcastEpisodeId: publication.podcastEpisodeId, bytesOffered: length, rangeRequest: Boolean(range) });
+    } catch (error) {
+      console.error("Public school podcast audio evidence could not be recorded:", error);
+    }
     return new NextResponse(body, { status: range ? 206 : 200, headers });
   } catch (error) {
     console.error("Public school podcast stream failed:", error);

@@ -206,6 +206,12 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   });
   assert.equal(unauthenticatedSchoolPublicationPolicyChange.status, 401);
 
+  const unauthenticatedSchoolPublicationOperations = await api("/api/school-radio/publication-operations");
+  assert.equal(unauthenticatedSchoolPublicationOperations.status, 401);
+
+  const unauthenticatedSchoolPublicationExport = await api("/api/school-radio/publication-operations/export");
+  assert.equal(unauthenticatedSchoolPublicationExport.status, 401);
+
   const unavailablePublicSchoolPage = await api("/api/public/school-radio/not-a-school/episodes");
   assert.equal(unavailablePublicSchoolPage.status, 404);
 
@@ -1861,5 +1867,4 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   assert.equal(lastResponse.status, 429);
   assert.ok(Number(lastResponse.headers.get("retry-after")) > 0);
 });
-
 
