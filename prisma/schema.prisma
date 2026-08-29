@@ -103,6 +103,20 @@ enum SchoolNetworkRole {
   VIEWER
 }
 
+enum SchoolEpisodeExchangeOfferStatus {
+  AVAILABLE
+  PAUSED
+  WITHDRAWN
+}
+
+enum SchoolEpisodeExchangeRequestStatus {
+  PENDING
+  APPROVED
+  DECLINED
+  CANCELLED
+  REVOKED
+}
+
 enum SubscriptionStatus {
   TRIAL
   ACTIVE
@@ -843,6 +857,10 @@ model User {
   createdPortfolioEntries          PortfolioEntry[]                 @relation("PortfolioEntryCreatedBy")
   createdSchoolNetworks            SchoolNetwork[]                  @relation("SchoolNetworkCreatedBy")
   schoolNetworkMemberships         SchoolNetworkMember[]
+  createdSchoolEpisodeExchanges    SchoolEpisodeExchangeOffer[]     @relation("SchoolEpisodeExchangeCreatedBy")
+  requestedSchoolEpisodeExchanges  SchoolEpisodeExchangeRequest[]   @relation("SchoolEpisodeExchangeRequestedBy")
+  decidedSchoolEpisodeExchanges    SchoolEpisodeExchangeRequest[]   @relation("SchoolEpisodeExchangeDecidedBy")
+  importedSchoolEpisodeExchanges   SchoolEpisodeExchangeRequest[]   @relation("SchoolEpisodeExchangeImportedBy")
   enterpriseIdentityLinks          EnterpriseIdentityLink[]
   createdServiceAccounts           ServiceAccount[]                 @relation("ServiceAccountCreatedBy")
   createdCompliancePolicies        CompliancePolicy[]               @relation("CompliancePolicyCreatedBy")
@@ -887,7 +905,7 @@ model Organisation {
   locations                    Location[]
   locationGroups               LocationGroup[]
   channels                     Channel[]
-  mediaAssets                  MediaAsset[]                  @relation("OrganisationMediaAssets")
+  mediaAssets                  MediaAsset[]                   @relation("OrganisationMediaAssets")
   promoAssets                  PromoAsset[]
   auditLogs                    AuditLog[]
   players                      Player[]
@@ -936,6 +954,8 @@ model Organisation {
   assessments                  Assessment[]
   portfolioEntries             PortfolioEntry[]
   schoolNetworkSchool          SchoolNetworkSchool?
+  sourceSchoolEpisodeExchanges SchoolEpisodeExchangeOffer[]   @relation("SchoolEpisodeExchangeSource")
+  targetSchoolEpisodeRequests  SchoolEpisodeExchangeRequest[] @relation("SchoolEpisodeExchangeTarget")
   enterpriseSecurityPolicy     EnterpriseSecurityPolicy?
   enterpriseIdentityProviders  EnterpriseIdentityProvider[]
   serviceAccounts              ServiceAccount[]
@@ -983,10 +1003,11 @@ model SchoolNetwork {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  createdBy User                  @relation("SchoolNetworkCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  members   SchoolNetworkMember[]
-  schools   SchoolNetworkSchool[]
-  auditLogs AuditLog[]
+  createdBy             User                         @relation("SchoolNetworkCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  members               SchoolNetworkMember[]
+  schools               SchoolNetworkSchool[]
+  episodeExchangeOffers SchoolEpisodeExchangeOffer[]
+  auditLogs             AuditLog[]
 
   @@index([createdByUserId])
 }
@@ -1020,6 +1041,71 @@ model SchoolNetworkSchool {
 
   @@unique([schoolNetworkId, organisationId])
   @@index([schoolNetworkId, active])
+}
+
+model SchoolEpisodeExchangeOffer {
+  id                     String                           @id @default(cuid())
+  schoolNetworkId        String
+  sourceOrganisationId   String
+  episodeId              String
+  approvedPromoVersionId String
+  sourceTitle            String
+  sourceSummary          String?
+  languageCode           String                           @default("und")
+  durationSeconds        Int?
+  status                 SchoolEpisodeExchangeOfferStatus @default(AVAILABLE)
+  consentConfirmed       Boolean
+  policyVersion          String                           @default("school-network-exchange-v1")
+  createdByUserId        String
+  availableAt            DateTime                         @default(now())
+  withdrawnAt            DateTime?
+  createdAt              DateTime                         @default(now())
+  updatedAt              DateTime                         @updatedAt
+
+  schoolNetwork        SchoolNetwork                  @relation(fields: [schoolNetworkId], references: [id], onDelete: Cascade)
+  sourceOrganisation   Organisation                   @relation("SchoolEpisodeExchangeSource", fields: [sourceOrganisationId], references: [id], onDelete: Cascade)
+  episode              SchoolEpisode                  @relation(fields: [episodeId], references: [id], onDelete: Restrict)
+  approvedPromoVersion PromoVersion                   @relation(fields: [approvedPromoVersionId], references: [id], onDelete: Restrict)
+  createdBy            User                           @relation("SchoolEpisodeExchangeCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  requests             SchoolEpisodeExchangeRequest[]
+
+  @@unique([schoolNetworkId, episodeId])
+  @@index([schoolNetworkId, status, availableAt])
+  @@index([sourceOrganisationId, status])
+  @@index([approvedPromoVersionId])
+  @@index([createdByUserId])
+}
+
+model SchoolEpisodeExchangeRequest {
+  id                   String                             @id @default(cuid())
+  offerId              String
+  targetOrganisationId String
+  status               SchoolEpisodeExchangeRequestStatus @default(PENDING)
+  intendedUse          String
+  decisionNotes        String?
+  policyVersion        String                             @default("school-network-exchange-v1")
+  requestedByUserId    String
+  decidedByUserId      String?
+  importedByUserId     String?
+  requestedAt          DateTime                           @default(now())
+  decidedAt            DateTime?
+  revokedAt            DateTime?
+  importedAt           DateTime?
+  createdAt            DateTime                           @default(now())
+  updatedAt            DateTime                           @updatedAt
+
+  offer                SchoolEpisodeExchangeOffer @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  targetOrganisation   Organisation               @relation("SchoolEpisodeExchangeTarget", fields: [targetOrganisationId], references: [id], onDelete: Cascade)
+  requestedBy          User                       @relation("SchoolEpisodeExchangeRequestedBy", fields: [requestedByUserId], references: [id], onDelete: Restrict)
+  decidedBy            User?                      @relation("SchoolEpisodeExchangeDecidedBy", fields: [decidedByUserId], references: [id], onDelete: SetNull)
+  importedBy           User?                      @relation("SchoolEpisodeExchangeImportedBy", fields: [importedByUserId], references: [id], onDelete: SetNull)
+  importedAnnouncement SchoolAnnouncement?
+
+  @@unique([offerId, targetOrganisationId])
+  @@index([targetOrganisationId, status, requestedAt])
+  @@index([requestedByUserId])
+  @@index([decidedByUserId])
+  @@index([importedByUserId])
 }
 
 model Plan {
@@ -1512,22 +1598,23 @@ model PromoVersion {
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
 
-  promoAsset            PromoAsset                 @relation("PromoAssetVersions", fields: [promoAssetId], references: [id], onDelete: Cascade)
-  mediaAsset            MediaAsset                 @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
-  submittedBy           User?                      @relation("PromoVersionSubmittedBy", fields: [submittedById], references: [id], onDelete: SetNull)
-  reviewedBy            User?                      @relation("PromoVersionReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
-  liveFallbackSessions  LiveStudioSession[]
-  approvedForPromo      PromoAsset?                @relation("CurrentApprovedPromoVersion")
-  processingJobs        PromoProcessingJob[]
-  campaigns             Campaign[]
-  schoolAnnouncements   SchoolAnnouncement[]
-  schoolSubmissions     SchoolSubmission[]
-  audioTakes            AudioTake[]
-  renderedAudioVersions AudioRender[]              @relation("AudioRenderPromoVersion")
-  playoutIntents        PlayoutIntent[]
-  proofOfPlayEvents     ProofOfPlayEvent[]
-  schoolRundownItems    SchoolRundownItem[]
-  retailMediaCreatives  RetailMediaOrderCreative[]
+  promoAsset                  PromoAsset                   @relation("PromoAssetVersions", fields: [promoAssetId], references: [id], onDelete: Cascade)
+  mediaAsset                  MediaAsset                   @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+  submittedBy                 User?                        @relation("PromoVersionSubmittedBy", fields: [submittedById], references: [id], onDelete: SetNull)
+  reviewedBy                  User?                        @relation("PromoVersionReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+  liveFallbackSessions        LiveStudioSession[]
+  approvedForPromo            PromoAsset?                  @relation("CurrentApprovedPromoVersion")
+  processingJobs              PromoProcessingJob[]
+  campaigns                   Campaign[]
+  schoolAnnouncements         SchoolAnnouncement[]
+  schoolSubmissions           SchoolSubmission[]
+  audioTakes                  AudioTake[]
+  renderedAudioVersions       AudioRender[]                @relation("AudioRenderPromoVersion")
+  playoutIntents              PlayoutIntent[]
+  proofOfPlayEvents           ProofOfPlayEvent[]
+  schoolRundownItems          SchoolRundownItem[]
+  retailMediaCreatives        RetailMediaOrderCreative[]
+  schoolEpisodeExchangeOffers SchoolEpisodeExchangeOffer[]
 
   @@unique([promoAssetId, version])
   @@unique([promoAssetId, sourceReference])
@@ -2155,31 +2242,34 @@ model SchoolProfile {
 }
 
 model SchoolAnnouncement {
-  id               String                   @id @default(cuid())
-  organisationId   String
-  promoVersionId   String
-  title            String
-  summary          String?
-  status           SchoolAnnouncementStatus @default(DRAFT)
-  policyVersion    String                   @default("school-radio-v1")
-  createdByUserId  String
-  reviewedByUserId String?
-  submittedAt      DateTime?
-  reviewedAt       DateTime?
-  reviewNotes      String?
-  createdAt        DateTime                 @default(now())
-  updatedAt        DateTime                 @updatedAt
+  id                      String                   @id @default(cuid())
+  organisationId          String
+  promoVersionId          String
+  sourceExchangeRequestId String?                  @unique
+  title                   String
+  summary                 String?
+  status                  SchoolAnnouncementStatus @default(DRAFT)
+  policyVersion           String                   @default("school-radio-v1")
+  createdByUserId         String
+  reviewedByUserId        String?
+  submittedAt             DateTime?
+  reviewedAt              DateTime?
+  reviewNotes             String?
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
 
-  organisation     Organisation            @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  promoVersion     PromoVersion            @relation(fields: [promoVersionId], references: [id], onDelete: Restrict)
-  createdBy        User                    @relation("SchoolAnnouncementCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  reviewedBy       User?                   @relation("SchoolAnnouncementReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
-  broadcastSlots   SchoolBroadcastSlot[]
-  rundownItems     SchoolRundownItem[]
-  noticeboardPosts SchoolNoticeboardPost[]
+  organisation          Organisation                  @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  promoVersion          PromoVersion                  @relation(fields: [promoVersionId], references: [id], onDelete: Restrict)
+  sourceExchangeRequest SchoolEpisodeExchangeRequest? @relation(fields: [sourceExchangeRequestId], references: [id], onDelete: SetNull)
+  createdBy             User                          @relation("SchoolAnnouncementCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  reviewedBy            User?                         @relation("SchoolAnnouncementReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+  broadcastSlots        SchoolBroadcastSlot[]
+  rundownItems          SchoolRundownItem[]
+  noticeboardPosts      SchoolNoticeboardPost[]
 
   @@index([organisationId, status])
   @@index([promoVersionId])
+  @@index([sourceExchangeRequestId])
   @@index([createdByUserId])
   @@index([reviewedByUserId])
 }
@@ -2358,9 +2448,9 @@ model SchoolEpisode {
   createdAt        DateTime               @default(now())
   updatedAt        DateTime               @updatedAt
 
-  organisation          Organisation               @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  programme             SchoolProgramme            @relation(fields: [programmeId], references: [id], onDelete: Restrict)
-  createdBy             User                       @relation("SchoolEpisodeCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  organisation          Organisation                 @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  programme             SchoolProgramme              @relation(fields: [programmeId], references: [id], onDelete: Restrict)
+  createdBy             User                         @relation("SchoolEpisodeCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
   contributors          SchoolEpisodeContributor[]
   submissions           SchoolSubmission[]
   reviews               SchoolModerationReview[]
@@ -2369,6 +2459,7 @@ model SchoolEpisode {
   rundown               SchoolRundown?
   broadcastSlots        SchoolBroadcastSlot[]
   podcastEpisode        SchoolPodcastEpisode?
+  networkExchangeOffers SchoolEpisodeExchangeOffer[]
   transcripts           Transcript[]
   newsStories           SchoolNewsStory[]
   liveSessions          LiveStudioSession[]

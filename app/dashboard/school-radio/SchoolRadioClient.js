@@ -10,6 +10,7 @@ import PodcastNewsLiveClient from "./PodcastNewsLiveClient";
 import LearningWorkspaceClient from "./LearningWorkspaceClient";
 import AcademyWorkspaceClient from "./AcademyWorkspaceClient";
 import SchoolNoticeboardClient from "./SchoolNoticeboardClient";
+import SchoolExchangeClient from "./SchoolExchangeClient";
 
 const managerRoles = new Set(["OWNER", "MANAGER"]);
 
@@ -144,6 +145,7 @@ export default function SchoolRadioClient() {
     {notice ? <div style={styles.notice}>{notice}</div> : null}
 
     <AcademyWorkspaceClient />
+    <SchoolExchangeClient />
     <AudioLabClient />
     <WaveformEditorClient />
     <MultitrackStudioClient />

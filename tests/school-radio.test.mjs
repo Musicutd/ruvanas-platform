@@ -80,6 +80,25 @@ test("only approved, tenant-owned, targeted announcements enter the player manif
   assert.deepEqual(excluded.insertions, []);
 });
 
+test("approved network-exchange audio plays only while the exact cross-school grant remains active", () => {
+  const local = approvedSlot().announcement;
+  const sharedAnnouncement = {
+    ...local,
+    promoVersion: { ...local.promoVersion, mediaAsset: { ...local.promoVersion.mediaAsset, organisationId: "org-2" } },
+    sourceExchangeRequest: {
+      targetOrganisationId: "org-1",
+      status: "APPROVED",
+      offer: { status: "AVAILABLE", sourceOrganisationId: "org-2", approvedPromoVersionId: "version-1" }
+    }
+  };
+  const playable = compileSchoolRadioPlayout({ slots: [approvedSlot({ announcement: sharedAnnouncement })], player, instant: new Date("2026-09-01T08:02:00.000Z") });
+  assert.equal(playable.insertions.length, 1);
+  const revoked = compileSchoolRadioPlayout({ slots: [approvedSlot({ announcement: { ...sharedAnnouncement, sourceExchangeRequest: { ...sharedAnnouncement.sourceExchangeRequest, status: "REVOKED" } } })], player, instant: new Date("2026-09-01T08:02:00.000Z") });
+  assert.equal(revoked.insertions.length, 0);
+  const mismatchedAudio = compileSchoolRadioPlayout({ slots: [approvedSlot({ announcement: { ...sharedAnnouncement, sourceExchangeRequest: { ...sharedAnnouncement.sourceExchangeRequest, offer: { ...sharedAnnouncement.sourceExchangeRequest.offer, approvedPromoVersionId: "another-version" } } } })], player, instant: new Date("2026-09-01T08:02:00.000Z") });
+  assert.equal(mismatchedAudio.insertions.length, 0);
+});
+
 test("school playout intents are tenant snapshots without a campaign", () => {
   const insertion = compileSchoolRadioPlayout({ slots: [approvedSlot()], player, instant: new Date("2026-09-01T08:02:00.000Z") }).insertions[0];
   const data = schoolPlayoutIntentCreateData({ insertion, player, channelId: "channel-1" });
