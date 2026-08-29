@@ -1163,7 +1163,8 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     assert.equal(publishPublicPodcast.status, 200, await publishPublicPodcast.clone().text());
     assert.equal((await publishPublicPodcast.json()).result.publicationScope, "PUBLIC");
 
-    const publicSchoolEpisodes = await api(`/api/public/school-radio/${accountABody.organisation.slug}/episodes`);
+    const publicSchoolSlug = (await db.organisation.findUnique({ where: { id: accountABody.organisation.id }, select: { slug: true } })).slug;
+    const publicSchoolEpisodes = await api(`/api/public/school-radio/${publicSchoolSlug}/episodes`);
     assert.equal(publicSchoolEpisodes.status, 200, await publicSchoolEpisodes.clone().text());
     const publicSchoolBody = await publicSchoolEpisodes.json();
     assert.equal(publicSchoolBody.episodes.length, 1);
@@ -1181,7 +1182,7 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     assert.equal((await returnSchoolPolicyToPrivate.json()).withdrawnCount, 1);
     assert.equal((await db.schoolPodcastEpisode.findUnique({ where: { id: podcastEpisode.id } })).status, "UNPUBLISHED");
     assert.equal(await db.schoolPublicationDecision.count({ where: { podcastEpisodeId: podcastEpisode.id, decision: "AUTO_WITHDRAWN" } }), 1);
-    assert.equal((await api(`/api/public/school-radio/${accountABody.organisation.slug}/episodes`)).status, 404);
+    assert.equal((await api(`/api/public/school-radio/${publicSchoolSlug}/episodes`)).status, 404);
 
     const createHiddenNetwork = await api("/api/school-radio/network", {
       method: "POST",
