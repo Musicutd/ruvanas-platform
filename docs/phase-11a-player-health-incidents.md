@@ -53,4 +53,3 @@ The admin panel, API routes, and operations worker can be disabled without affec
 ## Next smallest safe milestone
 
 Stage 11B should add expiring, acknowledged player diagnostic commands and replacement/revoke controls. It must remain separate because remote commands change device state and require stronger compatibility, authorization, and rollback testing.
-
