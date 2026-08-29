@@ -15,6 +15,7 @@ import SchoolSafeguardingReadinessClient from "./SchoolSafeguardingReadinessClie
 import SchoolStudentAccessClient from "./SchoolStudentAccessClient";
 import SchoolPublicationControl from "./SchoolPublicationControl";
 import SchoolPublicationOperationsClient from "./SchoolPublicationOperationsClient";
+import SchoolPilotReadinessClient from "./SchoolPilotReadinessClient";
 
 const managerRoles = new Set(["OWNER", "MANAGER"]);
 
@@ -152,6 +153,7 @@ export default function SchoolRadioClient() {
     {canManage ? <SchoolStudentAccessClient /> : null}
     {canManage ? <SchoolPublicationControl /> : null}
     {canManage ? <SchoolPublicationOperationsClient /> : null}
+    {canManage ? <SchoolPilotReadinessClient /> : null}
     <AcademyWorkspaceClient />
     <SchoolExchangeClient />
     <AudioLabClient />
@@ -215,4 +217,5 @@ const styles = {
   badge: { display: "inline-block", borderRadius: 5, padding: "4px 8px", fontSize: 11, fontWeight: 900, whiteSpace: "nowrap" },
   error: { border: "1px solid #ef4444", background: "#451a1a", color: "#fecaca", borderRadius: 8, padding: 12, marginBottom: 16 }, notice: { border: "1px solid #22c55e", background: "#052e16", color: "#bbf7d0", borderRadius: 8, padding: 12, marginBottom: 16 }, privacy: { color: "#8ea0b8", fontSize: 12, marginTop: 20 }
 };
+
 
