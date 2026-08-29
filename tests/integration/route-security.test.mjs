@@ -146,6 +146,27 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   const unauthenticatedSignageDevices = await api("/api/admin/digital-signage/devices?organisationId=not-an-organisation");
   assert.equal(unauthenticatedSignageDevices.status, 401);
 
+  const unauthenticatedSignagePlaylists = await api("/api/admin/digital-signage/playlists?organisationId=not-an-organisation");
+  assert.equal(unauthenticatedSignagePlaylists.status, 401);
+
+  const unauthenticatedSignagePlaylistPublish = await api("/api/admin/digital-signage/playlists/not-a-playlist/publish", { method: "PATCH", body: { action: "PUBLISH" } });
+  assert.equal(unauthenticatedSignagePlaylistPublish.status, 401);
+
+  const unauthenticatedSignageState = await api("/api/signage/state");
+  assert.equal(unauthenticatedSignageState.status, 401);
+
+  const unauthenticatedSignageManifest = await api("/api/signage/manifest");
+  assert.equal(unauthenticatedSignageManifest.status, 401);
+
+  const unauthenticatedSignageHeartbeat = await api("/api/signage/heartbeat", { method: "POST" });
+  assert.equal(unauthenticatedSignageHeartbeat.status, 401);
+
+  const unauthenticatedSignageProof = await api("/api/signage/proof", { method: "POST", body: { events: [] } });
+  assert.equal(unauthenticatedSignageProof.status, 401);
+
+  const unauthenticatedSignageMedia = await api("/api/signage/media/not-an-asset");
+  assert.equal(unauthenticatedSignageMedia.status, 401);
+
   const unauthenticatedSchoolAnnouncements = await api("/api/school-radio/announcements");
   assert.equal(unauthenticatedSchoolAnnouncements.status, 401);
 

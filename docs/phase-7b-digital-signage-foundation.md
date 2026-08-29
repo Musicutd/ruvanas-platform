@@ -23,4 +23,4 @@ Phase 7B establishes a tenant-safe visual-content and display-device foundation 
 
 ## Deferred from this increment
 
-Video transcoding, the dedicated signage-player application, visual playlists, time-window scheduling, asset-to-region assignment, emergency takeovers, Retail Media visual-order fulfilment, and combined audio/visual delivery reports remain Stage 7C+ work. Delivery evidence will continue to mean device-confirmed events only; it will not be presented as audience reach or commercial outcome.
+The dedicated signage player, visual playlists, time-window scheduling, asset-to-region assignment, offline-safe delivery, and device-confirmed evidence are delivered in Stage 7C. Video transcoding, emergency takeovers, Retail Media visual-order fulfilment, and combined audio/visual delivery reports remain Stage 7D work. Delivery evidence continues to mean device-confirmed events only; it is not audience reach or a commercial outcome.

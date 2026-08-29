@@ -1,5 +1,11 @@
 # Database migration operations
 
+## Stage 7C Digital Signage delivery
+
+Migration `20260911000000_stage_7c_digital_signage_delivery` is additive. It adds publishable, time-windowed visual playlists, ordered asset-to-region items, device assignments, and idempotent device-confirmed display evidence. Existing audio schedules, players, manifests, proof records, Retail Media orders, and Stage 7B visual assets/layouts/devices are not rewritten.
+
+Rollback should be performed only before Stage 7C data is accepted. Remove the Stage 7C proof, assignment, item, and playlist tables in dependency order, then remove the two Stage 7C enums. Do not alter any Stage 7B tables during rollback.
+
 ## Stage 7B digital-signage foundation
 
 Migration `20260910000000_stage_7b_digital_signage_foundation` is additive. It adds opt-in Digital Signage entitlements, tenant-owned visual assets, bounded reusable layouts and regions, and zone-bound display-device registrations. Existing audio players, campaigns, schedules, manifests, and proof records are not modified.
