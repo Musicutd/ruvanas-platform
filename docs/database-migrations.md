@@ -1,5 +1,11 @@
 # Database migration operations
 
+## Stage 11B Controlled Player Commands and Replacement
+
+Migration `20260924000000_stage_11b_player_commands_replacement` adds the `PlayerCommand` evidence table, command enums, nullable revocation/retirement fields, and a one-to-one player replacement link. It does not alter playback manifests, schedules, media, proof-of-play, or existing enrolment sessions.
+
+The migration is additive. After command or replacement evidence exists, retain the table and lifecycle fields during application rollback. Destructive rollback requires a separately approved evidence-retention decision.
+
 ## Stage 11A Player Health History and Incidents
 
 Migration `20260923000000_stage_11a_player_health_incidents` is additive. It adds five-minute player heartbeat samples and a platform-admin incident register with severity, acknowledgement, resolution, operator attribution, and historical location/zone identifiers. A partial unique index permits only one unresolved missed-heartbeat incident per player.

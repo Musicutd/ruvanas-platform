@@ -67,6 +67,16 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   const tenantOwnerPlayerHealth = await api("/api/admin/players/health", { cookie: cookieA });
   assert.equal(tenantOwnerPlayerHealth.status, 403);
 
+  const tenantOwnerPlayerCommands = await api("/api/admin/players/commands", { cookie: cookieA });
+  assert.equal(tenantOwnerPlayerCommands.status, 403);
+
+  const tenantOwnerPlayerLifecycle = await api("/api/admin/players/not-a-player/lifecycle", {
+    method: "POST",
+    cookie: cookieA,
+    body: { action: "REVOKE_SESSION", note: "Tenant users cannot revoke platform players." }
+  });
+  assert.equal(tenantOwnerPlayerLifecycle.status, 403);
+
   const ownOrganisationSwitch = await api("/api/me/organisation", {
     method: "POST",
     cookie: cookieA,
@@ -95,6 +105,15 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   });
   assert.equal(unauthenticatedHeartbeat.status, 401);
 
+  const unauthenticatedPlayerCommands = await api("/api/player/commands");
+  assert.equal(unauthenticatedPlayerCommands.status, 401);
+
+  const unauthenticatedPlayerCommandAcknowledgement = await api("/api/player/commands/not-a-command/acknowledge", {
+    method: "POST",
+    body: { outcome: "SUCCEEDED" }
+  });
+  assert.equal(unauthenticatedPlayerCommandAcknowledgement.status, 401);
+
   const unauthenticatedPlayerHealth = await api("/api/admin/players/health");
   assert.equal(unauthenticatedPlayerHealth.status, 401);
 
@@ -103,6 +122,24 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     body: { action: "ACKNOWLEDGE", note: "Unauthorised operational note." }
   });
   assert.equal(unauthenticatedPlayerIncidentUpdate.status, 401);
+
+  const unauthenticatedAdminPlayerCommands = await api("/api/admin/players/commands");
+  assert.equal(unauthenticatedAdminPlayerCommands.status, 401);
+
+  const unauthenticatedAdminPlayerCommandCreate = await api("/api/admin/players/commands", {
+    method: "POST",
+    body: { playerId: "not-a-player", kind: "PING" }
+  });
+  assert.equal(unauthenticatedAdminPlayerCommandCreate.status, 401);
+
+  const unauthenticatedAdminPlayerCommandCancel = await api("/api/admin/players/commands/not-a-command", { method: "PATCH" });
+  assert.equal(unauthenticatedAdminPlayerCommandCancel.status, 401);
+
+  const unauthenticatedAdminPlayerLifecycle = await api("/api/admin/players/not-a-player/lifecycle", {
+    method: "POST",
+    body: { action: "REVOKE_SESSION", note: "Unauthorised lifecycle action." }
+  });
+  assert.equal(unauthenticatedAdminPlayerLifecycle.status, 401);
 
   const unauthenticatedProofOfPlay = await api("/api/player/proof-of-play", {
     method: "POST",

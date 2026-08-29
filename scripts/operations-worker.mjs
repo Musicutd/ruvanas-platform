@@ -1,6 +1,7 @@
 import { prisma } from "../lib/prisma.js";
 import { PLAYER_HEALTH_SCAN_SECONDS } from "../lib/player-health.mjs";
 import { scanPlayerHealth } from "../lib/player-health-service.js";
+import { expirePlayerCommands } from "../lib/player-command-service.js";
 
 let stopping = false;
 for (const signal of ["SIGTERM", "SIGINT"]) process.once(signal, () => { stopping = true; });
@@ -10,6 +11,8 @@ while (!stopping) {
   try {
     const result = await scanPlayerHealth(prisma);
     if (result.created > 0) console.warn(JSON.stringify({ level: "warn", event: "player_health_incident_opened", ...result }));
+    const commands = await expirePlayerCommands(prisma);
+    if (commands.expired > 0) console.log(JSON.stringify({ level: "info", event: "player_commands_expired", ...commands }));
   } catch (error) {
     console.error(JSON.stringify({ level: "error", event: "player_health_scan_failed", message: String(error?.message || error).slice(0, 1_000) }));
   }

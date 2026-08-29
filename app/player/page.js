@@ -8,6 +8,7 @@ import {
 
 const PLAYBACK_QUEUE_KEY = "ruvanas_proof_of_play_queue_v1";
 const PLAYED_INSERTIONS_KEY = "ruvanas_played_campaign_insertions_v1";
+const PLAYER_APP_VERSION = "stage-11b";
 
 function readPlaybackQueue() {
   try {
@@ -51,6 +52,7 @@ export default function PlayerPage() {
   const audio = useRef(null);
   const activeItemRef = useRef(null);
   const startedPlaybackKey = useRef(null);
+  const commandBusy = useRef(false);
 
   const flushPlaybackQueue = useCallback(async () => {
     const queued = readPlaybackQueue();
@@ -101,6 +103,49 @@ export default function PlayerPage() {
     setLoading(false);
   }, [loadManifest]);
 
+  const pollPlayerCommands = useCallback(async () => {
+    if (commandBusy.current) return;
+    commandBusy.current = true;
+    try {
+      const response = await fetch("/api/player/commands", { cache: "no-store" });
+      if (!response.ok) return;
+      const { command } = await response.json();
+      if (!command) return;
+      let outcome = "SUCCEEDED";
+      let message = "Command completed by the enrolled player.";
+      try {
+        if (command.kind === "REFRESH_STATE") await loadState();
+        else if (command.kind === "REFRESH_MANIFEST") await loadManifest();
+        else if (command.kind === "COLLECT_DIAGNOSTICS" || command.kind === "PING") {
+          // These commands intentionally inspect only the bounded state below.
+        } else {
+          outcome = "UNSUPPORTED";
+          message = "The player does not support this command.";
+        }
+      } catch (error) {
+        outcome = "FAILED";
+        message = error instanceof Error ? error.message : "The player could not complete the command.";
+      }
+      await fetch(`/api/player/commands/${command.id}/acknowledge`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          outcome,
+          message,
+          details: {
+            appVersion: PLAYER_APP_VERSION,
+            manifestVersion: manifest?.version || null,
+            sourceStatus: navigator.onLine ? "CONNECTED" : "DISCONNECTED"
+          }
+        })
+      });
+    } catch {
+      // The expiring command remains visible to operations if the device disconnects.
+    } finally {
+      commandBusy.current = false;
+    }
+  }, [loadManifest, loadState, manifest?.version]);
+
   useEffect(() => {
     loadState().catch((error) => { setMessage(error.message); setLoading(false); });
   }, [loadState]);
@@ -108,13 +153,22 @@ export default function PlayerPage() {
   useEffect(() => {
     if (!state) return undefined;
     const heartbeat = async () => {
-      await fetch("/api/player/heartbeat", { method: "POST" });
+      await fetch("/api/player/heartbeat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          appVersion: PLAYER_APP_VERSION,
+          manifestVersion: manifest?.version || null,
+          sourceStatus: navigator.onLine ? "CONNECTED" : "DISCONNECTED"
+        })
+      });
       await flushPlaybackQueue();
+      await pollPlayerCommands();
     };
     heartbeat();
     timer.current = window.setInterval(heartbeat, state.heartbeatIntervalSeconds * 1000);
     return () => window.clearInterval(timer.current);
-  }, [state, flushPlaybackQueue]);
+  }, [state, manifest?.version, flushPlaybackQueue, pollPlayerCommands]);
 
   useEffect(() => {
     window.addEventListener("online", flushPlaybackQueue);
