@@ -295,6 +295,51 @@ enum CampaignWindowMode {
   EXACT_TIME
 }
 
+enum RetailMediaPartnerKind {
+  ADVERTISER
+  AGENCY
+}
+
+enum RetailMediaPartnerStatus {
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+}
+
+enum RetailMediaInventoryStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum RetailMediaPriceModel {
+  FIXED_FEE
+  PER_PLAY
+  CPM
+  CUSTOM
+}
+
+enum RetailMediaInventoryTargetType {
+  BRAND
+  LOCATION_GROUP
+  ZONE
+}
+
+enum RetailMediaOrderStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  CANCELLED
+  FULFILLED
+}
+
+enum RetailMediaCreativeStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 enum PlayerStatus {
   PENDING_ENROLMENT
   ONLINE
@@ -747,6 +792,9 @@ model User {
   reviewedAIJobs                AIJob[]                       @relation("AIJobReviewedBy")
   recommendationFeedback        RecommendationFeedback[]
   createdIntegrationConnections IntegrationConnection[]       @relation("IntegrationConnectionCreatedBy")
+  createdRetailMediaInventory   RetailMediaInventoryPackage[] @relation("RetailMediaInventoryCreatedBy")
+  approvedRetailMediaOrders     RetailMediaOrder[]            @relation("RetailMediaOrderApprovedBy")
+  reviewedRetailMediaCreatives  RetailMediaOrderCreative[]    @relation("RetailMediaCreativeReviewedBy")
 }
 
 model Organisation {
@@ -825,6 +873,9 @@ model Organisation {
   integrationSyncRuns         IntegrationSyncRun[]
   integrationMetricSummaries  IntegrationMetricSummary[]
   outgoingWebhookEvents       OutgoingWebhookEvent[]
+  retailMediaPartners         RetailMediaPartner[]
+  retailMediaInventory        RetailMediaInventoryPackage[]
+  retailMediaOrders           RetailMediaOrder[]
 }
 
 model OrganisationMember {
@@ -900,6 +951,7 @@ model Plan {
   includesRuvanasCatalogue Boolean  @default(false)
   promoUploadEnabled       Boolean  @default(true)
   schoolRadioEnabled       Boolean  @default(false)
+  retailMediaEnabled       Boolean  @default(false)
   active                   Boolean  @default(true)
   createdAt                DateTime @default(now())
   updatedAt                DateTime @updatedAt
@@ -914,6 +966,7 @@ model Subscription {
   status             SubscriptionStatus @default(TRIAL)
   currentPeriodEnd   DateTime?
   schoolRadioEnabled Boolean?
+  retailMediaEnabled Boolean?
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
 
@@ -1048,10 +1101,11 @@ model Brand {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  organisation    Organisation     @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  locations       Location[]
-  channels        Channel[]
-  campaignTargets CampaignTarget[]
+  organisation                Organisation                 @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  locations                   Location[]
+  channels                    Channel[]
+  campaignTargets             CampaignTarget[]
+  retailMediaInventoryTargets RetailMediaInventoryTarget[]
 
   @@unique([organisationId, slug])
   @@index([organisationId])
@@ -1132,9 +1186,10 @@ model LocationGroup {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  organisation    Organisation          @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  locations       LocationGroupMember[]
-  campaignTargets CampaignTarget[]
+  organisation                Organisation                 @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  locations                   LocationGroupMember[]
+  campaignTargets             CampaignTarget[]
+  retailMediaInventoryTargets RetailMediaInventoryTarget[]
 
   @@unique([organisationId, slug])
   @@index([organisationId])
@@ -1161,14 +1216,15 @@ model Zone {
   createdAt  DateTime   @default(now())
   updatedAt  DateTime   @updatedAt
 
-  location             Location              @relation(fields: [locationId], references: [id], onDelete: Cascade)
-  channelAssignments   ChannelAssignment[]
-  players              Player[]
-  musicSchedules       MusicSchedule[]
-  proofOfPlayEvents    ProofOfPlayEvent[]
-  campaignTargets      CampaignTarget[]
-  playoutIntents       PlayoutIntent[]
-  schoolBroadcastSlots SchoolBroadcastSlot[]
+  location                    Location                     @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  channelAssignments          ChannelAssignment[]
+  players                     Player[]
+  musicSchedules              MusicSchedule[]
+  proofOfPlayEvents           ProofOfPlayEvent[]
+  campaignTargets             CampaignTarget[]
+  playoutIntents              PlayoutIntent[]
+  schoolBroadcastSlots        SchoolBroadcastSlot[]
+  retailMediaInventoryTargets RetailMediaInventoryTarget[]
 
   @@unique([locationId, slug])
   @@index([locationId])
@@ -1368,21 +1424,22 @@ model PromoVersion {
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
 
-  promoAsset            PromoAsset           @relation("PromoAssetVersions", fields: [promoAssetId], references: [id], onDelete: Cascade)
-  mediaAsset            MediaAsset           @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
-  submittedBy           User?                @relation("PromoVersionSubmittedBy", fields: [submittedById], references: [id], onDelete: SetNull)
-  reviewedBy            User?                @relation("PromoVersionReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+  promoAsset            PromoAsset                 @relation("PromoAssetVersions", fields: [promoAssetId], references: [id], onDelete: Cascade)
+  mediaAsset            MediaAsset                 @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+  submittedBy           User?                      @relation("PromoVersionSubmittedBy", fields: [submittedById], references: [id], onDelete: SetNull)
+  reviewedBy            User?                      @relation("PromoVersionReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
   liveFallbackSessions  LiveStudioSession[]
-  approvedForPromo      PromoAsset?          @relation("CurrentApprovedPromoVersion")
+  approvedForPromo      PromoAsset?                @relation("CurrentApprovedPromoVersion")
   processingJobs        PromoProcessingJob[]
   campaigns             Campaign[]
   schoolAnnouncements   SchoolAnnouncement[]
   schoolSubmissions     SchoolSubmission[]
   audioTakes            AudioTake[]
-  renderedAudioVersions AudioRender[]        @relation("AudioRenderPromoVersion")
+  renderedAudioVersions AudioRender[]              @relation("AudioRenderPromoVersion")
   playoutIntents        PlayoutIntent[]
   proofOfPlayEvents     ProofOfPlayEvent[]
   schoolRundownItems    SchoolRundownItem[]
+  retailMediaCreatives  RetailMediaOrderCreative[]
 
   @@unique([promoAssetId, version])
   @@unique([promoAssetId, sourceReference])
@@ -1441,6 +1498,7 @@ model Campaign {
   schedules         CampaignSchedule[]
   playoutIntents    PlayoutIntent[]
   proofOfPlayEvents ProofOfPlayEvent[]
+  retailMediaOrder  RetailMediaOrder?
 
   @@index([organisationId, status])
   @@index([promoVersionId, status])
@@ -1499,6 +1557,143 @@ model CampaignSchedule {
 
   @@index([campaignId, weekday, startMinute])
   @@index([campaignId, weekday, exactMinute])
+}
+
+model RetailMediaPartner {
+  id               String                   @id @default(cuid())
+  organisationId   String
+  kind             RetailMediaPartnerKind
+  name             String
+  legalName        String?
+  contactName      String?
+  contactEmail     String?
+  contactPhone     String?
+  billingReference String?
+  status           RetailMediaPartnerStatus @default(ACTIVE)
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+
+  organisation     Organisation       @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  advertiserOrders RetailMediaOrder[] @relation("RetailMediaOrderAdvertiser")
+  agencyOrders     RetailMediaOrder[] @relation("RetailMediaOrderAgency")
+
+  @@unique([organisationId, kind, name])
+  @@index([organisationId, status, kind])
+}
+
+model RetailMediaInventoryPackage {
+  id               String                     @id @default(cuid())
+  organisationId   String
+  name             String
+  description      String?
+  status           RetailMediaInventoryStatus @default(DRAFT)
+  priceModel       RetailMediaPriceModel
+  currencyCode     String?                    @db.VarChar(3)
+  unitPriceMinor   Int?
+  maxPlays         Int
+  effectiveFrom    DateTime                   @db.Date
+  effectiveTo      DateTime                   @db.Date
+  restrictionNotes String?
+  createdByUserId  String
+  createdAt        DateTime                   @default(now())
+  updatedAt        DateTime                   @updatedAt
+
+  organisation Organisation                  @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  createdBy    User                          @relation("RetailMediaInventoryCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  targets      RetailMediaInventoryTarget[]
+  dayparts     RetailMediaInventoryDaypart[]
+  orders       RetailMediaOrder[]
+
+  @@unique([organisationId, name])
+  @@index([organisationId, status, effectiveFrom, effectiveTo])
+  @@index([createdByUserId])
+}
+
+model RetailMediaInventoryTarget {
+  id                 String                         @id @default(cuid())
+  inventoryPackageId String
+  targetType         RetailMediaInventoryTargetType
+  brandId            String?
+  locationGroupId    String?
+  zoneId             String?
+  createdAt          DateTime                       @default(now())
+
+  inventoryPackage RetailMediaInventoryPackage @relation(fields: [inventoryPackageId], references: [id], onDelete: Cascade)
+  brand            Brand?                      @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  locationGroup    LocationGroup?              @relation(fields: [locationGroupId], references: [id], onDelete: Cascade)
+  zone             Zone?                       @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+
+  @@unique([inventoryPackageId, targetType, brandId, locationGroupId, zoneId])
+  @@index([inventoryPackageId, targetType])
+  @@index([brandId])
+  @@index([locationGroupId])
+  @@index([zoneId])
+}
+
+model RetailMediaInventoryDaypart {
+  id                 String   @id @default(cuid())
+  inventoryPackageId String
+  weekday            Int
+  startMinute        Int
+  endMinute          Int
+  createdAt          DateTime @default(now())
+
+  inventoryPackage RetailMediaInventoryPackage @relation(fields: [inventoryPackageId], references: [id], onDelete: Cascade)
+
+  @@unique([inventoryPackageId, weekday, startMinute, endMinute], map: "RetailMediaDaypart_package_window_key")
+  @@index([inventoryPackageId, weekday, startMinute], map: "RetailMediaDaypart_package_weekday_idx")
+}
+
+model RetailMediaOrder {
+  id                     String                 @id @default(cuid())
+  organisationId         String
+  advertiserId           String
+  agencyId               String?
+  inventoryPackageId     String
+  campaignId             String?                @unique
+  name                   String
+  purchaseOrderReference String?
+  status                 RetailMediaOrderStatus @default(DRAFT)
+  submittedAt            DateTime?
+  approvedByUserId       String?
+  approvedAt             DateTime?
+  decisionNote           String?
+  createdAt              DateTime               @default(now())
+  updatedAt              DateTime               @updatedAt
+
+  organisation     Organisation                @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  advertiser       RetailMediaPartner          @relation("RetailMediaOrderAdvertiser", fields: [advertiserId], references: [id], onDelete: Restrict)
+  agency           RetailMediaPartner?         @relation("RetailMediaOrderAgency", fields: [agencyId], references: [id], onDelete: Restrict)
+  inventoryPackage RetailMediaInventoryPackage @relation(fields: [inventoryPackageId], references: [id], onDelete: Restrict)
+  campaign         Campaign?                   @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  approvedBy       User?                       @relation("RetailMediaOrderApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
+  creatives        RetailMediaOrderCreative[]
+
+  @@index([organisationId, status, createdAt])
+  @@index([advertiserId])
+  @@index([agencyId])
+  @@index([inventoryPackageId])
+  @@index([approvedByUserId])
+}
+
+model RetailMediaOrderCreative {
+  id             String                    @id @default(cuid())
+  orderId        String
+  promoVersionId String
+  status         RetailMediaCreativeStatus @default(PENDING)
+  reviewedById   String?
+  reviewedAt     DateTime?
+  reviewNote     String?
+  createdAt      DateTime                  @default(now())
+  updatedAt      DateTime                  @updatedAt
+
+  order        RetailMediaOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  promoVersion PromoVersion     @relation(fields: [promoVersionId], references: [id], onDelete: Restrict)
+  reviewedBy   User?            @relation("RetailMediaCreativeReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@unique([orderId, promoVersionId])
+  @@index([promoVersionId, status])
+  @@index([reviewedById])
 }
 
 model Track {

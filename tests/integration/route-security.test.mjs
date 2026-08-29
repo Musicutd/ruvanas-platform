@@ -134,6 +134,9 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   const unauthenticatedCampaignReport = await api("/api/reports/campaign-proof");
   assert.equal(unauthenticatedCampaignReport.status, 401);
 
+  const unauthenticatedRetailMedia = await api("/api/admin/retail-media/partners?organisationId=not-an-organisation");
+  assert.equal(unauthenticatedRetailMedia.status, 401);
+
   const unauthenticatedSchoolAnnouncements = await api("/api/school-radio/announcements");
   assert.equal(unauthenticatedSchoolAnnouncements.status, 401);
 
