@@ -25,4 +25,3 @@ function shutdown(signal) {
 for (const signal of ["SIGTERM", "SIGINT"]) process.once(signal, () => shutdown(signal));
 web.once("exit", (code) => { shutdown("SIGTERM"); process.exitCode = code || 0; });
 
-
