@@ -451,6 +451,23 @@ enum SchoolPublishingPolicy {
   PUBLIC
 }
 
+enum SchoolSafeguardingReadinessStatus {
+  DRAFT
+  READY_FOR_REVIEW
+}
+
+enum SchoolConsentModel {
+  SCHOOL_POLICY
+  PARENT_OR_GUARDIAN
+  BOTH
+}
+
+enum SchoolStudentIdentityMode {
+  DISABLED
+  INVITATION_ONLY
+  IDENTITY_FEDERATION
+}
+
 enum SchoolAnnouncementStatus {
   DRAFT
   IN_REVIEW
@@ -919,6 +936,7 @@ model Organisation {
   analyticsAggregationCursor   AnalyticsAggregationCursor?
   activeSessions               Session[]
   schoolProfile                SchoolProfile?
+  schoolSafeguardingReadiness  SchoolSafeguardingReadiness?
   schoolAnnouncements          SchoolAnnouncement[]
   schoolNoticeboardPosts       SchoolNoticeboardPost[]
   schoolBroadcastSlots         SchoolBroadcastSlot[]
@@ -2239,6 +2257,33 @@ model SchoolProfile {
   organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
 
   @@index([publishingPolicy])
+}
+
+model SchoolSafeguardingReadiness {
+  id                           String                            @id @default(cuid())
+  organisationId               String                            @unique
+  status                       SchoolSafeguardingReadinessStatus @default(DRAFT)
+  targetCountries              Json                              @default("[]")
+  minimumStudentAge            Int?
+  maximumStudentAge            Int?
+  consentModel                 SchoolConsentModel?
+  studentIdentityMode          SchoolStudentIdentityMode         @default(DISABLED)
+  privacyContactEmail          String?
+  rawRecordingRetentionDays    Int?
+  consentEvidenceRetentionDays Int?
+  localPolicyReference         String?
+  notes                        String?
+  staffModerationConfirmed     Boolean                           @default(false)
+  noDirectMessagingConfirmed   Boolean                           @default(false)
+  privateByDefaultConfirmed    Boolean                           @default(false)
+  submittedAt                  DateTime?
+  submittedByUserId            String?
+  createdAt                    DateTime                          @default(now())
+  updatedAt                    DateTime                          @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+
+  @@index([status])
 }
 
 model SchoolAnnouncement {

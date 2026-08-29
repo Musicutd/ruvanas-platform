@@ -11,6 +11,7 @@ import LearningWorkspaceClient from "./LearningWorkspaceClient";
 import AcademyWorkspaceClient from "./AcademyWorkspaceClient";
 import SchoolNoticeboardClient from "./SchoolNoticeboardClient";
 import SchoolExchangeClient from "./SchoolExchangeClient";
+import SchoolSafeguardingReadinessClient from "./SchoolSafeguardingReadinessClient";
 
 const managerRoles = new Set(["OWNER", "MANAGER"]);
 
@@ -144,6 +145,7 @@ export default function SchoolRadioClient() {
     {error ? <div style={styles.error}>{error}</div> : null}
     {notice ? <div style={styles.notice}>{notice}</div> : null}
 
+    <SchoolSafeguardingReadinessClient />
     <AcademyWorkspaceClient />
     <SchoolExchangeClient />
     <AudioLabClient />

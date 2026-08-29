@@ -212,6 +212,9 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   const unauthenticatedSchoolExchange = await api("/api/school-radio/network/exchange");
   assert.equal(unauthenticatedSchoolExchange.status, 401);
 
+  const unauthenticatedSafeguardingReadiness = await api("/api/school-radio/safeguarding-readiness");
+  assert.equal(unauthenticatedSafeguardingReadiness.status, 401);
+
   const unauthenticatedWaveformEditor = await api("/api/school-radio/audio-lab/projects/not-a-project/editor");
   assert.equal(unauthenticatedWaveformEditor.status, 401);
 
@@ -853,6 +856,41 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
       }),
       1
     );
+
+    const initialSafeguardingReadiness = await api("/api/school-radio/safeguarding-readiness", { cookie: cookieA });
+    assert.equal(initialSafeguardingReadiness.status, 200, await initialSafeguardingReadiness.clone().text());
+    const initialReadinessBody = await initialSafeguardingReadiness.json();
+    assert.equal(initialReadinessBody.readiness.status, "DRAFT");
+    assert.equal(initialReadinessBody.safety.directStudentAccessEnabled, false);
+    assert.ok(initialReadinessBody.gaps.length > 0);
+
+    const submitSafeguardingReadiness = await api("/api/school-radio/safeguarding-readiness", {
+      method: "POST",
+      cookie: cookieA,
+      body: {
+        action: "SUBMIT_FOR_REVIEW",
+        targetCountries: ["MT"],
+        minimumStudentAge: 8,
+        maximumStudentAge: 18,
+        consentModel: "BOTH",
+        studentIdentityMode: "INVITATION_ONLY",
+        privacyContactEmail: "privacy@school.example",
+        rawRecordingRetentionDays: 90,
+        consentEvidenceRetentionDays: 730,
+        localPolicyReference: "Integration safeguarding policy v1",
+        notes: "Controlled test readiness pack.",
+        staffModerationConfirmed: true,
+        noDirectMessagingConfirmed: true,
+        privateByDefaultConfirmed: true
+      }
+    });
+    assert.equal(submitSafeguardingReadiness.status, 200, await submitSafeguardingReadiness.clone().text());
+    const submittedReadinessBody = await submitSafeguardingReadiness.json();
+    assert.equal(submittedReadinessBody.readiness.status, "READY_FOR_REVIEW");
+    assert.deepEqual(submittedReadinessBody.gaps, []);
+    assert.equal(submittedReadinessBody.safety.directStudentAccessEnabled, false);
+    assert.equal(submittedReadinessBody.safety.publicPublishingEnabled, false);
+    assert.equal(await db.auditLog.count({ where: { organisationId: accountABody.organisation.id, action: "SCHOOL_SAFEGUARDING_READINESS_SUBMITTED" } }), 1);
 
     const schoolGroupResponse = await api("/api/school-radio/editorial", {
       method: "POST", cookie: cookieA,
