@@ -16,4 +16,3 @@ while (!stopping) {
   if (!stopping) await new Promise((resolve) => setTimeout(resolve, PLAYER_HEALTH_SCAN_SECONDS * 1_000));
 }
 await prisma.$disconnect();
-
