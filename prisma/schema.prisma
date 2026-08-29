@@ -446,6 +446,17 @@ enum SchoolAnnouncementStatus {
   ARCHIVED
 }
 
+enum SchoolNoticeboardStatus {
+  SCHEDULED
+  CANCELLED
+}
+
+enum SchoolNoticeboardTheme {
+  INFORMATION
+  CELEBRATION
+  IMPORTANT
+}
+
 enum SchoolBroadcastSlotStatus {
   APPROVED
   CANCELLED
@@ -793,6 +804,8 @@ model User {
   confirmedTrackRights             Track[]                          @relation("TrackRightsConfirmedBy")
   createdSchoolAnnouncements       SchoolAnnouncement[]             @relation("SchoolAnnouncementCreatedBy")
   reviewedSchoolAnnouncements      SchoolAnnouncement[]             @relation("SchoolAnnouncementReviewedBy")
+  createdSchoolNoticeboardPosts    SchoolNoticeboardPost[]          @relation("SchoolNoticeboardCreatedBy")
+  cancelledSchoolNoticeboardPosts  SchoolNoticeboardPost[]          @relation("SchoolNoticeboardCancelledBy")
   approvedSchoolSlots              SchoolBroadcastSlot[]            @relation("SchoolBroadcastSlotApprovedBy")
   createdProductionOrders          ProductionOrder[]                @relation("ProductionOrderCreatedBy")
   assignedProductionOrders         ProductionOrder[]                @relation("ProductionOrderAssignedTo")
@@ -889,6 +902,7 @@ model Organisation {
   activeSessions               Session[]
   schoolProfile                SchoolProfile?
   schoolAnnouncements          SchoolAnnouncement[]
+  schoolNoticeboardPosts       SchoolNoticeboardPost[]
   schoolBroadcastSlots         SchoolBroadcastSlot[]
   productionOrders             ProductionOrder[]
   productionOrderEvents        ProductionOrderEvent[]
@@ -1208,6 +1222,7 @@ model Location {
   musicSchedules             MusicSchedule[]
   campaignTargets            CampaignTarget[]
   schoolBroadcastSlots       SchoolBroadcastSlot[]
+  schoolNoticeboardPosts     SchoolNoticeboardPost[]
   integrationMetricSummaries IntegrationMetricSummary[]
 
   @@unique([organisationId, slug])
@@ -1295,6 +1310,7 @@ model Zone {
   campaignTargets             CampaignTarget[]
   playoutIntents              PlayoutIntent[]
   schoolBroadcastSlots        SchoolBroadcastSlot[]
+  schoolNoticeboardPosts      SchoolNoticeboardPost[]
   retailMediaInventoryTargets RetailMediaInventoryTarget[]
   digitalSignageDevices       DigitalSignageDevice[]
 
@@ -2154,17 +2170,53 @@ model SchoolAnnouncement {
   createdAt        DateTime                 @default(now())
   updatedAt        DateTime                 @updatedAt
 
-  organisation   Organisation          @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  promoVersion   PromoVersion          @relation(fields: [promoVersionId], references: [id], onDelete: Restrict)
-  createdBy      User                  @relation("SchoolAnnouncementCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  reviewedBy     User?                 @relation("SchoolAnnouncementReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
-  broadcastSlots SchoolBroadcastSlot[]
-  rundownItems   SchoolRundownItem[]
+  organisation     Organisation            @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  promoVersion     PromoVersion            @relation(fields: [promoVersionId], references: [id], onDelete: Restrict)
+  createdBy        User                    @relation("SchoolAnnouncementCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  reviewedBy       User?                   @relation("SchoolAnnouncementReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+  broadcastSlots   SchoolBroadcastSlot[]
+  rundownItems     SchoolRundownItem[]
+  noticeboardPosts SchoolNoticeboardPost[]
 
   @@index([organisationId, status])
   @@index([promoVersionId])
   @@index([createdByUserId])
   @@index([reviewedByUserId])
+}
+
+model SchoolNoticeboardPost {
+  id                 String                  @id @default(cuid())
+  organisationId     String
+  announcementId     String
+  locationId         String?
+  zoneId             String?
+  status             SchoolNoticeboardStatus @default(SCHEDULED)
+  theme              SchoolNoticeboardTheme  @default(INFORMATION)
+  priority           Int                     @default(50)
+  displaySeconds     Int                     @default(15)
+  startsAt           DateTime
+  endsAt             DateTime
+  policyVersion      String                  @default("school-noticeboard-v1")
+  createdByUserId    String
+  cancelledByUserId  String?
+  cancelledAt        DateTime?
+  cancellationReason String?
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
+
+  organisation Organisation       @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  announcement SchoolAnnouncement @relation(fields: [announcementId], references: [id], onDelete: Restrict)
+  location     Location?          @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  zone         Zone?              @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  createdBy    User               @relation("SchoolNoticeboardCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  cancelledBy  User?              @relation("SchoolNoticeboardCancelledBy", fields: [cancelledByUserId], references: [id], onDelete: SetNull)
+
+  @@index([organisationId, status, startsAt, endsAt])
+  @@index([announcementId])
+  @@index([locationId, status, startsAt, endsAt])
+  @@index([zoneId, status, startsAt, endsAt])
+  @@index([createdByUserId])
+  @@index([cancelledByUserId])
 }
 
 model SchoolBroadcastSlot {

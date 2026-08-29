@@ -82,6 +82,45 @@ function DisplayRegion({ region, manifest, assetUrls, onEvent }) {
   </div>;
 }
 
+function NoticeboardLayer({ items, manifestVersion, standalone = false }) {
+  const [index, setIndex] = useState(0);
+  const item = items[index % Math.max(1, items.length)] || null;
+  useEffect(() => { setIndex(0); }, [manifestVersion]);
+  useEffect(() => {
+    if (!item || items.length < 2) return undefined;
+    const timer = window.setTimeout(() => setIndex((current) => (current + 1) % items.length), item.displaySeconds * 1000);
+    return () => window.clearTimeout(timer);
+  }, [item?.id, index, items.length]);
+  if (!item) return null;
+  const palettes = {
+    INFORMATION: { background: "rgba(15, 23, 42, .96)", accent: "#60a5fa", label: "SCHOOL NOTICE" },
+    CELEBRATION: { background: "rgba(68, 35, 11, .96)", accent: "#fbbf24", label: "SCHOOL CELEBRATION" },
+    IMPORTANT: { background: "rgba(69, 10, 10, .97)", accent: "#fca5a5", label: "IMPORTANT SCHOOL NOTICE" }
+  };
+  const palette = palettes[item.theme] || palettes.INFORMATION;
+  return <section aria-live="polite" style={{
+    position: standalone ? "relative" : "absolute",
+    left: standalone ? "auto" : "3%",
+    right: standalone ? "auto" : "3%",
+    bottom: standalone ? "auto" : "3%",
+    zIndex: 10000,
+    width: standalone ? "min(980px, calc(100vw - 48px))" : "auto",
+    boxSizing: "border-box",
+    border: `2px solid ${palette.accent}`,
+    borderRadius: standalone ? 24 : 16,
+    padding: standalone ? "clamp(32px, 7vw, 80px)" : "clamp(18px, 3vw, 34px)",
+    background: palette.background,
+    color: "#fff",
+    boxShadow: "0 24px 70px rgba(0,0,0,.45)",
+    fontFamily: "Arial, sans-serif"
+  }}>
+    <p style={{ margin: "0 0 10px", color: palette.accent, fontSize: standalone ? 16 : 12, fontWeight: 900, letterSpacing: 1.8 }}>{palette.label}</p>
+    <h1 style={{ margin: 0, fontSize: standalone ? "clamp(40px, 7vw, 78px)" : "clamp(26px, 4vw, 52px)", lineHeight: 1.05 }}>{item.title}</h1>
+    {item.body ? <p style={{ margin: "16px 0 0", maxWidth: 1100, color: "#e2e8f0", fontSize: standalone ? "clamp(20px, 3vw, 34px)" : "clamp(16px, 2vw, 26px)", lineHeight: 1.35 }}>{item.body}</p> : null}
+    {items.length > 1 ? <p style={{ margin: "18px 0 0", color: "#cbd5e1", fontSize: 12, fontWeight: 700 }}>{index % items.length + 1} of {items.length}</p> : null}
+  </section>;
+}
+
 export default function SignagePage() {
   const [state, setState] = useState(null);
   const [manifest, setManifest] = useState(null);
@@ -212,6 +251,7 @@ export default function SignagePage() {
   }
 
   const canvas = manifest?.playlist?.layout;
+  const noticeboardItems = manifest?.noticeboard?.items || [];
   const aspectRatio = useMemo(() => canvas ? `${canvas.canvasWidth} / ${canvas.canvasHeight}` : "16 / 9", [canvas?.canvasWidth, canvas?.canvasHeight]);
   if (loading) return <main style={styles.center}><p>Connecting secure display…</p></main>;
   if (!state) return <main style={styles.center}><section style={styles.card}>
@@ -220,11 +260,16 @@ export default function SignagePage() {
     <form onSubmit={enrol} style={styles.form}><input value={code} onChange={(event) => setCode(event.target.value)} aria-label="Display enrolment code" autoComplete="off" style={styles.input} /><button disabled={!code.trim()} style={styles.button}>Enrol display</button></form>
     {message ? <p style={styles.error}>{message}</p> : null}
   </section></main>;
+  if (noticeboardItems.length && (!canvas || manifest.state !== "READY")) return <main style={styles.player} aria-label="School digital noticeboard">
+    <NoticeboardLayer items={noticeboardItems} manifestVersion={manifest.version} standalone />
+    {message ? <div style={styles.offline}>{message}</div> : null}
+  </main>;
   if (!canvas || manifest.state !== "READY") return <main style={styles.center}><section style={styles.card}><p style={styles.eyebrow}>RUVANAS DIGITAL SIGNAGE</p><h1 style={styles.heading}>{state.device.name}</h1><p style={styles.copy}>{state.device.location} / {state.device.zone}</p><div style={styles.waiting}>No active visual playlist is scheduled. This display will update automatically.</div>{message ? <p style={styles.notice}>{message}</p> : null}</section></main>;
 
   return <main style={styles.player} aria-label={`${manifest.playlist.name} digital signage`}>
     <div style={{ position: "relative", width: "100vw", maxHeight: "100vh", aspectRatio, background: canvas.backgroundColor, overflow: "hidden" }}>
       {canvas.regions.map((region) => <DisplayRegion key={`${manifest.version}:${region.id}`} region={region} manifest={manifest} assetUrls={assetUrls} onEvent={queueEvent} />)}
+      {noticeboardItems.length ? <NoticeboardLayer items={noticeboardItems} manifestVersion={manifest.version} /> : null}
     </div>
     {message ? <div style={styles.offline}>{message}</div> : null}
   </main>;
