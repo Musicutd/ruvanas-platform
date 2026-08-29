@@ -15,6 +15,7 @@ import SchoolSafeguardingReadinessClient from "./SchoolSafeguardingReadinessClie
 import SchoolStudentAccessClient from "./SchoolStudentAccessClient";
 import SchoolPublicationControl from "./SchoolPublicationControl";
 import SchoolPublicationOperationsClient from "./SchoolPublicationOperationsClient";
+import SchoolPilotReadinessClient from "./SchoolPilotReadinessClient";
 
 const managerRoles = new Set(["OWNER", "MANAGER"]);
 
@@ -152,6 +153,7 @@ export default function SchoolRadioClient() {
     {canManage ? <SchoolStudentAccessClient /> : null}
     {canManage ? <SchoolPublicationControl /> : null}
     {canManage ? <SchoolPublicationOperationsClient /> : null}
+    {canManage ? <SchoolPilotReadinessClient /> : null}
     <AcademyWorkspaceClient />
     <SchoolExchangeClient />
     <AudioLabClient />

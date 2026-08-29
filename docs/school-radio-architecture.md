@@ -141,6 +141,8 @@ Stage 9C begins the publishing portion of S6 with a separately entitled, private
 
 Stage 10A adds the first school-safe operational layer for S6: manager-only daily origin-delivery aggregates, an audited CSV export, release/withdrawal visibility, and a non-destructive preview of safeguarding retention cutoffs. It does not identify listeners or students, claim audience measurement, or delete records automatically. See `docs/phase-10a-school-publication-operations.md`.
 
+Stage 10B adds controlled retention and supervised-pilot readiness: aggregate candidate previews, tenant-verified safeguarding/legal holds, explicit audited hold release, and a server-derived readiness checklist. It deliberately provides no deletion, anonymisation, or record-mutation controls. See `docs/phase-10b-controlled-retention-pilot-readiness.md`.
+
 ## Definition of ready
 
 Implementation should not begin until the organisation and role foundations are stable, schedule ownership is defined, the safeguarding and privacy decisions are approved, and acceptance tests cover cross-organisation isolation, staff approval, consent revocation, and public-data redaction.

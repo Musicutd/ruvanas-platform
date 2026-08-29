@@ -464,6 +464,19 @@ enum SchoolSafeguardingReviewDecision {
   APPROVED
 }
 
+enum SchoolRetentionHoldScope {
+  ORGANISATION
+  EPISODE
+  CONTRIBUTOR
+  MEDIA_ASSET
+}
+
+enum SchoolPilotReadinessStatus {
+  IN_PROGRESS
+  BLOCKED
+  READY
+}
+
 enum SchoolConsentModel {
   SCHOOL_POLICY
   PARENT_OR_GUARDIAN
@@ -900,6 +913,9 @@ model User {
   decidedSchoolEpisodeExchanges    SchoolEpisodeExchangeRequest[]   @relation("SchoolEpisodeExchangeDecidedBy")
   importedSchoolEpisodeExchanges   SchoolEpisodeExchangeRequest[]   @relation("SchoolEpisodeExchangeImportedBy")
   schoolSafeguardingReviews        SchoolSafeguardingReview[]       @relation("SchoolSafeguardingReviewReviewer")
+  createdSchoolRetentionHolds      SchoolRetentionHold[]             @relation("SchoolRetentionHoldCreatedBy")
+  releasedSchoolRetentionHolds     SchoolRetentionHold[]             @relation("SchoolRetentionHoldReleasedBy")
+  updatedSchoolPilotReadiness      SchoolPilotReadiness[]            @relation("SchoolPilotReadinessUpdatedBy")
   schoolStudentAccess              SchoolStudentAccess?             @relation("SchoolStudentAccessUser")
   invitedSchoolStudentAccess       SchoolStudentAccess[]            @relation("SchoolStudentAccessInvitedBy")
   enterpriseIdentityLinks          EnterpriseIdentityLink[]
@@ -962,6 +978,8 @@ model Organisation {
   schoolProfile                    SchoolProfile?
   schoolSafeguardingReadiness      SchoolSafeguardingReadiness?
   schoolSafeguardingReviews        SchoolSafeguardingReview[]
+  schoolRetentionHolds             SchoolRetentionHold[]
+  schoolPilotReadiness             SchoolPilotReadiness?
   schoolAnnouncements              SchoolAnnouncement[]
   schoolNoticeboardPosts           SchoolNoticeboardPost[]
   schoolBroadcastSlots             SchoolBroadcastSlot[]
@@ -2335,6 +2353,51 @@ model SchoolSafeguardingReview {
   @@index([readinessId, createdAt])
   @@index([organisationId, createdAt])
   @@index([reviewerUserId])
+}
+
+model SchoolRetentionHold {
+  id               String                   @id @default(cuid())
+  organisationId   String
+  scope            SchoolRetentionHoldScope
+  referenceId      String?
+  reason           String
+  createdByUserId  String
+  releasedByUserId String?
+  releaseReason    String?
+  releasedAt       DateTime?
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation("SchoolRetentionHoldCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  releasedBy   User?        @relation("SchoolRetentionHoldReleasedBy", fields: [releasedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([organisationId, releasedAt, createdAt])
+  @@index([organisationId, scope, referenceId])
+  @@index([createdByUserId])
+  @@index([releasedByUserId])
+}
+
+model SchoolPilotReadiness {
+  id                                String                     @id @default(cuid())
+  organisationId                    String                     @unique
+  status                            SchoolPilotReadinessStatus @default(IN_PROGRESS)
+  staffTrainingConfirmed            Boolean                    @default(false)
+  emergencyWithdrawalDrillConfirmed Boolean                    @default(false)
+  retentionReviewConfirmed          Boolean                    @default(false)
+  supportContactsConfirmed          Boolean                    @default(false)
+  recoveryPlanConfirmed             Boolean                    @default(false)
+  notes                             String?
+  updatedByUserId                   String
+  readyAt                           DateTime?
+  createdAt                         DateTime                   @default(now())
+  updatedAt                         DateTime                   @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  updatedBy    User         @relation("SchoolPilotReadinessUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([status, updatedAt])
+  @@index([updatedByUserId])
 }
 
 model SchoolAnnouncement {
