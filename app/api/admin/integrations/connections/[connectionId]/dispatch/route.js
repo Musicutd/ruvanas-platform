@@ -11,6 +11,7 @@ export async function POST(_request, { params }) {
   const { connectionId } = await params;
   const connection = await prisma.integrationConnection.findUnique({ where: { id: connectionId } });
   if (!connection) return NextResponse.json({ error: "Integration not found." }, { status: 404 });
+  if (connection.kind !== "OUTGOING_WEBHOOK") return NextResponse.json({ error: "Only outgoing webhooks have a delivery queue." }, { status: 409 });
   if (connection.status === "REVOKED" || connection.status === "DISCONNECTED") return NextResponse.json({ error: "Reconnect this integration before dispatching events." }, { status: 409 });
   const events = await prisma.outgoingWebhookEvent.findMany({ where: { connectionId, status: { in: ["PENDING", "FAILED"] }, nextAttemptAt: { lte: new Date() } }, orderBy: { createdAt: "asc" }, take: 10 });
   const results = [];

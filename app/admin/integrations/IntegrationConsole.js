@@ -9,6 +9,13 @@ const EVENTS = [
   ["production.status_changed", "Production status changed"]
 ];
 
+const CONNECTION_TYPES = [
+  ["OUTGOING_WEBHOOK", "Signed outgoing webhook"],
+  ["POS_METRICS", "Sales summaries"],
+  ["INVENTORY_METRICS", "Inventory summaries"],
+  ["FOOTFALL_METRICS", "Footfall summaries"]
+];
+
 async function callApi(path, options) {
   const response = await fetch(path, { ...options, headers: { "content-type": "application/json", ...(options?.headers || {}) } });
   const body = await response.json();
@@ -18,7 +25,7 @@ async function callApi(path, options) {
 
 export default function IntegrationConsole({ organisations, initialConnections }) {
   const [connections, setConnections] = useState(initialConnections);
-  const [draft, setDraft] = useState({ organisationId: organisations[0]?.id || "", name: "", endpointUrl: "", subscribedEventTypes: EVENTS.map(([value]) => value) });
+  const [draft, setDraft] = useState({ organisationId: organisations[0]?.id || "", name: "", kind: "OUTGOING_WEBHOOK", providerKey: "", endpointUrl: "", subscribedEventTypes: EVENTS.map(([value]) => value) });
   const [notice, setNotice] = useState("");
   const [revealedSecret, setRevealedSecret] = useState("");
   const [working, setWorking] = useState(false);
@@ -32,8 +39,8 @@ export default function IntegrationConsole({ organisations, initialConnections }
     try {
       const body = await callApi("/api/admin/integrations/connections", { method: "POST", body: JSON.stringify(draft) });
       const organisation = organisations.find((item) => item.id === draft.organisationId);
-      setConnections((items) => [{ ...body.connection, organisation, _count: { events: 0, syncRuns: 0 }, events: [] }, ...items]);
-      setRevealedSecret(body.secret); setNotice(body.notice); setDraft({ ...draft, name: "", endpointUrl: "" }); setWorking(false);
+      setConnections((items) => [{ ...body.connection, organisation, _count: { events: 0, syncRuns: 0, metricSummaries: 0 }, events: [], syncRuns: [] }, ...items]);
+      setRevealedSecret(body.secret || ""); setNotice(body.notice); setDraft({ ...draft, name: "", providerKey: "", endpointUrl: "" }); setWorking(false);
     } catch (error) { setNotice(error.message); setWorking(false); }
   }
 
@@ -57,22 +64,29 @@ export default function IntegrationConsole({ organisations, initialConnections }
 
   return <div style={s.grid}>
     <form style={s.card} onSubmit={create}>
-      <p style={s.eyebrow}>New signed webhook</p><h2 style={s.h2}>Connect an endpoint</h2>
+      <p style={s.eyebrow}>New managed connection</p><h2 style={s.h2}>Connect an approved system</h2>
       <label style={s.label}>Organisation<select style={s.input} value={draft.organisationId} onChange={(e) => setDraft({ ...draft, organisationId: e.target.value })}>{organisations.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+      <label style={s.label}>Connection type<select style={s.input} value={draft.kind} onChange={(e) => setDraft({ ...draft, kind: e.target.value })}>{CONNECTION_TYPES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
       <label style={s.label}>Connection name<input style={s.input} required minLength="2" maxLength="100" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="Reporting webhook" /></label>
-      <label style={s.label}>HTTPS endpoint<input style={s.input} type="url" required value={draft.endpointUrl} onChange={(e) => setDraft({ ...draft, endpointUrl: e.target.value })} placeholder="https://partner.example/webhooks/ruvanas" /></label>
-      <fieldset style={s.fieldset}><legend style={s.legend}>Events</legend>{EVENTS.map(([value, label]) => <label key={value} style={s.check}><input type="checkbox" checked={draft.subscribedEventTypes.includes(value)} onChange={() => toggleEvent(value)} /> {label}</label>)}</fieldset>
-      <button style={s.primary} disabled={working || !draft.subscribedEventTypes.length}>Create connection</button>
+      {draft.kind === "OUTGOING_WEBHOOK" ? <>
+        <label style={s.label}>HTTPS endpoint<input style={s.input} type="url" required value={draft.endpointUrl} onChange={(e) => setDraft({ ...draft, endpointUrl: e.target.value })} placeholder="https://partner.example/webhooks/ruvanas" /></label>
+        <fieldset style={s.fieldset}><legend style={s.legend}>Events</legend>{EVENTS.map(([value, label]) => <label key={value} style={s.check}><input type="checkbox" checked={draft.subscribedEventTypes.includes(value)} onChange={() => toggleEvent(value)} /> {label}</label>)}</fieldset>
+      </> : <>
+        <label style={s.label}>Provider key<input style={s.input} required minLength="2" maxLength="80" value={draft.providerKey} onChange={(e) => setDraft({ ...draft, providerKey: e.target.value })} placeholder="PARTNER_POS_V1" /></label>
+        <p style={s.muted}>After creating this connection, issue a service account with the <strong>metrics:write</strong> scope. The partner submits only aggregated values linked to a Ruvanas location.</p>
+      </>}
+      <button style={s.primary} disabled={working || (draft.kind === "OUTGOING_WEBHOOK" && !draft.subscribedEventTypes.length)}>Create connection</button>
       {notice ? <p style={s.notice}>{notice}</p> : null}
       {revealedSecret ? <div style={s.secret}><strong>Copy once:</strong><code style={s.code}>{revealedSecret}</code></div> : null}
     </form>
     <section style={s.wide}><p style={s.eyebrow}>Connection status</p><h2 style={s.h2}>Managed integrations</h2>
       {!connections.length ? <p style={s.muted}>No connections yet. Create one when a trusted partner provides its HTTPS endpoint.</p> : connections.map((item) => <article key={item.id} style={s.item}>
-        <div style={s.row}><div><strong>{item.name}</strong><p style={s.muted}>{item.organisation.name} · {item.endpointUrl}</p></div><span style={badge(item.status)}>{item.status}</span></div>
-        <p style={s.small}>{item.subscribedEventTypes.join(" · ")} · {item._count.events} queued history items</p>
+        <div style={s.row}><div><strong>{item.name}</strong><p style={s.muted}>{item.organisation.name} · {CONNECTION_TYPES.find(([value]) => value === item.kind)?.[1] || item.kind}{item.endpointUrl ? ` · ${item.endpointUrl}` : ` · ${item.providerKey}`}</p></div><span style={badge(item.status)}>{item.status}</span></div>
+        <p style={s.small}>{item.kind === "OUTGOING_WEBHOOK" ? `${item.subscribedEventTypes.join(" · ")} · ${item._count.events} queued history items` : `${item._count.metricSummaries || 0} accepted summaries · ${item._count.syncRuns || 0} import runs`}</p>
         {item.lastErrorMessage ? <p style={s.error}>{item.lastErrorMessage}</p> : null}
-        <div style={s.actions}>{item.status === "CONNECTED" || item.status === "DEGRADED" ? <button disabled={working} onClick={() => dispatch(item.id)} style={s.primary}>Deliver due events</button> : null}{item.status !== "REVOKED" ? <button disabled={working} onClick={() => action(item.id, item.status === "DISCONNECTED" ? "reconnect" : "disconnect")}>{item.status === "DISCONNECTED" ? "Reconnect" : "Disconnect"}</button> : null}{item.status !== "REVOKED" ? <button disabled={working} onClick={() => action(item.id, "rotate_secret")}>Rotate secret</button> : null}{item.status !== "REVOKED" ? <button disabled={working} onClick={() => action(item.id, "revoke")} style={s.danger}>Revoke</button> : null}</div>
+        <div style={s.actions}>{item.kind === "OUTGOING_WEBHOOK" && (item.status === "CONNECTED" || item.status === "DEGRADED") ? <button disabled={working} onClick={() => dispatch(item.id)} style={s.primary}>Deliver due events</button> : null}{item.status !== "REVOKED" ? <button disabled={working} onClick={() => action(item.id, item.status === "DISCONNECTED" ? "reconnect" : "disconnect")}>{item.status === "DISCONNECTED" ? "Reconnect" : "Disconnect"}</button> : null}{item.kind === "OUTGOING_WEBHOOK" && item.status !== "REVOKED" ? <button disabled={working} onClick={() => action(item.id, "rotate_secret")}>Rotate secret</button> : null}{item.status !== "REVOKED" ? <button disabled={working} onClick={() => action(item.id, "revoke")} style={s.danger}>Revoke</button> : null}</div>
         {item.events.length ? <details><summary style={s.summary}>Recent deliveries</summary>{item.events.map((event) => <p key={event.id} style={s.small}>{event.eventType} · {event.status} · {event.attemptCount} attempt(s){event.lastError ? ` · ${event.lastError}` : ""}</p>)}</details> : null}
+        {item.syncRuns?.length ? <details><summary style={s.summary}>Recent summary imports</summary>{item.syncRuns.map((run) => <p key={run.id} style={s.small}>{new Date(run.createdAt).toLocaleString()} · {run.status} · {run.summary?.acceptedCount || 0} accepted · {run.summary?.duplicateCount || 0} duplicate{run.errorMessage ? ` · ${run.errorMessage}` : ""}</p>)}</details> : null}
       </article>)}
     </section>
   </div>;

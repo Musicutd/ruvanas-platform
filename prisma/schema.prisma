@@ -58,6 +58,15 @@ enum IntegrationSyncRunStatus {
   FAILED
 }
 
+enum IntegrationMetricType {
+  POS_NET_SALES_MINOR
+  POS_TRANSACTION_COUNT
+  INVENTORY_UNITS_ON_HAND
+  INVENTORY_STOCKOUT_COUNT
+  FOOTFALL_ENTRIES
+  FOOTFALL_EXITS
+}
+
 enum WebhookDeliveryStatus {
   PENDING
   DELIVERED
@@ -814,6 +823,7 @@ model Organisation {
   aiJobs                      AIJob[]
   integrationConnections      IntegrationConnection[]
   integrationSyncRuns         IntegrationSyncRun[]
+  integrationMetricSummaries  IntegrationMetricSummary[]
   outgoingWebhookEvents       OutgoingWebhookEvent[]
 }
 
@@ -1064,15 +1074,16 @@ model Location {
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 
-  organisation         Organisation               @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  brand                Brand?                     @relation(fields: [brandId], references: [id], onDelete: SetNull)
-  zones                Zone[]
-  groupMemberships     LocationGroupMember[]
-  openingHours         LocationOpeningHour[]
-  openingExceptions    LocationOpeningException[]
-  musicSchedules       MusicSchedule[]
-  campaignTargets      CampaignTarget[]
-  schoolBroadcastSlots SchoolBroadcastSlot[]
+  organisation               Organisation               @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  brand                      Brand?                     @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  zones                      Zone[]
+  groupMemberships           LocationGroupMember[]
+  openingHours               LocationOpeningHour[]
+  openingExceptions          LocationOpeningException[]
+  musicSchedules             MusicSchedule[]
+  campaignTargets            CampaignTarget[]
+  schoolBroadcastSlots       SchoolBroadcastSlot[]
+  integrationMetricSummaries IntegrationMetricSummary[]
 
   @@unique([organisationId, slug])
   @@index([organisationId])
@@ -2825,10 +2836,11 @@ model IntegrationConnection {
   createdAt            DateTime                    @default(now())
   updatedAt            DateTime                    @updatedAt
 
-  organisation Organisation           @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  createdBy    User                   @relation("IntegrationConnectionCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  syncRuns     IntegrationSyncRun[]
-  events       OutgoingWebhookEvent[]
+  organisation    Organisation               @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  createdBy       User                       @relation("IntegrationConnectionCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  syncRuns        IntegrationSyncRun[]
+  metricSummaries IntegrationMetricSummary[]
+  events          OutgoingWebhookEvent[]
 
   @@unique([organisationId, name])
   @@index([organisationId, status])
@@ -2852,6 +2864,31 @@ model IntegrationSyncRun {
 
   @@index([organisationId, createdAt])
   @@index([connectionId, status, createdAt])
+}
+
+model IntegrationMetricSummary {
+  id              String                @id @default(cuid())
+  organisationId  String
+  connectionId    String
+  locationId      String
+  externalId      String
+  metricType      IntegrationMetricType
+  value           Decimal               @db.Decimal(20, 4)
+  unit            String
+  windowStartedAt DateTime
+  windowEndedAt   DateTime
+  sourceTimestamp DateTime
+  dimensions      Json?
+  createdAt       DateTime              @default(now())
+
+  organisation Organisation          @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  connection   IntegrationConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  location     Location              @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@unique([connectionId, externalId])
+  @@index([organisationId, sourceTimestamp])
+  @@index([locationId, metricType, windowStartedAt])
+  @@index([connectionId, createdAt])
 }
 
 model OutgoingWebhookEvent {
@@ -3302,4 +3339,3 @@ model AnalyticsAggregationCursor {
 
   organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
 }
-

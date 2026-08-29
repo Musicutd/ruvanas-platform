@@ -3,6 +3,11 @@ import { publicRequestOrigin } from "@/lib/origin-policy.mjs";
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
+function isServiceAccountApiRequest(request) {
+  return request.nextUrl.pathname.startsWith("/api/v1/") &&
+    /^Bearer\s+rvsa_[a-f0-9]{12}_[a-f0-9]{64}$/i.test(request.headers.get("authorization") || "");
+}
+
 function allowedOrigins(request) {
   const configured = (process.env.ALLOWED_ORIGINS || "")
     .split(",")
@@ -26,7 +31,7 @@ export function middleware(request) {
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-request-id", requestId);
 
-  if (!SAFE_METHODS.has(request.method)) {
+  if (!SAFE_METHODS.has(request.method) && !isServiceAccountApiRequest(request)) {
     const origin = request.headers.get("origin");
 
     if (!origin || !allowedOrigins(request).has(origin)) {
