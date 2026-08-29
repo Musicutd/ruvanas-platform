@@ -154,4 +154,3 @@ Extend the proven tenant, targeting, scheduling, player-health, and reporting fo
 - The DOCX was inspected structurally in full: 280 paragraphs, 34 tables, 51 headings, one section, no images, comments, or tracked changes.
 - Visual page rendering could not be completed in this environment because LibreOffice is unavailable and desktop Word automation is not permitted. Content, styles, tables, headers/footers, and underlying WordprocessingML were still reviewed.
 
-
