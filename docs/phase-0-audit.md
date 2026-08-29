@@ -56,7 +56,7 @@ A full restart should be reconsidered only if production data proves that tenant
 | Campaigns and targeting | Missing | Add Campaign, CampaignTarget, CampaignSchedule, CampaignRule, preview/conflict validation |
 | Ruvanas Studio | Retail ProductionOrder foundation complete through credits and promo handoff | Continue with automated audio processing, then School Programme/Episode and AudioLab milestones |
 | Proof of play | PlayoutEvent is an early foundation | Separate scheduled intent from confirmed playback; support idempotent event ingestion |
-| Player/stream health | Missing | Add PlayerHeartbeat, HealthIncident, classifications, alert routing, and diagnostics |
+| Player/stream health | Player identity, current heartbeat status, sampled history, and missed-heartbeat incidents exist | Continue with source diagnostics, notification routing, and controlled player commands |
 | Compliance | Missing | Add consent, policy acceptance, retention, data requests, rights metadata, and append-only evidence |
 | Billing | Plan/Subscription only | Add provider customer/subscription/invoice/webhook records and entitlement reconciliation |
 | Super Admin operations | Early CRUD exists | Build tenant support, production, health, incidents, credits, billing, and audit control plane |
@@ -153,4 +153,5 @@ Extend the proven tenant, targeting, scheduling, player-health, and reporting fo
 - GitHub CI passed on the implementation commit produced by this audit.
 - The DOCX was inspected structurally in full: 280 paragraphs, 34 tables, 51 headings, one section, no images, comments, or tracked changes.
 - Visual page rendering could not be completed in this environment because LibreOffice is unavailable and desktop Word automation is not permitted. Content, styles, tables, headers/footers, and underlying WordprocessingML were still reviewed.
+
 
