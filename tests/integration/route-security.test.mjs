@@ -64,6 +64,9 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   const me = await api("/api/me", { cookie: cookieA });
   assert.equal(me.status, 200);
 
+  const tenantOwnerPlayerHealth = await api("/api/admin/players/health", { cookie: cookieA });
+  assert.equal(tenantOwnerPlayerHealth.status, 403);
+
   const ownOrganisationSwitch = await api("/api/me/organisation", {
     method: "POST",
     cookie: cookieA,
@@ -91,6 +94,15 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     method: "POST"
   });
   assert.equal(unauthenticatedHeartbeat.status, 401);
+
+  const unauthenticatedPlayerHealth = await api("/api/admin/players/health");
+  assert.equal(unauthenticatedPlayerHealth.status, 401);
+
+  const unauthenticatedPlayerIncidentUpdate = await api("/api/admin/players/health/not-an-incident", {
+    method: "PATCH",
+    body: { action: "ACKNOWLEDGE", note: "Unauthorised operational note." }
+  });
+  assert.equal(unauthenticatedPlayerIncidentUpdate.status, 401);
 
   const unauthenticatedProofOfPlay = await api("/api/player/proof-of-play", {
     method: "POST",
@@ -1888,4 +1900,5 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   assert.equal(lastResponse.status, 429);
   assert.ok(Number(lastResponse.headers.get("retry-after")) > 0);
 });
+
 
