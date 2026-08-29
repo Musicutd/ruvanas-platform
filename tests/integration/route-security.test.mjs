@@ -209,6 +209,9 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   const unauthenticatedSchoolNetwork = await api("/api/school-radio/network");
   assert.equal(unauthenticatedSchoolNetwork.status, 401);
 
+  const unauthenticatedSchoolExchange = await api("/api/school-radio/network/exchange");
+  assert.equal(unauthenticatedSchoolExchange.status, 401);
+
   const unauthenticatedWaveformEditor = await api("/api/school-radio/audio-lab/projects/not-a-project/editor");
   assert.equal(unauthenticatedWaveformEditor.status, 401);
 
@@ -896,6 +899,61 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
       assert.equal(addSchool.status, 201, await addSchool.clone().text());
     }
 
+    const exchangeMedia = await db.mediaAsset.create({
+      data: {
+        organisationId: accountABody.organisation.id,
+        name: `School exchange episode ${suffix}`,
+        originalName: "school-exchange-episode.mp3",
+        storageKey: `integration/school-exchange/${suffix}.mp3`,
+        mimeType: "audio/mpeg",
+        sizeBytes: 4096n,
+        durationSeconds: 180,
+        mediaType: "ANNOUNCEMENT",
+        libraryType: "ORGANISATION_PROMO",
+        status: "READY"
+      }
+    });
+    const exchangePromoAsset = await db.promoAsset.create({
+      data: {
+        organisationId: accountABody.organisation.id,
+        name: `School exchange episode ${suffix}`,
+        mediaType: "ANNOUNCEMENT",
+        languageCode: "en"
+      }
+    });
+    const exchangePromoVersion = await db.promoVersion.create({
+      data: {
+        promoAssetId: exchangePromoAsset.id,
+        mediaAssetId: exchangeMedia.id,
+        version: 1,
+        status: "APPROVED",
+        qcStatus: "PASSED",
+        languageCode: "en",
+        durationSeconds: 180,
+        reviewedAt: new Date()
+      }
+    });
+    await db.promoAsset.update({ where: { id: exchangePromoAsset.id }, data: { currentApprovedVersionId: exchangePromoVersion.id } });
+
+    await db.schoolEpisode.update({ where: { id: schoolEpisode.id }, data: { status: "APPROVED", approvedAt: new Date() } });
+    await db.schoolSubmission.create({
+      data: {
+        organisationId: accountABody.organisation.id,
+        episodeId: schoolEpisode.id,
+        promoVersionId: exchangePromoVersion.id,
+        revision: 1,
+        status: "SUBMITTED",
+        submittedByUserId: accountABody.user.id
+      }
+    });
+    const publishExchangeOffer = await api("/api/school-radio/network/exchange", {
+      method: "POST", cookie: cookieA,
+      body: { action: "PUBLISH_OFFER", episodeId: schoolEpisode.id, consentConfirmed: true }
+    });
+    assert.equal(publishExchangeOffer.status, 201, await publishExchangeOffer.clone().text());
+    const exchangeOffer = (await publishExchangeOffer.json()).result;
+    assert.equal(await db.auditLog.count({ where: { schoolNetworkId: schoolNetwork.id, action: "SCHOOL_EPISODE_EXCHANGE_OFFER_PUBLISHED", entityId: exchangeOffer.id } }), 1);
+
     const createHiddenNetwork = await api("/api/school-radio/network", {
       method: "POST",
       cookie: cookieA,
@@ -981,10 +1039,57 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     assert.equal(crossTenantEpisodeReview.status, 404);
     assert.equal(await db.schoolEpisode.count({ where: { organisationId: createdOrganisation.id } }), 0);
 
+    const targetExchangeLibrary = await api("/api/school-radio/network/exchange", { cookie: cookieA });
+    assert.equal(targetExchangeLibrary.status, 200, await targetExchangeLibrary.clone().text());
+    const targetExchangeBody = await targetExchangeLibrary.json();
+    assert.equal(targetExchangeBody.offers.length, 1);
+    assert.equal(targetExchangeBody.offers[0].sourceSchool.id, accountABody.organisation.id);
+    assert.equal(JSON.stringify(targetExchangeBody).includes(schoolEpisode.id), false);
+    assert.equal(JSON.stringify(targetExchangeBody).includes(exchangePromoVersion.id), false);
+    assert.equal(targetExchangeBody.safety.studentIdentitiesShared, false);
+
+    const requestExchangeAccess = await api("/api/school-radio/network/exchange", {
+      method: "POST", cookie: cookieA,
+      body: { action: "REQUEST_ACCESS", offerId: exchangeOffer.id, intendedUse: "A supervised media-literacy lesson for the receiving school." }
+    });
+    assert.equal(requestExchangeAccess.status, 201, await requestExchangeAccess.clone().text());
+    const exchangeRequest = (await requestExchangeAccess.json()).result;
+
     const switchBackToAccountA = await api("/api/me/organisation", {
       method: "POST", cookie: cookieA, body: { organisationId: accountABody.organisation.id }
     });
     assert.equal(switchBackToAccountA.status, 200);
+
+    const approveExchangeRequest = await api("/api/school-radio/network/exchange", {
+      method: "POST", cookie: cookieA,
+      body: { action: "DECIDE_REQUEST", requestId: exchangeRequest.id, decision: "APPROVE" }
+    });
+    assert.equal(approveExchangeRequest.status, 200, await approveExchangeRequest.clone().text());
+
+    const switchToExchangeTarget = await api("/api/me/organisation", {
+      method: "POST", cookie: cookieA, body: { organisationId: createdOrganisation.id }
+    });
+    assert.equal(switchToExchangeTarget.status, 200);
+    const importExchange = await api("/api/school-radio/network/exchange", {
+      method: "POST", cookie: cookieA, body: { action: "IMPORT_REQUEST", requestId: exchangeRequest.id }
+    });
+    assert.equal(importExchange.status, 201, await importExchange.clone().text());
+    const importedAnnouncement = (await importExchange.json()).result;
+    assert.equal(importedAnnouncement.organisationId, createdOrganisation.id);
+    assert.equal(importedAnnouncement.promoVersionId, exchangePromoVersion.id);
+    assert.equal(importedAnnouncement.status, "IN_REVIEW");
+
+    const returnToExchangeSource = await api("/api/me/organisation", {
+      method: "POST", cookie: cookieA, body: { organisationId: accountABody.organisation.id }
+    });
+    assert.equal(returnToExchangeSource.status, 200);
+    const revokeExchange = await api("/api/school-radio/network/exchange", {
+      method: "POST", cookie: cookieA,
+      body: { action: "REVOKE_REQUEST", requestId: exchangeRequest.id, reason: "Integration safeguarding revocation." }
+    });
+    assert.equal(revokeExchange.status, 200, await revokeExchange.clone().text());
+    assert.equal((await db.schoolAnnouncement.findUnique({ where: { id: importedAnnouncement.id } })).status, "ARCHIVED");
+    assert.equal(await db.auditLog.count({ where: { schoolNetworkId: schoolNetwork.id, action: "SCHOOL_EPISODE_EXCHANGE_REQUEST_REVOKE", entityId: exchangeRequest.id } }), 1);
 
     const invalidCatalogueUploadForm = new FormData();
     invalidCatalogueUploadForm.set("title", "Invalid catalogue file");
