@@ -143,6 +143,8 @@ Stage 10A adds the first school-safe operational layer for S6: manager-only dail
 
 Stage 10B adds controlled retention and supervised-pilot readiness: aggregate candidate previews, tenant-verified safeguarding/legal holds, explicit audited hold release, and a server-derived readiness checklist. It deliberately provides no deletion, anonymisation, or record-mutation controls. See `docs/phase-10b-controlled-retention-pilot-readiness.md`.
 
+Stage 10C adds supervised pilot operations and incident readiness: bounded pilot runs, current-readiness gates for start/resume, aggregate readiness snapshots, operational drills, and manager-recorded incident acknowledgement and resolution. It is a record-only workflow and performs no withdrawal, notification, shutdown, deletion, retention execution, or student-identity processing. See `docs/phase-10c-school-pilot-operations.md`.
+
 ## Definition of ready
 
 Implementation should not begin until the organisation and role foundations are stable, schedule ownership is defined, the safeguarding and privacy decisions are approved, and acceptance tests cover cross-organisation isolation, staff approval, consent revocation, and public-data redaction.
