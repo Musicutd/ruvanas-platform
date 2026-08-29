@@ -18,6 +18,9 @@ export async function PATCH(request, { params }) {
   const existing = await prisma.integrationConnection.findUnique({ where: { id: connectionId } });
   if (!existing) return NextResponse.json({ error: "Integration not found." }, { status: 404 });
   if (existing.status === "REVOKED" && parsed.data.action !== "revoke") return NextResponse.json({ error: "A revoked integration cannot be reactivated." }, { status: 409 });
+  if (parsed.data.action === "rotate_secret" && existing.kind !== "OUTGOING_WEBHOOK") {
+    return NextResponse.json({ error: "Metric integrations use service-account keys, which are rotated from Enterprise security." }, { status: 409 });
+  }
   const now = new Date();
   const secret = parsed.data.action === "rotate_secret" ? generateWebhookSecret() : null;
   const data = parsed.data.action === "disconnect" ? { status: "DISCONNECTED", disconnectedAt: now }

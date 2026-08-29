@@ -14,17 +14,18 @@ export default async function IntegrationsPage() {
     prisma.integrationConnection.findMany({
       include: {
         organisation: { select: { name: true } },
-        _count: { select: { events: true, syncRuns: true } },
-        events: { select: { id: true, eventType: true, status: true, attemptCount: true, lastError: true, createdAt: true, deliveredAt: true }, orderBy: { createdAt: "desc" }, take: 8 }
+        _count: { select: { events: true, syncRuns: true, metricSummaries: true } },
+        events: { select: { id: true, eventType: true, status: true, attemptCount: true, lastError: true, createdAt: true, deliveredAt: true }, orderBy: { createdAt: "desc" }, take: 8 },
+        syncRuns: { select: { id: true, status: true, sourceTimestamp: true, summary: true, errorMessage: true, createdAt: true, completedAt: true }, orderBy: { createdAt: "desc" }, take: 8 }
       },
       orderBy: { createdAt: "desc" }
     })
   ]);
   return <main style={styles.page}>
-    <p style={styles.eyebrow}>Stage 6B · Controlled connectivity</p>
+    <p style={styles.eyebrow}>Stage 6C · Controlled connectivity</p>
     <h1 style={styles.title}>API & integrations</h1>
-    <p style={styles.description}>Connect approved systems through versioned APIs and signed webhooks. Secrets remain encrypted, every delivery is idempotent and auditable, and no integration receives direct database access.</p>
-    <div style={styles.notice}><strong>Safe by default:</strong> only HTTPS public endpoints are allowed. You can disconnect, rotate, retry, or permanently revoke a connection at any time.</div>
+    <p style={styles.description}>Connect approved systems through versioned APIs, signed webhooks and privacy-safe sales, inventory or footfall summaries. Every transfer is tenant-scoped, idempotent and auditable, and no integration receives direct database access.</p>
+    <div style={styles.notice}><strong>Safe by default:</strong> metric connections accept location-level summaries only - never customer identities or order-level records. Correlation data is not presented as proof that audio caused a commercial outcome.</div>
     <IntegrationConsole organisations={serializable(organisations)} initialConnections={serializable(connections)} />
   </main>;
 }

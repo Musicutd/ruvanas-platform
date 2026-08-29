@@ -25,10 +25,11 @@ test("service account keys expose a prefix while storing only a stable keyed has
 
 test("service account scopes are allow-listed, deduplicated, and checked exactly", () => {
   const scopes = normalizeServiceAccountScopes([
-    " REPORTS:READ ", "organisation:read", "reports:read", "organisation:write", null
+    " REPORTS:READ ", "organisation:read", "reports:read", "metrics:write", "organisation:write", null
   ]);
-  assert.deepEqual(scopes, ["organisation:read", "reports:read"]);
+  assert.deepEqual(scopes, ["metrics:write", "organisation:read", "reports:read"]);
   assert.equal(scopeAllows(scopes, "reports:read"), true);
+  assert.equal(scopeAllows(scopes, "metrics:write"), true);
   assert.equal(scopeAllows(scopes, "report:read"), false);
 });
 
@@ -62,4 +63,3 @@ test("revoked and expired service credentials are never usable", () => {
 test("email-domain normalization rejects malformed entries", () => {
   assert.deepEqual(normalizeEmailDomains(["Example.COM", "@example.com", "localhost", "bad_domain.com"]), ["example.com"]);
 });
-

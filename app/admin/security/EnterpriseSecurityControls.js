@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-const AVAILABLE_SCOPES = ["organisation:read", "analytics:read", "reports:read", "media:read", "locations:read"];
+const AVAILABLE_SCOPES = ["organisation:read", "analytics:read", "reports:read", "media:read", "locations:read", "metrics:write"];
 
 async function callApi(url, options = {}) {
   const response = await fetch(url, {

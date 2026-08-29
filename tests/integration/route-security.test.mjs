@@ -101,6 +101,9 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   const unauthenticatedPublicLocations = await api("/api/v1/locations");
   assert.equal(unauthenticatedPublicLocations.status, 401);
 
+  const unauthenticatedMetricImport = await api("/api/v1/integration-metrics", { method: "POST", body: { connectionId: "not-a-connection", metrics: [] } });
+  assert.equal(unauthenticatedMetricImport.status, 401);
+
   const unauthenticatedIntegrationCreate = await api("/api/admin/integrations/connections", { method: "POST", body: {} });
   assert.equal(unauthenticatedIntegrationCreate.status, 401);
 
@@ -517,6 +520,14 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
       data: { role: "SUPER_ADMIN" }
     });
 
+    const metricsLocation = await db.location.create({
+      data: {
+        organisationId: accountABody.organisation.id,
+        name: `Summary Metrics Location ${suffix}`,
+        slug: `summary-metrics-${suffix}`
+      }
+    });
+
     const integrationResponse = await api("/api/admin/integrations/connections", {
       method: "POST",
       cookie: cookieA,
@@ -531,7 +542,7 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     const serviceAccountResponse = await api("/api/admin/security/service-accounts", {
       method: "POST",
       cookie: cookieA,
-      body: { organisationId: accountABody.organisation.id, name: `Integration API ${suffix}`, scopes: ["organisation:read", "locations:read"] }
+      body: { organisationId: accountABody.organisation.id, name: `Integration API ${suffix}`, scopes: ["organisation:read", "locations:read", "metrics:write"] }
     });
     assert.equal(serviceAccountResponse.status, 201, await serviceAccountResponse.clone().text());
     const serviceAccountBody = await serviceAccountResponse.json();
@@ -541,7 +552,46 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     assert.ok(Number(publicIdentity.headers.get("x-ratelimit-remaining")) < 120);
     const publicLocations = await api("/api/v1/locations?limit=10", { headers: { authorization: `Bearer ${serviceAccountBody.apiKey}` } });
     assert.equal(publicLocations.status, 200, await publicLocations.clone().text());
-    assert.ok(Array.isArray((await publicLocations.json()).data));
+    const publicLocationItems = (await publicLocations.json()).data;
+    assert.ok(Array.isArray(publicLocationItems));
+    assert.ok(publicLocationItems.some((location) => location.id === metricsLocation.id));
+
+    const metricConnectionResponse = await api("/api/admin/integrations/connections", {
+      method: "POST",
+      cookie: cookieA,
+      body: { organisationId: accountABody.organisation.id, name: `POS summaries ${suffix}`, kind: "POS_METRICS", providerKey: "INTEGRATION_POS_V1" }
+    });
+    assert.equal(metricConnectionResponse.status, 201, await metricConnectionResponse.clone().text());
+    const metricConnection = (await metricConnectionResponse.json()).connection;
+    assert.equal(metricConnection.kind, "POS_METRICS");
+    assert.equal(metricConnection.encryptedSecret, undefined);
+
+    const metricPayload = {
+      connectionId: metricConnection.id,
+      metrics: [{
+        externalId: `pos:${suffix}:hour-1`,
+        locationId: publicLocationItems[0].id,
+        metricType: "POS_TRANSACTION_COUNT",
+        value: 23,
+        unit: "COUNT",
+        windowStartedAt: new Date(Date.now() - 3_600_000).toISOString(),
+        windowEndedAt: new Date().toISOString(),
+        sourceTimestamp: new Date().toISOString(),
+        dimensions: { department: "All retail", sourceLocationRef: `qa-${suffix}` }
+      }]
+    };
+    const metricImport = await api("/api/v1/integration-metrics", { method: "POST", headers: { authorization: `Bearer ${serviceAccountBody.apiKey}` }, body: metricPayload });
+    assert.equal(metricImport.status, 201, await metricImport.clone().text());
+    const metricImportBody = await metricImport.json();
+    assert.equal(metricImportBody.acceptedCount, 1);
+    assert.equal(metricImportBody.duplicateCount, 0);
+    assert.match(metricImportBody.notice, /do not prove/);
+
+    const duplicateMetricImport = await api("/api/v1/integration-metrics", { method: "POST", headers: { authorization: `Bearer ${serviceAccountBody.apiKey}` }, body: metricPayload });
+    assert.equal(duplicateMetricImport.status, 201, await duplicateMetricImport.clone().text());
+    assert.equal((await duplicateMetricImport.json()).duplicateCount, 1);
+    assert.equal(await db.integrationMetricSummary.count({ where: { connectionId: metricConnection.id } }), 1);
+    assert.equal(await db.auditLog.count({ where: { action: "INTEGRATION_METRICS_IMPORTED", entityId: metricConnection.id } }), 2);
 
     const aiDraftResponse = await api("/api/admin/ai/jobs", {
       method: "POST",
