@@ -43,13 +43,13 @@ export async function POST(request) {
 
     const [layout, assets, devices] = await Promise.all([
       prisma.digitalSignageLayout.findFirst({ where: { id: input.layoutId, organisationId: input.organisationId }, include: { regions: true } }),
-      prisma.digitalSignageAsset.findMany({ where: { id: { in: [...new Set(input.items.map((item) => item.assetId))] }, organisationId: input.organisationId, status: "READY", kind: "IMAGE" } }),
+      prisma.digitalSignageAsset.findMany({ where: { id: { in: [...new Set(input.items.map((item) => item.assetId))] }, organisationId: input.organisationId, status: "READY", kind: { in: ["IMAGE", "VIDEO"] } } }),
       prisma.digitalSignageDevice.findMany({ where: { id: { in: input.deviceIds }, organisationId: input.organisationId } })
     ]);
     if (!layout) return NextResponse.json({ error: "The selected layout does not belong to this organisation." }, { status: 400 });
     const regionIds = new Set(layout.regions.map((region) => region.id));
     if (input.items.some((item) => !regionIds.has(item.regionId))) return NextResponse.json({ error: "Every playlist region must belong to the selected layout." }, { status: 400 });
-    if (assets.length !== new Set(input.items.map((item) => item.assetId)).size) return NextResponse.json({ error: "Every visual item must be a ready image owned by this organisation." }, { status: 400 });
+    if (assets.length !== new Set(input.items.map((item) => item.assetId)).size) return NextResponse.json({ error: "Every visual item must be a ready image or normalized video owned by this organisation." }, { status: 400 });
     if (devices.length !== input.deviceIds.length) return NextResponse.json({ error: "Every assigned device must belong to this organisation." }, { status: 400 });
 
     const playlist = await prisma.$transaction(async (tx) => {

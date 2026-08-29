@@ -346,9 +346,25 @@ enum DigitalSignageAssetKind {
 }
 
 enum DigitalSignageAssetStatus {
+  PROCESSING
   READY
+  FAILED
   REJECTED
   ARCHIVED
+}
+
+enum DigitalSignageVideoJobStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+enum DigitalSignageTakeoverStatus {
+  DRAFT
+  ACTIVE
+  ENDED
+  CANCELLED
 }
 
 enum DigitalSignageLayoutStatus {
@@ -768,75 +784,79 @@ model User {
   updatedAt    DateTime @updatedAt
 
   memberships                      OrganisationMember[]
-  auditLogs                        AuditLog[]                    @relation("AuditActor")
+  auditLogs                        AuditLog[]                       @relation("AuditActor")
   sessions                         Session[]
-  submittedPromoVersions           PromoVersion[]                @relation("PromoVersionSubmittedBy")
-  reviewedPromoVersions            PromoVersion[]                @relation("PromoVersionReviewedBy")
-  publishedCampaigns               Campaign[]                    @relation("CampaignPublishedBy")
-  reportExports                    ReportExportJob[]             @relation("ReportExportRequestedBy")
-  confirmedTrackRights             Track[]                       @relation("TrackRightsConfirmedBy")
-  createdSchoolAnnouncements       SchoolAnnouncement[]          @relation("SchoolAnnouncementCreatedBy")
-  reviewedSchoolAnnouncements      SchoolAnnouncement[]          @relation("SchoolAnnouncementReviewedBy")
-  approvedSchoolSlots              SchoolBroadcastSlot[]         @relation("SchoolBroadcastSlotApprovedBy")
-  createdProductionOrders          ProductionOrder[]             @relation("ProductionOrderCreatedBy")
-  assignedProductionOrders         ProductionOrder[]             @relation("ProductionOrderAssignedTo")
-  productionOrderEvents            ProductionOrderEvent[]        @relation("ProductionOrderEventActor")
-  productionOrderFiles             ProductionOrderFile[]         @relation("ProductionOrderFileUploadedBy")
-  productionScriptVersions         ProductionScriptVersion[]     @relation("ProductionScriptVersionCreatedBy")
-  requestedProductionRevisions     ProductionRevisionRequest[]   @relation("ProductionRevisionRequestedBy")
-  resolvedProductionRevisions      ProductionRevisionRequest[]   @relation("ProductionRevisionResolvedBy")
-  productionCreditEntries          ProductionCreditLedgerEntry[] @relation("ProductionCreditEntryActor")
-  schoolSupervisions               StaffSupervisor[]             @relation("SchoolSupervisorUser")
-  createdStudentGroups             StudentGroup[]                @relation("StudentGroupCreatedBy")
-  createdSchoolProgrammes          SchoolProgramme[]             @relation("SchoolProgrammeCreatedBy")
-  createdSchoolEpisodes            SchoolEpisode[]               @relation("SchoolEpisodeCreatedBy")
-  schoolSubmissions                SchoolSubmission[]            @relation("SchoolSubmissionSubmittedBy")
-  schoolModerationReviews          SchoolModerationReview[]      @relation("SchoolModerationReviewer")
-  recordedConsentRecords           ConsentRecord[]               @relation("ConsentRecordedBy")
-  createdAudioProjects             AudioProject[]                @relation("AudioProjectCreatedBy")
-  audioProjectVersions             AudioProjectVersion[]         @relation("AudioProjectVersionCreatedBy")
-  recordedAudioTakes               AudioTake[]                   @relation("AudioTakeRecordedBy")
-  schoolAudioUploads               SchoolAudioUploadSession[]    @relation("SchoolAudioUploadCreatedBy")
-  createdAudioMarkers              AudioMarker[]                 @relation("AudioMarkerCreatedBy")
-  requestedAudioRenders            AudioRender[]                 @relation("AudioRenderRequestedBy")
-  createdSchoolRundowns            SchoolRundown[]               @relation("SchoolRundownCreatedBy")
-  reviewedSchoolRundowns           SchoolRundown[]               @relation("SchoolRundownReviewedBy")
-  createdPodcastSeries             SchoolPodcastSeries[]         @relation("SchoolPodcastSeriesCreatedBy")
-  createdPodcastEpisodes           SchoolPodcastEpisode[]        @relation("SchoolPodcastEpisodeCreatedBy")
-  reviewedPodcastEpisodes          SchoolPodcastEpisode[]        @relation("SchoolPodcastEpisodeReviewedBy")
-  createdNewsStories               SchoolNewsStory[]             @relation("SchoolNewsStoryCreatedBy")
-  assignedNewsStories              SchoolNewsStory[]             @relation("SchoolNewsStoryAssignedTo")
-  reviewedNewsStories              SchoolNewsStory[]             @relation("SchoolNewsStoryReviewedBy")
-  supervisedLiveSessions           LiveStudioSession[]           @relation("LiveStudioSupervisor")
-  createdAssignments               Assignment[]                  @relation("AssignmentCreatedBy")
-  recordedAssignmentSubmissions    AssignmentSubmission[]        @relation("AssignmentSubmissionRecordedBy")
-  assignmentAssessments            Assessment[]                  @relation("AssessmentAssessedBy")
-  createdPortfolioEntries          PortfolioEntry[]              @relation("PortfolioEntryCreatedBy")
-  createdSchoolNetworks            SchoolNetwork[]               @relation("SchoolNetworkCreatedBy")
+  submittedPromoVersions           PromoVersion[]                   @relation("PromoVersionSubmittedBy")
+  reviewedPromoVersions            PromoVersion[]                   @relation("PromoVersionReviewedBy")
+  publishedCampaigns               Campaign[]                       @relation("CampaignPublishedBy")
+  reportExports                    ReportExportJob[]                @relation("ReportExportRequestedBy")
+  confirmedTrackRights             Track[]                          @relation("TrackRightsConfirmedBy")
+  createdSchoolAnnouncements       SchoolAnnouncement[]             @relation("SchoolAnnouncementCreatedBy")
+  reviewedSchoolAnnouncements      SchoolAnnouncement[]             @relation("SchoolAnnouncementReviewedBy")
+  approvedSchoolSlots              SchoolBroadcastSlot[]            @relation("SchoolBroadcastSlotApprovedBy")
+  createdProductionOrders          ProductionOrder[]                @relation("ProductionOrderCreatedBy")
+  assignedProductionOrders         ProductionOrder[]                @relation("ProductionOrderAssignedTo")
+  productionOrderEvents            ProductionOrderEvent[]           @relation("ProductionOrderEventActor")
+  productionOrderFiles             ProductionOrderFile[]            @relation("ProductionOrderFileUploadedBy")
+  productionScriptVersions         ProductionScriptVersion[]        @relation("ProductionScriptVersionCreatedBy")
+  requestedProductionRevisions     ProductionRevisionRequest[]      @relation("ProductionRevisionRequestedBy")
+  resolvedProductionRevisions      ProductionRevisionRequest[]      @relation("ProductionRevisionResolvedBy")
+  productionCreditEntries          ProductionCreditLedgerEntry[]    @relation("ProductionCreditEntryActor")
+  schoolSupervisions               StaffSupervisor[]                @relation("SchoolSupervisorUser")
+  createdStudentGroups             StudentGroup[]                   @relation("StudentGroupCreatedBy")
+  createdSchoolProgrammes          SchoolProgramme[]                @relation("SchoolProgrammeCreatedBy")
+  createdSchoolEpisodes            SchoolEpisode[]                  @relation("SchoolEpisodeCreatedBy")
+  schoolSubmissions                SchoolSubmission[]               @relation("SchoolSubmissionSubmittedBy")
+  schoolModerationReviews          SchoolModerationReview[]         @relation("SchoolModerationReviewer")
+  recordedConsentRecords           ConsentRecord[]                  @relation("ConsentRecordedBy")
+  createdAudioProjects             AudioProject[]                   @relation("AudioProjectCreatedBy")
+  audioProjectVersions             AudioProjectVersion[]            @relation("AudioProjectVersionCreatedBy")
+  recordedAudioTakes               AudioTake[]                      @relation("AudioTakeRecordedBy")
+  schoolAudioUploads               SchoolAudioUploadSession[]       @relation("SchoolAudioUploadCreatedBy")
+  createdAudioMarkers              AudioMarker[]                    @relation("AudioMarkerCreatedBy")
+  requestedAudioRenders            AudioRender[]                    @relation("AudioRenderRequestedBy")
+  createdSchoolRundowns            SchoolRundown[]                  @relation("SchoolRundownCreatedBy")
+  reviewedSchoolRundowns           SchoolRundown[]                  @relation("SchoolRundownReviewedBy")
+  createdPodcastSeries             SchoolPodcastSeries[]            @relation("SchoolPodcastSeriesCreatedBy")
+  createdPodcastEpisodes           SchoolPodcastEpisode[]           @relation("SchoolPodcastEpisodeCreatedBy")
+  reviewedPodcastEpisodes          SchoolPodcastEpisode[]           @relation("SchoolPodcastEpisodeReviewedBy")
+  createdNewsStories               SchoolNewsStory[]                @relation("SchoolNewsStoryCreatedBy")
+  assignedNewsStories              SchoolNewsStory[]                @relation("SchoolNewsStoryAssignedTo")
+  reviewedNewsStories              SchoolNewsStory[]                @relation("SchoolNewsStoryReviewedBy")
+  supervisedLiveSessions           LiveStudioSession[]              @relation("LiveStudioSupervisor")
+  createdAssignments               Assignment[]                     @relation("AssignmentCreatedBy")
+  recordedAssignmentSubmissions    AssignmentSubmission[]           @relation("AssignmentSubmissionRecordedBy")
+  assignmentAssessments            Assessment[]                     @relation("AssessmentAssessedBy")
+  createdPortfolioEntries          PortfolioEntry[]                 @relation("PortfolioEntryCreatedBy")
+  createdSchoolNetworks            SchoolNetwork[]                  @relation("SchoolNetworkCreatedBy")
   schoolNetworkMemberships         SchoolNetworkMember[]
   enterpriseIdentityLinks          EnterpriseIdentityLink[]
-  createdServiceAccounts           ServiceAccount[]              @relation("ServiceAccountCreatedBy")
-  createdCompliancePolicies        CompliancePolicy[]            @relation("CompliancePolicyCreatedBy")
-  policyAcceptances                PolicyAcceptance[]            @relation("PolicyAcceptanceAcceptedBy")
-  requestedDataRequests            DataRequest[]                 @relation("DataRequestRequestedBy")
-  subjectDataRequests              DataRequest[]                 @relation("DataRequestSubjectUser")
-  completedDataRequests            DataRequest[]                 @relation("DataRequestCompletedBy")
-  reviewedRetentionPolicies        RetentionPolicy[]             @relation("RetentionPolicyReviewedBy")
-  requestedRetentionJobs           RetentionJob[]                @relation("RetentionJobRequestedBy")
-  createdSupportTickets            SupportTicket[]               @relation("SupportTicketCreatedBy")
-  assignedSupportTickets           SupportTicket[]               @relation("SupportTicketAssignedTo")
-  requestedAIJobs                  AIJob[]                       @relation("AIJobRequestedBy")
-  reviewedAIJobs                   AIJob[]                       @relation("AIJobReviewedBy")
+  createdServiceAccounts           ServiceAccount[]                 @relation("ServiceAccountCreatedBy")
+  createdCompliancePolicies        CompliancePolicy[]               @relation("CompliancePolicyCreatedBy")
+  policyAcceptances                PolicyAcceptance[]               @relation("PolicyAcceptanceAcceptedBy")
+  requestedDataRequests            DataRequest[]                    @relation("DataRequestRequestedBy")
+  subjectDataRequests              DataRequest[]                    @relation("DataRequestSubjectUser")
+  completedDataRequests            DataRequest[]                    @relation("DataRequestCompletedBy")
+  reviewedRetentionPolicies        RetentionPolicy[]                @relation("RetentionPolicyReviewedBy")
+  requestedRetentionJobs           RetentionJob[]                   @relation("RetentionJobRequestedBy")
+  createdSupportTickets            SupportTicket[]                  @relation("SupportTicketCreatedBy")
+  assignedSupportTickets           SupportTicket[]                  @relation("SupportTicketAssignedTo")
+  requestedAIJobs                  AIJob[]                          @relation("AIJobRequestedBy")
+  reviewedAIJobs                   AIJob[]                          @relation("AIJobReviewedBy")
   recommendationFeedback           RecommendationFeedback[]
-  createdIntegrationConnections    IntegrationConnection[]       @relation("IntegrationConnectionCreatedBy")
-  createdRetailMediaInventory      RetailMediaInventoryPackage[] @relation("RetailMediaInventoryCreatedBy")
-  approvedRetailMediaOrders        RetailMediaOrder[]            @relation("RetailMediaOrderApprovedBy")
-  reviewedRetailMediaCreatives     RetailMediaOrderCreative[]    @relation("RetailMediaCreativeReviewedBy")
-  uploadedDigitalSignageAssets     DigitalSignageAsset[]         @relation("DigitalSignageAssetUploadedBy")
-  createdDigitalSignageLayouts     DigitalSignageLayout[]        @relation("DigitalSignageLayoutCreatedBy")
-  createdDigitalSignageDevices     DigitalSignageDevice[]        @relation("DigitalSignageDeviceCreatedBy")
-  createdDigitalSignagePlaylists   DigitalSignagePlaylist[]      @relation("DigitalSignagePlaylistCreatedBy")
-  publishedDigitalSignagePlaylists DigitalSignagePlaylist[]      @relation("DigitalSignagePlaylistPublishedBy")
+  createdIntegrationConnections    IntegrationConnection[]          @relation("IntegrationConnectionCreatedBy")
+  createdRetailMediaInventory      RetailMediaInventoryPackage[]    @relation("RetailMediaInventoryCreatedBy")
+  approvedRetailMediaOrders        RetailMediaOrder[]               @relation("RetailMediaOrderApprovedBy")
+  reviewedRetailMediaCreatives     RetailMediaOrderCreative[]       @relation("RetailMediaCreativeReviewedBy")
+  reviewedRetailMediaVisuals       RetailMediaOrderVisualCreative[] @relation("RetailMediaVisualCreativeReviewedBy")
+  uploadedDigitalSignageAssets     DigitalSignageAsset[]            @relation("DigitalSignageAssetUploadedBy")
+  createdDigitalSignageLayouts     DigitalSignageLayout[]           @relation("DigitalSignageLayoutCreatedBy")
+  createdDigitalSignageDevices     DigitalSignageDevice[]           @relation("DigitalSignageDeviceCreatedBy")
+  createdDigitalSignagePlaylists   DigitalSignagePlaylist[]         @relation("DigitalSignagePlaylistCreatedBy")
+  publishedDigitalSignagePlaylists DigitalSignagePlaylist[]         @relation("DigitalSignagePlaylistPublishedBy")
+  createdDigitalSignageTakeovers   DigitalSignageTakeover[]         @relation("DigitalSignageTakeoverCreatedBy")
+  activatedDigitalSignageTakeovers DigitalSignageTakeover[]         @relation("DigitalSignageTakeoverActivatedBy")
+  endedDigitalSignageTakeovers     DigitalSignageTakeover[]         @relation("DigitalSignageTakeoverEndedBy")
 }
 
 model Organisation {
@@ -923,6 +943,7 @@ model Organisation {
   digitalSignageDevices        DigitalSignageDevice[]
   digitalSignagePlaylists      DigitalSignagePlaylist[]
   digitalSignageDeliveryProofs DigitalSignageDeliveryProof[]
+  digitalSignageTakeovers      DigitalSignageTakeover[]
 }
 
 model OrganisationMember {
@@ -1711,13 +1732,16 @@ model RetailMediaOrder {
   createdAt              DateTime               @default(now())
   updatedAt              DateTime               @updatedAt
 
-  organisation     Organisation                @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  advertiser       RetailMediaPartner          @relation("RetailMediaOrderAdvertiser", fields: [advertiserId], references: [id], onDelete: Restrict)
-  agency           RetailMediaPartner?         @relation("RetailMediaOrderAgency", fields: [agencyId], references: [id], onDelete: Restrict)
-  inventoryPackage RetailMediaInventoryPackage @relation(fields: [inventoryPackageId], references: [id], onDelete: Restrict)
-  campaign         Campaign?                   @relation(fields: [campaignId], references: [id], onDelete: SetNull)
-  approvedBy       User?                       @relation("RetailMediaOrderApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
-  creatives        RetailMediaOrderCreative[]
+  organisation         Organisation                     @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  advertiser           RetailMediaPartner               @relation("RetailMediaOrderAdvertiser", fields: [advertiserId], references: [id], onDelete: Restrict)
+  agency               RetailMediaPartner?              @relation("RetailMediaOrderAgency", fields: [agencyId], references: [id], onDelete: Restrict)
+  inventoryPackage     RetailMediaInventoryPackage      @relation(fields: [inventoryPackageId], references: [id], onDelete: Restrict)
+  campaign             Campaign?                        @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  approvedBy           User?                            @relation("RetailMediaOrderApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
+  creatives            RetailMediaOrderCreative[]
+  visualCreatives      RetailMediaOrderVisualCreative[]
+  visualPlaylists      DigitalSignagePlaylist[]
+  visualDeliveryProofs DigitalSignageDeliveryProof[]
 
   @@index([organisationId, status, createdAt])
   @@index([advertiserId])
@@ -1746,6 +1770,26 @@ model RetailMediaOrderCreative {
   @@index([reviewedById])
 }
 
+model RetailMediaOrderVisualCreative {
+  id             String                    @id @default(cuid())
+  orderId        String
+  signageAssetId String
+  status         RetailMediaCreativeStatus @default(PENDING)
+  reviewedById   String?
+  reviewedAt     DateTime?
+  reviewNote     String?
+  createdAt      DateTime                  @default(now())
+  updatedAt      DateTime                  @updatedAt
+
+  order        RetailMediaOrder    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  signageAsset DigitalSignageAsset @relation(fields: [signageAssetId], references: [id], onDelete: Restrict)
+  reviewedBy   User?               @relation("RetailMediaVisualCreativeReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@unique([orderId, signageAssetId])
+  @@index([signageAssetId, status])
+  @@index([reviewedById])
+}
+
 model DigitalSignageAsset {
   id               String                    @id @default(cuid())
   organisationId   String
@@ -1764,14 +1808,33 @@ model DigitalSignageAsset {
   createdAt        DateTime                  @default(now())
   updatedAt        DateTime                  @updatedAt
 
-  organisation   Organisation                  @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  uploadedBy     User                          @relation("DigitalSignageAssetUploadedBy", fields: [uploadedByUserId], references: [id], onDelete: Restrict)
-  playlistItems  DigitalSignagePlaylistItem[]
-  deliveryProofs DigitalSignageDeliveryProof[]
+  organisation         Organisation                     @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  uploadedBy           User                             @relation("DigitalSignageAssetUploadedBy", fields: [uploadedByUserId], references: [id], onDelete: Restrict)
+  playlistItems        DigitalSignagePlaylistItem[]
+  deliveryProofs       DigitalSignageDeliveryProof[]
+  videoJob             DigitalSignageVideoJob?
+  retailMediaCreatives RetailMediaOrderVisualCreative[]
 
   @@unique([organisationId, checksumSha256])
   @@index([organisationId, status, kind])
   @@index([uploadedByUserId])
+}
+
+model DigitalSignageVideoJob {
+  id             String                       @id @default(cuid())
+  assetId        String                       @unique
+  status         DigitalSignageVideoJobStatus @default(QUEUED)
+  attempts       Int                          @default(0)
+  startedAt      DateTime?
+  completedAt    DateTime?
+  errorMessage   String?
+  sourceMimeType String
+  createdAt      DateTime                     @default(now())
+  updatedAt      DateTime                     @updatedAt
+
+  asset DigitalSignageAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
 }
 
 model DigitalSignageLayout {
@@ -1842,6 +1905,7 @@ model DigitalSignageDevice {
   createdBy           User                           @relation("DigitalSignageDeviceCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
   playlistAssignments DigitalSignagePlaylistDevice[]
   deliveryProofs      DigitalSignageDeliveryProof[]
+  takeoverAssignments DigitalSignageTakeoverDevice[]
 
   @@index([organisationId, status])
   @@index([zoneId])
@@ -1850,37 +1914,41 @@ model DigitalSignageDevice {
 }
 
 model DigitalSignagePlaylist {
-  id                String                       @id @default(cuid())
-  organisationId    String
-  layoutId          String
-  name              String
-  status            DigitalSignagePlaylistStatus @default(DRAFT)
-  version           Int                          @default(1)
-  startsAt          DateTime?
-  endsAt            DateTime?
-  activeDays        Int[]                        @default([])
-  dailyStartMinute  Int                          @default(0)
-  dailyEndMinute    Int                          @default(1440)
-  priority          Int                          @default(0)
-  publishedAt       DateTime?
-  publishedByUserId String?
-  createdByUserId   String
-  createdAt         DateTime                     @default(now())
-  updatedAt         DateTime                     @updatedAt
+  id                 String                       @id @default(cuid())
+  organisationId     String
+  layoutId           String
+  name               String
+  status             DigitalSignagePlaylistStatus @default(DRAFT)
+  version            Int                          @default(1)
+  startsAt           DateTime?
+  endsAt             DateTime?
+  activeDays         Int[]                        @default([])
+  dailyStartMinute   Int                          @default(0)
+  dailyEndMinute     Int                          @default(1440)
+  priority           Int                          @default(0)
+  publishedAt        DateTime?
+  publishedByUserId  String?
+  createdByUserId    String
+  retailMediaOrderId String?
+  createdAt          DateTime                     @default(now())
+  updatedAt          DateTime                     @updatedAt
 
-  organisation   Organisation                   @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  layout         DigitalSignageLayout           @relation(fields: [layoutId], references: [id], onDelete: Restrict)
-  createdBy      User                           @relation("DigitalSignagePlaylistCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  publishedBy    User?                          @relation("DigitalSignagePlaylistPublishedBy", fields: [publishedByUserId], references: [id], onDelete: SetNull)
-  items          DigitalSignagePlaylistItem[]
-  devices        DigitalSignagePlaylistDevice[]
-  deliveryProofs DigitalSignageDeliveryProof[]
+  organisation     Organisation                   @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  layout           DigitalSignageLayout           @relation(fields: [layoutId], references: [id], onDelete: Restrict)
+  createdBy        User                           @relation("DigitalSignagePlaylistCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  publishedBy      User?                          @relation("DigitalSignagePlaylistPublishedBy", fields: [publishedByUserId], references: [id], onDelete: SetNull)
+  items            DigitalSignagePlaylistItem[]
+  devices          DigitalSignagePlaylistDevice[]
+  deliveryProofs   DigitalSignageDeliveryProof[]
+  retailMediaOrder RetailMediaOrder?              @relation(fields: [retailMediaOrderId], references: [id], onDelete: SetNull)
+  takeovers        DigitalSignageTakeover[]
 
   @@unique([organisationId, name])
   @@index([organisationId, status, startsAt, endsAt])
   @@index([layoutId])
   @@index([createdByUserId])
   @@index([publishedByUserId])
+  @@index([retailMediaOrderId])
 }
 
 model DigitalSignagePlaylistItem {
@@ -1914,30 +1982,78 @@ model DigitalSignagePlaylistDevice {
   @@index([deviceId])
 }
 
-model DigitalSignageDeliveryProof {
-  id              String                          @id @default(cuid())
-  clientEventId   String                          @unique
-  organisationId  String
-  deviceId        String
-  playlistId      String
-  playlistItemId  String
-  assetId         String
-  manifestVersion String                          @db.VarChar(24)
-  eventType       DigitalSignageDeliveryEventType
-  occurredAt      DateTime
-  receivedAt      DateTime                        @default(now())
-  failureReason   String?
+model DigitalSignageTakeover {
+  id                String                       @id @default(cuid())
+  organisationId    String
+  playlistId        String
+  name              String
+  reason            String
+  status            DigitalSignageTakeoverStatus @default(DRAFT)
+  startsAt          DateTime
+  endsAt            DateTime
+  activatedAt       DateTime?
+  endedAt           DateTime?
+  createdByUserId   String
+  activatedByUserId String?
+  endedByUserId     String?
+  createdAt         DateTime                     @default(now())
+  updatedAt         DateTime                     @updatedAt
 
-  organisation Organisation               @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  device       DigitalSignageDevice       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
-  playlist     DigitalSignagePlaylist     @relation(fields: [playlistId], references: [id], onDelete: Restrict)
-  playlistItem DigitalSignagePlaylistItem @relation(fields: [playlistItemId], references: [id], onDelete: Restrict)
-  asset        DigitalSignageAsset        @relation(fields: [assetId], references: [id], onDelete: Restrict)
+  organisation   Organisation                   @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  playlist       DigitalSignagePlaylist         @relation(fields: [playlistId], references: [id], onDelete: Restrict)
+  createdBy      User                           @relation("DigitalSignageTakeoverCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  activatedBy    User?                          @relation("DigitalSignageTakeoverActivatedBy", fields: [activatedByUserId], references: [id], onDelete: SetNull)
+  endedBy        User?                          @relation("DigitalSignageTakeoverEndedBy", fields: [endedByUserId], references: [id], onDelete: SetNull)
+  devices        DigitalSignageTakeoverDevice[]
+  deliveryProofs DigitalSignageDeliveryProof[]
+
+  @@index([organisationId, status, startsAt, endsAt])
+  @@index([playlistId])
+  @@index([createdByUserId])
+}
+
+model DigitalSignageTakeoverDevice {
+  takeoverId String
+  deviceId   String
+  assignedAt DateTime @default(now())
+
+  takeover DigitalSignageTakeover @relation(fields: [takeoverId], references: [id], onDelete: Cascade)
+  device   DigitalSignageDevice   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@id([takeoverId, deviceId])
+  @@index([deviceId])
+}
+
+model DigitalSignageDeliveryProof {
+  id                 String                          @id @default(cuid())
+  clientEventId      String                          @unique
+  organisationId     String
+  deviceId           String
+  playlistId         String
+  playlistItemId     String
+  assetId            String
+  manifestVersion    String                          @db.VarChar(24)
+  eventType          DigitalSignageDeliveryEventType
+  occurredAt         DateTime
+  receivedAt         DateTime                        @default(now())
+  failureReason      String?
+  takeoverId         String?
+  retailMediaOrderId String?
+
+  organisation     Organisation               @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  device           DigitalSignageDevice       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  playlist         DigitalSignagePlaylist     @relation(fields: [playlistId], references: [id], onDelete: Restrict)
+  playlistItem     DigitalSignagePlaylistItem @relation(fields: [playlistItemId], references: [id], onDelete: Restrict)
+  asset            DigitalSignageAsset        @relation(fields: [assetId], references: [id], onDelete: Restrict)
+  takeover         DigitalSignageTakeover?    @relation(fields: [takeoverId], references: [id], onDelete: SetNull)
+  retailMediaOrder RetailMediaOrder?          @relation(fields: [retailMediaOrderId], references: [id], onDelete: SetNull)
 
   @@index([organisationId, occurredAt])
   @@index([deviceId, occurredAt])
   @@index([playlistId, eventType, occurredAt])
   @@index([assetId, occurredAt])
+  @@index([takeoverId, occurredAt])
+  @@index([retailMediaOrderId, occurredAt])
 }
 
 model Track {

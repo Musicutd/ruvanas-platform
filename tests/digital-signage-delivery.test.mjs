@@ -6,9 +6,11 @@ import {
   buildDigitalSignageManifest,
   createDigitalSignageProofToken,
   isDigitalSignagePlaylistActive,
+  normaliseDigitalSignageTakeover,
   normaliseDigitalSignagePlaylist,
   removeDigitalSignageEvents,
   selectDigitalSignagePlaylist,
+  selectDigitalSignageTakeover,
   verifyDigitalSignageProofToken
 } from "../lib/digital-signage-delivery.mjs";
 
@@ -86,6 +88,19 @@ test("the highest-priority active playlist wins deterministically", () => {
   assert.equal(selected.id, "playlist_2");
 });
 
+test("takeovers are bounded, explicit, and win over scheduled playlists", () => {
+  const input = normaliseDigitalSignageTakeover({ organisationId: "org_1", playlistId: "playlist_1", name: "Closure", reason: "Site closed due to weather", startsAt: "2026-08-24T09:00:00.000Z", endsAt: "2026-08-24T10:00:00.000Z", deviceIds: ["device_1", "device_1"] });
+  assert.deepEqual(input.deviceIds, ["device_1"]);
+  assert.throws(() => normaliseDigitalSignageTakeover({ ...input, endsAt: "2026-08-26T10:00:00.000Z" }), /24 hours/);
+  const takeover = { id: "takeover_1", status: "ACTIVE", startsAt: input.startsAt, endsAt: input.endsAt, activatedAt: input.startsAt, playlist: playlist({ id: "urgent", priority: 0 }) };
+  assert.equal(selectDigitalSignageTakeover([takeover], new Date("2026-08-24T09:30:00.000Z")).id, "takeover_1");
+  const manifest = buildDigitalSignageManifest({ device, playlists: [playlist({ priority: 100 })], takeovers: [takeover], proofSecret: secret, instant: new Date("2026-08-24T09:30:00.000Z") });
+  assert.equal(manifest.deliveryClass, "EMERGENCY_TAKEOVER");
+  assert.equal(manifest.playlist.id, "urgent");
+  assert.ok(new Date(manifest.offlineGraceUntil) <= input.endsAt);
+  assert.match(manifest.takeover.safetyNotice, /not a certified life-safety/);
+});
+
 test("signage manifest is signed, expiring, offline-safe, and hides storage keys", () => {
   const manifest = buildDigitalSignageManifest({ device, playlists: [playlist()], proofSecret: secret, instant: new Date("2026-08-24T09:02:00.000Z") });
   assert.equal(manifest.state, "READY");
@@ -101,6 +116,10 @@ test("display proof tokens reject device or asset tampering", () => {
   assert.equal(verifyDigitalSignageProofToken(input, token, secret), true);
   assert.equal(verifyDigitalSignageProofToken({ ...input, deviceId: "device_2" }, token, secret), false);
   assert.equal(verifyDigitalSignageProofToken({ ...input, assetId: "asset_2" }, token, secret), false);
+  const commercial = { ...input, retailMediaOrderId: "order_1" };
+  const commercialToken = createDigitalSignageProofToken(commercial, secret);
+  assert.equal(verifyDigitalSignageProofToken(commercial, commercialToken, secret), true);
+  assert.equal(verifyDigitalSignageProofToken({ ...commercial, retailMediaOrderId: "order_2" }, commercialToken, secret), false);
 });
 
 test("offline display evidence is bounded and removed only after acknowledgement", () => {

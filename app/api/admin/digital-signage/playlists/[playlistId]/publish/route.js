@@ -26,7 +26,7 @@ export async function PATCH(request, { params }) {
     if (!access.ok) return accessDenied(access);
     if (action === "PUBLISH" && (!playlist.items.length || !playlist.devices.length)) return NextResponse.json({ error: "A published playlist needs visual items and at least one assigned device." }, { status: 400 });
     if (action === "PUBLISH" && playlist.layout.status === "ARCHIVED") return NextResponse.json({ error: "An archived layout cannot be published." }, { status: 400 });
-    if (action === "PUBLISH" && playlist.items.some((item) => item.asset.status !== "READY" || item.asset.kind !== "IMAGE")) return NextResponse.json({ error: "Every visual must still be an approved, ready image before publishing." }, { status: 400 });
+    if (action === "PUBLISH" && playlist.items.some((item) => item.asset.status !== "READY" || !["IMAGE", "VIDEO"].includes(item.asset.kind))) return NextResponse.json({ error: "Every visual must still be a ready image or normalized video before publishing." }, { status: 400 });
     if (action === "PUBLISH" && playlist.devices.some((assignment) => assignment.device.status === "DISABLED")) return NextResponse.json({ error: "Remove disabled displays before publishing this playlist." }, { status: 400 });
 
     const now = new Date();

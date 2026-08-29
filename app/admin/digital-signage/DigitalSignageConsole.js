@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-const emptyData = { assets: [], layouts: [], devices: [], playlists: [] };
+const emptyData = { assets: [], layouts: [], devices: [], playlists: [], takeovers: [] };
 
 export default function DigitalSignageConsole({ organisations, showOrganisationSelector = true }) {
   const enabledOrganisations = organisations.filter((item) => item.digitalSignageEnabled);
@@ -19,16 +19,17 @@ export default function DigitalSignageConsole({ organisations, showOrganisationS
     setLoading(true); setMessage("");
     try {
       const query = `?organisationId=${encodeURIComponent(organisationId)}`;
-      const [assetsResponse, layoutsResponse, devicesResponse, playlistsResponse] = await Promise.all([
+      const [assetsResponse, layoutsResponse, devicesResponse, playlistsResponse, takeoversResponse] = await Promise.all([
         fetch(`/api/admin/digital-signage/assets${query}`),
         fetch(`/api/admin/digital-signage/layouts${query}`),
         fetch(`/api/admin/digital-signage/devices${query}`),
-        fetch(`/api/admin/digital-signage/playlists${query}`)
+        fetch(`/api/admin/digital-signage/playlists${query}`),
+        fetch(`/api/admin/digital-signage/takeovers${query}`)
       ]);
-      const [assets, layouts, devices, playlists] = await Promise.all([assetsResponse.json(), layoutsResponse.json(), devicesResponse.json(), playlistsResponse.json()]);
-      const failed = [[assetsResponse, assets], [layoutsResponse, layouts], [devicesResponse, devices], [playlistsResponse, playlists]].find(([response]) => !response.ok);
+      const [assets, layouts, devices, playlists, takeovers] = await Promise.all([assetsResponse.json(), layoutsResponse.json(), devicesResponse.json(), playlistsResponse.json(), takeoversResponse.json()]);
+      const failed = [[assetsResponse, assets], [layoutsResponse, layouts], [devicesResponse, devices], [playlistsResponse, playlists], [takeoversResponse, takeovers]].find(([response]) => !response.ok);
       if (failed) throw new Error(failed[1].error || "Unable to load the signage workspace.");
-      setData({ assets: assets.assets, layouts: layouts.layouts, devices: devices.devices, playlists: playlists.playlists });
+      setData({ assets: assets.assets, layouts: layouts.layouts, devices: devices.devices, playlists: playlists.playlists, takeovers: takeovers.takeovers });
     } catch (error) { setMessage(error instanceof Error ? error.message : "Unable to load the signage workspace."); }
     finally { setLoading(false); }
   }
@@ -42,11 +43,11 @@ export default function DigitalSignageConsole({ organisations, showOrganisationS
       formData.set("organisationId", organisationId);
       const response = await fetch("/api/admin/digital-signage/assets", { method: "POST", body: formData });
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Unable to upload the image.");
+      if (!response.ok) throw new Error(result.error || "Unable to upload the visual.");
       event.currentTarget.reset();
       await load();
-      setMessage(result.duplicate ? "This image already exists in the visual library." : "Visual asset uploaded safely.");
-    } catch (error) { setMessage(error instanceof Error ? error.message : "Unable to upload the image."); }
+      setMessage(result.duplicate ? "This visual already exists in the library." : result.asset.kind === "VIDEO" ? "Video uploaded. Protected processing is now running; refresh shortly to see when it is ready." : "Visual asset uploaded safely.");
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Unable to upload the visual."); }
     finally { setBusy(""); }
   }
 
@@ -103,7 +104,7 @@ export default function DigitalSignageConsole({ organisations, showOrganisationS
         organisationId,
         name: formData.get("name"),
         layoutId: layout.id,
-        deviceIds: [formData.get("deviceId")],
+        deviceIds: formData.getAll("deviceIds"),
         activeDays: [0, 1, 2, 3, 4, 5, 6],
         dailyStart: formData.get("dailyStart"),
         dailyEnd: formData.get("dailyEnd"),
@@ -128,10 +129,34 @@ export default function DigitalSignageConsole({ organisations, showOrganisationS
     finally { setBusy(""); }
   }
 
+  async function createTakeover(event) {
+    event.preventDefault(); setBusy("takeover"); setMessage("");
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    try {
+      const response = await fetch("/api/admin/digital-signage/takeovers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ organisationId, name: formData.get("name"), reason: formData.get("reason"), playlistId: formData.get("playlistId"), deviceIds: formData.getAll("deviceIds"), startsAt: new Date(String(formData.get("startsAt"))).toISOString(), endsAt: new Date(String(formData.get("endsAt"))).toISOString() }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Unable to create the visual takeover.");
+      form.reset(); await load(); setMessage("Takeover draft created. A manager must explicitly activate it.");
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Unable to create the visual takeover."); }
+    finally { setBusy(""); }
+  }
+
+  async function updateTakeover(takeoverId, action) {
+    setBusy(takeoverId); setMessage("");
+    try {
+      const response = await fetch(`/api/admin/digital-signage/takeovers/${takeoverId}/action`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Unable to update the visual takeover.");
+      await load(); setMessage(action === "ACTIVATE" ? "Takeover activated. Selected displays will switch on their next secure refresh." : "Takeover closed safely.");
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Unable to update the visual takeover."); }
+    finally { setBusy(""); }
+  }
+
   return <main style={styles.page}>
-    <p style={styles.eyebrow}>Stage 7C</p>
-    <h1 style={styles.title}>Digital Signage delivery</h1>
-    <p style={styles.copy}>Prepare approved visuals and layouts, register tenant-owned displays, then publish time-windowed playlists through a separate secure display player with offline-safe delivery and device-confirmed evidence.</p>
+    <p style={styles.eyebrow}>Stage 7D</p>
+    <h1 style={styles.title}>Advanced Digital Signage</h1>
+    <p style={styles.copy}>Prepare images and normalized video, publish multi-display playlists, and manage audited, time-bounded visual takeovers. Delivery remains offline-safe and supported by device-confirmed evidence.</p>
 
     {showOrganisationSelector ? <label style={styles.label}>Organisation
       <select value={organisationId} onChange={(event) => setOrganisationId(event.target.value)} style={styles.input}>
@@ -146,12 +171,12 @@ export default function DigitalSignageConsole({ organisations, showOrganisationS
       <section style={styles.grid}>
         <form onSubmit={uploadAsset} style={styles.card}>
           <h2 style={styles.cardTitle}>Visual library</h2>
-          <p style={styles.small}>PNG or JPEG, maximum 15 MB. File signatures and image dimensions are verified before storage.</p>
+          <p style={styles.small}>PNG/JPEG up to 15 MB or MP4/WebM up to 80 MB. Videos enter protected normalization and cannot be published until verified.</p>
           <label style={styles.label}>Display name<input name="name" required maxLength={200} style={styles.input} /></label>
-          <label style={styles.label}>Image<input name="file" type="file" required accept="image/png,image/jpeg" style={styles.input} /></label>
+          <label style={styles.label}>Image or video<input name="file" type="file" required accept="image/png,image/jpeg,video/mp4,video/webm" style={styles.input} /></label>
           <button disabled={busy === "asset"} style={styles.button}>{busy === "asset" ? "Uploading…" : "Upload visual"}</button>
           <p style={styles.count}>{data.assets.length} active visual asset{data.assets.length === 1 ? "" : "s"}</p>
-          {data.assets.slice(0, 5).map((asset) => <div key={asset.id} style={styles.row}><strong>{asset.name}</strong><span>{asset.width}×{asset.height} · {(Number(asset.sizeBytes) / 1048576).toFixed(1)} MB</span></div>)}
+          {data.assets.slice(0, 5).map((asset) => <div key={asset.id} style={styles.row}><strong>{asset.name}</strong><span>{asset.kind} · {asset.status}{asset.width ? ` · ${asset.width}×${asset.height}` : ""} · {(Number(asset.sizeBytes) / 1048576).toFixed(1)} MB</span>{asset.videoJob?.status === "FAILED" ? <span style={styles.errorText}>{asset.videoJob.errorMessage || "Protected video processing failed."}</span> : null}</div>)}
         </form>
 
         <form onSubmit={createLayout} style={styles.card}>
@@ -179,11 +204,11 @@ export default function DigitalSignageConsole({ organisations, showOrganisationS
 
         <form onSubmit={createPlaylist} style={styles.card}>
           <h2 style={styles.cardTitle}>Scheduled visual playlists</h2>
-          <p style={styles.small}>Create a reviewed draft, assign it to one display, and publish it when ready. The first safe workflow uses the layout's primary region; multi-region delivery is supported by the manifest.</p>
+          <p style={styles.small}>Create a reviewed draft, assign it to one or more displays, and publish it when ready. Hold Ctrl (Windows) or Command (Mac) to select multiple displays.</p>
           <label style={styles.label}>Playlist name<input name="name" required maxLength={200} style={styles.input} /></label>
           <label style={styles.label}>Layout<select name="layoutId" required style={styles.input}><option value="">Select a layout</option>{data.layouts.map((layout) => <option key={layout.id} value={layout.id}>{layout.name}</option>)}</select></label>
-          <label style={styles.label}>Visual asset<select name="assetId" required style={styles.input}><option value="">Select an image</option>{data.assets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}</select></label>
-          <label style={styles.label}>Display device<select name="deviceId" required style={styles.input}><option value="">Select a display</option>{data.devices.map((device) => <option key={device.id} value={device.id}>{device.name} — {device.zone.location.name}</option>)}</select></label>
+          <label style={styles.label}>Visual asset<select name="assetId" required style={styles.input}><option value="">Select a ready visual</option>{data.assets.filter((asset) => asset.status === "READY").map((asset) => <option key={asset.id} value={asset.id}>{asset.name} — {asset.kind}</option>)}</select></label>
+          <label style={styles.label}>Display devices<select name="deviceIds" required multiple size={Math.min(5, Math.max(2, data.devices.length))} style={styles.input}>{data.devices.map((device) => <option key={device.id} value={device.id}>{device.name} — {device.zone.location.name}</option>)}</select></label>
           <div style={styles.two}><label style={styles.label}>Daily start<input name="dailyStart" type="time" defaultValue="06:00" required style={styles.input} /></label><label style={styles.label}>Daily end<input name="dailyEnd" type="time" defaultValue="23:00" required style={styles.input} /></label></div>
           <div style={styles.two}><label style={styles.label}>Seconds per visual<input name="durationSeconds" type="number" min="3" max="86400" defaultValue="10" required style={styles.input} /></label><label style={styles.label}>Priority<input name="priority" type="number" min="0" max="100" defaultValue="0" required style={styles.input} /></label></div>
           <button disabled={busy === "playlist" || !data.assets.length || !data.layouts.length || !data.devices.length} style={styles.button}>{busy === "playlist" ? "Creating…" : "Create playlist draft"}</button>
@@ -192,6 +217,19 @@ export default function DigitalSignageConsole({ organisations, showOrganisationS
             <strong>{playlist.name}</strong><span>{playlist.layout.name} · {playlist.status} · priority {playlist.priority}</span>
             <button type="button" disabled={busy === playlist.id} onClick={() => updatePlaylist(playlist.id, playlist.status === "PUBLISHED" ? "PAUSE" : "PUBLISH")} style={styles.smallButton}>{playlist.status === "PUBLISHED" ? "Pause" : "Publish"}</button>
           </div>)}
+        </form>
+
+        <form onSubmit={createTakeover} style={styles.card}>
+          <h2 style={styles.cardTitle}>Time-bounded visual takeover</h2>
+          <p style={styles.small}>A manager-controlled override for urgent operational messages. It expires automatically and does not replace certified fire, safety, or emergency alarm systems.</p>
+          <label style={styles.label}>Takeover name<input name="name" required maxLength={200} style={styles.input} /></label>
+          <label style={styles.label}>Operational reason<textarea name="reason" required maxLength={1000} rows={3} style={styles.input} /></label>
+          <label style={styles.label}>Published playlist<select name="playlistId" required style={styles.input}><option value="">Select a published playlist</option>{data.playlists.filter((playlist) => playlist.status === "PUBLISHED").map((playlist) => <option key={playlist.id} value={playlist.id}>{playlist.name}</option>)}</select></label>
+          <label style={styles.label}>Displays<select name="deviceIds" required multiple size={Math.min(5, Math.max(2, data.devices.length))} style={styles.input}>{data.devices.filter((device) => device.status !== "DISABLED").map((device) => <option key={device.id} value={device.id}>{device.name} — {device.zone.location.name}</option>)}</select></label>
+          <div style={styles.two}><label style={styles.label}>Starts<input name="startsAt" type="datetime-local" required style={styles.input} /></label><label style={styles.label}>Ends (within 24h)<input name="endsAt" type="datetime-local" required style={styles.input} /></label></div>
+          <button disabled={busy === "takeover"} style={styles.button}>{busy === "takeover" ? "Creating…" : "Create takeover draft"}</button>
+          <p style={styles.count}>{data.takeovers.length} takeover record{data.takeovers.length === 1 ? "" : "s"}</p>
+          {data.takeovers.slice(0, 8).map((takeover) => <div key={takeover.id} style={styles.row}><strong>{takeover.name}</strong><span>{takeover.status} · {takeover.devices.length} display{takeover.devices.length === 1 ? "" : "s"} · ends {new Date(takeover.endsAt).toLocaleString()}</span>{takeover.status === "DRAFT" ? <div style={styles.actions}><button type="button" disabled={busy === takeover.id} onClick={() => updateTakeover(takeover.id, "ACTIVATE")} style={styles.smallButton}>Activate</button><button type="button" disabled={busy === takeover.id} onClick={() => updateTakeover(takeover.id, "CANCEL")} style={styles.smallButton}>Cancel</button></div> : takeover.status === "ACTIVE" ? <button type="button" disabled={busy === takeover.id} onClick={() => updateTakeover(takeover.id, "END")} style={styles.smallButton}>End now</button> : null}</div>)}
         </form>
       </section>
     </>}
@@ -215,5 +253,7 @@ const styles = {
   button: { minHeight: 42, border: 0, borderRadius: 7, padding: "10px 14px", background: "#0f172a", color: "#fff", fontWeight: 900, cursor: "pointer" },
   smallButton: { justifySelf: "start", minHeight: 34, border: "1px solid #0f172a", borderRadius: 6, padding: "6px 10px", background: "#fff", color: "#0f172a", fontWeight: 800, cursor: "pointer" },
   count: { margin: "8px 0 0", color: "#9a6400", fontSize: 12, fontWeight: 900, textTransform: "uppercase" },
-  row: { display: "grid", gap: 3, paddingTop: 10, borderTop: "1px solid #e2e8f0", color: "#334155", fontSize: 13 }
+  row: { display: "grid", gap: 3, paddingTop: 10, borderTop: "1px solid #e2e8f0", color: "#334155", fontSize: 13 },
+  actions: { display: "flex", gap: 8, flexWrap: "wrap" },
+  errorText: { color: "#b91c1c", fontWeight: 700 }
 };

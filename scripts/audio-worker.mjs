@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { pipeline } from "node:stream/promises";
-import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { PrismaClient } from "@prisma/client";
 import ffmpegPath from "ffmpeg-static";
 import ffprobeStatic from "ffprobe-static";
@@ -137,11 +137,80 @@ async function processRender() {
   return true;
 }
 
+async function processSignageVideo() {
+  const retryBefore = new Date(Date.now() - 15 * 60 * 1000);
+  const job = await prisma.digitalSignageVideoJob.findFirst({
+    where: { OR: [{ status: "QUEUED" }, { status: "RUNNING", updatedAt: { lt: retryBefore } }] },
+    orderBy: { createdAt: "asc" },
+    include: { asset: true }
+  });
+  if (!job) return false;
+  const claimed = await prisma.digitalSignageVideoJob.updateMany({
+    where: { id: job.id, status: job.status, updatedAt: job.updatedAt },
+    data: { status: "RUNNING", attempts: { increment: 1 }, startedAt: new Date(), errorMessage: null }
+  });
+  if (!claimed.count) return true;
+  const directory = await mkdtemp(path.join(tmpdir(), "ruvanas-signage-video-"));
+  try {
+    const input = path.join(directory, "source");
+    const output = path.join(directory, "display.mp4");
+    await download(job.asset.storageKey, input);
+    const sourceProbe = await run(ffprobeStatic.path, ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height:format=duration", "-of", "json", input], { timeout: 2 * 60 * 1000 });
+    const sourceInfo = JSON.parse(sourceProbe.stdout.toString("utf8"));
+    const sourceStream = sourceInfo.streams?.[0];
+    const durationSeconds = Math.ceil(Number(sourceInfo.format?.duration || 0));
+    if (!sourceStream?.width || !sourceStream?.height || durationSeconds < 1 || durationSeconds > 3600) throw new Error("Video must contain a valid picture stream and be no longer than 60 minutes.");
+    if (sourceStream.width > 8192 || sourceStream.height > 8192) throw new Error("Video dimensions exceed the protected processing limit.");
+    if (sourceStream.width * sourceStream.height > 33_554_432) throw new Error("Video contains too many pixels for safe display processing.");
+    await run(ffmpegPath, [
+      "-y", "-v", "error", "-i", input,
+      "-map", "0:v:0", "-map", "0:a?",
+      "-vf", "scale='min(1920,iw)':-2",
+      "-c:v", "libx264", "-preset", "medium", "-crf", "23", "-pix_fmt", "yuv420p",
+      "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", output
+    ], { timeout: 10 * 60 * 1000 });
+    const [outputProbe, fileInfo] = await Promise.all([
+      run(ffprobeStatic.path, ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height:format=duration", "-of", "json", output], { timeout: 2 * 60 * 1000 }),
+      stat(output)
+    ]);
+    const outputInfo = JSON.parse(outputProbe.stdout.toString("utf8"));
+    const outputStream = outputInfo.streams?.[0];
+    if (!outputStream?.width || !outputStream?.height) throw new Error("The normalized display video could not be verified.");
+    if (fileInfo.size > 250 * 1024 * 1024) throw new Error("The normalized display video exceeds the protected output limit.");
+    const outputKey = `organisations/${job.asset.organisationId}/signage/videos/${crypto.randomUUID()}.mp4`;
+    await storage.client.send(new PutObjectCommand({
+      Bucket: storage.bucketName,
+      Key: outputKey,
+      Body: createReadStream(output),
+      ContentLength: fileInfo.size,
+      ContentType: "video/mp4",
+      Metadata: { source: "digital-signage-video-worker", asset: job.assetId }
+    }));
+    await prisma.$transaction([
+      prisma.digitalSignageAsset.update({ where: { id: job.assetId }, data: { storageKey: outputKey, mimeType: "video/mp4", sizeBytes: BigInt(fileInfo.size), width: outputStream.width, height: outputStream.height, durationSeconds: Math.ceil(Number(outputInfo.format?.duration || durationSeconds)), status: "READY" } }),
+      prisma.digitalSignageVideoJob.update({ where: { id: job.id }, data: { status: "SUCCEEDED", completedAt: new Date(), errorMessage: null } }),
+      prisma.auditLog.create({ data: { organisationId: job.asset.organisationId, actorUserId: job.asset.uploadedByUserId, action: "DIGITAL_SIGNAGE_VIDEO_READY", entityType: "DigitalSignageAsset", entityId: job.assetId, details: { width: outputStream.width, height: outputStream.height, durationSeconds, normalizedMimeType: "video/mp4" } } })
+    ]);
+    await storage.client.send(new DeleteObjectCommand({ Bucket: storage.bucketName, Key: job.asset.storageKey })).catch(() => {});
+    console.log("signage video ready", job.assetId);
+  } catch (error) {
+    console.error("signage video failed", job.assetId, error);
+    const errorMessage = String(error?.message || "Video processing failed").slice(0, 2000);
+    await prisma.$transaction([
+      prisma.digitalSignageVideoJob.update({ where: { id: job.id }, data: { status: "FAILED", completedAt: new Date(), errorMessage } }),
+      prisma.digitalSignageAsset.update({ where: { id: job.assetId }, data: { status: "FAILED" } })
+    ]).catch(() => {});
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+  return true;
+}
+
 let stopping = false;
 for (const signal of ["SIGTERM", "SIGINT"]) process.once(signal, () => { stopping = true; });
-console.log("Ruvanas audio worker ready");
+console.log("Ruvanas protected media worker ready");
 while (!stopping) {
-  const worked = await processWaveform() || await processRender();
+  const worked = await processWaveform() || await processRender() || await processSignageVideo();
   if (!worked) await new Promise((resolve) => setTimeout(resolve, intervalMs));
 }
 await prisma.$disconnect();

@@ -20,7 +20,15 @@ function orderInclude() {
         reviewedBy: { select: { id: true, name: true, email: true } }
       },
       orderBy: { createdAt: "asc" }
-    }
+    },
+    visualCreatives: {
+      include: {
+        signageAsset: { select: { id: true, name: true, status: true, kind: true, width: true, height: true, organisationId: true } },
+        reviewedBy: { select: { id: true, name: true, email: true } }
+      },
+      orderBy: { createdAt: "asc" }
+    },
+    visualPlaylists: { select: { id: true, name: true, status: true, version: true } }
   };
 }
 
@@ -45,17 +53,19 @@ export async function POST(request) {
     const access = await requireRetailMediaOrganisation(input.organisationId, ORGANISATION_CONTENT_ROLES);
     if (!access.ok) return accessDenied(access);
 
-    const [advertiser, agency, inventoryPackage, creatives, campaign] = await Promise.all([
+    const [advertiser, agency, inventoryPackage, creatives, visualCreatives, campaign] = await Promise.all([
       prisma.retailMediaPartner.findFirst({ where: { id: input.advertiserId, organisationId: input.organisationId, kind: "ADVERTISER", status: "ACTIVE" } }),
       input.agencyId ? prisma.retailMediaPartner.findFirst({ where: { id: input.agencyId, organisationId: input.organisationId, kind: "AGENCY", status: "ACTIVE" } }) : null,
       prisma.retailMediaInventoryPackage.findFirst({ where: { id: input.inventoryPackageId, organisationId: input.organisationId, status: { not: "ARCHIVED" } } }),
       prisma.promoVersion.findMany({ where: { id: { in: input.creativePromoVersionIds }, status: "APPROVED", promoAsset: { organisationId: input.organisationId, status: "ACTIVE" }, mediaAsset: { status: "READY" } }, select: { id: true } }),
+      prisma.digitalSignageAsset.findMany({ where: { id: { in: input.visualAssetIds }, organisationId: input.organisationId, status: "READY" }, select: { id: true } }),
       input.campaignId ? prisma.campaign.findFirst({ where: { id: input.campaignId, organisationId: input.organisationId, status: "DRAFT", retailMediaOrder: null }, select: { id: true, promoVersionId: true } }) : null
     ]);
     if (!advertiser) return NextResponse.json({ error: "Choose an active advertiser from this organisation." }, { status: 400 });
     if (input.agencyId && !agency) return NextResponse.json({ error: "Choose an active agency from this organisation." }, { status: 400 });
     if (!inventoryPackage) return NextResponse.json({ error: "Choose an available inventory package from this organisation." }, { status: 400 });
     if (creatives.length !== input.creativePromoVersionIds.length) return NextResponse.json({ error: "Every creative must be an approved, ready promo version owned by this organisation." }, { status: 400 });
+    if (visualCreatives.length !== input.visualAssetIds.length) return NextResponse.json({ error: "Every visual creative must be a ready signage asset owned by this organisation." }, { status: 400 });
     if (input.campaignId && !campaign) return NextResponse.json({ error: "Choose an unlinked campaign draft from this organisation." }, { status: 400 });
     if (campaign && !input.creativePromoVersionIds.includes(campaign.promoVersionId)) {
       return NextResponse.json({ error: "The linked campaign creative must be included in the order." }, { status: 400 });
@@ -71,7 +81,8 @@ export async function POST(request) {
           campaignId: input.campaignId,
           name: input.name,
           purchaseOrderReference: input.purchaseOrderReference,
-          creatives: { create: input.creativePromoVersionIds.map((promoVersionId) => ({ promoVersionId })) }
+          creatives: { create: input.creativePromoVersionIds.map((promoVersionId) => ({ promoVersionId })) },
+          visualCreatives: { create: input.visualAssetIds.map((signageAssetId) => ({ signageAssetId })) }
         },
         include: orderInclude()
       });
@@ -81,7 +92,7 @@ export async function POST(request) {
         action: "RETAIL_MEDIA_ORDER_CREATED",
         entityType: "RetailMediaOrder",
         entityId: created.id,
-        details: { advertiserId: input.advertiserId, agencyId: input.agencyId, inventoryPackageId: input.inventoryPackageId, campaignId: input.campaignId, creativeCount: input.creativePromoVersionIds.length }
+        details: { advertiserId: input.advertiserId, agencyId: input.agencyId, inventoryPackageId: input.inventoryPackageId, campaignId: input.campaignId, audioCreativeCount: input.creativePromoVersionIds.length, visualCreativeCount: input.visualAssetIds.length }
       } });
       return created;
     });

@@ -19,11 +19,12 @@ export async function GET(_request, { params }) {
     if (!device) return NextResponse.json({ error: "This display is not enrolled, disabled, or no longer entitled." }, { status: 401 });
     const instant = new Date();
     const graceStart = new Date(instant.getTime() - SIGNAGE_OFFLINE_GRACE_SECONDS * 1000);
+    const { assetId } = await params;
     const asset = await prisma.digitalSignageAsset.findFirst({ where: {
-      id: String(params.assetId || ""),
+      id: String(assetId || ""),
       organisationId: device.organisationId,
       status: "READY",
-      playlistItems: { some: { playlist: { devices: { some: { deviceId: device.id } }, status: "PUBLISHED", OR: [{ endsAt: null }, { endsAt: { gt: graceStart } }] } } }
+      playlistItems: { some: { playlist: { status: "PUBLISHED", AND: [{ OR: [{ endsAt: null }, { endsAt: { gt: graceStart } }] }, { OR: [{ devices: { some: { deviceId: device.id } } }, { takeovers: { some: { devices: { some: { deviceId: device.id } }, status: { in: ["ACTIVE", "ENDED"] }, endsAt: { gt: graceStart } } } }] }] } } }
     }, select: { storageKey: true, mimeType: true, checksumSha256: true } });
     if (!asset) return NextResponse.json({ error: "This visual is not in the display's published delivery plan." }, { status: 404 });
     const r2 = getR2Storage();

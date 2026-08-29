@@ -13,7 +13,7 @@ export async function PATCH(request, { params }) {
     catch (error) { return NextResponse.json({ error: error.message }, { status: 400 }); }
     const order = await prisma.retailMediaOrder.findUnique({
       where: { id: orderId },
-      include: { inventoryPackage: true, advertiser: true, agency: true, creatives: true }
+      include: { inventoryPackage: true, advertiser: true, agency: true, creatives: true, visualCreatives: true }
     });
     if (!order) return NextResponse.json({ error: "Retail-media order not found." }, { status: 404 });
     const allowedRoles = review.action === "SUBMIT_ORDER" ? ORGANISATION_CONTENT_ROLES : ORGANISATION_MANAGER_ROLES;
@@ -34,16 +34,19 @@ export async function PATCH(request, { params }) {
         auditAction = "RETAIL_MEDIA_ORDER_SUBMITTED";
       } else if (["APPROVE_CREATIVE", "REJECT_CREATIVE"].includes(review.action)) {
         if (order.status !== "SUBMITTED") throw new Error("Creatives can only be reviewed while the order is submitted.");
-        const creative = order.creatives.find((item) => item.id === review.creativeId);
+        const visual = review.creativeType === "VISUAL";
+        const creative = (visual ? order.visualCreatives : order.creatives).find((item) => item.id === review.creativeId);
         if (!creative) throw new Error("Creative not found on this order.");
         if (creative.status !== "PENDING") throw new Error("This creative already has a review decision.");
         const status = review.action === "APPROVE_CREATIVE" ? "APPROVED" : "REJECTED";
-        const changed = await tx.retailMediaOrderCreative.updateMany({ where: { id: creative.id, orderId: order.id, status: "PENDING" }, data: { status, reviewedById: access.user.id, reviewedAt: now, reviewNote: review.note } });
+        const changed = visual
+          ? await tx.retailMediaOrderVisualCreative.updateMany({ where: { id: creative.id, orderId: order.id, status: "PENDING" }, data: { status, reviewedById: access.user.id, reviewedAt: now, reviewNote: review.note } })
+          : await tx.retailMediaOrderCreative.updateMany({ where: { id: creative.id, orderId: order.id, status: "PENDING" }, data: { status, reviewedById: access.user.id, reviewedAt: now, reviewNote: review.note } });
         if (changed.count !== 1) throw new Error("The creative was reviewed by someone else. Reload to see the decision.");
         result = await tx.retailMediaOrder.findUnique({ where: { id: order.id } });
         auditAction = status === "APPROVED" ? "RETAIL_MEDIA_CREATIVE_APPROVED" : "RETAIL_MEDIA_CREATIVE_REJECTED";
       } else if (review.action === "APPROVE_ORDER") {
-        const fresh = await tx.retailMediaOrder.findUnique({ where: { id: order.id }, include: { inventoryPackage: true, creatives: true } });
+        const fresh = await tx.retailMediaOrder.findUnique({ where: { id: order.id }, include: { inventoryPackage: true, creatives: true, visualCreatives: true } });
         const blockers = retailMediaOrderApprovalBlockers(fresh, now);
         if (blockers.length) throw new Error(blockers.join(" "));
         const changed = await tx.retailMediaOrder.updateMany({ where: { id: order.id, status: "SUBMITTED" }, data: { status: "APPROVED", approvedByUserId: access.user.id, approvedAt: now, decisionNote: review.note } });
@@ -67,9 +70,9 @@ export async function PATCH(request, { params }) {
         organisationId: order.organisationId,
         actorUserId: access.user.id,
         action: auditAction,
-        entityType: review.action.includes("CREATIVE") ? "RetailMediaOrderCreative" : "RetailMediaOrder",
+        entityType: review.action.includes("CREATIVE") ? (review.creativeType === "VISUAL" ? "RetailMediaOrderVisualCreative" : "RetailMediaOrderCreative") : "RetailMediaOrder",
         entityId: review.action.includes("CREATIVE") ? review.creativeId : order.id,
-        details: { orderId: order.id, previousStatus: order.status, action: review.action, noteProvided: Boolean(review.note) }
+        details: { orderId: order.id, previousStatus: order.status, action: review.action, creativeType: review.creativeType, noteProvided: Boolean(review.note) }
       } });
       return result;
     });
