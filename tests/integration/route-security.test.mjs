@@ -520,6 +520,14 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
       data: { role: "SUPER_ADMIN" }
     });
 
+    const metricsLocation = await db.location.create({
+      data: {
+        organisationId: accountABody.organisation.id,
+        name: `Summary Metrics Location ${suffix}`,
+        slug: `summary-metrics-${suffix}`
+      }
+    });
+
     const integrationResponse = await api("/api/admin/integrations/connections", {
       method: "POST",
       cookie: cookieA,
@@ -546,7 +554,7 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     assert.equal(publicLocations.status, 200, await publicLocations.clone().text());
     const publicLocationItems = (await publicLocations.json()).data;
     assert.ok(Array.isArray(publicLocationItems));
-    assert.ok(publicLocationItems.length > 0);
+    assert.ok(publicLocationItems.some((location) => location.id === metricsLocation.id));
 
     const metricConnectionResponse = await api("/api/admin/integrations/connections", {
       method: "POST",
