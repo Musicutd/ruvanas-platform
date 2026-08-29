@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { effectivePlayerStatus } from "@/lib/player-tokens.mjs";
 import NewPlayerForm from "./NewPlayerForm";
+import PlayerHealthOperations from "./PlayerHealthOperations";
 
 export const dynamic = "force-dynamic";
 
@@ -29,10 +30,11 @@ export default async function PlayersPage() {
       <header>
         <p style={styles.eyebrow}>PLAYBACK OPERATIONS</p>
         <h1 style={styles.heading}>Players and health</h1>
-        <p style={styles.subtitle}>Enrol persistent web players, bind them to zones, and monitor their most recent heartbeat.</p>
+        <p style={styles.subtitle}>Enrol persistent web players, bind them to zones, and operate sampled heartbeat history with an auditable incident workflow.</p>
       </header>
 
       <NewPlayerForm organisations={organisations} />
+      <PlayerHealthOperations />
 
       <section style={styles.card}>
         <h2 style={styles.sectionTitle}>Registered players</h2>
@@ -74,4 +76,5 @@ const styles = {
   offline: { background: "#fee2e2", color: "#991b1b" },
   pending: { background: "#fef3c7", color: "#92400e" }
 };
+
 
