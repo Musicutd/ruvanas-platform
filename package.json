@@ -10,6 +10,7 @@
     "start": "node scripts/start-production.mjs",
     "start:web": "next start",
     "worker:audio": "node scripts/audio-worker.mjs",
+    "worker:operations": "node scripts/operations-worker.mjs",
     "postinstall": "prisma generate",
     "db:migrate:dev": "prisma migrate dev",
     "db:migrate:deploy": "prisma migrate deploy"
@@ -36,4 +37,5 @@
     "node": ">=20"
   }
 }
+
 
