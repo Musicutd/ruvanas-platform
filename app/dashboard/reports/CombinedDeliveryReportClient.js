@@ -8,10 +8,11 @@ function initialDates() {
   return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) };
 }
 
-export default function CombinedDeliveryReportClient() {
+export default function CombinedDeliveryReportClient({ retailMediaOrders = [] }) {
   const dates = initialDates();
   const [from, setFrom] = useState(dates.from);
   const [to, setTo] = useState(dates.to);
+  const [retailMediaOrderId, setRetailMediaOrderId] = useState("");
   const [result, setResult] = useState(null);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
@@ -20,6 +21,7 @@ export default function CombinedDeliveryReportClient() {
     event?.preventDefault(); setLoading(true); setMessage("");
     try {
       const query = new URLSearchParams({ from, to });
+      if (retailMediaOrderId) query.set("retailMediaOrderId", retailMediaOrderId);
       const response = await fetch(`/api/reports/combined-delivery?${query}`, { cache: "no-store" });
       const value = await response.json();
       if (!response.ok) throw new Error(value.error || "Unable to load combined delivery evidence.");
@@ -29,14 +31,17 @@ export default function CombinedDeliveryReportClient() {
   }
 
   const summary = result?.report?.summary;
-  const query = new URLSearchParams({ from, to }).toString();
+  const queryParams = new URLSearchParams({ from, to });
+  if (retailMediaOrderId) queryParams.set("retailMediaOrderId", retailMediaOrderId);
+  const query = queryParams.toString();
   return <section style={styles.section}>
-    <p style={styles.eyebrow}>Stage 7D</p>
+    <p style={styles.eyebrow}>Stage 7E</p>
     <h2 style={styles.title}>Combined audio and visual delivery</h2>
     <p style={styles.copy}>Review device-confirmed promotional audio and digital-signage delivery in one evidence view. Audio and visual totals remain separate so the report never implies audience measurement.</p>
     <form onSubmit={load} style={styles.filters}>
       <label style={styles.label}>From<input type="date" value={from} onChange={(event) => setFrom(event.target.value)} required style={styles.input} /></label>
       <label style={styles.label}>To<input type="date" value={to} onChange={(event) => setTo(event.target.value)} required style={styles.input} /></label>
+      <label style={styles.label}>Retail Media order<select value={retailMediaOrderId} onChange={(event) => setRetailMediaOrderId(event.target.value)} style={styles.input}><option value="">All delivery</option>{retailMediaOrders.map((order) => <option key={order.id} value={order.id}>{order.name} · {order.status.toLowerCase()}</option>)}</select></label>
       <button disabled={loading} style={styles.button}>{loading ? "Loading…" : "Build report"}</button>
       {result ? <a href={`/api/reports/combined-delivery/export?${query}`} style={styles.link}>Download verified CSV</a> : null}
     </form>

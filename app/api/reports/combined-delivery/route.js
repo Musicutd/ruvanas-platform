@@ -10,7 +10,7 @@ export async function GET(request) {
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   try {
     const params = request.nextUrl.searchParams;
-    const report = await loadCombinedDeliveryReport(access.organisation.id, { from: params.get("from"), to: params.get("to") });
+    const report = await loadCombinedDeliveryReport(access.organisation.id, { from: params.get("from"), to: params.get("to"), retailMediaOrderId: params.get("retailMediaOrderId") });
     return NextResponse.json({ organisation: { id: access.organisation.id, name: access.organisation.name }, report, notice: COMBINED_DELIVERY_NOTICE });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to build the combined delivery report." }, { status: 400 });

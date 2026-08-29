@@ -4,6 +4,8 @@ import { COMBINED_DELIVERY_NOTICE, combinedDeliveryCsv, combinedDeliverySummary,
 
 test("combined delivery filters are bounded to protect reporting workloads", () => {
   assert.deepEqual(normaliseCombinedDeliveryFilters({ from: "2026-08-01", to: "2026-08-29" }, new Date("2026-08-29T10:00:00Z")).from, "2026-08-01");
+  assert.equal(normaliseCombinedDeliveryFilters({ from: "2026-08-01", to: "2026-08-29", retailMediaOrderId: "order_123" }).retailMediaOrderId, "order_123");
+  assert.throws(() => normaliseCombinedDeliveryFilters({ retailMediaOrderId: "unsafe/order" }), /order is invalid/);
   assert.throws(() => normaliseCombinedDeliveryFilters({ from: "2026-01-01", to: "2026-08-29" }), /93 days/);
 });
 

@@ -847,6 +847,7 @@ model User {
   createdIntegrationConnections    IntegrationConnection[]          @relation("IntegrationConnectionCreatedBy")
   createdRetailMediaInventory      RetailMediaInventoryPackage[]    @relation("RetailMediaInventoryCreatedBy")
   approvedRetailMediaOrders        RetailMediaOrder[]               @relation("RetailMediaOrderApprovedBy")
+  fulfilledRetailMediaOrders       RetailMediaOrder[]               @relation("RetailMediaOrderFulfilledBy")
   reviewedRetailMediaCreatives     RetailMediaOrderCreative[]       @relation("RetailMediaCreativeReviewedBy")
   reviewedRetailMediaVisuals       RetailMediaOrderVisualCreative[] @relation("RetailMediaVisualCreativeReviewedBy")
   uploadedDigitalSignageAssets     DigitalSignageAsset[]            @relation("DigitalSignageAssetUploadedBy")
@@ -1716,21 +1717,25 @@ model RetailMediaInventoryDaypart {
 }
 
 model RetailMediaOrder {
-  id                     String                 @id @default(cuid())
-  organisationId         String
-  advertiserId           String
-  agencyId               String?
-  inventoryPackageId     String
-  campaignId             String?                @unique
-  name                   String
-  purchaseOrderReference String?
-  status                 RetailMediaOrderStatus @default(DRAFT)
-  submittedAt            DateTime?
-  approvedByUserId       String?
-  approvedAt             DateTime?
-  decisionNote           String?
-  createdAt              DateTime               @default(now())
-  updatedAt              DateTime               @updatedAt
+  id                          String                 @id @default(cuid())
+  organisationId              String
+  advertiserId                String
+  agencyId                    String?
+  inventoryPackageId          String
+  campaignId                  String?                @unique
+  name                        String
+  purchaseOrderReference      String?
+  status                      RetailMediaOrderStatus @default(DRAFT)
+  submittedAt                 DateTime?
+  approvedByUserId            String?
+  approvedAt                  DateTime?
+  decisionNote                String?
+  fulfilledByUserId           String?
+  fulfilledAt                 DateTime?
+  fulfilmentRevision          Int                    @default(0)
+  fulfilmentConfigurationHash String?
+  createdAt                   DateTime               @default(now())
+  updatedAt                   DateTime               @updatedAt
 
   organisation         Organisation                     @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   advertiser           RetailMediaPartner               @relation("RetailMediaOrderAdvertiser", fields: [advertiserId], references: [id], onDelete: Restrict)
@@ -1738,6 +1743,7 @@ model RetailMediaOrder {
   inventoryPackage     RetailMediaInventoryPackage      @relation(fields: [inventoryPackageId], references: [id], onDelete: Restrict)
   campaign             Campaign?                        @relation(fields: [campaignId], references: [id], onDelete: SetNull)
   approvedBy           User?                            @relation("RetailMediaOrderApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
+  fulfilledBy          User?                            @relation("RetailMediaOrderFulfilledBy", fields: [fulfilledByUserId], references: [id], onDelete: SetNull)
   creatives            RetailMediaOrderCreative[]
   visualCreatives      RetailMediaOrderVisualCreative[]
   visualPlaylists      DigitalSignagePlaylist[]
@@ -1748,6 +1754,7 @@ model RetailMediaOrder {
   @@index([agencyId])
   @@index([inventoryPackageId])
   @@index([approvedByUserId])
+  @@index([fulfilledByUserId])
 }
 
 model RetailMediaOrderCreative {

@@ -137,6 +137,9 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   const unauthenticatedRetailMedia = await api("/api/admin/retail-media/partners?organisationId=not-an-organisation");
   assert.equal(unauthenticatedRetailMedia.status, 401);
 
+  const unauthenticatedCrossMediaActivation = await api("/api/admin/retail-media/orders/not-an-order/activation", { method: "PATCH", body: { action: "ACTIVATE" } });
+  assert.equal(unauthenticatedCrossMediaActivation.status, 404);
+
   const unauthenticatedSignageAssets = await api("/api/admin/digital-signage/assets?organisationId=not-an-organisation");
   assert.equal(unauthenticatedSignageAssets.status, 401);
 
