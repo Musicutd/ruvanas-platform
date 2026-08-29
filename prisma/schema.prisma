@@ -440,6 +440,22 @@ enum PlayerHealthIncidentStatus {
   RESOLVED
 }
 
+enum PlayerCommandKind {
+  PING
+  REFRESH_STATE
+  REFRESH_MANIFEST
+  COLLECT_DIAGNOSTICS
+}
+
+enum PlayerCommandStatus {
+  PENDING
+  DELIVERED
+  ACKNOWLEDGED
+  FAILED
+  EXPIRED
+  CANCELLED
+}
+
 enum TrackStatus {
   DRAFT
   READY
@@ -1019,6 +1035,7 @@ model User {
   endedDigitalSignageTakeovers      DigitalSignageTakeover[]         @relation("DigitalSignageTakeoverEndedBy")
   acknowledgedPlayerHealthIncidents PlayerHealthIncident[]           @relation("PlayerHealthIncidentAcknowledgedBy")
   resolvedPlayerHealthIncidents     PlayerHealthIncident[]           @relation("PlayerHealthIncidentResolvedBy")
+  requestedPlayerCommands           PlayerCommand[]                  @relation("PlayerCommandRequestedBy")
 }
 
 model Organisation {
@@ -1111,6 +1128,7 @@ model Organisation {
   outgoingWebhookEvents            OutgoingWebhookEvent[]
   playerHeartbeatSamples           PlayerHeartbeatSample[]
   playerHealthIncidents            PlayerHealthIncident[]
+  playerCommands                   PlayerCommand[]
   retailMediaPartners              RetailMediaPartner[]
   retailMediaInventory             RetailMediaInventoryPackage[]
   retailMediaOrders                RetailMediaOrder[]
@@ -4084,6 +4102,10 @@ model Player {
   lastHeartbeatAt    DateTime?
   lastIpAddress      String?
   lastUserAgent      String?
+  sessionRevokedAt   DateTime?
+  retiredAt          DateTime?
+  retiredReason      String?
+  replacesPlayerId   String?      @unique
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
 
@@ -4093,11 +4115,42 @@ model Player {
   playoutIntents    PlayoutIntent[]
   heartbeatSamples  PlayerHeartbeatSample[]
   healthIncidents   PlayerHealthIncident[]
+  commands          PlayerCommand[]
+  replacesPlayer    Player?                 @relation("PlayerReplacement", fields: [replacesPlayerId], references: [id], onDelete: SetNull)
+  replacementPlayer Player?                 @relation("PlayerReplacement")
 
   @@index([organisationId])
   @@index([zoneId])
   @@index([organisationId, status])
   @@index([lastHeartbeatAt])
+  @@index([retiredAt])
+}
+
+model PlayerCommand {
+  id              String              @id @default(cuid())
+  organisationId  String
+  playerId        String
+  kind            PlayerCommandKind
+  status          PlayerCommandStatus @default(PENDING)
+  requestedById   String
+  requestedAt     DateTime            @default(now())
+  expiresAt       DateTime
+  deliveredAt     DateTime?
+  acknowledgedAt  DateTime?
+  resultCode      String?
+  resultMessage   String?
+  resultDetails   Json?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  player       Player       @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  requestedBy  User         @relation("PlayerCommandRequestedBy", fields: [requestedById], references: [id], onDelete: Restrict)
+
+  @@index([playerId, status, expiresAt])
+  @@index([organisationId, requestedAt])
+  @@index([requestedById, requestedAt])
+  @@index([expiresAt])
 }
 
 model PlayerHeartbeatSample {

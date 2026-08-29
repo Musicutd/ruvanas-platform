@@ -2,11 +2,13 @@ import { prisma } from "@/lib/prisma";
 import { effectivePlayerStatus } from "@/lib/player-tokens.mjs";
 import NewPlayerForm from "./NewPlayerForm";
 import PlayerHealthOperations from "./PlayerHealthOperations";
+import PlayerCommandOperations from "./PlayerCommandOperations";
+import { getCurrentUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export default async function PlayersPage() {
-  const [organisations, players] = await Promise.all([
+  const [organisations, players, user] = await Promise.all([
     prisma.organisation.findMany({
       orderBy: { name: "asc" },
       include: {
@@ -22,19 +24,21 @@ export default async function PlayersPage() {
         organisation: true,
         zone: { include: { location: true } }
       }
-    })
+    }),
+    getCurrentUser()
   ]);
 
   return (
     <div style={styles.page}>
       <header>
         <p style={styles.eyebrow}>PLAYBACK OPERATIONS</p>
-        <h1 style={styles.heading}>Players and health</h1>
-        <p style={styles.subtitle}>Enrol persistent web players, bind them to zones, and operate sampled heartbeat history with an auditable incident workflow.</p>
+        <h1 style={styles.heading}>Players and device operations</h1>
+        <p style={styles.subtitle}>Enrol persistent web players, review heartbeat incidents, run safe diagnostics, and replace retired devices without losing operational history.</p>
       </header>
 
       <NewPlayerForm organisations={organisations} />
       <PlayerHealthOperations />
+      <PlayerCommandOperations canManageLifecycle={user?.role === "SUPER_ADMIN"} />
 
       <section style={styles.card}>
         <h2 style={styles.sectionTitle}>Registered players</h2>
