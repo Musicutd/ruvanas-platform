@@ -12,6 +12,7 @@ import AcademyWorkspaceClient from "./AcademyWorkspaceClient";
 import SchoolNoticeboardClient from "./SchoolNoticeboardClient";
 import SchoolExchangeClient from "./SchoolExchangeClient";
 import SchoolSafeguardingReadinessClient from "./SchoolSafeguardingReadinessClient";
+import SchoolStudentAccessClient from "./SchoolStudentAccessClient";
 
 const managerRoles = new Set(["OWNER", "MANAGER"]);
 
@@ -146,6 +147,7 @@ export default function SchoolRadioClient() {
     {notice ? <div style={styles.notice}>{notice}</div> : null}
 
     <SchoolSafeguardingReadinessClient />
+    {canManage ? <SchoolStudentAccessClient /> : null}
     <AcademyWorkspaceClient />
     <SchoolExchangeClient />
     <AudioLabClient />
@@ -185,7 +187,7 @@ export default function SchoolRadioClient() {
         {item.broadcastSlots.length ? <div style={styles.slots}>{item.broadcastSlots.map((broadcast) => <div key={broadcast.id} style={styles.slot}><span><strong>{broadcast.zone ? `${broadcast.zone.location.name} — ${broadcast.zone.name}` : broadcast.location?.name}</strong><br />{formatDate(broadcast.startsAt)} → {formatDate(broadcast.endsAt)}</span><span><Badge value={broadcast.status} />{canManage && broadcast.status === "APPROVED" ? <button style={styles.cancelLink} disabled={working} onClick={() => cancelSlot(broadcast)}>Cancel</button> : null}</span></div>)}</div> : null}
       </article>)}</div>}
     </section>
-    <p style={styles.privacy}>Safety boundary: staff-managed only · no student accounts · no student personal details · private publishing policy.</p>
+    <p style={styles.privacy}>Safety boundary: staff-managed operations · invited students use a separate read-only private workspace · private publishing policy.</p>
   </main>;
 }
 

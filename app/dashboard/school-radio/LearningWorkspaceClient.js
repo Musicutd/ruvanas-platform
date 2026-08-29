@@ -98,7 +98,7 @@ export default function LearningWorkspaceClient() {
 
     <div style={styles.divider} />
     <h3>Private portfolios</h3><div style={styles.portfolioGrid}>{data.portfolios.map((item) => <article key={item.id} style={styles.card}><div style={styles.row}><div><h3 style={styles.itemTitle}>{item.title}</h3><p style={styles.muted}>{item.contributor.displayName} · {item.contributor.studentGroup.name}</p></div><Badge value="PRIVATE" /></div><p style={styles.body}>{item.submission.assignment.title}{item.projectRole ? ` · ${item.projectRole}` : ""}</p>{item.reflection ? <p style={styles.muted}>{item.reflection}</p> : null}<p style={styles.muted}>Skills: {(Array.isArray(item.skillsJson) ? item.skillsJson : []).join(", ") || "Not recorded"}</p></article>)}</div>
-    <p style={styles.privacy}>Safety boundary: teachers act on behalf of students · no student accounts · no private messaging · portfolios cannot be published.</p>
+    <p style={styles.privacy}>Safety boundary: teachers control submissions and assessments · invited students have a separate read-only workspace · no private messaging · portfolios cannot be published.</p>
   </section>;
 }
 

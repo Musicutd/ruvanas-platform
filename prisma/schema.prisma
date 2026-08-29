@@ -14,6 +14,7 @@ enum UserRole {
   MANAGER
   CONTENT_EDITOR
   VIEWER
+  STUDENT
 }
 
 enum EnterpriseIdentityProtocol {
@@ -546,6 +547,12 @@ enum StudentContributorStatus {
   INACTIVE
 }
 
+enum SchoolStudentAccessStatus {
+  INVITED
+  ACTIVE
+  REVOKED
+}
+
 enum SchoolSubmissionStatus {
   SUBMITTED
   SUPERSEDED
@@ -886,6 +893,8 @@ model User {
   decidedSchoolEpisodeExchanges    SchoolEpisodeExchangeRequest[]   @relation("SchoolEpisodeExchangeDecidedBy")
   importedSchoolEpisodeExchanges   SchoolEpisodeExchangeRequest[]   @relation("SchoolEpisodeExchangeImportedBy")
   schoolSafeguardingReviews         SchoolSafeguardingReview[]        @relation("SchoolSafeguardingReviewReviewer")
+  schoolStudentAccess               SchoolStudentAccess?              @relation("SchoolStudentAccessUser")
+  invitedSchoolStudentAccess        SchoolStudentAccess[]             @relation("SchoolStudentAccessInvitedBy")
   enterpriseIdentityLinks          EnterpriseIdentityLink[]
   createdServiceAccounts           ServiceAccount[]                 @relation("ServiceAccountCreatedBy")
   createdCompliancePolicies        CompliancePolicy[]               @relation("CompliancePolicyCreatedBy")
@@ -958,6 +967,7 @@ model Organisation {
   staffSupervisors             StaffSupervisor[]
   studentGroups                StudentGroup[]
   studentContributors          StudentContributor[]
+  schoolStudentAccess          SchoolStudentAccess[]
   schoolProgrammes             SchoolProgramme[]
   schoolEpisodes               SchoolEpisode[]
   schoolSubmissions            SchoolSubmission[]
@@ -2476,9 +2486,35 @@ model StudentContributor {
   consentRecords        ConsentRecord[]
   assignmentSubmissions AssignmentSubmissionContributor[]
   portfolioEntries      PortfolioEntry[]
+  studentAccess         SchoolStudentAccess?
 
   @@unique([studentGroupId, displayName])
   @@index([organisationId, status])
+}
+
+model SchoolStudentAccess {
+  id                     String                    @id @default(cuid())
+  organisationId         String
+  contributorId          String                    @unique
+  userId                  String?                   @unique
+  email                   String                    @unique
+  status                  SchoolStudentAccessStatus @default(INVITED)
+  invitationTokenHash     String?                   @unique
+  invitationExpiresAt     DateTime?
+  invitedByUserId         String
+  acceptedAt              DateTime?
+  revokedAt               DateTime?
+  createdAt               DateTime                  @default(now())
+  updatedAt               DateTime                  @updatedAt
+
+  organisation Organisation       @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  contributor  StudentContributor @relation(fields: [contributorId], references: [id], onDelete: Cascade)
+  user         User?              @relation("SchoolStudentAccessUser", fields: [userId], references: [id], onDelete: SetNull)
+  invitedBy    User               @relation("SchoolStudentAccessInvitedBy", fields: [invitedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([organisationId, status])
+  @@index([invitedByUserId])
+  @@index([invitationExpiresAt])
 }
 
 model SchoolProgramme {

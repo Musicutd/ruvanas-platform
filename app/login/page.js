@@ -42,7 +42,9 @@ export default function LoginPage() {
 
       const role = data.user?.role;
 
-      if (role === "SUPER_ADMIN" || role === "ADMIN") {
+      if (role === "STUDENT") {
+        router.push("/school-student");
+      } else if (role === "SUPER_ADMIN" || role === "ADMIN") {
         router.push("/admin/stations");
       } else {
         router.push("/dashboard");
@@ -61,10 +63,10 @@ export default function LoginPage() {
       <section style={styles.card}>
         <a href="/" style={styles.brand}>RUVANAS</a>
 
-        <p style={styles.eyebrow}>CLIENT PORTAL</p>
+        <p style={styles.eyebrow}>SECURE PORTAL</p>
         <h1 style={styles.title}>Welcome back</h1>
         <p style={styles.subtitle}>
-          Sign in to manage your online radio or in-store audio service.
+          Sign in to your Ruvanas staff, client, or invited student workspace.
         </p>
 
         <form onSubmit={handleSubmit} style={styles.form}>
