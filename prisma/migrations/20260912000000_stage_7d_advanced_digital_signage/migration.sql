@@ -1,6 +1,3 @@
-ALTER TYPE "DigitalSignageAssetStatus" ADD VALUE 'PROCESSING' BEFORE 'READY';
-ALTER TYPE "DigitalSignageAssetStatus" ADD VALUE 'FAILED' AFTER 'READY';
-
 CREATE TYPE "DigitalSignageVideoJobStatus" AS ENUM ('QUEUED', 'RUNNING', 'SUCCEEDED', 'FAILED');
 CREATE TYPE "DigitalSignageTakeoverStatus" AS ENUM ('DRAFT', 'ACTIVE', 'ENDED', 'CANCELLED');
 
