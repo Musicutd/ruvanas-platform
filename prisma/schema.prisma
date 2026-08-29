@@ -340,6 +340,30 @@ enum RetailMediaCreativeStatus {
   REJECTED
 }
 
+enum DigitalSignageAssetKind {
+  IMAGE
+  VIDEO
+}
+
+enum DigitalSignageAssetStatus {
+  READY
+  REJECTED
+  ARCHIVED
+}
+
+enum DigitalSignageLayoutStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum DigitalSignageOrientation {
+  LANDSCAPE
+  PORTRAIT
+  SQUARE
+  CUSTOM
+}
+
 enum PlayerStatus {
   PENDING_ENROLMENT
   ONLINE
@@ -795,6 +819,9 @@ model User {
   createdRetailMediaInventory   RetailMediaInventoryPackage[] @relation("RetailMediaInventoryCreatedBy")
   approvedRetailMediaOrders     RetailMediaOrder[]            @relation("RetailMediaOrderApprovedBy")
   reviewedRetailMediaCreatives  RetailMediaOrderCreative[]    @relation("RetailMediaCreativeReviewedBy")
+  uploadedDigitalSignageAssets  DigitalSignageAsset[]         @relation("DigitalSignageAssetUploadedBy")
+  createdDigitalSignageLayouts  DigitalSignageLayout[]        @relation("DigitalSignageLayoutCreatedBy")
+  createdDigitalSignageDevices  DigitalSignageDevice[]        @relation("DigitalSignageDeviceCreatedBy")
 }
 
 model Organisation {
@@ -876,6 +903,9 @@ model Organisation {
   retailMediaPartners         RetailMediaPartner[]
   retailMediaInventory        RetailMediaInventoryPackage[]
   retailMediaOrders           RetailMediaOrder[]
+  digitalSignageAssets        DigitalSignageAsset[]
+  digitalSignageLayouts       DigitalSignageLayout[]
+  digitalSignageDevices       DigitalSignageDevice[]
 }
 
 model OrganisationMember {
@@ -952,6 +982,7 @@ model Plan {
   promoUploadEnabled       Boolean  @default(true)
   schoolRadioEnabled       Boolean  @default(false)
   retailMediaEnabled       Boolean  @default(false)
+  digitalSignageEnabled    Boolean  @default(false)
   active                   Boolean  @default(true)
   createdAt                DateTime @default(now())
   updatedAt                DateTime @updatedAt
@@ -960,15 +991,16 @@ model Plan {
 }
 
 model Subscription {
-  id                 String             @id @default(cuid())
-  organisationId     String             @unique
-  planId             String
-  status             SubscriptionStatus @default(TRIAL)
-  currentPeriodEnd   DateTime?
-  schoolRadioEnabled Boolean?
-  retailMediaEnabled Boolean?
-  createdAt          DateTime           @default(now())
-  updatedAt          DateTime           @updatedAt
+  id                    String             @id @default(cuid())
+  organisationId        String             @unique
+  planId                String
+  status                SubscriptionStatus @default(TRIAL)
+  currentPeriodEnd      DateTime?
+  schoolRadioEnabled    Boolean?
+  retailMediaEnabled    Boolean?
+  digitalSignageEnabled Boolean?
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
 
   organisation           Organisation                 @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   plan                   Plan                         @relation(fields: [planId], references: [id])
@@ -1225,6 +1257,7 @@ model Zone {
   playoutIntents              PlayoutIntent[]
   schoolBroadcastSlots        SchoolBroadcastSlot[]
   retailMediaInventoryTargets RetailMediaInventoryTarget[]
+  digitalSignageDevices       DigitalSignageDevice[]
 
   @@unique([locationId, slug])
   @@index([locationId])
@@ -1694,6 +1727,103 @@ model RetailMediaOrderCreative {
   @@unique([orderId, promoVersionId])
   @@index([promoVersionId, status])
   @@index([reviewedById])
+}
+
+model DigitalSignageAsset {
+  id               String                    @id @default(cuid())
+  organisationId   String
+  name             String
+  kind             DigitalSignageAssetKind   @default(IMAGE)
+  status           DigitalSignageAssetStatus @default(READY)
+  originalName     String
+  storageKey       String                    @unique
+  mimeType         String
+  sizeBytes        BigInt
+  checksumSha256   String
+  width            Int
+  height           Int
+  durationSeconds  Int?
+  uploadedByUserId String
+  createdAt        DateTime                  @default(now())
+  updatedAt        DateTime                  @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  uploadedBy   User         @relation("DigitalSignageAssetUploadedBy", fields: [uploadedByUserId], references: [id], onDelete: Restrict)
+
+  @@unique([organisationId, checksumSha256])
+  @@index([organisationId, status, kind])
+  @@index([uploadedByUserId])
+}
+
+model DigitalSignageLayout {
+  id              String                     @id @default(cuid())
+  organisationId  String
+  name            String
+  description     String?
+  status          DigitalSignageLayoutStatus @default(DRAFT)
+  orientation     DigitalSignageOrientation  @default(LANDSCAPE)
+  canvasWidth     Int
+  canvasHeight    Int
+  backgroundColor String                     @default("#000000") @db.VarChar(7)
+  createdByUserId String
+  createdAt       DateTime                   @default(now())
+  updatedAt       DateTime                   @updatedAt
+
+  organisation Organisation                 @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  createdBy    User                         @relation("DigitalSignageLayoutCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  regions      DigitalSignageLayoutRegion[]
+
+  @@unique([organisationId, name])
+  @@index([organisationId, status])
+  @@index([createdByUserId])
+}
+
+model DigitalSignageLayoutRegion {
+  id        String   @id @default(cuid())
+  layoutId  String
+  name      String
+  x         Int
+  y         Int
+  width     Int
+  height    Int
+  zIndex    Int      @default(0)
+  fitMode   String   @default("COVER") @db.VarChar(12)
+  createdAt DateTime @default(now())
+
+  layout DigitalSignageLayout @relation(fields: [layoutId], references: [id], onDelete: Cascade)
+
+  @@unique([layoutId, name])
+  @@index([layoutId, zIndex])
+}
+
+model DigitalSignageDevice {
+  id                 String                    @id @default(cuid())
+  organisationId     String
+  zoneId             String
+  name               String
+  status             PlayerStatus              @default(PENDING_ENROLMENT)
+  orientation        DigitalSignageOrientation @default(LANDSCAPE)
+  viewportWidth      Int
+  viewportHeight     Int
+  enrolmentTokenHash String?                   @unique
+  enrolmentExpiresAt DateTime?
+  sessionTokenHash   String?                   @unique
+  enrolledAt         DateTime?
+  lastHeartbeatAt    DateTime?
+  lastIpAddress      String?
+  lastUserAgent      String?
+  createdByUserId    String
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  zone         Zone         @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation("DigitalSignageDeviceCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@index([organisationId, status])
+  @@index([zoneId])
+  @@index([createdByUserId])
+  @@index([lastHeartbeatAt])
 }
 
 model Track {
