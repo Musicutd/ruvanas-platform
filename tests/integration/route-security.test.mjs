@@ -197,6 +197,18 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   const unauthenticatedPodcasts = await api("/api/school-radio/podcasts");
   assert.equal(unauthenticatedPodcasts.status, 401);
 
+  const unauthenticatedSchoolPublicationPolicy = await api("/api/school-radio/publication-policy");
+  assert.equal(unauthenticatedSchoolPublicationPolicy.status, 401);
+
+  const unauthenticatedSchoolPublicationPolicyChange = await api("/api/school-radio/publication-policy", {
+    method: "PATCH",
+    body: { publishingPolicy: "PUBLIC", reason: "Unauthorised publication policy change." }
+  });
+  assert.equal(unauthenticatedSchoolPublicationPolicyChange.status, 401);
+
+  const unavailablePublicSchoolPage = await api("/api/public/school-radio/not-a-school/episodes");
+  assert.equal(unavailablePublicSchoolPage.status, 404);
+
   const unauthenticatedNewsroom = await api("/api/school-radio/newsroom");
   assert.equal(unauthenticatedNewsroom.status, 401);
 
@@ -849,6 +861,14 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
       1
     );
 
+    const enableControlledSchoolPublishing = await api(
+      `/api/admin/organisations/${accountABody.organisation.id}/school-publishing`,
+      { method: "PATCH", cookie: cookieA, body: { enabled: true } }
+    );
+    assert.equal(enableControlledSchoolPublishing.status, 200, await enableControlledSchoolPublishing.clone().text());
+    assert.equal((await enableControlledSchoolPublishing.json()).subscription.effectiveSchoolPublicPublishingEnabled, true);
+    assert.equal((await db.subscription.findUnique({ where: { organisationId: accountABody.organisation.id } })).schoolPublicPublishingEnabled, true);
+
     const enableSchoolRadio = await api(
       `/api/admin/organisations/${accountABody.organisation.id}/school-radio`,
       { method: "PATCH", cookie: cookieA, body: { enabled: true } }
@@ -918,11 +938,19 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     });
     assert.equal(approveSafeguardingReadiness.status, 201, await approveSafeguardingReadiness.clone().text());
     const approvedReadinessBody = await approveSafeguardingReadiness.json();
-    assert.equal(approvedReadinessBody.studentAccessEnabled, false);
-    assert.equal(approvedReadinessBody.publicPublishingEnabled, false);
+    assert.equal(approvedReadinessBody.guardedStudentAccessEligible, true);
+    assert.equal(approvedReadinessBody.publicPublishingPolicyEligible, true);
     assert.equal((await db.schoolSafeguardingReadiness.findUnique({ where: { id: submittedReadinessBody.readiness.id } })).status, "APPROVED");
     assert.equal(await db.schoolSafeguardingReview.count({ where: { readinessId: submittedReadinessBody.readiness.id, decision: "APPROVED" } }), 1);
     assert.equal(await db.auditLog.count({ where: { organisationId: accountABody.organisation.id, action: "SCHOOL_SAFEGUARDING_READINESS_APPROVED" } }), 1);
+
+    const enablePublicSchoolPolicy = await api("/api/school-radio/publication-policy", {
+      method: "PATCH",
+      cookie: cookieA,
+      body: { publishingPolicy: "PUBLIC", reason: "Integration controlled public publishing approval." }
+    });
+    assert.equal(enablePublicSchoolPolicy.status, 200, await enablePublicSchoolPolicy.clone().text());
+    assert.equal((await enablePublicSchoolPolicy.json()).profile.publishingPolicy, "PUBLIC");
 
     const approvedPackEdit = await api("/api/school-radio/safeguarding-readiness", {
       method: "POST",
@@ -1010,7 +1038,7 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
 
     const schoolEpisodeResponse = await api("/api/school-radio/editorial", {
       method: "POST", cookie: cookieA,
-      body: { action: "CREATE_EPISODE", programmeId: schoolProgramme.id, title: "First supervised episode", contributorIds: [] }
+      body: { action: "CREATE_EPISODE", programmeId: schoolProgramme.id, title: "First supervised episode", contributorIds: [schoolContributor.id] }
     });
     assert.equal(schoolEpisodeResponse.status, 201, await schoolEpisodeResponse.clone().text());
     const schoolEpisode = (await schoolEpisodeResponse.json()).result;
@@ -1093,6 +1121,68 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     assert.equal(publishExchangeOffer.status, 201, await publishExchangeOffer.clone().text());
     const exchangeOffer = (await publishExchangeOffer.json()).result;
     assert.equal(await db.auditLog.count({ where: { schoolNetworkId: schoolNetwork.id, action: "SCHOOL_EPISODE_EXCHANGE_OFFER_PUBLISHED", entityId: exchangeOffer.id } }), 1);
+
+    const podcastSeriesResponse = await api("/api/school-radio/podcasts", {
+      method: "POST", cookie: cookieA,
+      body: { action: "CREATE_SERIES", title: `Integration Student Voices ${suffix}`, programmeId: schoolProgramme.id }
+    });
+    assert.equal(podcastSeriesResponse.status, 201, await podcastSeriesResponse.clone().text());
+    const podcastSeries = (await podcastSeriesResponse.json()).result;
+
+    const podcastEpisodeResponse = await api("/api/school-radio/podcasts", {
+      method: "POST", cookie: cookieA,
+      body: { action: "CREATE_EPISODE", seriesId: podcastSeries.id, episodeId: schoolEpisode.id, accessibleDescription: "A supervised school news episode." }
+    });
+    assert.equal(podcastEpisodeResponse.status, 201, await podcastEpisodeResponse.clone().text());
+    const podcastEpisode = (await podcastEpisodeResponse.json()).result;
+
+    const savePodcastEditor = await api("/api/school-radio/podcasts", {
+      method: "POST", cookie: cookieA,
+      body: {
+        action: "SAVE_EDITOR",
+        podcastEpisodeId: podcastEpisode.id,
+        languageCode: "en",
+        transcriptSegments: [{ startMs: 0, endMs: 5000, text: "Welcome to our supervised school radio update.", speaker: schoolContributor.displayName }],
+        chapters: [{ startMs: 0, title: "Introduction" }],
+        accessibleDescription: "A supervised school news episode.",
+        submitTranscript: true
+      }
+    });
+    assert.equal(savePodcastEditor.status, 200, await savePodcastEditor.clone().text());
+
+    const approvePodcastTranscript = await api("/api/school-radio/podcasts", {
+      method: "POST", cookie: cookieA,
+      body: { action: "APPROVE_TRANSCRIPT", podcastEpisodeId: podcastEpisode.id }
+    });
+    assert.equal(approvePodcastTranscript.status, 200, await approvePodcastTranscript.clone().text());
+
+    const publishPublicPodcast = await api("/api/school-radio/podcasts", {
+      method: "POST", cookie: cookieA,
+      body: { action: "PUBLISH", podcastEpisodeId: podcastEpisode.id, publicationScope: "PUBLIC" }
+    });
+    assert.equal(publishPublicPodcast.status, 200, await publishPublicPodcast.clone().text());
+    assert.equal((await publishPublicPodcast.json()).result.publicationScope, "PUBLIC");
+
+    const publicSchoolSlug = (await db.organisation.findUnique({ where: { id: accountABody.organisation.id }, select: { slug: true } })).slug;
+    const publicSchoolEpisodes = await api(`/api/public/school-radio/${publicSchoolSlug}/episodes`);
+    assert.equal(publicSchoolEpisodes.status, 200, await publicSchoolEpisodes.clone().text());
+    const publicSchoolBody = await publicSchoolEpisodes.json();
+    assert.equal(publicSchoolBody.episodes.length, 1);
+    assert.equal(publicSchoolBody.episodes[0].title, "First supervised episode");
+    assert.equal(publicSchoolBody.episodes[0].transcript[0].text, "Welcome to our supervised school radio update.");
+    assert.equal("speaker" in publicSchoolBody.episodes[0].transcript[0], false);
+    assert.equal(JSON.stringify(publicSchoolBody).includes(schoolContributor.id), false);
+    assert.equal(JSON.stringify(publicSchoolBody).includes(JSON.stringify(schoolContributor.displayName)), false);
+
+    const returnSchoolPolicyToPrivate = await api("/api/school-radio/publication-policy", {
+      method: "PATCH", cookie: cookieA,
+      body: { publishingPolicy: "PRIVATE", reason: "Integration immediate withdrawal verification." }
+    });
+    assert.equal(returnSchoolPolicyToPrivate.status, 200, await returnSchoolPolicyToPrivate.clone().text());
+    assert.equal((await returnSchoolPolicyToPrivate.json()).withdrawnCount, 1);
+    assert.equal((await db.schoolPodcastEpisode.findUnique({ where: { id: podcastEpisode.id } })).status, "UNPUBLISHED");
+    assert.equal(await db.schoolPublicationDecision.count({ where: { podcastEpisodeId: podcastEpisode.id, decision: "AUTO_WITHDRAWN" } }), 1);
+    assert.equal((await api(`/api/public/school-radio/${publicSchoolSlug}/episodes`)).status, 404);
 
     const createHiddenNetwork = await api("/api/school-radio/network", {
       method: "POST",
@@ -1771,4 +1861,5 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   assert.equal(lastResponse.status, 429);
   assert.ok(Number(lastResponse.headers.get("retry-after")) > 0);
 });
+
 

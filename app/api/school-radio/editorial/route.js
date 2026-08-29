@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { ORGANISATION_CONTENT_ROLES, ORGANISATION_MANAGER_ROLES, isOrganisationRoleAllowed } from "@/lib/permissions.mjs";
 import { requireActiveSchoolRadio } from "@/lib/school-radio-access";
 import { SCHOOL_RADIO_POLICY_VERSION, transitionSchoolEpisode } from "@/lib/school-radio.mjs";
+import { SCHOOL_PUBLICATION_POLICY_VERSION } from "@/lib/school-publication.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -53,7 +54,7 @@ export async function GET() {
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const organisationId = access.organisation.id;
   const canModerate = isOrganisationRoleAllowed(access.membership.role, ORGANISATION_MANAGER_ROLES);
-  const [groups, programmes, episodes, audioVersions, consentRecords] = await Promise.all([
+  const [groups, programmes, episodes, audioVersions, consentRecords, profile, readiness] = await Promise.all([
     prisma.studentGroup.findMany({
       where: { organisationId }, orderBy: { name: "asc" },
       include: { supervisor: { include: { user: { select: { id: true, name: true } } } }, contributors: { where: { status: "ACTIVE" }, orderBy: { displayName: "asc" } } }
@@ -68,13 +69,27 @@ export async function GET() {
       orderBy: [{ promoAsset: { name: "asc" } }, { version: "desc" }],
       select: { id: true, version: true, status: true, durationSeconds: true, promoAsset: { select: { id: true, name: true } }, mediaAsset: { select: { originalName: true, mimeType: true } } }
     }),
-    canModerate ? prisma.consentRecord.findMany({ where: { organisationId }, orderBy: { createdAt: "desc" }, take: 250 }) : Promise.resolve([])
+    canModerate ? prisma.consentRecord.findMany({ where: { organisationId }, orderBy: { createdAt: "desc" }, take: 250 }) : Promise.resolve([]),
+    prisma.schoolProfile.findUnique({ where: { organisationId }, select: { publishingPolicy: true } }),
+    prisma.schoolSafeguardingReadiness.findUnique({ where: { organisationId }, select: { status: true } })
   ]);
+  const publicPublishingEnabled = Boolean(
+    access.entitlements.schoolPublicPublishingEnabled &&
+    profile?.publishingPolicy === "PUBLIC" &&
+    readiness?.status === "APPROVED"
+  );
   return NextResponse.json({
     role: access.membership.role,
     permissions: { canModerate },
     groups, programmes, episodes, audioVersions, consentRecords,
-    safety: { publicationScope: "INTERNAL_ONLY", publicPublishingEnabled: false, policyVersion: SCHOOL_RADIO_POLICY_VERSION }
+    safety: {
+      publicationScope: "INTERNAL_ONLY",
+      publicPublishingEnabled,
+      publishingPolicy: profile?.publishingPolicy || "PRIVATE",
+      safeguardingStatus: readiness?.status || "NOT_SUBMITTED",
+      studentsCanPublish: false,
+      policyVersion: SCHOOL_RADIO_POLICY_VERSION
+    }
   });
 }
 
@@ -140,6 +155,25 @@ export async function POST(request) {
         }
         const now = new Date();
         entity = await tx.consentRecord.create({ data: { organisationId, contributorId: contributor.id, episodeId: data.episodeId || null, status: data.status, notes: data.notes || null, policyVersion: SCHOOL_RADIO_POLICY_VERSION, recordedByUserId: access.user.id, grantedAt: data.status === "GRANTED" ? now : null, revokedAt: data.status === "REVOKED" ? now : null, expiresAt: data.expiresAt ? new Date(data.expiresAt) : null } });
+        if (data.status === "REVOKED") {
+          const publicPodcasts = await tx.schoolPodcastEpisode.findMany({
+            where: {
+              organisationId,
+              status: "PUBLISHED",
+              publicationScope: "PUBLIC",
+              episode: {
+                contributors: { some: { contributorId: contributor.id } },
+                ...(data.episodeId ? { id: data.episodeId } : {})
+              }
+            },
+            select: { id: true, publicationRevision: true }
+          });
+          if (publicPodcasts.length) {
+            const reason = "Contributor consent was revoked.";
+            await tx.schoolPodcastEpisode.updateMany({ where: { id: { in: publicPodcasts.map((item) => item.id) } }, data: { status: "UNPUBLISHED", unpublishedAt: now, lastPolicyCheckAt: now, unpublishReason: reason } });
+            await tx.schoolPublicationDecision.createMany({ data: publicPodcasts.map((item) => ({ organisationId, podcastEpisodeId: item.id, actorUserId: access.user.id, decision: "AUTO_WITHDRAWN", reason, policyVersion: SCHOOL_PUBLICATION_POLICY_VERSION, policySnapshot: { consentRecordId: entity.id, contributorId: contributor.id, publicationRevision: item.publicationRevision } })) });
+          }
+        }
       }
       const entityTypes = { CREATE_GROUP: "StudentGroup", CREATE_CONTRIBUTOR: "StudentContributor", CREATE_PROGRAMME: "SchoolProgramme", CREATE_EPISODE: "SchoolEpisode", SUBMIT_EPISODE: "SchoolSubmission", RECORD_CONSENT: "ConsentRecord" };
       await tx.auditLog.create({ data: { organisationId, actorUserId: access.user.id, action: `SCHOOL_EDITORIAL_${data.action}`, entityType: entityTypes[data.action], entityId: entity.id, details: { policyVersion: SCHOOL_RADIO_POLICY_VERSION } } });

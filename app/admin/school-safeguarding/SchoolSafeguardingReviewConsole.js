@@ -43,7 +43,7 @@ function ReadinessCard({ pack, onMessage }) {
     setBusy(true); onMessage("");
     try {
       await recordDecision(pack.id, decision, notes);
-      onMessage(decision === "APPROVED" ? `${pack.organisation.name} safeguarding readiness approved. Student access remains locked.` : `Changes requested from ${pack.organisation.name}.`);
+      onMessage(decision === "APPROVED" ? `${pack.organisation.name} safeguarding readiness approved. Guarded student invitations and separately entitled public publishing may now pass their own controls.` : `Changes requested from ${pack.organisation.name}; any public school podcast is withdrawn immediately.`);
       window.setTimeout(() => window.location.reload(), 500);
     } catch (error) { onMessage(error.message); } finally { setBusy(false); }
   }

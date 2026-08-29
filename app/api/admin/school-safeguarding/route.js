@@ -7,6 +7,7 @@ import {
   normalizeSchoolSafeguardingReview,
   schoolSafeguardingPolicySnapshot
 } from "@/lib/school-safeguarding-readiness.mjs";
+import { SCHOOL_PUBLICATION_POLICY_VERSION } from "@/lib/school-publication.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -55,6 +56,17 @@ export async function POST(request) {
           policySnapshot: schoolSafeguardingPolicySnapshot(readiness)
         }
       });
+      let withdrawnPodcastCount = 0;
+      if (reviewInput.decision === "CHANGES_REQUESTED") {
+        const now = new Date();
+        const publicPodcasts = await tx.schoolPodcastEpisode.findMany({ where: { organisationId: readiness.organisationId, status: "PUBLISHED", publicationScope: "PUBLIC" }, select: { id: true, publicationRevision: true } });
+        withdrawnPodcastCount = publicPodcasts.length;
+        if (publicPodcasts.length) {
+          const reason = "School safeguarding approval was withdrawn for changes.";
+          await tx.schoolPodcastEpisode.updateMany({ where: { id: { in: publicPodcasts.map((item) => item.id) } }, data: { status: "UNPUBLISHED", unpublishedAt: now, lastPolicyCheckAt: now, unpublishReason: reason } });
+          await tx.schoolPublicationDecision.createMany({ data: publicPodcasts.map((item) => ({ organisationId: readiness.organisationId, podcastEpisodeId: item.id, actorUserId: access.user.id, decision: "AUTO_WITHDRAWN", reason, policyVersion: SCHOOL_PUBLICATION_POLICY_VERSION, policySnapshot: { readinessId: readiness.id, publicationRevision: item.publicationRevision } })) });
+        }
+      }
       await tx.auditLog.create({ data: {
         organisationId: readiness.organisationId,
         actorUserId: access.user.id,
@@ -65,13 +77,14 @@ export async function POST(request) {
           readinessId: readiness.id,
           decision: reviewInput.decision,
           policyVersion: "school-safeguarding-readiness-v1",
-          directStudentAccessEnabled: false,
-          publicPublishingEnabled: false
+          guardedStudentAccessEligible: reviewInput.decision === "APPROVED",
+          publicPublishingPolicyEligible: reviewInput.decision === "APPROVED",
+          withdrawnPodcastCount
         }
       } });
       return created;
     });
-    return NextResponse.json({ review, studentAccessEnabled: false, publicPublishingEnabled: false }, { status: 201 });
+    return NextResponse.json({ review, guardedStudentAccessEligible: review.decision === "APPROVED", publicPublishingPolicyEligible: review.decision === "APPROVED" }, { status: 201 });
   } catch (error) {
     if (error?.message === "READINESS_NOT_FOUND") return NextResponse.json({ error: "Safeguarding readiness pack not found." }, { status: 404 });
     if (error?.message === "READINESS_NOT_REVIEWABLE") return NextResponse.json({ error: "This pack is no longer awaiting review. Refresh the page to see its current status." }, { status: 409 });
