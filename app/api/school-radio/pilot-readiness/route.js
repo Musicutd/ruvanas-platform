@@ -79,4 +79,3 @@ export async function PATCH(request) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Pilot readiness could not be saved." }, { status: 409 });
   }
 }
-

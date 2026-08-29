@@ -1880,4 +1880,3 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   assert.ok(Number(lastResponse.headers.get("retry-after")) > 0);
 });
 
-

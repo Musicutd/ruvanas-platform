@@ -81,4 +81,3 @@ test("retention candidate results remain aggregate and non-destructive", () => {
   assert.match(SCHOOL_RETENTION_SAFETY_NOTICE, /No school recording/);
   assert.match(SCHOOL_RETENTION_SAFETY_NOTICE, /deleted or changed/);
 });
-

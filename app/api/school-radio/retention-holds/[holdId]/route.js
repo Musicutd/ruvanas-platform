@@ -46,4 +46,3 @@ export async function PATCH(request, { params }) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "The retention hold could not be released." }, { status: 409 });
   }
 }
-

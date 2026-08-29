@@ -54,4 +54,3 @@ export async function POST(request) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "The retention hold could not be created." }, { status: 409 });
   }
 }
-

@@ -147,4 +147,3 @@ Stage 10B adds controlled retention and supervised-pilot readiness: aggregate ca
 
 Implementation should not begin until the organisation and role foundations are stable, schedule ownership is defined, the safeguarding and privacy decisions are approved, and acceptance tests cover cross-organisation isolation, staff approval, consent revocation, and public-data redaction.
 
-

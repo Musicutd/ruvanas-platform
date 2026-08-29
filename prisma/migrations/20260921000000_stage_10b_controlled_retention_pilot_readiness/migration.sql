@@ -49,4 +49,3 @@ ALTER TABLE "SchoolRetentionHold" ADD CONSTRAINT "SchoolRetentionHold_createdByU
 ALTER TABLE "SchoolRetentionHold" ADD CONSTRAINT "SchoolRetentionHold_releasedByUserId_fkey" FOREIGN KEY ("releasedByUserId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 ALTER TABLE "SchoolPilotReadiness" ADD CONSTRAINT "SchoolPilotReadiness_organisationId_fkey" FOREIGN KEY ("organisationId") REFERENCES "Organisation"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "SchoolPilotReadiness" ADD CONSTRAINT "SchoolPilotReadiness_updatedByUserId_fkey" FOREIGN KEY ("updatedByUserId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-

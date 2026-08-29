@@ -57,4 +57,3 @@ Before release:
 ## Rollback
 
 The dashboard and APIs can be removed without affecting School Radio publishing. The tables should be retained while any hold or readiness history remains operationally relevant. If a database rollback is required, export and review active holds first; never interpret rollback as authority to delete referenced school records.
-
