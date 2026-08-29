@@ -52,11 +52,12 @@ function playlist(overrides = {}) {
 
 const device = {
   id: "device_1",
+  organisationId: "org_1",
   name: "Entrance display",
   viewportWidth: 1920,
   viewportHeight: 1080,
   orientation: "LANDSCAPE",
-  zone: { name: "Entrance", location: { name: "Valletta", timezone: "Europe/Malta" } }
+  zone: { id: "zone_1", name: "Entrance", location: { id: "location_1", name: "Valletta", timezone: "Europe/Malta" } }
 };
 
 test("visual playlist input binds tenant layout, assets, regions, and devices", () => {
@@ -108,6 +109,25 @@ test("signage manifest is signed, expiring, offline-safe, and hides storage keys
   assert.match(manifest.playlist.layout.regions[0].items[0].proofToken, /^[0-9a-f]{64}$/);
   assert.equal(JSON.stringify(manifest).includes("must-not-leak"), false);
   assert.ok(new Date(manifest.offlineGraceUntil) > new Date(manifest.expiresAt));
+});
+
+test("approved school notices use the enrolled signage channel with or without a visual playlist", () => {
+  const noticeboardPosts = [{
+    id: "notice_1", organisationId: "org_1", status: "SCHEDULED", locationId: "location_1", zoneId: null,
+    startsAt: new Date("2026-08-24T09:00:00.000Z"), endsAt: new Date("2026-08-24T10:00:00.000Z"), priority: 80,
+    displaySeconds: 15, theme: "IMPORTANT", policyVersion: "school-noticeboard-v1",
+    announcement: { title: "Assembly moved", summary: "Use the main hall.", status: "APPROVED" }
+  }];
+  const standalone = buildDigitalSignageManifest({ device, noticeboardPosts, proofSecret: secret, instant: new Date("2026-08-24T09:02:00.000Z") });
+  assert.equal(standalone.state, "NOTICEBOARD_ONLY");
+  assert.equal(standalone.deliveryClass, "SCHOOL_NOTICEBOARD");
+  assert.equal(standalone.noticeboard.items[0].title, "Assembly moved");
+  const overlaid = buildDigitalSignageManifest({ device, playlists: [playlist()], noticeboardPosts, proofSecret: secret, instant: new Date("2026-08-24T09:02:00.000Z") });
+  assert.equal(overlaid.state, "READY");
+  assert.equal(overlaid.noticeboard.items.length, 1);
+  const takeover = { id: "takeover_1", status: "ACTIVE", startsAt: new Date("2026-08-24T09:00:00.000Z"), endsAt: new Date("2026-08-24T10:00:00.000Z"), activatedAt: new Date("2026-08-24T09:00:00.000Z"), playlist: playlist({ id: "urgent" }) };
+  const urgent = buildDigitalSignageManifest({ device, playlists: [playlist()], takeovers: [takeover], noticeboardPosts, proofSecret: secret, instant: new Date("2026-08-24T09:02:00.000Z") });
+  assert.deepEqual(urgent.noticeboard.items, []);
 });
 
 test("display proof tokens reject device or asset tampering", () => {

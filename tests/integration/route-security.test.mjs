@@ -173,6 +173,12 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   const unauthenticatedSchoolAnnouncements = await api("/api/school-radio/announcements");
   assert.equal(unauthenticatedSchoolAnnouncements.status, 401);
 
+  const unauthenticatedSchoolNoticeboard = await api("/api/school-radio/noticeboard");
+  assert.equal(unauthenticatedSchoolNoticeboard.status, 401);
+
+  const unauthenticatedSchoolNoticeboardCancel = await api("/api/school-radio/noticeboard/not-a-post", { method: "PATCH", body: { reason: "Unauthorised" } });
+  assert.equal(unauthenticatedSchoolNoticeboardCancel.status, 401);
+
   const unauthenticatedSchoolEditorial = await api("/api/school-radio/editorial");
   assert.equal(unauthenticatedSchoolEditorial.status, 401);
 

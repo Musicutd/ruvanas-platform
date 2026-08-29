@@ -9,6 +9,7 @@ import MultitrackStudioClient from "./MultitrackStudioClient";
 import PodcastNewsLiveClient from "./PodcastNewsLiveClient";
 import LearningWorkspaceClient from "./LearningWorkspaceClient";
 import AcademyWorkspaceClient from "./AcademyWorkspaceClient";
+import SchoolNoticeboardClient from "./SchoolNoticeboardClient";
 
 const managerRoles = new Set(["OWNER", "MANAGER"]);
 
@@ -150,6 +151,7 @@ export default function SchoolRadioClient() {
     <LearningWorkspaceClient />
     <ShowBuilderClient />
     <SchoolEditorialClient />
+    <SchoolNoticeboardClient announcements={data.announcements} locations={data.locations} canManage={canManage} />
 
     <section style={styles.grid}>
       <form onSubmit={createAnnouncement} style={styles.card}>

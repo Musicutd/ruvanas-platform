@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 35650)
+Total output lines: 3955
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -446,6 +449,17 @@ enum SchoolAnnouncementStatus {
   ARCHIVED
 }
 
+enum SchoolNoticeboardStatus {
+  SCHEDULED
+  CANCELLED
+}
+
+enum SchoolNoticeboardTheme {
+  INFORMATION
+  CELEBRATION
+  IMPORTANT
+}
+
 enum SchoolBroadcastSlotStatus {
   APPROVED
   CANCELLED
@@ -793,6 +807,8 @@ model User {
   confirmedTrackRights             Track[]                          @relation("TrackRightsConfirmedBy")
   createdSchoolAnnouncements       SchoolAnnouncement[]             @relation("SchoolAnnouncementCreatedBy")
   reviewedSchoolAnnouncements      SchoolAnnouncement[]             @relation("SchoolAnnouncementReviewedBy")
+  createdSchoolNoticeboardPosts    SchoolNoticeboardPost[]          @relation("SchoolNoticeboardCreatedBy")
+  cancelledSchoolNoticeboardPosts  SchoolNoticeboardPost[]          @relation("SchoolNoticeboardCancelledBy")
   approvedSchoolSlots              SchoolBroadcastSlot[]            @relation("SchoolBroadcastSlotApprovedBy")
   createdProductionOrders          ProductionOrder[]                @relation("ProductionOrderCreatedBy")
   assignedProductionOrders         ProductionOrder[]                @relation("ProductionOrderAssignedTo")
@@ -889,6 +905,7 @@ model Organisation {
   activeSessions               Session[]
   schoolProfile                SchoolProfile?
   schoolAnnouncements          SchoolAnnouncement[]
+  schoolNoticeboardPosts       SchoolNoticeboardPost[]
   schoolBroadcastSlots         SchoolBroadcastSlot[]
   productionOrders             ProductionOrder[]
   productionOrderEvents        ProductionOrderEvent[]
@@ -1208,6 +1225,7 @@ model Location {
   musicSchedules             MusicSchedule[]
   campaignTargets            CampaignTarget[]
   schoolBroadcastSlots       SchoolBroadcastSlot[]
+  schoolNoticeboardPosts     SchoolNoticeboardPost[]
   integrationMetricSummaries IntegrationMetricSummary[]
 
   @@unique([organisationId, slug])
@@ -1295,6 +1313,7 @@ model Zone {
   campaignTargets             CampaignTarget[]
   playoutIntents              PlayoutIntent[]
   schoolBroadcastSlots        SchoolBroadcastSlot[]
+  schoolNoticeboardPosts      SchoolNoticeboardPost[]
   retailMediaInventoryTargets RetailMediaInventoryTarget[]
   digitalSignageDevices       DigitalSignageDevice[]
 
@@ -1936,487 +1955,7 @@ model DigitalSignagePlaylist {
   publishedAt        DateTime?
   publishedByUserId  String?
   createdByUserId    String
-  retailMediaOrderId String?
-  createdAt          DateTime                     @default(now())
-  updatedAt          DateTime                     @updatedAt
-
-  organisation     Organisation                   @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  layout           DigitalSignageLayout           @relation(fields: [layoutId], references: [id], onDelete: Restrict)
-  createdBy        User                           @relation("DigitalSignagePlaylistCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  publishedBy      User?                          @relation("DigitalSignagePlaylistPublishedBy", fields: [publishedByUserId], references: [id], onDelete: SetNull)
-  items            DigitalSignagePlaylistItem[]
-  devices          DigitalSignagePlaylistDevice[]
-  deliveryProofs   DigitalSignageDeliveryProof[]
-  retailMediaOrder RetailMediaOrder?              @relation(fields: [retailMediaOrderId], references: [id], onDelete: SetNull)
-  takeovers        DigitalSignageTakeover[]
-
-  @@unique([organisationId, name])
-  @@index([organisationId, status, startsAt, endsAt])
-  @@index([layoutId])
-  @@index([createdByUserId])
-  @@index([publishedByUserId])
-  @@index([retailMediaOrderId])
-}
-
-model DigitalSignagePlaylistItem {
-  id              String   @id @default(cuid())
-  playlistId      String
-  regionId        String
-  assetId         String
-  position        Int
-  durationSeconds Int      @default(10)
-  createdAt       DateTime @default(now())
-
-  playlist       DigitalSignagePlaylist        @relation(fields: [playlistId], references: [id], onDelete: Cascade)
-  region         DigitalSignageLayoutRegion    @relation(fields: [regionId], references: [id], onDelete: Restrict)
-  asset          DigitalSignageAsset           @relation(fields: [assetId], references: [id], onDelete: Restrict)
-  deliveryProofs DigitalSignageDeliveryProof[]
-
-  @@unique([playlistId, regionId, position])
-  @@index([assetId])
-  @@index([regionId])
-}
-
-model DigitalSignagePlaylistDevice {
-  playlistId String
-  deviceId   String
-  assignedAt DateTime @default(now())
-
-  playlist DigitalSignagePlaylist @relation(fields: [playlistId], references: [id], onDelete: Cascade)
-  device   DigitalSignageDevice   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
-
-  @@id([playlistId, deviceId])
-  @@index([deviceId])
-}
-
-model DigitalSignageTakeover {
-  id                String                       @id @default(cuid())
-  organisationId    String
-  playlistId        String
-  name              String
-  reason            String
-  status            DigitalSignageTakeoverStatus @default(DRAFT)
-  startsAt          DateTime
-  endsAt            DateTime
-  activatedAt       DateTime?
-  endedAt           DateTime?
-  createdByUserId   String
-  activatedByUserId String?
-  endedByUserId     String?
-  createdAt         DateTime                     @default(now())
-  updatedAt         DateTime                     @updatedAt
-
-  organisation   Organisation                   @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  playlist       DigitalSignagePlaylist         @relation(fields: [playlistId], references: [id], onDelete: Restrict)
-  createdBy      User                           @relation("DigitalSignageTakeoverCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  activatedBy    User?                          @relation("DigitalSignageTakeoverActivatedBy", fields: [activatedByUserId], references: [id], onDelete: SetNull)
-  endedBy        User?                          @relation("DigitalSignageTakeoverEndedBy", fields: [endedByUserId], references: [id], onDelete: SetNull)
-  devices        DigitalSignageTakeoverDevice[]
-  deliveryProofs DigitalSignageDeliveryProof[]
-
-  @@index([organisationId, status, startsAt, endsAt])
-  @@index([playlistId])
-  @@index([createdByUserId])
-}
-
-model DigitalSignageTakeoverDevice {
-  takeoverId String
-  deviceId   String
-  assignedAt DateTime @default(now())
-
-  takeover DigitalSignageTakeover @relation(fields: [takeoverId], references: [id], onDelete: Cascade)
-  device   DigitalSignageDevice   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
-
-  @@id([takeoverId, deviceId])
-  @@index([deviceId])
-}
-
-model DigitalSignageDeliveryProof {
-  id                 String                          @id @default(cuid())
-  clientEventId      String                          @unique
-  organisationId     String
-  deviceId           String
-  playlistId         String
-  playlistItemId     String
-  assetId            String
-  manifestVersion    String                          @db.VarChar(24)
-  eventType          DigitalSignageDeliveryEventType
-  occurredAt         DateTime
-  receivedAt         DateTime                        @default(now())
-  failureReason      String?
-  takeoverId         String?
-  retailMediaOrderId String?
-
-  organisation     Organisation               @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  device           DigitalSignageDevice       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
-  playlist         DigitalSignagePlaylist     @relation(fields: [playlistId], references: [id], onDelete: Restrict)
-  playlistItem     DigitalSignagePlaylistItem @relation(fields: [playlistItemId], references: [id], onDelete: Restrict)
-  asset            DigitalSignageAsset        @relation(fields: [assetId], references: [id], onDelete: Restrict)
-  takeover         DigitalSignageTakeover?    @relation(fields: [takeoverId], references: [id], onDelete: SetNull)
-  retailMediaOrder RetailMediaOrder?          @relation(fields: [retailMediaOrderId], references: [id], onDelete: SetNull)
-
-  @@index([organisationId, occurredAt])
-  @@index([deviceId, occurredAt])
-  @@index([playlistId, eventType, occurredAt])
-  @@index([assetId, occurredAt])
-  @@index([takeoverId, occurredAt])
-  @@index([retailMediaOrderId, occurredAt])
-}
-
-model Track {
-  id                   String      @id @default(cuid())
-  mediaAssetId         String      @unique
-  title                String
-  artist               String
-  album                String?
-  releaseYear          Int?
-  isExplicit           Boolean     @default(false)
-  status               TrackStatus @default(DRAFT)
-  rightsHolder         String?
-  rightsReference      String?
-  permittedTerritories String?
-  licenceExpiresAt     DateTime?   @db.Date
-  rightsConfirmedAt    DateTime?
-  rightsConfirmedById  String?
-  createdAt            DateTime    @default(now())
-  updatedAt            DateTime    @updatedAt
-
-  mediaAsset         MediaAsset          @relation(fields: [mediaAssetId], references: [id], onDelete: Cascade)
-  rightsConfirmedBy  User?               @relation("TrackRightsConfirmedBy", fields: [rightsConfirmedById], references: [id], onDelete: SetNull)
-  musicModes         MusicModeTrack[]
-  proofOfPlayEvents  ProofOfPlayEvent[]
-  schoolRundownItems SchoolRundownItem[]
-
-  @@index([status])
-  @@index([artist, title])
-  @@index([rightsConfirmedById])
-  @@index([licenceExpiresAt])
-}
-
-model MusicMode {
-  id             String          @id @default(cuid())
-  organisationId String
-  name           String
-  slug           String
-  description    String?
-  status         MusicModeStatus @default(DRAFT)
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-
-  organisation  Organisation     @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  tracks        MusicModeTrack[]
-  scheduleSlots ScheduleSlot[]
-
-  @@unique([organisationId, slug])
-  @@index([organisationId, status])
-}
-
-model MusicModeTrack {
-  musicModeId String
-  trackId     String
-  weight      Int      @default(100)
-  createdAt   DateTime @default(now())
-
-  musicMode MusicMode @relation(fields: [musicModeId], references: [id], onDelete: Cascade)
-  track     Track     @relation(fields: [trackId], references: [id], onDelete: Cascade)
-
-  @@id([musicModeId, trackId])
-  @@index([trackId])
-}
-
-model SchoolProfile {
-  id               String                 @id @default(cuid())
-  organisationId   String                 @unique
-  displayName      String?
-  publishingPolicy SchoolPublishingPolicy @default(PRIVATE)
-  policyVersion    String                 @default("school-radio-v1")
-  createdAt        DateTime               @default(now())
-  updatedAt        DateTime               @updatedAt
-
-  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-
-  @@index([publishingPolicy])
-}
-
-model SchoolAnnouncement {
-  id               String                   @id @default(cuid())
-  organisationId   String
-  promoVersionId   String
-  title            String
-  summary          String?
-  status           SchoolAnnouncementStatus @default(DRAFT)
-  policyVersion    String                   @default("school-radio-v1")
-  createdByUserId  String
-  reviewedByUserId String?
-  submittedAt      DateTime?
-  reviewedAt       DateTime?
-  reviewNotes      String?
-  createdAt        DateTime                 @default(now())
-  updatedAt        DateTime                 @updatedAt
-
-  organisation   Organisation          @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  promoVersion   PromoVersion          @relation(fields: [promoVersionId], references: [id], onDelete: Restrict)
-  createdBy      User                  @relation("SchoolAnnouncementCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  reviewedBy     User?                 @relation("SchoolAnnouncementReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
-  broadcastSlots SchoolBroadcastSlot[]
-  rundownItems   SchoolRundownItem[]
-
-  @@index([organisationId, status])
-  @@index([promoVersionId])
-  @@index([createdByUserId])
-  @@index([reviewedByUserId])
-}
-
-model SchoolBroadcastSlot {
-  id                 String                    @id @default(cuid())
-  organisationId     String
-  announcementId     String?
-  episodeId          String?
-  locationId         String?
-  zoneId             String?
-  startsAt           DateTime
-  endsAt             DateTime
-  status             SchoolBroadcastSlotStatus @default(APPROVED)
-  revision           Int                       @default(1)
-  approvedByUserId   String
-  approvedAt         DateTime                  @default(now())
-  cancelledAt        DateTime?
-  cancellationReason String?
-  createdAt          DateTime                  @default(now())
-  updatedAt          DateTime                  @updatedAt
-
-  organisation      Organisation        @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  announcement      SchoolAnnouncement? @relation(fields: [announcementId], references: [id], onDelete: Restrict)
-  episode           SchoolEpisode?      @relation(fields: [episodeId], references: [id], onDelete: Restrict)
-  location          Location?           @relation(fields: [locationId], references: [id], onDelete: Cascade)
-  zone              Zone?               @relation(fields: [zoneId], references: [id], onDelete: Cascade)
-  approvedBy        User                @relation("SchoolBroadcastSlotApprovedBy", fields: [approvedByUserId], references: [id], onDelete: Restrict)
-  playoutIntents    PlayoutIntent[]
-  proofOfPlayEvents ProofOfPlayEvent[]
-
-  @@index([organisationId, status, startsAt])
-  @@index([locationId, status, startsAt])
-  @@index([zoneId, status, startsAt])
-  @@index([announcementId])
-  @@index([episodeId])
-  @@index([approvedByUserId])
-}
-
-model StaffSupervisor {
-  id             String   @id @default(cuid())
-  organisationId String
-  userId         String
-  displayTitle   String?
-  active         Boolean  @default(true)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-
-  organisation Organisation      @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  user         User              @relation("SchoolSupervisorUser", fields: [userId], references: [id], onDelete: Cascade)
-  groups       StudentGroup[]
-  programmes   SchoolProgramme[]
-
-  @@unique([organisationId, userId])
-  @@index([organisationId, active])
-}
-
-model StudentGroup {
-  id              String   @id @default(cuid())
-  organisationId  String
-  supervisorId    String
-  name            String
-  academicYear    String?
-  notes           String?
-  createdByUserId String
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  organisation  Organisation         @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  supervisor    StaffSupervisor      @relation(fields: [supervisorId], references: [id], onDelete: Restrict)
-  createdBy     User                 @relation("StudentGroupCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  contributors  StudentContributor[]
-  programmes    SchoolProgramme[]
-  audioProjects AudioProject[]
-  assignments   Assignment[]
-
-  @@unique([organisationId, name, academicYear])
-  @@index([organisationId, supervisorId])
-}
-
-model StudentContributor {
-  id             String                   @id @default(cuid())
-  organisationId String
-  studentGroupId String
-  displayName    String
-  referenceCode  String?
-  status         StudentContributorStatus @default(ACTIVE)
-  createdAt      DateTime                 @default(now())
-  updatedAt      DateTime                 @updatedAt
-
-  organisation          Organisation                      @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  studentGroup          StudentGroup                      @relation(fields: [studentGroupId], references: [id], onDelete: Cascade)
-  episodes              SchoolEpisodeContributor[]
-  consentRecords        ConsentRecord[]
-  assignmentSubmissions AssignmentSubmissionContributor[]
-  portfolioEntries      PortfolioEntry[]
-
-  @@unique([studentGroupId, displayName])
-  @@index([organisationId, status])
-}
-
-model SchoolProgramme {
-  id              String                @id @default(cuid())
-  organisationId  String
-  studentGroupId  String?
-  supervisorId    String
-  title           String
-  description     String?
-  status          SchoolProgrammeStatus @default(ACTIVE)
-  createdByUserId String
-  createdAt       DateTime              @default(now())
-  updatedAt       DateTime              @updatedAt
-
-  organisation  Organisation          @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  studentGroup  StudentGroup?         @relation(fields: [studentGroupId], references: [id], onDelete: SetNull)
-  supervisor    StaffSupervisor       @relation(fields: [supervisorId], references: [id], onDelete: Restrict)
-  createdBy     User                  @relation("SchoolProgrammeCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  episodes      SchoolEpisode[]
-  audioProjects AudioProject[]
-  podcastSeries SchoolPodcastSeries[]
-  newsStories   SchoolNewsStory[]
-  liveSessions  LiveStudioSession[]
-  assignments   Assignment[]
-
-  @@unique([organisationId, title])
-  @@index([organisationId, status])
-  @@index([studentGroupId])
-}
-
-model SchoolEpisode {
-  id               String                 @id @default(cuid())
-  organisationId   String
-  programmeId      String
-  title            String
-  summary          String?
-  status           SchoolEpisodeStatus    @default(DRAFT)
-  publicationScope SchoolPublicationScope @default(INTERNAL_ONLY)
-  createdByUserId  String
-  submittedAt      DateTime?
-  approvedAt       DateTime?
-  createdAt        DateTime               @default(now())
-  updatedAt        DateTime               @updatedAt
-
-  organisation          Organisation               @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  programme             SchoolProgramme            @relation(fields: [programmeId], references: [id], onDelete: Restrict)
-  createdBy             User                       @relation("SchoolEpisodeCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  contributors          SchoolEpisodeContributor[]
-  submissions           SchoolSubmission[]
-  reviews               SchoolModerationReview[]
-  consentRecords        ConsentRecord[]
-  audioProjects         AudioProject[]
-  rundown               SchoolRundown?
-  broadcastSlots        SchoolBroadcastSlot[]
-  podcastEpisode        SchoolPodcastEpisode?
-  transcripts           Transcript[]
-  newsStories           SchoolNewsStory[]
-  liveSessions          LiveStudioSession[]
-  assignmentSubmissions AssignmentSubmission[]
-
-  @@index([organisationId, status])
-  @@index([programmeId, createdAt])
-}
-
-model SchoolRundown {
-  id               String              @id @default(cuid())
-  organisationId   String
-  episodeId        String              @unique
-  status           SchoolRundownStatus @default(DRAFT)
-  revision         Int                 @default(1)
-  approvedRevision Int?
-  createdByUserId  String
-  reviewedByUserId String?
-  submittedAt      DateTime?
-  reviewedAt       DateTime?
-  reviewNotes      String?
-  createdAt        DateTime            @default(now())
-  updatedAt        DateTime            @updatedAt
-
-  organisation Organisation        @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  episode      SchoolEpisode       @relation(fields: [episodeId], references: [id], onDelete: Cascade)
-  createdBy    User                @relation("SchoolRundownCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  reviewedBy   User?               @relation("SchoolRundownReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
-  items        SchoolRundownItem[]
-
-  @@index([organisationId, status, updatedAt])
-  @@index([reviewedByUserId])
-}
-
-model SchoolRundownItem {
-  id                   String                @id @default(cuid())
-  rundownId            String
-  type                 SchoolRundownItemType
-  position             Int
-  label                String
-  notes                String?
-  sourceMediaAssetId   String?
-  sourceTrackId        String?
-  sourcePromoVersionId String?
-  sourceAnnouncementId String?
-  sourceTakeId         String?
-  estimatedDurationMs  Int?
-  introCueMs           Int                   @default(0)
-  outroCueMs           Int                   @default(0)
-  transitionPreset     String                @default("CLEAN")
-  cueOffsetMs          Int?
-  createdAt            DateTime              @default(now())
-  updatedAt            DateTime              @updatedAt
-
-  rundown            SchoolRundown       @relation(fields: [rundownId], references: [id], onDelete: Cascade)
-  sourceMediaAsset   MediaAsset?         @relation(fields: [sourceMediaAssetId], references: [id], onDelete: Restrict)
-  sourceTrack        Track?              @relation(fields: [sourceTrackId], references: [id], onDelete: Restrict)
-  sourcePromoVersion PromoVersion?       @relation(fields: [sourcePromoVersionId], references: [id], onDelete: Restrict)
-  sourceAnnouncement SchoolAnnouncement? @relation(fields: [sourceAnnouncementId], references: [id], onDelete: Restrict)
-  sourceTake         AudioTake?          @relation(fields: [sourceTakeId], references: [id], onDelete: Restrict)
-  playoutIntents     PlayoutIntent[]
-
-  @@unique([rundownId, position])
-  @@index([sourceMediaAssetId])
-  @@index([sourceTrackId])
-  @@index([sourcePromoVersionId])
-  @@index([sourceAnnouncementId])
-  @@index([sourceTakeId])
-}
-
-model SchoolEpisodeContributor {
-  episodeId     String
-  contributorId String
-  creditedAs    String?
-  createdAt     DateTime @default(now())
-
-  episode     SchoolEpisode      @relation(fields: [episodeId], references: [id], onDelete: Cascade)
-  contributor StudentContributor @relation(fields: [contributorId], references: [id], onDelete: Restrict)
-
-  @@id([episodeId, contributorId])
-  @@index([contributorId])
-}
-
-model SchoolSubmission {
-  id                String                 @id @default(cuid())
-  organisationId    String
-  episodeId         String
-  promoVersionId    String
-  revision          Int
-  notes             String?
-  status            SchoolSubmissionStatus @default(SUBMITTED)
-  submittedByUserId String
-  submittedAt       DateTime               @default(now())
-  createdAt         DateTime               @default(now())
-
-  organisation Organisation             @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  episode      SchoolEpisode            @relation(fields: [episodeId], references: [id], onDelete: Cascade)
-  promoVersion PromoVersion             @relation(fields: [promoVersionId], references: [id], onDelete: Restrict)
-  submittedBy  User                     @relation("SchoolSubmissionSubmittedBy", fields: [submittedByUserId], references: [id], onDelete: Restrict)
-  reviews      SchoolModerationReview[]
+  retailMediaOrd…5650 tokens truncated…     SchoolModerationReview[]
 
   @@unique([episodeId, revision])
   @@index([organisationId, status])
