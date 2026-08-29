@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getAdminUser } from "@/lib/requireAdmin";
 import SchoolRadioEntitlementControl from "./SchoolRadioEntitlementControl";
 import RetailMediaEntitlementControl from "./RetailMediaEntitlementControl";
+import DigitalSignageEntitlementControl from "./DigitalSignageEntitlementControl";
 
 export default async function AdminOrganisationsPage() {
   const adminUser = await getAdminUser();
@@ -63,6 +64,7 @@ export default async function AdminOrganisationsPage() {
                   <th style={styles.tableHeader}>Subscription</th>
                   <th style={styles.tableHeader}>School Radio</th>
                   <th style={styles.tableHeader}>Retail Media</th>
+                  <th style={styles.tableHeader}>Digital Signage</th>
                   <th style={styles.tableHeader}>Members</th>
                   <th style={styles.tableHeader}>Brands</th>
                   <th style={styles.tableHeader}>Locations</th>
@@ -115,6 +117,23 @@ export default async function AdminOrganisationsPage() {
                           )}
                           overrideEnabled={organisation.subscription.retailMediaEnabled}
                           planDefaultEnabled={organisation.subscription.plan.retailMediaEnabled}
+                          canManage={canManageEntitlements}
+                        />
+                      ) : (
+                        <span style={styles.muted}>Unavailable</span>
+                      )}
+                    </td>
+
+                    <td style={styles.tableCellFeature}>
+                      {organisation.subscription ? (
+                        <DigitalSignageEntitlementControl
+                          organisationId={organisation.id}
+                          effectiveEnabled={Boolean(
+                            organisation.subscription.digitalSignageEnabled ??
+                            organisation.subscription.plan.digitalSignageEnabled
+                          )}
+                          overrideEnabled={organisation.subscription.digitalSignageEnabled}
+                          planDefaultEnabled={organisation.subscription.plan.digitalSignageEnabled}
                           canManage={canManageEntitlements}
                         />
                       ) : (
@@ -233,7 +252,7 @@ const styles = {
   },
   table: {
     width: "100%",
-    minWidth: 1460,
+    minWidth: 1690,
     borderCollapse: "collapse"
   },
   tableHeader: {

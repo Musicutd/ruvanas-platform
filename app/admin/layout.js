@@ -87,6 +87,11 @@ const navItems = [
     href: "/admin/retail-media",
     label: "Retail media",
     superAdminOnly: true
+  },
+  {
+    href: "/admin/digital-signage",
+    label: "Digital signage",
+    superAdminOnly: true
   }
 ];
 

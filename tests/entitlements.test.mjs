@@ -16,7 +16,8 @@ const plan = {
   includesRuvanasCatalogue: true,
   promoUploadEnabled: true,
   schoolRadioEnabled: true,
-  retailMediaEnabled: true
+  retailMediaEnabled: true,
+  digitalSignageEnabled: true
 };
 
 test("active and trial subscriptions receive plan entitlements", () => {
@@ -27,6 +28,7 @@ test("active and trial subscriptions receive plan entitlements", () => {
     assert.equal(entitlements.promoUploadEnabled, true);
     assert.equal(entitlements.schoolRadioEnabled, true);
     assert.equal(entitlements.retailMediaEnabled, true);
+    assert.equal(entitlements.digitalSignageEnabled, true);
   }
 });
 
@@ -94,6 +96,25 @@ test("an organisation subscription can override the shared Retail Media plan def
   );
 });
 
+test("an organisation subscription can override the shared Digital Signage plan default", () => {
+  assert.equal(
+    resolveEntitlements({
+      status: "ACTIVE",
+      digitalSignageEnabled: false,
+      plan
+    }).digitalSignageEnabled,
+    false
+  );
+  assert.equal(
+    resolveEntitlements({
+      status: "ACTIVE",
+      digitalSignageEnabled: true,
+      plan: { ...plan, digitalSignageEnabled: false }
+    }).digitalSignageEnabled,
+    true
+  );
+});
+
 test("suspended, cancelled, missing, and inactive plans deny service", () => {
   for (const subscription of [
     { status: "SUSPENDED", plan },
@@ -107,6 +128,7 @@ test("suspended, cancelled, missing, and inactive plans deny service", () => {
     assert.equal(entitlements.promoUploadEnabled, false);
     assert.equal(entitlements.schoolRadioEnabled, false);
     assert.equal(entitlements.retailMediaEnabled, false);
+    assert.equal(entitlements.digitalSignageEnabled, false);
   }
 });
 

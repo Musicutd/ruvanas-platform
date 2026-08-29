@@ -137,6 +137,15 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   const unauthenticatedRetailMedia = await api("/api/admin/retail-media/partners?organisationId=not-an-organisation");
   assert.equal(unauthenticatedRetailMedia.status, 401);
 
+  const unauthenticatedSignageAssets = await api("/api/admin/digital-signage/assets?organisationId=not-an-organisation");
+  assert.equal(unauthenticatedSignageAssets.status, 401);
+
+  const unauthenticatedSignageLayouts = await api("/api/admin/digital-signage/layouts?organisationId=not-an-organisation");
+  assert.equal(unauthenticatedSignageLayouts.status, 401);
+
+  const unauthenticatedSignageDevices = await api("/api/admin/digital-signage/devices?organisationId=not-an-organisation");
+  assert.equal(unauthenticatedSignageDevices.status, 401);
+
   const unauthenticatedSchoolAnnouncements = await api("/api/school-radio/announcements");
   assert.equal(unauthenticatedSchoolAnnouncements.status, 401);
 

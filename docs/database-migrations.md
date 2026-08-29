@@ -1,5 +1,9 @@
 # Database migration operations
 
+## Stage 7B digital-signage foundation
+
+Migration `20260910000000_stage_7b_digital_signage_foundation` is additive. It adds opt-in Digital Signage entitlements, tenant-owned visual assets, bounded reusable layouts and regions, and zone-bound display-device registrations. Existing audio players, campaigns, schedules, manifests, and proof records are not modified.
+
 ## Stage 7A retail-media foundation
 
 Migration `20260909000000_stage_7a_retail_media_foundation` is additive. It adds opt-in Retail Media entitlements, tenant-owned advertiser and agency records, inventory packages and targeting windows, supplier campaign orders, creative review, and subscriber approval records. Existing campaigns remain unchanged unless an order is explicitly linked; linked campaigns gain an application-level approval gate before publication.
