@@ -45,6 +45,14 @@ function DisplayRegion({ region, manifest, assetUrls, onEvent }) {
   useEffect(() => {
     if (!item) return undefined;
     onEvent(item, "STARTED");
+    if (item.asset.kind === "VIDEO") {
+      const watchdogSeconds = Math.max(item.durationSeconds, item.asset.durationSeconds || 0) + 15;
+      const watchdog = window.setTimeout(() => {
+        onEvent(item, "FAILED", "Video playback did not finish within its verified duration");
+        setIndex((current) => (current + 1) % region.items.length);
+      }, watchdogSeconds * 1000);
+      return () => window.clearTimeout(watchdog);
+    }
     const timer = window.setTimeout(() => {
       onEvent(item, "COMPLETED");
       setIndex((current) => (current + 1) % region.items.length);
@@ -52,13 +60,25 @@ function DisplayRegion({ region, manifest, assetUrls, onEvent }) {
     return () => window.clearTimeout(timer);
   }, [item?.id, index, manifest.version, onEvent, region.items.length]);
   if (!item) return null;
+  const next = (eventType, failureReason = null) => {
+    onEvent(item, eventType, failureReason);
+    setIndex((current) => (current + 1) % region.items.length);
+  };
+  const mediaStyle = { width: "100%", height: "100%", objectFit: region.fitMode === "CONTAIN" ? "contain" : region.fitMode === "STRETCH" ? "fill" : "cover", display: "block" };
   return <div style={{ position: "absolute", left: `${region.x / manifest.playlist.layout.canvasWidth * 100}%`, top: `${region.y / manifest.playlist.layout.canvasHeight * 100}%`, width: `${region.width / manifest.playlist.layout.canvasWidth * 100}%`, height: `${region.height / manifest.playlist.layout.canvasHeight * 100}%`, zIndex: region.zIndex, overflow: "hidden" }}>
-    <img
+    {item.asset.kind === "VIDEO" ? <video
+      key={`${manifest.version}:${item.id}`}
+      src={assetUrls[item.asset.id] || item.asset.mediaUrl}
+      autoPlay muted playsInline preload="auto"
+      onEnded={() => next("COMPLETED")}
+      onError={() => next("FAILED", "Video asset could not be rendered")}
+      style={mediaStyle}
+    /> : <img
       src={assetUrls[item.asset.id] || item.asset.mediaUrl}
       alt=""
-      onError={() => { onEvent(item, "FAILED", "Visual asset could not be rendered"); setIndex((current) => (current + 1) % region.items.length); }}
-      style={{ width: "100%", height: "100%", objectFit: region.fitMode === "CONTAIN" ? "contain" : region.fitMode === "STRETCH" ? "fill" : "cover", display: "block" }}
-    />
+      onError={() => next("FAILED", "Visual asset could not be rendered")}
+      style={mediaStyle}
+    />}
   </div>;
 }
 
@@ -94,6 +114,8 @@ export default function SignagePage() {
       playlistId: currentManifest.playlist.id,
       playlistItemId: item.id,
       assetId: item.asset.id,
+      ...(currentManifest.takeover?.id ? { takeoverId: currentManifest.takeover.id } : {}),
+      ...(currentManifest.playlist.retailMediaOrderId ? { retailMediaOrderId: currentManifest.playlist.retailMediaOrderId } : {}),
       eventType,
       occurredAt: new Date().toISOString(),
       ...(failureReason ? { failureReason } : {})

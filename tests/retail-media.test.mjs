@@ -64,6 +64,8 @@ test("orders require approved-source identifiers and unique creative versions", 
     name: "Launch order",
     creativePromoVersionIds: ["promo_1", "promo_1"]
   }), /unique/);
+  const visualOnly = normaliseRetailMediaOrder({ organisationId: "org_1", advertiserId: "advertiser_1", inventoryPackageId: "inventory_1", name: "Visual launch", creativePromoVersionIds: [], visualAssetIds: ["visual_1"] });
+  assert.deepEqual(visualOnly.visualAssetIds, ["visual_1"]);
 });
 
 test("subscriber approval stays blocked until inventory and every creative are approved", () => {
@@ -74,10 +76,11 @@ test("subscriber approval stays blocked until inventory and every creative are a
       effectiveFrom: new Date("2026-09-01T00:00:00.000Z"),
       effectiveTo: new Date("2026-09-30T00:00:00.000Z")
     },
-    creatives: [{ status: "PENDING" }]
+    creatives: [{ status: "APPROVED" }],
+    visualCreatives: [{ status: "PENDING" }]
   };
   assert.match(retailMediaOrderApprovalBlockers(order, new Date("2026-09-15T12:00:00.000Z")).join(" "), /Every creative/);
-  order.creatives[0].status = "APPROVED";
+  order.visualCreatives[0].status = "APPROVED";
   assert.deepEqual(retailMediaOrderApprovalBlockers(order, new Date("2026-09-15T12:00:00.000Z")), []);
 });
 

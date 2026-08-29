@@ -5,7 +5,8 @@ import {
   digitalSignageOrientation,
   normaliseDigitalSignageDevice,
   normaliseDigitalSignageLayout,
-  validateDigitalSignageImage
+  validateDigitalSignageImage,
+  validateDigitalSignageVideo
 } from "../lib/digital-signage.mjs";
 
 function pngHeader(width, height) {
@@ -82,4 +83,11 @@ test("visual upload validation trusts file signatures rather than extensions", (
 test("orientation is derived consistently", () => {
   assert.equal(digitalSignageOrientation(1080, 1920), "PORTRAIT");
   assert.equal(digitalSignageOrientation(1080, 1080), "SQUARE");
+});
+
+test("video uploads are signature checked and size bounded before protected processing", () => {
+  const mp4 = Buffer.alloc(24); mp4.write("ftyp", 4, "ascii");
+  assert.equal(validateDigitalSignageVideo({ buffer: mp4, fileName: "campaign.mp4", claimedType: "video/mp4" }).ok, true);
+  assert.match(validateDigitalSignageVideo({ buffer: mp4, fileName: "campaign.webm", claimedType: "video/webm" }).error, /reported video type/);
+  assert.match(validateDigitalSignageVideo({ buffer: Buffer.from("not-video"), fileName: "campaign.mp4", claimedType: "video/mp4" }).error, /valid MP4 and WebM/);
 });

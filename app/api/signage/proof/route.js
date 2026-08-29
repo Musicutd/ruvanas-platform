@@ -17,6 +17,8 @@ const eventSchema = z.object({
   playlistId: z.string().cuid(),
   playlistItemId: z.string().cuid(),
   assetId: z.string().cuid(),
+  takeoverId: z.string().cuid().optional().nullable(),
+  retailMediaOrderId: z.string().cuid().optional().nullable(),
   eventType: z.enum(["STARTED", "COMPLETED", "FAILED"]),
   occurredAt: z.string().datetime({ offset: true }),
   failureReason: z.string().trim().max(500).optional().nullable()
@@ -32,18 +34,44 @@ export async function POST(request) {
     if (!parsed.success) return NextResponse.json({ error: `Submit between 1 and ${MAX_BATCH_SIZE} valid display events.` }, { status: 400 });
     const events = parsed.data.events;
     const items = await prisma.digitalSignagePlaylistItem.findMany({
-      where: { id: { in: [...new Set(events.map((event) => event.playlistItemId))] }, playlist: { organisationId: device.organisationId, devices: { some: { deviceId: device.id } } } },
-      include: { asset: { select: { id: true, organisationId: true } }, playlist: { select: { id: true, organisationId: true } } }
+      where: {
+        id: { in: [...new Set(events.map((event) => event.playlistItemId))] },
+        playlist: {
+          organisationId: device.organisationId,
+          OR: [
+            { devices: { some: { deviceId: device.id } } },
+            { takeovers: { some: { devices: { some: { deviceId: device.id } } } } }
+          ]
+        }
+      },
+      include: {
+        asset: { select: { id: true, organisationId: true } },
+        playlist: {
+          select: {
+            id: true,
+            organisationId: true,
+            retailMediaOrderId: true,
+            takeovers: { where: { devices: { some: { deviceId: device.id } } }, select: { id: true } }
+          }
+        }
+      }
     });
     const byId = new Map(items.map((item) => [item.id, item]));
+    const retailMediaOrderIds = [...new Set(events.map((event) => event.retailMediaOrderId).filter(Boolean))];
+    const retailMediaOrders = retailMediaOrderIds.length ? await prisma.retailMediaOrder.findMany({ where: { id: { in: retailMediaOrderIds }, organisationId: device.organisationId }, select: { id: true } }) : [];
+    const validRetailMediaOrderIds = new Set(retailMediaOrders.map((order) => order.id));
     const now = new Date();
     for (const event of events) {
       const item = byId.get(event.playlistItemId);
       const occurredAt = new Date(event.occurredAt);
       const age = now.getTime() - occurredAt.getTime();
-      const valid = item && item.playlistId === event.playlistId && item.assetId === event.assetId &&
+      const takeoverId = event.takeoverId || null;
+      const retailMediaOrderId = event.retailMediaOrderId || null;
+      const validTakeover = takeoverId ? item?.playlist.takeovers.some((takeover) => takeover.id === takeoverId) : true;
+      const validRetailMediaOrder = retailMediaOrderId ? validRetailMediaOrderIds.has(retailMediaOrderId) : true;
+      const valid = item && validTakeover && validRetailMediaOrder && item.playlistId === event.playlistId && item.assetId === event.assetId &&
         item.asset.organisationId === device.organisationId &&
-        verifyDigitalSignageProofToken({ deviceId: device.id, manifestVersion: event.manifestVersion, playlistItemId: event.playlistItemId, assetId: event.assetId }, event.proofToken, process.env.SESSION_SECRET) &&
+        verifyDigitalSignageProofToken({ deviceId: device.id, manifestVersion: event.manifestVersion, playlistItemId: event.playlistItemId, assetId: event.assetId, takeoverId, retailMediaOrderId }, event.proofToken, process.env.SESSION_SECRET) &&
         age <= MAX_EVENT_AGE_MS && age >= -MAX_CLOCK_SKEW_MS;
       if (!valid) return NextResponse.json({ error: "One or more display events could not be verified." }, { status: 400 });
     }
@@ -57,6 +85,8 @@ export async function POST(request) {
           playlistId: event.playlistId,
           playlistItemId: event.playlistItemId,
           assetId: event.assetId,
+          takeoverId: event.takeoverId || null,
+          retailMediaOrderId: event.retailMediaOrderId || null,
           manifestVersion: event.manifestVersion,
           eventType: event.eventType,
           occurredAt: new Date(event.occurredAt),
