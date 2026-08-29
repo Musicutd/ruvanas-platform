@@ -10,7 +10,7 @@ export async function GET(request) {
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   try {
     const params = request.nextUrl.searchParams;
-    const report = await loadCombinedDeliveryReport(access.organisation.id, { from: params.get("from"), to: params.get("to") }, 50_000);
+    const report = await loadCombinedDeliveryReport(access.organisation.id, { from: params.get("from"), to: params.get("to"), retailMediaOrderId: params.get("retailMediaOrderId") }, 50_000);
     if (report.truncated) return NextResponse.json({ error: "Reduce the date range before exporting more than 100,000 delivery rows." }, { status: 413 });
     const csv = combinedDeliveryCsv(report.rows);
     const contentSha256 = crypto.createHash("sha256").update(csv).digest("hex");

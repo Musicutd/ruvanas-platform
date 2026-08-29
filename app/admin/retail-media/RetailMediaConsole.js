@@ -6,7 +6,7 @@ const weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Frida
 const defaultDaypart = { weekday: 1, startMinute: 540, endMinute: 1020 };
 
 function Badge({ value }) {
-  const good = ["ACTIVE", "APPROVED"].includes(value);
+  const good = ["ACTIVE", "APPROVED", "FULFILLED"].includes(value);
   const bad = ["REJECTED", "CANCELLED", "ARCHIVED"].includes(value);
   return <span style={{ ...styles.badge, background: good ? "#dcfce7" : bad ? "#fee2e2" : "#fef3c7", color: good ? "#166534" : bad ? "#991b1b" : "#92400e" }}>{String(value).replaceAll("_", " ")}</span>;
 }
@@ -25,6 +25,7 @@ export default function RetailMediaConsole({ organisations, canApprove = true, s
   const [dayparts, setDayparts] = useState([defaultDaypart]);
   const [orderForm, setOrderForm] = useState({ name: "", advertiserId: "", agencyId: "", inventoryPackageId: "", campaignId: "", creativePromoVersionId: "", visualAssetId: "", purchaseOrderReference: "" });
   const [fulfilmentSelections, setFulfilmentSelections] = useState({});
+  const [readinessByOrder, setReadinessByOrder] = useState({});
   const organisation = useMemo(() => organisations.find((item) => item.id === organisationId), [organisations, organisationId]);
 
   async function load() {
@@ -63,15 +64,26 @@ export default function RetailMediaConsole({ organisations, canApprove = true, s
       const response = await fetch(path, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || "The operation could not be completed.");
-      setMessage(success); await load();
+      setMessage(success); await load(); return data;
+    } catch (error) { setMessage(error.message); return null; }
+    finally { setWorking(false); }
+  }
+
+  async function reviewReadiness(orderId) {
+    setWorking(true); setMessage("");
+    try {
+      const response = await fetch(`/api/admin/retail-media/orders/${orderId}/activation`, { cache: "no-store" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Unable to review cross-media readiness.");
+      setReadinessByOrder((current) => ({ ...current, [orderId]: data.readiness }));
     } catch (error) { setMessage(error.message); }
     finally { setWorking(false); }
   }
 
   if (!organisations.length) return <main style={styles.page}><h1>Retail Media</h1><p>Create an organisation before configuring Retail Media.</p></main>;
   return <main style={styles.page}>
-    <p style={styles.eyebrow}>Stage 7D</p><h1 style={styles.title}>Retail Media orders</h1>
-    <p style={styles.copy}>Build subscriber-approved advertiser inventory with audio and visual creative. Advertisers and agencies remain commercial records only; they cannot sign in or publish directly.</p>
+    <p style={styles.eyebrow}>Stage 7E</p><h1 style={styles.title}>Cross-media Retail Media orders</h1>
+    <p style={styles.copy}>Coordinate approved audio campaigns and digital-signage playlists under one commercial order, with shared location, date, and daypart eligibility. Each medium keeps its own delivery proof and totals.</p>
     {showOrganisationSelector ? <label style={styles.label}>Organisation<select value={organisationId} onChange={(event) => setOrganisationId(event.target.value)} style={styles.input}>{organisations.map((item) => <option key={item.id} value={item.id}>{item.name}{item.retailMediaEnabled ? "" : " · disabled"}</option>)}</select></label> : <p style={styles.organisationName}>{organisation?.name}</p>}
     {!organisation?.retailMediaEnabled ? <div style={styles.warning}>Retail Media is disabled for this organisation. Enable it from Organisations before creating commercial records.</div> : null}
     {!canApprove ? <div style={styles.notice}>You can prepare partners, inventory drafts, and campaign orders. An organisation owner or manager must activate inventory and record approval decisions.</div> : null}
@@ -113,8 +125,13 @@ export default function RetailMediaConsole({ organisations, canApprove = true, s
       {order.visualCreatives.map((creative) => <div key={creative.id} style={styles.creative}><span>Visual · {creative.signageAsset.name} · {creative.signageAsset.kind}</span><Badge value={creative.status} />{canApprove && order.status === "SUBMITTED" && creative.status === "PENDING" ? <><button disabled={working} onClick={() => patch(`/api/admin/retail-media/orders/${order.id}/review`, { action: "APPROVE_CREATIVE", creativeId: creative.id, creativeType: "VISUAL" }, "Visual creative approved.")} style={styles.secondary}>Approve creative</button><button disabled={working} onClick={() => patch(`/api/admin/retail-media/orders/${order.id}/review`, { action: "REJECT_CREATIVE", creativeId: creative.id, creativeType: "VISUAL" }, "Visual creative rejected.")}>Reject</button></> : null}</div>)}
       <div style={styles.actions}>{order.status === "DRAFT" ? <button disabled={working} onClick={() => patch(`/api/admin/retail-media/orders/${order.id}/review`, { action: "SUBMIT_ORDER" }, "Order submitted for subscriber approval.")} style={styles.primary}>Submit for approval</button> : null}{canApprove && order.status === "SUBMITTED" ? <><button disabled={working || [...order.creatives, ...order.visualCreatives].some((item) => item.status !== "APPROVED")} onClick={() => patch(`/api/admin/retail-media/orders/${order.id}/review`, { action: "APPROVE_ORDER" }, "Subscriber approval recorded. Existing publication checks still apply.")} style={styles.primary}>Approve order</button><button disabled={working} onClick={() => patch(`/api/admin/retail-media/orders/${order.id}/review`, { action: "REJECT_ORDER" }, "Order rejected.")}>Reject order</button></> : null}</div>
       {order.status === "APPROVED" && order.visualCreatives.length ? <div style={styles.creative}><select value={fulfilmentSelections[order.id] || order.visualPlaylists[0]?.id || ""} onChange={(event) => setFulfilmentSelections((current) => ({ ...current, [order.id]: event.target.value }))} style={styles.input}><option value="">Choose published visual playlist</option>{(organisation?.digitalSignagePlaylists || []).filter((playlist) => !playlist.retailMediaOrderId || playlist.retailMediaOrderId === order.id).map((playlist) => <option key={playlist.id} value={playlist.id}>{playlist.name}</option>)}</select><button disabled={working || !(fulfilmentSelections[order.id] || order.visualPlaylists[0]?.id)} onClick={() => patch(`/api/admin/retail-media/orders/${order.id}/visual-fulfilment`, { action: "LINK", playlistId: fulfilmentSelections[order.id] || order.visualPlaylists[0]?.id }, "Approved visual order linked to its targeted playlist.")} style={styles.secondary}>Link visual fulfilment</button></div> : null}
+      {["APPROVED", "FULFILLED"].includes(order.status) ? <div style={styles.readiness}><div style={styles.actions}><button disabled={working} onClick={() => reviewReadiness(order.id)} style={styles.secondary}>Review cross-media readiness</button>{order.status === "FULFILLED" ? <span style={styles.muted}>Activated {order.fulfilledAt ? new Date(order.fulfilledAt).toLocaleString() : ""}{order.fulfilledBy ? ` by ${order.fulfilledBy.name || order.fulfilledBy.email}` : ""}</span> : null}</div>{readinessByOrder[order.id] ? <><div style={styles.readinessGrid}><ReadinessCard label="Audio" value={readinessByOrder[order.id].audio} /><ReadinessCard label="Visual" value={readinessByOrder[order.id].visual} /></div>{readinessByOrder[order.id].sharedBlockers.map((blocker) => <p key={blocker} style={styles.blocker}>{blocker}</p>)}<p style={styles.muted}>{readinessByOrder[order.id].evidenceNotice}</p>{canApprove && order.status === "APPROVED" ? <button disabled={working || !readinessByOrder[order.id].canActivate} onClick={async () => { const result = await patch(`/api/admin/retail-media/orders/${order.id}/activation`, { action: "ACTIVATE" }, "Cross-media delivery activated with an auditable configuration snapshot."); if (result) await reviewReadiness(order.id); }} style={styles.primary}>Activate eligible delivery</button> : null}</> : null}</div> : null}
     </article>)}</div></section>
   </main>;
+}
+
+function ReadinessCard({ label, value }) {
+  return <div style={styles.readinessCard}><strong>{label} · {value.required ? (value.ready ? "ready" : "blocked") : "not required"}</strong>{value.blockers.map((blocker) => <p key={blocker} style={styles.blocker}>{blocker}</p>)}</div>;
 }
 
 const styles = {
@@ -141,5 +158,9 @@ const styles = {
   muted: { color: "#64748b", fontSize: 13, marginTop: 4 },
   message: { marginTop: 14, padding: 12, borderRadius: 8, background: "#e0f2fe", color: "#075985", fontWeight: 700 },
   warning: { marginTop: 16, padding: 14, border: "1px solid #f59e0b", borderRadius: 8, background: "#fffbeb", color: "#92400e", fontWeight: 800 },
-  notice: { padding: 12, borderLeft: "4px solid #f4b942", background: "#fff", color: "#475569", fontSize: 13, lineHeight: 1.5 }
+  notice: { padding: 12, borderLeft: "4px solid #f4b942", background: "#fff", color: "#475569", fontSize: 13, lineHeight: 1.5 },
+  readiness: { padding: 14, border: "1px solid #93c5fd", borderRadius: 9, background: "#eff6ff" },
+  readinessGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 10, margin: "12px 0" },
+  readinessCard: { padding: 12, borderRadius: 8, background: "#fff", color: "#1e3a8a" },
+  blocker: { margin: "6px 0", color: "#991b1b", fontSize: 13, fontWeight: 700 }
 };

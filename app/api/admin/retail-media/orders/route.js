@@ -14,6 +14,7 @@ function orderInclude() {
     inventoryPackage: { select: { id: true, name: true, status: true, maxPlays: true, effectiveFrom: true, effectiveTo: true } },
     campaign: { select: { id: true, name: true, status: true } },
     approvedBy: { select: { id: true, name: true, email: true } },
+    fulfilledBy: { select: { id: true, name: true, email: true } },
     creatives: {
       include: {
         promoVersion: { select: { id: true, version: true, status: true, promoAsset: { select: { id: true, name: true, organisationId: true } } } },
