@@ -139,6 +139,8 @@ Add policy-controlled podcast/web publishing, accessibility metadata, school-saf
 
 Stage 9C begins the publishing portion of S6 with a separately entitled, private-by-default public podcast path. Public release requires an approved safeguarding pack, an explicit school policy, staff-approved content and transcript, approved audio, and current consent for every contributor. Public responses are redacted, audio access is revalidated, and capability, policy, safeguarding, consent, or editorial changes can immediately withdraw an episode. Guarded student accounts never receive publishing authority. See `docs/phase-9c-controlled-school-publishing.md`.
 
+Stage 10A adds the first school-safe operational layer for S6: manager-only daily origin-delivery aggregates, an audited CSV export, release/withdrawal visibility, and a non-destructive preview of safeguarding retention cutoffs. It does not identify listeners or students, claim audience measurement, or delete records automatically. See `docs/phase-10a-school-publication-operations.md`.
+
 ## Definition of ready
 
 Implementation should not begin until the organisation and role foundations are stable, schedule ownership is defined, the safeguarding and privacy decisions are approved, and acceptance tests cover cross-organisation isolation, staff approval, consent revocation, and public-data redaction.
