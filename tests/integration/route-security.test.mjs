@@ -67,6 +67,12 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   const tenantOwnerPlayerHealth = await api("/api/admin/players/health", { cookie: cookieA });
   assert.equal(tenantOwnerPlayerHealth.status, 403);
 
+  const tenantOwnerStreamHealth = await api("/api/admin/streams/health", { cookie: cookieA });
+  assert.equal(tenantOwnerStreamHealth.status, 403);
+
+  const tenantOwnerStreamProbe = await api("/api/admin/streams/not-a-station/probe", { method: "POST", cookie: cookieA });
+  assert.equal(tenantOwnerStreamProbe.status, 403);
+
   const tenantOwnerPlayerCommands = await api("/api/admin/players/commands", { cookie: cookieA });
   assert.equal(tenantOwnerPlayerCommands.status, 403);
 
@@ -116,6 +122,18 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
 
   const unauthenticatedPlayerHealth = await api("/api/admin/players/health");
   assert.equal(unauthenticatedPlayerHealth.status, 401);
+
+  const unauthenticatedStreamHealth = await api("/api/admin/streams/health");
+  assert.equal(unauthenticatedStreamHealth.status, 401);
+
+  const unauthenticatedStreamProbe = await api("/api/admin/streams/not-a-station/probe", { method: "POST" });
+  assert.equal(unauthenticatedStreamProbe.status, 401);
+
+  const unauthenticatedStreamIncidentUpdate = await api("/api/admin/streams/health/not-an-incident", {
+    method: "PATCH",
+    body: { action: "ACKNOWLEDGE", note: "Unauthorised stream incident note." }
+  });
+  assert.equal(unauthenticatedStreamIncidentUpdate.status, 401);
 
   const unauthenticatedPlayerIncidentUpdate = await api("/api/admin/players/health/not-an-incident", {
     method: "PATCH",
@@ -674,6 +692,20 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
       where: { id: accountABody.user.id },
       data: { role: "SUPER_ADMIN" }
     });
+
+    const platformStreamHealth = await api("/api/admin/streams/health", { cookie: cookieA });
+    assert.equal(platformStreamHealth.status, 200, await platformStreamHealth.clone().text());
+    assert.ok(Array.isArray((await platformStreamHealth.json()).stations));
+
+    const missingStreamProbe = await api("/api/admin/streams/not-a-station/probe", { method: "POST", cookie: cookieA });
+    assert.equal(missingStreamProbe.status, 404);
+
+    const missingStreamIncident = await api("/api/admin/streams/health/not-an-incident", {
+      method: "PATCH",
+      cookie: cookieA,
+      body: { action: "ACKNOWLEDGE", note: "No matching stream incident." }
+    });
+    assert.equal(missingStreamIncident.status, 404);
 
     const metricsLocation = await db.location.create({
       data: {
