@@ -86,6 +86,9 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   const tenantOwnerJobs = await api("/api/admin/jobs", { cookie: cookieA });
   assert.equal(tenantOwnerJobs.status, 403);
 
+  const tenantOwnerOperationalHealth = await api("/api/admin/operations/health", { cookie: cookieA });
+  assert.equal(tenantOwnerOperationalHealth.status, 403);
+
   const ownNotifications = await api("/api/notifications", { cookie: cookieA });
   assert.equal(ownNotifications.status, 200, await ownNotifications.clone().text());
   assert.ok(Array.isArray((await ownNotifications.json()).deliveries));
@@ -184,6 +187,9 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   const unauthenticatedJobs = await api("/api/admin/jobs");
   assert.equal(unauthenticatedJobs.status, 401);
 
+  const unauthenticatedOperationalHealth = await api("/api/admin/operations/health");
+  assert.equal(unauthenticatedOperationalHealth.status, 401);
+
   const unauthenticatedNotifications = await api("/api/notifications");
   assert.equal(unauthenticatedNotifications.status, 401);
 
@@ -210,6 +216,9 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
 
   const unauthenticatedIntegrationCreate = await api("/api/admin/integrations/connections", { method: "POST", body: {} });
   assert.equal(unauthenticatedIntegrationCreate.status, 401);
+
+  const unauthenticatedIntegrationRecovery = await api("/api/admin/integrations/connections/not-a-connection/dispatch", { method: "POST", body: { action: "RECOVER_ABANDONED", note: "Unauthenticated recovery attempt." } });
+  assert.equal(unauthenticatedIntegrationRecovery.status, 401);
 
   const unauthenticatedPromoArchive = await api(
     "/api/admin/promos/example/status",
@@ -679,6 +688,13 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   });
   assert.equal(ownerIntegrationAttempt.status, 403);
 
+  const ownerIntegrationRecoveryAttempt = await api("/api/admin/integrations/connections/not-a-connection/dispatch", {
+    method: "POST",
+    cookie: cookieA,
+    body: { action: "RECOVER_ABANDONED", note: "Organisation owners cannot recover delivery evidence." }
+  });
+  assert.equal(ownerIntegrationRecoveryAttempt.status, 403);
+
   const ownerNetworkCreateAttempt = await api("/api/school-radio/network", {
     method: "POST",
     cookie: cookieA,
@@ -738,6 +754,14 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     assert.equal(platformJobs.status, 200, await platformJobs.clone().text());
     assert.ok(Array.isArray((await platformJobs.json()).jobs));
 
+    const platformOperationalHealth = await api("/api/admin/operations/health", { cookie: cookieA });
+    assert.equal(platformOperationalHealth.status, 200, await platformOperationalHealth.clone().text());
+    const platformOperationalBody = await platformOperationalHealth.json();
+    assert.ok(["HEALTHY", "ATTENTION", "CRITICAL"].includes(platformOperationalBody.status));
+    assert.ok(Array.isArray(platformOperationalBody.deployment.instances));
+    assert.ok(platformOperationalBody.queues.jobs);
+    assert.equal(JSON.stringify(platformOperationalBody).includes("instanceId"), false);
+
     const missingStreamProbe = await api("/api/admin/streams/not-a-station/probe", { method: "POST", cookie: cookieA });
     assert.equal(missingStreamProbe.status, 404);
 
@@ -766,6 +790,30 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     assert.match(integrationBody.secret, /^rvwhsec_[a-f0-9]{64}$/);
     const storedIntegration = await db.integrationConnection.findUnique({ where: { id: integrationBody.connection.id } });
     assert.notEqual(storedIntegration.encryptedSecret, integrationBody.secret);
+
+    const abandonedWebhook = await db.outgoingWebhookEvent.create({
+      data: {
+        organisationId: accountABody.organisation.id,
+        connectionId: integrationBody.connection.id,
+        eventType: "campaign.published",
+        idempotencyKey: `route-recovery:${suffix}`,
+        payload: { campaignId: `campaign-${suffix}` },
+        status: "ABANDONED",
+        attemptCount: 5,
+        lastError: "WEBHOOK_HTTP_503"
+      }
+    });
+    const integrationRecovery = await api(`/api/admin/integrations/connections/${integrationBody.connection.id}/dispatch`, {
+      method: "POST",
+      cookie: cookieA,
+      body: { action: "RECOVER_ABANDONED", note: "Endpoint incident resolved and retry approved." }
+    });
+    assert.equal(integrationRecovery.status, 200, await integrationRecovery.clone().text());
+    assert.equal((await integrationRecovery.json()).recovered, 1);
+    const recoveredWebhook = await db.outgoingWebhookEvent.findUniqueOrThrow({ where: { id: abandonedWebhook.id } });
+    assert.equal(recoveredWebhook.status, "FAILED");
+    assert.equal(recoveredWebhook.recoveryCount, 1);
+    assert.equal(await db.auditLog.count({ where: { entityId: integrationBody.connection.id, action: "INTEGRATION_ABANDONED_RECOVERY_QUEUED" } }), 1);
 
     const serviceAccountResponse = await api("/api/admin/security/service-accounts", {
       method: "POST",

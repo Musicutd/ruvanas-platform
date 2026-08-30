@@ -11,6 +11,7 @@ import {
   validateWebhookEndpoint,
   webhookIdempotencyKey
 } from "../lib/outgoing-webhooks.mjs";
+import { safeWebhookFailureCode } from "../lib/outgoing-webhook-service.js";
 
 const SECRET = "rvwhsec_stage-6b-signature-test-secret-that-is-long-enough";
 
@@ -52,5 +53,11 @@ test("outgoing event payloads expose only documented non-sensitive fields", () =
 
 test("event subscriptions are allow-listed and deduplicated", () => {
   assert.deepEqual(normalizeWebhookEventTypes(["proof.accepted", "PROOF.ACCEPTED", "notification.created", "unknown"]), ["notification.created", "proof.accepted"]);
+});
+
+test("delivery failures are reduced to bounded operational codes", () => {
+  assert.equal(safeWebhookFailureCode(Object.assign(new Error("secret provider detail"), { code: "WEBHOOK_HTTP_503" })), "WEBHOOK_HTTP_503");
+  assert.equal(safeWebhookFailureCode(Object.assign(new Error("lookup detail"), { code: "WEBHOOK_DNS_FAILED" })), "WEBHOOK_DNS_FAILED");
+  assert.equal(safeWebhookFailureCode(new Error("token=must-not-leak")), "WEBHOOK_REQUEST_FAILED");
 });
 

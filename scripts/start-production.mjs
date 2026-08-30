@@ -16,7 +16,7 @@ if (process.env.DATABASE_URL?.trim()) {
 if (requiredWorkerEnvironment.every((name) => process.env[name]?.trim())) {
   start(process.execPath, ["scripts/audio-worker.mjs"]);
 } else {
-  console.log("Protected media worker skipped because protected storage is not configured in this environment.");
+  console.log(JSON.stringify({ timestamp: new Date().toISOString(), level: "info", event: "protected_media_worker_skipped", service: "STARTUP", environment: process.env.RUVANAS_ENVIRONMENT || process.env.RENDER_SERVICE_NAME || process.env.NODE_ENV || "local", reasonCode: "PROTECTED_STORAGE_NOT_CONFIGURED" }));
 }
 
 function shutdown(signal) {

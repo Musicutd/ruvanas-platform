@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
 import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { pipeline } from "node:stream/promises";
@@ -11,9 +11,14 @@ import ffmpegPath from "ffmpeg-static";
 import ffprobeStatic from "ffprobe-static";
 import { S3Client } from "@aws-sdk/client-s3";
 import { buildMultitrackRenderGraph, buildRenderGraph, parseLoudnessReport, reducePcmPeaks } from "../lib/audio-worker.mjs";
+import { deploymentIdentity, safeOperationalErrorCode, structuredServiceLog } from "../lib/operational-observability.mjs";
+import { recordServiceHeartbeat } from "../lib/operational-observability-service.js";
 
 const prisma = new PrismaClient();
 const intervalMs = Math.max(2000, Number(process.env.AUDIO_WORKER_INTERVAL_MS || 5000));
+const processStartedAt = new Date();
+const identity = deploymentIdentity({ service: "AUDIO_WORKER", instanceId: String(process.env.RENDER_INSTANCE_ID || `audio-${hostname()}-${process.pid}`).slice(0, 120), startedAt: processStartedAt });
+const writeLog = (level, event, details = {}) => console[level === "error" ? "error" : level === "warn" ? "warn" : "log"](structuredServiceLog(identity, level, event, details));
 const storage = {
   client: new S3Client({
     region: "auto", endpoint: process.env.R2_ENDPOINT, forcePathStyle: true,
@@ -67,7 +72,7 @@ async function processWaveform() {
       prisma.mediaAsset.update({ where: { id: take.mediaAssetId }, data: { durationSeconds } })
     ]);
   } catch (error) {
-    console.error("waveform job failed", take.id, error);
+    writeLog("error", "waveform_job_failed", { entityId: take.id, errorCode: safeOperationalErrorCode(error, "WAVEFORM_JOB_FAILED") });
     await prisma.audioTake.update({ where: { id: take.id }, data: { waveformStatus: "FAILED" } }).catch(() => {});
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -127,9 +132,9 @@ async function processRender() {
       await tx.audioRender.update({ where: { id: render.id }, data: { status: "SUCCEEDED", completedAt: new Date(), outputMediaAssetId: mediaAsset.id, outputPromoVersionId: promoVersion?.id || null, loudnessLufs: report.integratedLufs, resultJson: { ...report, durationSeconds, immutableSource: true, version: render.version.version } } });
       return { mediaAsset, promoVersion };
     });
-    console.log("audio render complete", render.id, result.mediaAsset.id);
+    writeLog("info", "audio_render_completed", { entityId: render.id, outputEntityId: result.mediaAsset.id });
   } catch (error) {
-    console.error("audio render failed", render.id, error);
+    writeLog("error", "audio_render_failed", { entityId: render.id, errorCode: safeOperationalErrorCode(error, "AUDIO_RENDER_FAILED") });
     await prisma.audioRender.update({ where: { id: render.id }, data: { status: "FAILED", completedAt: new Date(), errorMessage: String(error?.message || "Render failed").slice(0, 2000) } }).catch(() => {});
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -192,9 +197,9 @@ async function processSignageVideo() {
       prisma.auditLog.create({ data: { organisationId: job.asset.organisationId, actorUserId: job.asset.uploadedByUserId, action: "DIGITAL_SIGNAGE_VIDEO_READY", entityType: "DigitalSignageAsset", entityId: job.assetId, details: { width: outputStream.width, height: outputStream.height, durationSeconds, normalizedMimeType: "video/mp4" } } })
     ]);
     await storage.client.send(new DeleteObjectCommand({ Bucket: storage.bucketName, Key: job.asset.storageKey })).catch(() => {});
-    console.log("signage video ready", job.assetId);
+    writeLog("info", "signage_video_ready", { entityId: job.assetId });
   } catch (error) {
-    console.error("signage video failed", job.assetId, error);
+    writeLog("error", "signage_video_failed", { entityId: job.assetId, errorCode: safeOperationalErrorCode(error, "SIGNAGE_VIDEO_FAILED") });
     const errorMessage = String(error?.message || "Video processing failed").slice(0, 2000);
     await prisma.$transaction([
       prisma.digitalSignageVideoJob.update({ where: { id: job.id }, data: { status: "FAILED", completedAt: new Date(), errorMessage } }),
@@ -208,9 +213,13 @@ async function processSignageVideo() {
 
 let stopping = false;
 for (const signal of ["SIGTERM", "SIGINT"]) process.once(signal, () => { stopping = true; });
-console.log("Ruvanas protected media worker ready");
+await recordServiceHeartbeat(prisma, { identity, details: { intervalMs } });
+const heartbeatTimer = setInterval(() => recordServiceHeartbeat(prisma, { identity, details: { intervalMs } }).catch((error) => writeLog("error", "audio_worker_heartbeat_failed", { errorCode: safeOperationalErrorCode(error) })), 30_000);
+heartbeatTimer.unref();
+writeLog("info", "audio_worker_ready", { intervalMs });
 while (!stopping) {
   const worked = await processWaveform() || await processRender() || await processSignageVideo();
   if (!worked) await new Promise((resolve) => setTimeout(resolve, intervalMs));
 }
+clearInterval(heartbeatTimer);
 await prisma.$disconnect();
