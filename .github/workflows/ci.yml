@@ -64,6 +64,9 @@ jobs:
       - name: Validate Prisma schema
         run: npx prisma validate
 
+      - name: Verify critical performance indexes
+        run: npm run ci:performance-indexes
+
       - name: Apply database migrations
         run: npx prisma migrate deploy
 
@@ -95,6 +98,11 @@ jobs:
         env:
           INTEGRATION_BASE_URL: http://127.0.0.1:3100
         run: npm run test:smoke
+
+      - name: Run performance regression baseline
+        env:
+          INTEGRATION_BASE_URL: http://127.0.0.1:3100
+        run: npm run test:performance
 
       - name: Show application logs after failure
         if: failure()
