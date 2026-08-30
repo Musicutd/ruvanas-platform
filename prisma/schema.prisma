@@ -199,6 +199,13 @@ enum SourceConnectionStatus {
   ERROR
 }
 
+enum StreamProbeStatus {
+  HEALTHY
+  DEGRADED
+  UNREACHABLE
+  SKIPPED
+}
+
 enum PlayoutEventType {
   WORKER_STARTED
   WORKER_STOPPED
@@ -1035,6 +1042,8 @@ model User {
   endedDigitalSignageTakeovers      DigitalSignageTakeover[]         @relation("DigitalSignageTakeoverEndedBy")
   acknowledgedPlayerHealthIncidents PlayerHealthIncident[]           @relation("PlayerHealthIncidentAcknowledgedBy")
   resolvedPlayerHealthIncidents     PlayerHealthIncident[]           @relation("PlayerHealthIncidentResolvedBy")
+  acknowledgedStreamHealthIncidents StationStreamHealthIncident[]    @relation("StationStreamHealthIncidentAcknowledgedBy")
+  resolvedStreamHealthIncidents     StationStreamHealthIncident[]    @relation("StationStreamHealthIncidentResolvedBy")
   requestedPlayerCommands           PlayerCommand[]                  @relation("PlayerCommandRequestedBy")
 }
 
@@ -1129,6 +1138,8 @@ model Organisation {
   playerHeartbeatSamples           PlayerHeartbeatSample[]
   playerHealthIncidents            PlayerHealthIncident[]
   playerCommands                   PlayerCommand[]
+  streamHealthSamples              StationStreamHealthSample[]
+  streamHealthIncidents            StationStreamHealthIncident[]
   retailMediaPartners              RetailMediaPartner[]
   retailMediaInventory             RetailMediaInventoryPackage[]
   retailMediaOrders                RetailMediaOrder[]
@@ -1625,10 +1636,12 @@ model Station {
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
 
-  organisation  Organisation         @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  streamConfig  StationStreamConfig?
-  channels      Channel[]
-  playoutEvents PlayoutEvent[]
+  organisation          Organisation                  @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  streamConfig          StationStreamConfig?
+  channels              Channel[]
+  playoutEvents         PlayoutEvent[]
+  streamHealthSamples   StationStreamHealthSample[]
+  streamHealthIncidents StationStreamHealthIncident[]
 
   @@index([organisationId])
 }
@@ -1654,13 +1667,81 @@ model StationStreamConfig {
   lastHeartbeatAt        DateTime?
   lastError              String?
 
+  providerKey           String    @default("CENTOVA_CAST")
+  backupStreamUrl       String?
+  probeEnabled          Boolean   @default(true)
+  probeIntervalSeconds  Int       @default(60)
+  probeTimeoutMs        Int       @default(8000)
+  lastProbeAt           DateTime?
+  lastSuccessfulProbeAt DateTime?
+  consecutiveFailures   Int       @default(0)
+  lastProbeHttpStatus   Int?
+  lastProbeLatencyMs    Int?
+  lastProbeContentType  String?
+
   adminPasswordEncrypted  String?
   sourcePasswordEncrypted String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  station Station @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  station       Station                     @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  healthSamples StationStreamHealthSample[]
+
+  @@index([probeEnabled, lastProbeAt])
+}
+
+model StationStreamHealthSample {
+  id             String            @id @default(cuid())
+  organisationId String
+  stationId      String
+  streamConfigId String
+  bucketStart    DateTime
+  observedAt     DateTime
+  status         StreamProbeStatus
+  latencyMs      Int?
+  httpStatus     Int?
+  contentType    String?
+  errorCode      String?
+  createdAt      DateTime          @default(now())
+
+  organisation Organisation        @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  station      Station             @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  streamConfig StationStreamConfig @relation(fields: [streamConfigId], references: [id], onDelete: Cascade)
+
+  @@unique([streamConfigId, bucketStart])
+  @@index([organisationId, observedAt])
+  @@index([stationId, observedAt])
+  @@index([status, observedAt])
+}
+
+model StationStreamHealthIncident {
+  id                  String                       @id @default(cuid())
+  organisationId      String
+  stationId           String
+  status              PlayerHealthIncidentStatus   @default(OPEN)
+  severity            PlayerHealthIncidentSeverity @default(MEDIUM)
+  firstObservedAt     DateTime
+  lastObservedAt      DateTime
+  summary             String
+  details             Json?
+  acknowledgedAt      DateTime?
+  acknowledgedById    String?
+  acknowledgementNote String?
+  resolvedAt          DateTime?
+  resolvedById        String?
+  resolutionNote      String?
+  createdAt           DateTime                     @default(now())
+  updatedAt           DateTime                     @updatedAt
+
+  organisation   Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  station        Station      @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  acknowledgedBy User?        @relation("StationStreamHealthIncidentAcknowledgedBy", fields: [acknowledgedById], references: [id], onDelete: SetNull)
+  resolvedBy     User?        @relation("StationStreamHealthIncidentResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull)
+
+  @@index([organisationId, status, severity])
+  @@index([stationId, status])
+  @@index([lastObservedAt])
 }
 
 model PlayoutEvent {
@@ -4127,21 +4208,21 @@ model Player {
 }
 
 model PlayerCommand {
-  id              String              @id @default(cuid())
-  organisationId  String
-  playerId        String
-  kind            PlayerCommandKind
-  status          PlayerCommandStatus @default(PENDING)
-  requestedById   String
-  requestedAt     DateTime            @default(now())
-  expiresAt       DateTime
-  deliveredAt     DateTime?
-  acknowledgedAt  DateTime?
-  resultCode      String?
-  resultMessage   String?
-  resultDetails   Json?
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
+  id             String              @id @default(cuid())
+  organisationId String
+  playerId       String
+  kind           PlayerCommandKind
+  status         PlayerCommandStatus @default(PENDING)
+  requestedById  String
+  requestedAt    DateTime            @default(now())
+  expiresAt      DateTime
+  deliveredAt    DateTime?
+  acknowledgedAt DateTime?
+  resultCode     String?
+  resultMessage  String?
+  resultDetails  Json?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
 
   organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   player       Player       @relation(fields: [playerId], references: [id], onDelete: Cascade)
