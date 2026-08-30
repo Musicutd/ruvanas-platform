@@ -89,7 +89,7 @@ jobs:
           cat /tmp/ruvanas-next.log
           exit 1
 
-      - name: Run route-level security tests
+      - name: Run route and player lifecycle integration tests
         env:
           INTEGRATION_BASE_URL: http://127.0.0.1:3100
         run: npm run test:integration
@@ -111,4 +111,5 @@ jobs:
       - name: Stop application
         if: always()
         run: test ! -f /tmp/ruvanas-next.pid || kill $(cat /tmp/ruvanas-next.pid) || true
+
 
