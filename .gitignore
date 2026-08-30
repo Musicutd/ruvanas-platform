@@ -1,7 +1,9 @@
 node_modules/
 .next/
+.npm-cache/
 .env
 .env.*
 !.env.example
 .tmp-stage*-postgres/
+.tmp-stage*-pgdata/
 .tmp-stage*.log

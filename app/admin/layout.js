@@ -107,6 +107,11 @@ const navItems = [
     href: "/admin/operations",
     label: "Platform health",
     superAdminOnly: true
+  },
+  {
+    href: "/admin/recovery",
+    label: "Backup & recovery",
+    superAdminOnly: true
   }
 ];
 
