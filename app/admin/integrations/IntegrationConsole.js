@@ -4,6 +4,7 @@ import { useState } from "react";
 
 const EVENTS = [
   ["campaign.published", "Campaign published"],
+  ["notification.created", "Operational notification created"],
   ["player.health_changed", "Player health changed"],
   ["proof.accepted", "Proof accepted"],
   ["production.status_changed", "Production status changed"]

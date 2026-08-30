@@ -14,6 +14,8 @@ Stage 11D establishes the reliable asynchronous work and notification layer requ
 - A super-admin operations screen showing queue health and audited manual recovery for dead-letter jobs.
 - Email and webhook channels represented only as future extension points; external delivery is not enabled.
 
+Stage 12A now activates these extension points behind explicit opt-in, provider configuration and the existing signed-integration controls. See [Controlled External Notification Delivery](phase-12a-external-notification-delivery.md).
+
 ## Reliability boundary
 
 The worker claims a job by writing a random lease token and expiration. Only the holder of that token can complete or fail it. An expired lease can be reclaimed after a worker interruption. Failures expose a bounded public code and generic message, then retry with exponential backoff up to the configured maximum. Exhausted work moves to `DEAD_LETTER` and requires a super-admin note to retry.

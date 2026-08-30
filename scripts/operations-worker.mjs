@@ -1,6 +1,7 @@
 import { hostname } from "node:os";
 import { prisma } from "../lib/prisma.js";
 import { processJobBatch } from "../lib/job-notification-service.js";
+import { processOutgoingWebhookBatch } from "../lib/outgoing-webhook-service.js";
 import { PLAYER_HEALTH_SCAN_SECONDS } from "../lib/player-health.mjs";
 import { scanPlayerHealth } from "../lib/player-health-service.js";
 import { expirePlayerCommands } from "../lib/player-command-service.js";
@@ -15,6 +16,8 @@ while (!stopping) {
   try {
     const jobs = await processJobBatch(prisma, { workerId });
     if (jobs.claimed > 0) console.log(JSON.stringify({ timestamp: new Date().toISOString(), level: jobs.deadLettered > 0 ? "error" : "info", event: "job_batch_processed", workerId, ...jobs }));
+    const webhooks = await processOutgoingWebhookBatch(prisma);
+    if (webhooks.claimed > 0) console.log(JSON.stringify({ timestamp: new Date().toISOString(), level: webhooks.abandoned > 0 ? "error" : webhooks.failed > 0 ? "warn" : "info", event: "webhook_batch_processed", workerId, ...webhooks }));
     const result = await scanPlayerHealth(prisma);
     if (result.created > 0) console.warn(JSON.stringify({ level: "warn", event: "player_health_incident_opened", ...result }));
     const commands = await expirePlayerCommands(prisma);

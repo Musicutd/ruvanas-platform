@@ -15,6 +15,7 @@ const LABELS = {
 export default function NotificationsClient({ organisationName }) {
   const [notifications, setNotifications] = useState(null);
   const [preferences, setPreferences] = useState([]);
+  const [emailConfigured, setEmailConfigured] = useState(false);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
 
@@ -33,6 +34,7 @@ export default function NotificationsClient({ organisationName }) {
       if (!preferenceResponse.ok) throw new Error(preferenceBody.error || "Unable to load notification preferences.");
       setNotifications(notificationBody);
       setPreferences(preferenceBody.preferences || []);
+      setEmailConfigured(preferenceBody.emailConfigured === true);
     } catch (loadError) {
       setError(loadError.message || "Unable to load notifications.");
     }
@@ -59,18 +61,18 @@ export default function NotificationsClient({ organisationName }) {
     }
   }
 
-  async function updatePreference(type, enabled) {
-    setBusy(`preference:${type}`);
+  async function updatePreference(type, channel, enabled) {
+    setBusy(`preference:${channel}:${type}`);
     setError("");
     try {
       const response = await fetch("/api/notifications/preferences", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type, enabled })
+        body: JSON.stringify({ type, channel, enabled })
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || "Unable to update the notification preference.");
-      setPreferences((current) => current.map((item) => item.type === type ? { ...item, enabled } : item));
+      setPreferences((current) => current.map((item) => item.type === type && item.channel === channel ? { ...item, enabled } : item));
     } catch (preferenceError) {
       setError(preferenceError.message || "Unable to update the notification preference.");
     } finally {
@@ -82,7 +84,7 @@ export default function NotificationsClient({ organisationName }) {
     <header style={styles.header}>
       <div>
         <a href="/dashboard" style={styles.back}>← Client dashboard</a>
-        <p style={styles.eyebrow}>STAGE 11D · IN-APP NOTIFICATIONS</p>
+        <p style={styles.eyebrow}>STAGE 12A · CONTROLLED EXTERNAL NOTIFICATIONS</p>
         <h1 style={styles.title}>Operational notifications</h1>
         <p style={styles.subtitle}>{organisationName} · clear, tenant-safe alerts for playback, streams, campaigns, billing, production, and school review operations.</p>
       </div>
@@ -92,7 +94,7 @@ export default function NotificationsClient({ organisationName }) {
     {error ? <p role="alert" style={styles.error}>{error}</p> : null}
     <section style={styles.summary}>
       <div><span style={styles.summaryLabel}>Unread</span><strong style={styles.summaryValue}>{notifications?.unread ?? "—"}</strong></div>
-      <p style={styles.summaryText}>Email and webhook delivery remain disabled until their security and consent controls are implemented.</p>
+      <p style={styles.summaryText}>{emailConfigured ? "Email delivery is available by explicit opt-in. Signed webhooks are managed by a Ruvanas Super Admin under API & integrations." : "In-app delivery is active. Email remains safely disabled until the provider is configured; signed webhooks are managed under API & integrations."}</p>
     </section>
 
     <section style={styles.grid}>
@@ -115,12 +117,21 @@ export default function NotificationsClient({ organisationName }) {
       </article>
 
       <aside style={styles.card}>
-        <h2 style={styles.sectionTitle}>In-app preferences</h2>
+        <h2 style={styles.sectionTitle}>Delivery preferences</h2>
+        <p style={styles.preferenceHeading}>In-app</p>
         <p style={styles.muted}>Choose which operational events appear here. Critical platform safeguards may still be shown where legally or operationally required.</p>
-        <div style={styles.preferenceList}>{preferences.map((preference) => (
-          <label key={preference.type} style={styles.preference}>
+        <div style={styles.preferenceList}>{preferences.filter((item) => item.channel === "IN_APP").map((preference) => (
+          <label key={`${preference.channel}:${preference.type}`} style={styles.preference}>
             <span>{LABELS[preference.type] || preference.type}</span>
-            <input type="checkbox" checked={preference.enabled} disabled={busy === `preference:${preference.type}`} onChange={(event) => updatePreference(preference.type, event.target.checked)} />
+            <input type="checkbox" checked={preference.enabled} disabled={busy === `preference:${preference.channel}:${preference.type}`} onChange={(event) => updatePreference(preference.type, preference.channel, event.target.checked)} />
+          </label>
+        ))}</div>
+        <p style={styles.preferenceHeading}>Email — explicit opt-in</p>
+        <p style={styles.muted}>{emailConfigured ? "Messages contain only bounded operational summaries and direct you back to the secure portal." : "Unavailable until a Ruvanas administrator configures the approved email provider."}</p>
+        <div style={styles.preferenceList}>{preferences.filter((item) => item.channel === "EMAIL").map((preference) => (
+          <label key={`${preference.channel}:${preference.type}`} style={{ ...styles.preference, ...(!emailConfigured ? styles.preferenceDisabled : {}) }}>
+            <span>{LABELS[preference.type] || preference.type}</span>
+            <input type="checkbox" checked={preference.enabled} disabled={!emailConfigured || busy === `preference:${preference.channel}:${preference.type}`} onChange={(event) => updatePreference(preference.type, preference.channel, event.target.checked)} />
           </label>
         ))}</div>
       </aside>
@@ -162,7 +173,9 @@ const styles = {
   secondary: { border: "1px solid #f4b942", borderRadius: 7, padding: "9px 12px", background: "transparent", color: "#f4b942", fontWeight: 800, cursor: "pointer" },
   dismiss: { border: "1px solid #52627d", borderRadius: 7, padding: "9px 12px", background: "transparent", color: "#dbe3ee", fontWeight: 800, cursor: "pointer" },
   preferenceList: { display: "grid", gap: 4 },
+  preferenceHeading: { margin: "20px 0 4px", color: "#f4b942", fontWeight: 900, textTransform: "uppercase", letterSpacing: 0.8, fontSize: 12 },
   preference: { display: "flex", justifyContent: "space-between", gap: 16, padding: "11px 0", borderBottom: "1px solid #2b3a54", color: "#dbe3ee", fontWeight: 700 },
+  preferenceDisabled: { opacity: 0.55 },
   muted: { color: "#aebbd0", lineHeight: 1.55 },
   good: { padding: 12, borderRadius: 8, background: "#163628", color: "#bbf7d0", fontWeight: 800 },
   error: { color: "#fecaca", background: "#3f1d27", border: "1px solid #9f4b4b", borderRadius: 8, padding: 12, margin: "16px 0 0" }

@@ -13,6 +13,7 @@ import {
   getInAppNotifications,
   processJobBatch,
   retryDeadLetterJob,
+  setNotificationPreference,
   setInAppPreference,
   updateInAppDelivery
 } from "../lib/job-notification-service.js";
@@ -97,6 +98,7 @@ test("database jobs lease once, deliver by preference, dead-letter, and recover"
     assert.equal(await updateInAppDelivery(database, { deliveryId: inbox.deliveries[0].id, organisationId: organisation.id, userId: user.id, action: "READ" }), true);
 
     await setInAppPreference(database, { organisationId: organisation.id, userId: user.id, type: "STREAM_ERROR", enabled: false });
+    await setNotificationPreference(database, { organisationId: organisation.id, userId: user.id, type: "STREAM_ERROR", channel: "EMAIL", enabled: true });
     await database.$transaction((tx) => enqueueNotificationEvent(tx, {
       organisationId: organisation.id,
       type: "STREAM_ERROR",
@@ -105,8 +107,46 @@ test("database jobs lease once, deliver by preference, dead-letter, and recover"
       message: "The source did not return expected audio content.",
       correlationId: `stream:${suffix}`
     }));
-    assert.deepEqual(await processJobBatch(database, { workerId: "preference-worker", organisationId: organisation.id, log: () => {} }), { claimed: 1, succeeded: 1, retried: 0, deadLettered: 0 });
+    const sent = [];
+    const webhookEvents = [];
+    assert.deepEqual(await processJobBatch(database, {
+      workerId: "preference-worker",
+      organisationId: organisation.id,
+      log: () => {},
+      emailSender: async ({ event, recipientEmail }) => { sent.push({ eventId: event.id, recipientEmail }); return { configured: true, delivered: true }; },
+      webhookQueue: async (_client, input) => { webhookEvents.push(input); return 1; }
+    }), { claimed: 1, succeeded: 1, retried: 0, deadLettered: 0 });
     assert.equal(await database.notificationDelivery.count({ where: { organisationId: organisation.id, status: "SKIPPED" } }), 1);
+    assert.equal(await database.notificationDelivery.count({ where: { organisationId: organisation.id, channel: "EMAIL", status: "DELIVERED" } }), 1);
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].recipientEmail, user.email);
+    assert.equal(webhookEvents[0].eventType, "notification.created");
+
+    await setNotificationPreference(database, { organisationId: organisation.id, userId: user.id, type: "BILLING_STATE", channel: "EMAIL", enabled: true });
+    const failingEvent = await database.$transaction((tx) => enqueueNotificationEvent(tx, {
+      organisationId: organisation.id,
+      type: "BILLING_STATE",
+      severity: "CRITICAL",
+      title: "Background operation needs attention",
+      message: "A bounded background operation could not be completed.",
+      correlationId: `email-failure:${suffix}`
+    }));
+    assert.deepEqual(await processJobBatch(database, {
+      workerId: "email-failure-worker",
+      organisationId: organisation.id,
+      log: () => {},
+      emailSender: async () => { throw Object.assign(new Error("provider details must not leak"), { code: "EMAIL_PROVIDER_HTTP_503" }); },
+      webhookQueue: async () => 0
+    }), { claimed: 1, succeeded: 0, retried: 1, deadLettered: 0 });
+    const failedEmail = await database.notificationDelivery.findUniqueOrThrow({
+      where: { notificationEventId_userId_channel: { notificationEventId: failingEvent.id, userId: user.id, channel: "EMAIL" } }
+    });
+    assert.equal(failedEmail.status, "FAILED");
+    assert.equal(failedEmail.failureCode, "EMAIL_PROVIDER_HTTP_503");
+    const retryJob = await database.job.findFirstOrThrow({ where: { organisationId: organisation.id, correlationId: `email-failure:${suffix}` } });
+    assert.equal(retryJob.status, "RETRY_SCHEDULED");
+    assert.equal(retryJob.lastErrorCode, "EMAIL_PROVIDER_HTTP_503");
+    assert.equal(retryJob.lastErrorMessage.includes("provider details"), false);
 
     const invalid = await database.job.create({
       data: {
