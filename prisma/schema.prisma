@@ -4224,8 +4224,10 @@ model OutgoingWebhookEvent {
   payload        Json
   status         WebhookDeliveryStatus @default(PENDING)
   attemptCount   Int                   @default(0)
+  recoveryCount  Int                   @default(0)
   nextAttemptAt  DateTime              @default(now())
   deliveredAt    DateTime?
+  lastRecoveredAt DateTime?
   lastError      String?
   createdAt      DateTime              @default(now())
   updatedAt      DateTime              @updatedAt

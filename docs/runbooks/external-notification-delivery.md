@@ -8,6 +8,8 @@
 4. Deploy, open the notification centre and confirm email toggles become available.
 5. Opt in a controlled staff test account to one low-risk event and verify one delivery before wider use.
 
+An optional secondary adapter uses `NOTIFICATION_EMAIL_FAILOVER_ENDPOINT`, `NOTIFICATION_EMAIL_FAILOVER_TOKEN` and `NOTIFICATION_EMAIL_FAILOVER_FROM`. Configure all three or none. It is used only after primary DNS failure or an explicit HTTP 502, 503 or 504. It is deliberately not used after a timeout or ambiguous connection failure because that could duplicate a message.
+
 Never copy provider tokens into support tickets, job notes, screenshots or repository files. Do not configure the suspended free staging service.
 
 ## Email failures
@@ -23,8 +25,12 @@ Never copy provider tokens into support tickets, job notes, screenshots or repos
 1. Review **Admin → API & integrations** for a degraded connection and the worker logs for aggregate webhook-batch results.
 2. Confirm the partner endpoint remains HTTPS, publicly resolvable and subscribed to `notification.created`.
 3. Ask the partner to verify the signature, timestamp and idempotency headers and to return a successful HTTP status within ten seconds.
-4. Failed events retry automatically. An abandoned event remains preserved as delivery evidence.
-5. Rotate or revoke a signing secret only through the existing integration controls.
+4. Failed events retry automatically. An abandoned event remains preserved as delivery evidence and will not retry on its own.
+5. After the endpoint incident is corrected, enter a clear recovery reason and choose **Queue abandoned recovery**. Recover at most one displayed batch, then confirm delivery health before repeating.
+6. Stop after an event reaches three recovery cycles. Escalate with the connection ID, safe failure code and UTC timestamps; do not erase or recreate the event.
+7. Rotate or revoke a signing secret only through the existing integration controls.
+
+The delivery-health summary separates pending, failed, delivered and abandoned events. Manual recovery never resets the attempt counter or removes earlier delivery attempts.
 
 ## Privacy and incident evidence
 

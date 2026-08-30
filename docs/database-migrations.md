@@ -1,5 +1,11 @@
 # Database migration operations
 
+## Stage 12B External Delivery Resilience and Recovery
+
+Migration `20260927000000_stage_12b_delivery_resilience` adds an additive recovery counter and last-recovered timestamp to outgoing webhook events. A database check bounds the counter from zero through three. Existing events default to zero and all attempt, status and idempotency evidence remains unchanged.
+
+The previous application can run with these fields present. During application rollback, retain them and never remove webhook attempts or reset attempt counters. Any later destructive removal requires a separately approved operational-evidence retention decision.
+
 ## Stage 11D Job and In-App Notification Foundation
 
 Migration `20260926000000_stage_11d_job_notification_foundation` adds a PostgreSQL-backed job queue with exclusive leases, bounded exponential retries, dead-letter recovery, correlation identifiers, and safe result/error fields. It also adds tenant-scoped notification events, per-user in-app preferences, and delivery/read/dismissal evidence. The first producers are new player-offline and stream-source incidents.

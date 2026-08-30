@@ -9,24 +9,28 @@ export default async function IntegrationsPage() {
   const user = await getAdminUser();
   if (!user) redirect("/login");
   if (user.role !== "SUPER_ADMIN") redirect("/admin");
-  const [organisations, connections] = await Promise.all([
+  const [organisations, connections, deliveryGroups] = await Promise.all([
     prisma.organisation.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
     prisma.integrationConnection.findMany({
       include: {
         organisation: { select: { name: true } },
         _count: { select: { events: true, syncRuns: true, metricSummaries: true } },
-        events: { select: { id: true, eventType: true, status: true, attemptCount: true, lastError: true, createdAt: true, deliveredAt: true }, orderBy: { createdAt: "desc" }, take: 8 },
+        events: { select: { id: true, eventType: true, status: true, attemptCount: true, recoveryCount: true, lastError: true, nextAttemptAt: true, createdAt: true, deliveredAt: true, lastRecoveredAt: true }, orderBy: { createdAt: "desc" }, take: 8 },
         syncRuns: { select: { id: true, status: true, sourceTimestamp: true, summary: true, errorMessage: true, createdAt: true, completedAt: true }, orderBy: { createdAt: "desc" }, take: 8 }
       },
       orderBy: { createdAt: "desc" }
-    })
+    }),
+    prisma.outgoingWebhookEvent.groupBy({ by: ["connectionId", "status"], _count: { _all: true } })
   ]);
+  const healthByConnection = new Map();
+  for (const group of deliveryGroups) healthByConnection.set(group.connectionId, { ...(healthByConnection.get(group.connectionId) || {}), [group.status]: group._count._all });
+  const managedConnections = connections.map((connection) => ({ ...connection, deliveryHealth: healthByConnection.get(connection.id) || {} }));
   return <main style={styles.page}>
-    <p style={styles.eyebrow}>Stage 6C · Controlled connectivity</p>
+    <p style={styles.eyebrow}>Stage 12B · Resilient delivery</p>
     <h1 style={styles.title}>API & integrations</h1>
-    <p style={styles.description}>Connect approved systems through versioned APIs, signed webhooks and privacy-safe sales, inventory or footfall summaries. Every transfer is tenant-scoped, idempotent and auditable, and no integration receives direct database access.</p>
-    <div style={styles.notice}><strong>Safe by default:</strong> metric connections accept location-level summaries only - never customer identities or order-level records. Correlation data is not presented as proof that audio caused a commercial outcome.</div>
-    <IntegrationConsole organisations={serializable(organisations)} initialConnections={serializable(connections)} />
+    <p style={styles.description}>Connect approved systems through versioned APIs, signed webhooks and privacy-safe sales, inventory or footfall summaries. Delivery failures are isolated, evidence is retained, and abandoned events can only be recovered through a bounded, audited Super Admin action.</p>
+    <div style={styles.notice}><strong>Safe by default:</strong> metric connections accept location-level summaries only - never customer identities or order-level records. Webhook retries use stable idempotency keys, and recovery never erases the original attempt history.</div>
+    <IntegrationConsole organisations={serializable(organisations)} initialConnections={serializable(managedConnections)} />
   </main>;
 }
 
