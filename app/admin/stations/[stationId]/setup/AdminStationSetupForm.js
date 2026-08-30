@@ -17,6 +17,11 @@ export default function AdminStationSetupForm({
     serverPort: initialData?.serverPort?.toString() || "",
     bitrateKbps: initialData?.bitrateKbps?.toString() || "",
     centovaUsername: initialData?.centovaUsername || "",
+    providerKey: initialData?.providerKey || "CENTOVA_CAST",
+    backupStreamUrl: initialData?.backupStreamUrl || "",
+    probeEnabled: initialData?.probeEnabled !== false,
+    probeIntervalSeconds: initialData?.probeIntervalSeconds?.toString() || "60",
+    probeTimeoutMs: initialData?.probeTimeoutMs?.toString() || "8000",
     sourcePassword: ""
   });
 
@@ -29,7 +34,7 @@ export default function AdminStationSetupForm({
   function updateField(event) {
     setForm((current) => ({
       ...current,
-      [event.target.name]: event.target.value
+      [event.target.name]: event.target.type === "checkbox" ? event.target.checked : event.target.value
     }));
   }
 
@@ -44,7 +49,7 @@ export default function AdminStationSetupForm({
       return;
     }
 
-    if (!form.serverHost.trim()) {
+    if (form.providerKey === "CENTOVA_CAST" && !form.serverHost.trim()) {
       setMessage({
         type: "error",
         text: "Please enter the server host."
@@ -52,7 +57,7 @@ export default function AdminStationSetupForm({
       return;
     }
 
-    if (!form.serverPort.trim()) {
+    if (form.providerKey === "CENTOVA_CAST" && !form.serverPort.trim()) {
       setMessage({
         type: "error",
         text: "Please enter the server port."
@@ -60,7 +65,7 @@ export default function AdminStationSetupForm({
       return;
     }
 
-    if (!form.centovaUsername.trim()) {
+    if (form.providerKey === "CENTOVA_CAST" && !form.centovaUsername.trim()) {
       setMessage({
         type: "error",
         text: "Please enter the Centova username."
@@ -88,6 +93,11 @@ export default function AdminStationSetupForm({
           ? Number(form.bitrateKbps)
           : null,
         centovaUsername: form.centovaUsername.trim(),
+        providerKey: form.providerKey,
+        backupStreamUrl: form.backupStreamUrl.trim(),
+        probeEnabled: form.probeEnabled,
+        probeIntervalSeconds: Number(form.probeIntervalSeconds),
+        probeTimeoutMs: Number(form.probeTimeoutMs),
         sourcePassword: form.sourcePassword
       };
 
@@ -145,7 +155,7 @@ export default function AdminStationSetupForm({
             onChange={updateField}
             placeholder="https://stream.example.com/live"
             disabled={saving}
-            required
+            required={form.providerKey === "CENTOVA_CAST"}
           />
         </label>
 
@@ -172,7 +182,7 @@ export default function AdminStationSetupForm({
             onChange={updateField}
             placeholder="stream.example.com"
             disabled={saving}
-            required
+            required={form.providerKey === "CENTOVA_CAST"}
           />
         </label>
 
@@ -210,6 +220,41 @@ export default function AdminStationSetupForm({
       </section>
 
       <section style={styles.section}>
+        <h2 style={styles.sectionTitle}>Provider and source health</h2>
+
+        <label style={styles.label}>
+          Provider adapter
+          <select style={styles.input} name="providerKey" value={form.providerKey} onChange={updateField} disabled={saving}>
+            <option value="CENTOVA_CAST">Centova Cast</option>
+            <option value="GENERIC_HTTP">Generic HTTP stream</option>
+          </select>
+        </label>
+
+        <label style={styles.label}>
+          Backup stream URL <span style={styles.optional}>(recorded for controlled fallback; not switched automatically)</span>
+          <input style={styles.input} type="url" name="backupStreamUrl" value={form.backupStreamUrl} onChange={updateField} placeholder="https://backup.example.com/live" disabled={saving} />
+        </label>
+
+        <label style={styles.checkLabel}>
+          <input type="checkbox" name="probeEnabled" checked={form.probeEnabled} onChange={updateField} disabled={saving} />
+          Monitor the public stream source independently from player heartbeats
+        </label>
+
+        <div style={styles.row}>
+          <label style={styles.label}>
+            Probe interval (seconds)
+            <input style={styles.input} type="number" name="probeIntervalSeconds" value={form.probeIntervalSeconds} onChange={updateField} min="30" max="3600" disabled={saving} required />
+          </label>
+          <label style={styles.label}>
+            Probe timeout (milliseconds)
+            <input style={styles.input} type="number" name="probeTimeoutMs" value={form.probeTimeoutMs} onChange={updateField} min="1000" max="30000" disabled={saving} required />
+          </label>
+        </div>
+
+        <p style={styles.helpText}>Ruvanas samples health every five minutes and opens an incident only after repeated failures. Private-network and redirect targets are not followed.</p>
+      </section>
+
+      {form.providerKey === "CENTOVA_CAST" ? <section style={styles.section}>
         <h2 style={styles.sectionTitle}>Centova credentials</h2>
 
         <label style={styles.label}>
@@ -246,7 +291,7 @@ export default function AdminStationSetupForm({
           The administrator password is not stored in Ruvanas. Use Centova
           directly to manage the account password.
         </p>
-      </section>
+      </section> : null}
 
       {message.text ? (
         <p
@@ -305,6 +350,14 @@ const styles = {
     color: "#aebcd0",
     fontSize: 13,
     lineHeight: 1.5
+  },
+  checkLabel: {
+    display: "flex",
+    gap: 10,
+    alignItems: "center",
+    color: "#d8e0ec",
+    fontSize: 14,
+    fontWeight: 700
   },
   input: {
     width: "100%",

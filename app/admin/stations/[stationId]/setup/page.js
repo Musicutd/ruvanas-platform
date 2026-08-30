@@ -24,6 +24,11 @@ export default async function AdminStationSetupPage({ params }) {
     serverPort: station.streamConfig?.serverPort?.toString() ?? "",
     bitrateKbps: station.streamConfig?.bitrateKbps?.toString() ?? "",
     centovaUsername: station.streamConfig?.centovaUsername ?? "",
+    providerKey: station.streamConfig?.providerKey ?? "CENTOVA_CAST",
+    backupStreamUrl: station.streamConfig?.backupStreamUrl ?? "",
+    probeEnabled: station.streamConfig?.probeEnabled ?? true,
+    probeIntervalSeconds: station.streamConfig?.probeIntervalSeconds?.toString() ?? "60",
+    probeTimeoutMs: station.streamConfig?.probeTimeoutMs?.toString() ?? "8000",
     adminPassword: "",
     sourcePassword: ""
   };
@@ -35,7 +40,7 @@ export default async function AdminStationSetupPage({ params }) {
       </h1>
 
       <p style={{ color: "#9fb3c8", marginBottom: 24 }}>
-        Enter the Centova and streaming-server details for this station.
+        Configure the current Centova or generic HTTP stream without changing the player-facing station model.
         Leave a password blank if you do not want to change it.
       </p>
 
