@@ -10,6 +10,7 @@
     "ci:prepare-media-toolchain": "npm rebuild ffmpeg-static --foreground-scripts",
     "ci:static": "node scripts/ci-static-checks.mjs",
     "test": "node --test tests/*.test.mjs",
+    "test:acceptance": "node scripts/final-platform-acceptance.mjs",
     "test:integration": "node --test tests/integration/*.test.mjs",
     "test:performance": "node scripts/performance-smoke.mjs",
     "test:smoke": "node scripts/release-smoke.mjs",
@@ -43,4 +44,3 @@
     "node": ">=20"
   }
 }
-

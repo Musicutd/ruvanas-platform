@@ -89,20 +89,10 @@ jobs:
           cat /tmp/ruvanas-next.log
           exit 1
 
-      - name: Run route and player lifecycle integration tests
+      - name: Run final retail and School Radio platform acceptance
         env:
           INTEGRATION_BASE_URL: http://127.0.0.1:3100
-        run: npm run test:integration
-
-      - name: Run release regression smoke
-        env:
-          INTEGRATION_BASE_URL: http://127.0.0.1:3100
-        run: npm run test:smoke
-
-      - name: Run performance regression baseline
-        env:
-          INTEGRATION_BASE_URL: http://127.0.0.1:3100
-        run: npm run test:performance
+        run: npm run test:acceptance
 
       - name: Show application logs after failure
         if: failure()
@@ -111,5 +101,3 @@ jobs:
       - name: Stop application
         if: always()
         run: test ! -f /tmp/ruvanas-next.pid || kill $(cat /tmp/ruvanas-next.pid) || true
-
-
