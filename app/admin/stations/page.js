@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
+import StreamSourceOperations from "./StreamSourceOperations";
 
 export default async function AdminStationsPage() {
   const stations = await prisma.station.findMany({
@@ -19,8 +20,7 @@ export default async function AdminStationsPage() {
           <p style={styles.eyebrow}>Technical streaming</p>
           <h1 style={styles.title}>All Stations</h1>
           <p style={styles.description}>
-            Create a station for an organisation, then configure its private
-            Centova streaming details.
+            Create a station, configure its streaming provider, and review source reliability independently from player health.
           </p>
         </div>
 
@@ -28,6 +28,8 @@ export default async function AdminStationsPage() {
           Add station
         </Link>
       </div>
+
+      <StreamSourceOperations />
 
       <section style={styles.section}>
         <h2 style={styles.sectionTitle}>Existing stations</h2>
