@@ -112,6 +112,11 @@ const navItems = [
     href: "/admin/recovery",
     label: "Backup & recovery",
     superAdminOnly: true
+  },
+  {
+    href: "/admin/launch-readiness",
+    label: "Launch readiness",
+    superAdminOnly: true
   }
 ];
 
