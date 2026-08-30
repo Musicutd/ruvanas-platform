@@ -29,7 +29,7 @@ An interrupted worker leaves leased jobs recoverable after the 45-second lease e
 1. Open **Client dashboard → Notifications** inside the affected organisation.
 2. Confirm the signed-in user is an active member and the relevant in-app preference is enabled.
 3. A disabled preference produces a `SKIPPED` delivery. It is not a worker failure.
-4. Email and webhook delivery are intentionally unavailable in Stage 11D.
+4. Stage 12A email delivery remains disabled by default and requires both valid provider configuration and an explicit user opt-in. Signed notification webhooks are managed separately under **API & integrations**.
 
 ## Escalation evidence
 

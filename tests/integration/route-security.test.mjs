@@ -92,7 +92,18 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
 
   const ownNotificationPreferences = await api("/api/notifications/preferences", { cookie: cookieA });
   assert.equal(ownNotificationPreferences.status, 200, await ownNotificationPreferences.clone().text());
-  assert.equal((await ownNotificationPreferences.json()).channel, "IN_APP");
+  const ownNotificationPreferenceBody = await ownNotificationPreferences.json();
+  assert.equal(ownNotificationPreferenceBody.emailConfigured, false);
+  assert.equal(ownNotificationPreferenceBody.webhookManagedInIntegrations, true);
+  assert.ok(ownNotificationPreferenceBody.preferences.some((item) => item.channel === "IN_APP" && item.enabled === true));
+  assert.ok(ownNotificationPreferenceBody.preferences.some((item) => item.channel === "EMAIL" && item.enabled === false));
+
+  const unavailableEmailOptIn = await api("/api/notifications/preferences", {
+    method: "PATCH",
+    cookie: cookieA,
+    body: { type: "PLAYER_OFFLINE", channel: "EMAIL", enabled: true }
+  });
+  assert.equal(unavailableEmailOptIn.status, 409);
 
   const ownOrganisationSwitch = await api("/api/me/organisation", {
     method: "POST",
