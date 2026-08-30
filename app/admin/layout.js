@@ -97,6 +97,11 @@ const navItems = [
     href: "/admin/digital-signage",
     label: "Digital signage",
     superAdminOnly: true
+  },
+  {
+    href: "/admin/jobs",
+    label: "Jobs & notifications",
+    superAdminOnly: true
   }
 ];
 
