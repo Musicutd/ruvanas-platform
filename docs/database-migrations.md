@@ -1,5 +1,11 @@
 # Database migration operations
 
+# Stage 12D Backup and Recovery Readiness
+
+Migration `20260929000000_stage_12d_backup_recovery_readiness` adds provider-neutral recovery controls and immutable verification/restore-drill evidence for the database and protected object storage. Database checks bound RPO, RTO, retention, restore duration, evidence-field consistency, and object-versioning scope. The application records safe operational references only; it does not store backups, credentials, private provider URLs, customer content, media, or student data.
+
+The migration is additive. An application rollback can retain both tables and their evidence because older releases do not read them. Do not remove recovery evidence during rollback. Apply only through `prisma migrate deploy` after a verified pre-migration snapshot exists for the paid production database.
+
 ## Stage 12C Operational Observability
 
 Migration `20260928000000_stage_12c_operational_observability` adds an operational-service heartbeat register for the web application, operations worker, and optional protected-media worker. Heartbeats contain only service kind, environment, release identifiers, timestamps, an instance identifier that is hashed before display, and bounded operational details. They do not contain customer content, notification recipients, credentials, raw errors, or student data.

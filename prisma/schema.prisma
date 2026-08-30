@@ -93,6 +93,22 @@ enum OperationalServiceKind {
   AUDIO_WORKER
 }
 
+enum RecoveryAssetKind {
+  DATABASE
+  OBJECT_STORAGE
+}
+
+enum RecoveryEvidenceKind {
+  BACKUP_VERIFICATION
+  RESTORE_DRILL
+}
+
+enum RecoveryEvidenceResult {
+  PASSED
+  PARTIAL
+  FAILED
+}
+
 enum NotificationType {
   PLAYER_OFFLINE
   STREAM_ERROR
@@ -1094,6 +1110,8 @@ model User {
   requestedPlayerCommands           PlayerCommand[]                  @relation("PlayerCommandRequestedBy")
   notificationPreferences           NotificationPreference[]
   notificationDeliveries            NotificationDelivery[]
+  updatedRecoveryControls           RecoveryControl[]                @relation("RecoveryControlUpdatedBy")
+  recordedRecoveryEvidence          RecoveryEvidence[]               @relation("RecoveryEvidenceRecordedBy")
 }
 
 model Organisation {
@@ -3982,6 +4000,56 @@ model OperationalServiceHeartbeat {
   @@index([version, lastSeenAt])
 }
 
+model RecoveryControl {
+  id                       String            @id @default(cuid())
+  assetKind                RecoveryAssetKind
+  environment              String
+  strategyConfirmed        Boolean           @default(false)
+  automatedBackupConfirmed Boolean           @default(false)
+  versioningConfirmed      Boolean           @default(false)
+  targetRpoMinutes         Int?
+  targetRtoMinutes         Int?
+  retentionDays            Int?
+  notes                    String
+  reviewedAt               DateTime
+  nextReviewAt             DateTime
+  updatedByUserId          String
+  createdAt                DateTime          @default(now())
+  updatedAt                DateTime          @updatedAt
+
+  updatedBy User               @relation("RecoveryControlUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: Restrict)
+  evidence  RecoveryEvidence[]
+
+  @@unique([assetKind, environment])
+  @@unique([id, assetKind, environment])
+  @@index([environment, strategyConfirmed])
+  @@index([nextReviewAt])
+}
+
+model RecoveryEvidence {
+  id                      String                 @id @default(cuid())
+  recoveryControlId       String
+  assetKind               RecoveryAssetKind
+  environment             String
+  evidenceKind            RecoveryEvidenceKind
+  result                  RecoveryEvidenceResult
+  evidenceReference       String
+  performedAt             DateTime
+  backupCapturedAt        DateTime?
+  restoreCompletedMinutes Int?
+  notes                   String
+  recordedByUserId        String
+  createdAt               DateTime               @default(now())
+
+  recoveryControl RecoveryControl @relation(fields: [recoveryControlId, assetKind, environment], references: [id, assetKind, environment], onDelete: Restrict)
+  recordedBy      User            @relation("RecoveryEvidenceRecordedBy", fields: [recordedByUserId], references: [id], onDelete: Restrict)
+
+  @@unique([environment, evidenceReference])
+  @@index([assetKind, environment, evidenceKind, performedAt])
+  @@index([result, performedAt])
+  @@index([recordedByUserId])
+}
+
 model NotificationEvent {
   id               String               @id @default(cuid())
   organisationId   String
@@ -4240,21 +4308,21 @@ model IntegrationMetricSummary {
 }
 
 model OutgoingWebhookEvent {
-  id             String                @id @default(cuid())
-  organisationId String
-  connectionId   String
-  eventType      String
-  idempotencyKey String
-  payload        Json
-  status         WebhookDeliveryStatus @default(PENDING)
-  attemptCount   Int                   @default(0)
-  recoveryCount  Int                   @default(0)
-  nextAttemptAt  DateTime              @default(now())
-  deliveredAt    DateTime?
+  id              String                @id @default(cuid())
+  organisationId  String
+  connectionId    String
+  eventType       String
+  idempotencyKey  String
+  payload         Json
+  status          WebhookDeliveryStatus @default(PENDING)
+  attemptCount    Int                   @default(0)
+  recoveryCount   Int                   @default(0)
+  nextAttemptAt   DateTime              @default(now())
+  deliveredAt     DateTime?
   lastRecoveredAt DateTime?
-  lastError      String?
-  createdAt      DateTime              @default(now())
-  updatedAt      DateTime              @updatedAt
+  lastError       String?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
 
   organisation Organisation             @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   connection   IntegrationConnection    @relation(fields: [connectionId], references: [id], onDelete: Cascade)

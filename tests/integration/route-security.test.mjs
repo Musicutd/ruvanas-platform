@@ -89,6 +89,9 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   const tenantOwnerOperationalHealth = await api("/api/admin/operations/health", { cookie: cookieA });
   assert.equal(tenantOwnerOperationalHealth.status, 403);
 
+  const tenantOwnerRecoveryReadiness = await api("/api/admin/recovery", { cookie: cookieA });
+  assert.equal(tenantOwnerRecoveryReadiness.status, 403);
+
   const ownNotifications = await api("/api/notifications", { cookie: cookieA });
   assert.equal(ownNotifications.status, 200, await ownNotifications.clone().text());
   assert.ok(Array.isArray((await ownNotifications.json()).deliveries));
@@ -189,6 +192,15 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
 
   const unauthenticatedOperationalHealth = await api("/api/admin/operations/health");
   assert.equal(unauthenticatedOperationalHealth.status, 401);
+
+  const unauthenticatedRecoveryReadiness = await api("/api/admin/recovery");
+  assert.equal(unauthenticatedRecoveryReadiness.status, 401);
+
+  const unauthenticatedRecoveryEvidence = await api("/api/admin/recovery", {
+    method: "POST",
+    body: { action: "RECORD_EVIDENCE", assetKind: "DATABASE", evidenceKind: "BACKUP_VERIFICATION", result: "PASSED", evidenceReference: "unauthenticated-evidence", performedAt: new Date().toISOString(), notes: "Unauthorised recovery evidence attempt." }
+  });
+  assert.equal(unauthenticatedRecoveryEvidence.status, 401);
 
   const unauthenticatedNotifications = await api("/api/notifications");
   assert.equal(unauthenticatedNotifications.status, 401);
@@ -761,6 +773,13 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     assert.ok(Array.isArray(platformOperationalBody.deployment.instances));
     assert.ok(platformOperationalBody.queues.jobs);
     assert.equal(JSON.stringify(platformOperationalBody).includes("instanceId"), false);
+
+    const platformRecoveryReadiness = await api("/api/admin/recovery", { cookie: cookieA });
+    assert.equal(platformRecoveryReadiness.status, 200, await platformRecoveryReadiness.clone().text());
+    const platformRecoveryBody = await platformRecoveryReadiness.json();
+    assert.ok(["READY", "ATTENTION", "NOT_READY"].includes(platformRecoveryBody.status));
+    assert.equal(platformRecoveryBody.assets.length, 2);
+    assert.equal(JSON.stringify(platformRecoveryBody).includes("passwordHash"), false);
 
     const missingStreamProbe = await api("/api/admin/streams/not-a-station/probe", { method: "POST", cookie: cookieA });
     assert.equal(missingStreamProbe.status, 404);
