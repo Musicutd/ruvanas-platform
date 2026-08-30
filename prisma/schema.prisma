@@ -87,6 +87,12 @@ enum JobStatus {
   DEAD_LETTER
 }
 
+enum OperationalServiceKind {
+  WEB
+  OPERATIONS_WORKER
+  AUDIO_WORKER
+}
+
 enum NotificationType {
   PLAYER_OFFLINE
   STREAM_ERROR
@@ -3956,6 +3962,24 @@ model Job {
   @@index([leaseUntil])
   @@index([organisationId, createdAt])
   @@index([correlationId])
+}
+
+model OperationalServiceHeartbeat {
+  id          String                 @id @default(cuid())
+  service     OperationalServiceKind
+  environment String
+  instanceId  String
+  version     String
+  commitSha   String?
+  startedAt   DateTime
+  lastSeenAt  DateTime
+  details     Json?
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+
+  @@unique([service, environment, instanceId])
+  @@index([service, environment, lastSeenAt])
+  @@index([version, lastSeenAt])
 }
 
 model NotificationEvent {

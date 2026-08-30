@@ -86,6 +86,9 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   const tenantOwnerJobs = await api("/api/admin/jobs", { cookie: cookieA });
   assert.equal(tenantOwnerJobs.status, 403);
 
+  const tenantOwnerOperationalHealth = await api("/api/admin/operations/health", { cookie: cookieA });
+  assert.equal(tenantOwnerOperationalHealth.status, 403);
+
   const ownNotifications = await api("/api/notifications", { cookie: cookieA });
   assert.equal(ownNotifications.status, 200, await ownNotifications.clone().text());
   assert.ok(Array.isArray((await ownNotifications.json()).deliveries));
@@ -183,6 +186,9 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
 
   const unauthenticatedJobs = await api("/api/admin/jobs");
   assert.equal(unauthenticatedJobs.status, 401);
+
+  const unauthenticatedOperationalHealth = await api("/api/admin/operations/health");
+  assert.equal(unauthenticatedOperationalHealth.status, 401);
 
   const unauthenticatedNotifications = await api("/api/notifications");
   assert.equal(unauthenticatedNotifications.status, 401);
@@ -747,6 +753,14 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     const platformJobs = await api("/api/admin/jobs", { cookie: cookieA });
     assert.equal(platformJobs.status, 200, await platformJobs.clone().text());
     assert.ok(Array.isArray((await platformJobs.json()).jobs));
+
+    const platformOperationalHealth = await api("/api/admin/operations/health", { cookie: cookieA });
+    assert.equal(platformOperationalHealth.status, 200, await platformOperationalHealth.clone().text());
+    const platformOperationalBody = await platformOperationalHealth.json();
+    assert.ok(["HEALTHY", "ATTENTION", "CRITICAL"].includes(platformOperationalBody.status));
+    assert.ok(Array.isArray(platformOperationalBody.deployment.instances));
+    assert.ok(platformOperationalBody.queues.jobs);
+    assert.equal(JSON.stringify(platformOperationalBody).includes("instanceId"), false);
 
     const missingStreamProbe = await api("/api/admin/streams/not-a-station/probe", { method: "POST", cookie: cookieA });
     assert.equal(missingStreamProbe.status, 404);

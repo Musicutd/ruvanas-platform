@@ -1,5 +1,11 @@
 # Database migration operations
 
+## Stage 12C Operational Observability
+
+Migration `20260928000000_stage_12c_operational_observability` adds an operational-service heartbeat register for the web application, operations worker, and optional protected-media worker. Heartbeats contain only service kind, environment, release identifiers, timestamps, an instance identifier that is hashed before display, and bounded operational details. They do not contain customer content, notification recipients, credentials, raw errors, or student data.
+
+The migration is additive and does not change playback, schedules, publishing, delivery, billing, or tenant data. During rollback, the previous application can run with the table present. Retain heartbeat evidence until the applicable operational-retention decision is made; stop workers before any corrective schema operation.
+
 ## Stage 12B External Delivery Resilience and Recovery
 
 Migration `20260927000000_stage_12b_delivery_resilience` adds an additive recovery counter and last-recovered timestamp to outgoing webhook events. A database check bounds the counter from zero through three. Existing events default to zero and all attempt, status and idempotency evidence remains unchanged.
