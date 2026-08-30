@@ -107,6 +107,8 @@ test(
       const opened = await database.playerHealthIncident.findFirstOrThrow({ where: { playerId: player.id } });
       assert.equal(opened.status, "OPEN");
       assert.equal(opened.severity, "MEDIUM");
+      assert.equal(await database.notificationEvent.count({ where: { organisationId: organisation.id, type: "PLAYER_OFFLINE", entityId: opened.id } }), 1);
+      assert.equal(await database.job.count({ where: { organisationId: organisation.id, type: "NOTIFICATION_DELIVERY" } }), 1);
 
       const escalationAt = new Date("2026-08-29T13:00:00.000Z");
       assert.deepEqual(await scanPlayerHealth(database, { now: escalationAt }), { scanned: 1, created: 0, updated: 1 });

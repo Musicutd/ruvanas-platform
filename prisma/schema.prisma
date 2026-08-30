@@ -75,6 +75,47 @@ enum WebhookDeliveryStatus {
   ABANDONED
 }
 
+enum JobType {
+  NOTIFICATION_DELIVERY
+}
+
+enum JobStatus {
+  QUEUED
+  LEASED
+  RETRY_SCHEDULED
+  SUCCEEDED
+  DEAD_LETTER
+}
+
+enum NotificationType {
+  PLAYER_OFFLINE
+  STREAM_ERROR
+  CAMPAIGN_FAILURE
+  PRODUCTION_ORDER_UPDATE
+  BILLING_STATE
+  SCHOOL_REVIEW_REQUEST
+  CONSENT_EXPIRY
+}
+
+enum NotificationSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  WEBHOOK
+}
+
+enum NotificationDeliveryStatus {
+  PENDING
+  DELIVERED
+  SKIPPED
+  FAILED
+}
+
 enum AIAssistantType {
   PROMO_SCRIPT
   SCHEDULE_RULES
@@ -1045,6 +1086,8 @@ model User {
   acknowledgedStreamHealthIncidents StationStreamHealthIncident[]    @relation("StationStreamHealthIncidentAcknowledgedBy")
   resolvedStreamHealthIncidents     StationStreamHealthIncident[]    @relation("StationStreamHealthIncidentResolvedBy")
   requestedPlayerCommands           PlayerCommand[]                  @relation("PlayerCommandRequestedBy")
+  notificationPreferences           NotificationPreference[]
+  notificationDeliveries            NotificationDelivery[]
 }
 
 model Organisation {
@@ -1140,6 +1183,10 @@ model Organisation {
   playerCommands                   PlayerCommand[]
   streamHealthSamples              StationStreamHealthSample[]
   streamHealthIncidents            StationStreamHealthIncident[]
+  jobs                             Job[]
+  notificationEvents               NotificationEvent[]
+  notificationPreferences          NotificationPreference[]
+  notificationDeliveries           NotificationDelivery[]
   retailMediaPartners              RetailMediaPartner[]
   retailMediaInventory             RetailMediaInventoryPackage[]
   retailMediaOrders                RetailMediaOrder[]
@@ -3874,6 +3921,109 @@ model AuditLog {
   @@index([schoolNetworkId])
   @@index([actorUserId])
   @@index([actorServiceAccountId])
+}
+
+model Job {
+  id               String    @id @default(cuid())
+  organisationId   String?
+  type             JobType
+  status           JobStatus @default(QUEUED)
+  priority         Int       @default(0)
+  payload          Json
+  result           Json?
+  idempotencyKey   String?
+  correlationId    String
+  requestId        String?
+  attempts         Int       @default(0)
+  maxAttempts      Int       @default(5)
+  availableAt      DateTime  @default(now())
+  leaseToken       String?
+  leaseOwner       String?
+  leaseUntil       DateTime?
+  startedAt        DateTime?
+  completedAt      DateTime?
+  deadLetteredAt   DateTime?
+  lastErrorCode    String?
+  lastErrorMessage String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  organisation      Organisation?      @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  notificationEvent NotificationEvent? @relation("NotificationDeliveryJob")
+
+  @@unique([organisationId, type, idempotencyKey])
+  @@index([status, availableAt, priority])
+  @@index([leaseUntil])
+  @@index([organisationId, createdAt])
+  @@index([correlationId])
+}
+
+model NotificationEvent {
+  id               String               @id @default(cuid())
+  organisationId   String
+  type             NotificationType
+  severity         NotificationSeverity @default(INFO)
+  title            String
+  message          String
+  entityType       String?
+  entityId         String?
+  metadata         Json?
+  dedupeKey        String?
+  correlationId    String
+  deliveryJobId    String?              @unique
+  occurredAt       DateTime             @default(now())
+  deliveryQueuedAt DateTime?
+  dispatchedAt     DateTime?
+  createdAt        DateTime             @default(now())
+
+  organisation Organisation           @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  deliveryJob  Job?                   @relation("NotificationDeliveryJob", fields: [deliveryJobId], references: [id], onDelete: SetNull)
+  deliveries   NotificationDelivery[]
+
+  @@unique([organisationId, dedupeKey])
+  @@index([organisationId, occurredAt])
+  @@index([type, occurredAt])
+  @@index([correlationId])
+}
+
+model NotificationPreference {
+  id             String              @id @default(cuid())
+  organisationId String
+  userId         String
+  type           NotificationType
+  channel        NotificationChannel @default(IN_APP)
+  enabled        Boolean             @default(true)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organisationId, userId, type, channel])
+  @@index([userId, organisationId])
+}
+
+model NotificationDelivery {
+  id                  String                     @id @default(cuid())
+  organisationId      String
+  notificationEventId String
+  userId              String
+  channel             NotificationChannel        @default(IN_APP)
+  status              NotificationDeliveryStatus @default(PENDING)
+  deliveredAt         DateTime?
+  readAt              DateTime?
+  dismissedAt         DateTime?
+  failureCode         String?
+  createdAt           DateTime                   @default(now())
+  updatedAt           DateTime                   @updatedAt
+
+  organisation      Organisation      @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  notificationEvent NotificationEvent @relation(fields: [notificationEventId], references: [id], onDelete: Cascade)
+  user              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([notificationEventId, userId, channel])
+  @@index([userId, organisationId, readAt, createdAt])
+  @@index([organisationId, status, createdAt])
 }
 
 model Session {

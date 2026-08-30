@@ -1,5 +1,11 @@
 # Database migration operations
 
+## Stage 11D Job and In-App Notification Foundation
+
+Migration `20260926000000_stage_11d_job_notification_foundation` adds a PostgreSQL-backed job queue with exclusive leases, bounded exponential retries, dead-letter recovery, correlation identifiers, and safe result/error fields. It also adds tenant-scoped notification events, per-user in-app preferences, and delivery/read/dismissal evidence. The first producers are new player-offline and stream-source incidents.
+
+The migration is additive. Email and webhook notification channels are reserved in the schema but remain disabled in the application; no external message is sent. Existing playback, schedules, manifests, proof-of-play, player commands, and stream configuration are unchanged. After job or notification evidence exists, retain these tables during an application rollback and stop the operations worker before any corrective database work.
+
 ## Stage 11C Provider-Neutral Stream Source Health
 
 Migration `20260925000000_stage_11c_stream_source_health` adds provider/probe fields to the existing `StationStreamConfig`, creates five-minute `StationStreamHealthSample` evidence, and adds `StationStreamHealthIncident` with acknowledgement and resolution history. Existing configurations default to the compatible `CENTOVA_CAST` provider key; no data backfill or player/channel change is required.

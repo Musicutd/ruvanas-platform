@@ -83,6 +83,17 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   });
   assert.equal(tenantOwnerPlayerLifecycle.status, 403);
 
+  const tenantOwnerJobs = await api("/api/admin/jobs", { cookie: cookieA });
+  assert.equal(tenantOwnerJobs.status, 403);
+
+  const ownNotifications = await api("/api/notifications", { cookie: cookieA });
+  assert.equal(ownNotifications.status, 200, await ownNotifications.clone().text());
+  assert.ok(Array.isArray((await ownNotifications.json()).deliveries));
+
+  const ownNotificationPreferences = await api("/api/notifications/preferences", { cookie: cookieA });
+  assert.equal(ownNotificationPreferences.status, 200, await ownNotificationPreferences.clone().text());
+  assert.equal((await ownNotificationPreferences.json()).channel, "IN_APP");
+
   const ownOrganisationSwitch = await api("/api/me/organisation", {
     method: "POST",
     cookie: cookieA,
@@ -158,6 +169,21 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     body: { action: "REVOKE_SESSION", note: "Unauthorised lifecycle action." }
   });
   assert.equal(unauthenticatedAdminPlayerLifecycle.status, 401);
+
+  const unauthenticatedJobs = await api("/api/admin/jobs");
+  assert.equal(unauthenticatedJobs.status, 401);
+
+  const unauthenticatedNotifications = await api("/api/notifications");
+  assert.equal(unauthenticatedNotifications.status, 401);
+
+  const unauthenticatedNotificationPreferences = await api("/api/notifications/preferences");
+  assert.equal(unauthenticatedNotificationPreferences.status, 401);
+
+  const unauthenticatedNotificationUpdate = await api("/api/notifications/not-a-delivery", {
+    method: "PATCH",
+    body: { action: "READ" }
+  });
+  assert.equal(unauthenticatedNotificationUpdate.status, 401);
 
   const unauthenticatedProofOfPlay = await api("/api/player/proof-of-play", {
     method: "POST",
@@ -696,6 +722,10 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     const platformStreamHealth = await api("/api/admin/streams/health", { cookie: cookieA });
     assert.equal(platformStreamHealth.status, 200, await platformStreamHealth.clone().text());
     assert.ok(Array.isArray((await platformStreamHealth.json()).stations));
+
+    const platformJobs = await api("/api/admin/jobs", { cookie: cookieA });
+    assert.equal(platformJobs.status, 200, await platformJobs.clone().text());
+    assert.ok(Array.isArray((await platformJobs.json()).jobs));
 
     const missingStreamProbe = await api("/api/admin/streams/not-a-station/probe", { method: "POST", cookie: cookieA });
     assert.equal(missingStreamProbe.status, 404);

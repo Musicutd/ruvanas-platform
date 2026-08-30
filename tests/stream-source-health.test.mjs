@@ -104,6 +104,8 @@ test("database stream probes open and recover source incidents without changing 
     const opened = await database.stationStreamHealthIncident.findFirstOrThrow({ where: { stationId: station.id } });
     assert.equal(opened.status, "OPEN");
     assert.equal(opened.severity, "MEDIUM");
+    assert.equal(await database.notificationEvent.count({ where: { organisationId: organisation.id, type: "STREAM_ERROR", entityId: opened.id } }), 1);
+    assert.equal(await database.job.count({ where: { organisationId: organisation.id, type: "NOTIFICATION_DELIVERY" } }), 1);
     assert.equal((await database.stationStreamConfig.findUniqueOrThrow({ where: { id: config.id } })).consecutiveFailures, 3);
 
     const recovered = await probeStationStream(database, config, {
