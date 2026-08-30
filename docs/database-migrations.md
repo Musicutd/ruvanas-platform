@@ -1,5 +1,11 @@
 # Database migration operations
 
+## Stage 11C Provider-Neutral Stream Source Health
+
+Migration `20260925000000_stage_11c_stream_source_health` adds provider/probe fields to the existing `StationStreamConfig`, creates five-minute `StationStreamHealthSample` evidence, and adds `StationStreamHealthIncident` with acknowledgement and resolution history. Existing configurations default to the compatible `CENTOVA_CAST` provider key; no data backfill or player/channel change is required.
+
+The migration is additive. The previous application can run while the new columns and tables remain. After probe or incident evidence exists, retain it during application rollback. Destructive removal requires a separately approved operational-evidence retention decision.
+
 ## Stage 11B Controlled Player Commands and Replacement
 
 Migration `20260924000000_stage_11b_player_commands_replacement` adds the `PlayerCommand` evidence table, command enums, nullable revocation/retirement fields, and a one-to-one player replacement link. It does not alter playback manifests, schedules, media, proof-of-play, or existing enrolment sessions.
