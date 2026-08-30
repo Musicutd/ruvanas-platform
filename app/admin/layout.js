@@ -102,6 +102,11 @@ const navItems = [
     href: "/admin/jobs",
     label: "Jobs & notifications",
     superAdminOnly: true
+  },
+  {
+    href: "/admin/operations",
+    label: "Platform health",
+    superAdminOnly: true
   }
 ];
 
