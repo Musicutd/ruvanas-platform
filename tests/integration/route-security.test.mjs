@@ -92,6 +92,9 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   const tenantOwnerRecoveryReadiness = await api("/api/admin/recovery", { cookie: cookieA });
   assert.equal(tenantOwnerRecoveryReadiness.status, 403);
 
+  const tenantOwnerLaunchReadiness = await api("/api/admin/launch-readiness", { cookie: cookieA });
+  assert.equal(tenantOwnerLaunchReadiness.status, 403);
+
   const ownNotifications = await api("/api/notifications", { cookie: cookieA });
   assert.equal(ownNotifications.status, 200, await ownNotifications.clone().text());
   assert.ok(Array.isArray((await ownNotifications.json()).deliveries));
@@ -195,6 +198,15 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
 
   const unauthenticatedRecoveryReadiness = await api("/api/admin/recovery");
   assert.equal(unauthenticatedRecoveryReadiness.status, 401);
+
+  const unauthenticatedLaunchReadiness = await api("/api/admin/launch-readiness");
+  assert.equal(unauthenticatedLaunchReadiness.status, 401);
+
+  const unauthenticatedLaunchSignoff = await api("/api/admin/launch-readiness", {
+    method: "POST",
+    body: { action: "CONFIRM_CHECK", checkId: "CI_ACCEPTANCE_PASSED", evidenceReference: "unauthenticated", note: "Unauthorised sign-off attempt." }
+  });
+  assert.equal(unauthenticatedLaunchSignoff.status, 401);
 
   const unauthenticatedRecoveryEvidence = await api("/api/admin/recovery", {
     method: "POST",
@@ -780,6 +792,13 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     assert.ok(["READY", "ATTENTION", "NOT_READY"].includes(platformRecoveryBody.status));
     assert.equal(platformRecoveryBody.assets.length, 2);
     assert.equal(JSON.stringify(platformRecoveryBody).includes("passwordHash"), false);
+
+    const platformLaunchReadiness = await api("/api/admin/launch-readiness", { cookie: cookieA });
+    assert.equal(platformLaunchReadiness.status, 200, await platformLaunchReadiness.clone().text());
+    const platformLaunchBody = await platformLaunchReadiness.json();
+    assert.ok(["READY_FOR_OPERATOR_SIGN_OFF", "ATTENTION", "BLOCKED"].includes(platformLaunchBody.status));
+    assert.equal(platformLaunchBody.signoff.requiredCount, 5);
+    assert.equal(JSON.stringify(platformLaunchBody).includes("passwordHash"), false);
 
     const missingStreamProbe = await api("/api/admin/streams/not-a-station/probe", { method: "POST", cookie: cookieA });
     assert.equal(missingStreamProbe.status, 404);
