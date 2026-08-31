@@ -5,10 +5,11 @@ import {
   appendPlaybackEvent,
   removePlaybackEvents
 } from "@/lib/playback-queue.mjs";
+import LiveChannelPlayer from "./LiveChannelPlayer";
 
 const PLAYBACK_QUEUE_KEY = "ruvanas_proof_of_play_queue_v1";
 const PLAYED_INSERTIONS_KEY = "ruvanas_played_campaign_insertions_v1";
-const PLAYER_APP_VERSION = "stage-11b";
+const PLAYER_APP_VERSION = "stage-15a-live-channel";
 
 function readPlaybackQueue() {
   try {
@@ -43,13 +44,12 @@ export default function PlayerPage() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [manifest, setManifest] = useState(null);
-  const [trackIndex, setTrackIndex] = useState(0);
   const [activeInsertionId, setActiveInsertionId] = useState(null);
-  const [playSequence, setPlaySequence] = useState(0);
   const timer = useRef(null);
   const manifestTimer = useRef(null);
   const insertionTimer = useRef(null);
-  const audio = useRef(null);
+  const insertionAudio = useRef(null);
+  const activeAudioRef = useRef(null);
   const activeItemRef = useRef(null);
   const startedPlaybackKey = useRef(null);
   const commandBusy = useRef(false);
@@ -84,9 +84,7 @@ export default function PlayerPage() {
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Unable to load the playback plan.");
     setManifest(data);
-    setTrackIndex((current) => data.playlist?.length ? current % data.playlist.length : 0);
     setActiveInsertionId((current) => data.insertions?.some((item) => item.scheduleItemId === current) ? current : null);
-    setPlaySequence((current) => current + 1);
   }, []);
 
   const loadState = useCallback(async () => {
@@ -206,13 +204,12 @@ export default function PlayerPage() {
           trackId: current.trackId,
           eventType: "INTERRUPTED",
           occurredAt: new Date().toISOString(),
-          positionSeconds: Math.max(0, Math.round(audio.current?.currentTime || 0)),
+          positionSeconds: Math.max(0, Math.round(activeAudioRef.current?.currentTime || 0)),
           failureReason: `Interrupted for ${nextInsertion.itemType === "SCHOOL_ANNOUNCEMENT" ? `school announcement ${nextInsertion.announcementTitle}` : `campaign ${nextInsertion.campaignName}`}`
         });
       }
       startedPlaybackKey.current = null;
       setActiveInsertionId(nextInsertion.scheduleItemId);
-      setPlaySequence((current) => current + 1);
     };
     const delay = Math.max(0, new Date(nextInsertion.plannedStart).getTime() - Date.now());
     insertionTimer.current = window.setTimeout(activate, delay);
@@ -236,6 +233,28 @@ export default function PlayerPage() {
     await loadState();
   }
 
+  const playbackEvent = useCallback((item, eventType, audioElement, failureReason = null) => {
+    if (!item || !manifest) return;
+    queuePlaybackEvent({
+      eventId: crypto.randomUUID(),
+      manifestVersion: manifest.version,
+      proofToken: item.proofToken,
+      scheduleItemId: item.scheduleItemId,
+      itemType: item.itemType,
+      ...(item.itemType === "MUSIC" ? { trackId: item.trackId } : {}),
+      eventType,
+      occurredAt: new Date().toISOString(),
+      positionSeconds: Math.max(0, Math.round(audioElement?.currentTime || 0)),
+      ...(failureReason ? { failureReason } : {})
+    });
+  }, [manifest?.version, queuePlaybackEvent]);
+
+  const handleLiveActiveItem = useCallback((item, element) => {
+    activeItemRef.current = item;
+    activeAudioRef.current = element;
+    startedPlaybackKey.current = manifest ? `${manifest.version}:${item.scheduleItemId}` : null;
+  }, [manifest?.version]);
+
   if (loading) return <main style={styles.page}><p>Connecting player...</p></main>;
 
   if (!state) {
@@ -252,51 +271,33 @@ export default function PlayerPage() {
   }
 
   const activeInsertion = manifest?.insertions?.find((item) => item.scheduleItemId === activeInsertionId) || null;
-  const activeTrack = manifest?.playlist?.[trackIndex] || null;
-  const activeItem = activeInsertion || activeTrack;
-  activeItemRef.current = activeItem;
-  const activePlaybackKey = activeItem
-    ? `${manifest.version}:${activeItem.scheduleItemId}:${playSequence}`
+  const activePlaybackKey = activeInsertion
+    ? `${manifest.version}:${activeInsertion.scheduleItemId}`
     : null;
 
-  function playbackEvent(eventType, audioElement, failureReason = null) {
-    if (!activeItem || !manifest) return;
-    queuePlaybackEvent({
-      eventId: crypto.randomUUID(),
-      manifestVersion: manifest.version,
-      proofToken: activeItem.proofToken,
-      scheduleItemId: activeItem.scheduleItemId,
-      itemType: activeItem.itemType,
-      ...(activeItem.itemType === "MUSIC" ? { trackId: activeItem.trackId } : {}),
-      eventType,
-      occurredAt: new Date().toISOString(),
-      positionSeconds: Math.max(0, Math.round(audioElement?.currentTime || 0)),
-      ...(failureReason ? { failureReason } : {})
-    });
-  }
-
   function startTrack(event) {
+    if (!activeInsertion) return;
     if (startedPlaybackKey.current === activePlaybackKey) return;
     startedPlaybackKey.current = activePlaybackKey;
-    if (activeItem.itemType !== "MUSIC") rememberPlayedInsertion(activeItem.scheduleItemId);
-    playbackEvent("STARTED", event.currentTarget);
+    rememberPlayedInsertion(activeInsertion.scheduleItemId);
+    activeItemRef.current = activeInsertion;
+    activeAudioRef.current = event.currentTarget;
+    playbackEvent(activeInsertion, "STARTED", event.currentTarget);
   }
 
   function finishTrack(event) {
-    playbackEvent("COMPLETED", event.currentTarget);
+    if (!activeInsertion) return;
+    playbackEvent(activeInsertion, "COMPLETED", event.currentTarget);
     startedPlaybackKey.current = null;
-    if (activeItem.itemType !== "MUSIC") setActiveInsertionId(null);
-    else setTrackIndex((current) => (current + 1) % manifest.playlist.length);
-    setPlaySequence((current) => current + 1);
+    setActiveInsertionId(null);
   }
 
   function failTrack(event) {
-    playbackEvent("FAILED", event.currentTarget, "Browser audio playback failed");
+    if (!activeInsertion) return;
+    playbackEvent(activeInsertion, "FAILED", event.currentTarget, "Browser audio playback failed");
     startedPlaybackKey.current = null;
-    if (activeItem.itemType !== "MUSIC") {
-      rememberPlayedInsertion(activeItem.scheduleItemId);
-      setActiveInsertionId(null);
-    }
+    rememberPlayedInsertion(activeInsertion.scheduleItemId);
+    setActiveInsertionId(null);
     setMessage("This audio could not be played. The player will retry when the schedule refreshes.");
   }
 
@@ -304,11 +305,20 @@ export default function PlayerPage() {
     <p style={styles.eyebrow}>RUVANAS WEB PLAYER</p>
     <h1 style={styles.heading}>{state.player.name}</h1>
     <p style={styles.copy}>{state.player.location} / {state.player.zone}</p>
-    {activeItem ? <>
-      <h2 style={styles.channel}>{activeItem.itemType === "SCHOOL_ANNOUNCEMENT" ? "School Radio" : activeItem.itemType === "PROMO" ? activeItem.campaignName : manifest.musicMode?.name}</h2>
-      <p style={styles.nowPlaying}>{activeItem.itemType === "SCHOOL_ANNOUNCEMENT" ? "Announcement playing" : activeItem.itemType === "PROMO" ? "Campaign playing" : "Now playing"}: <strong>{activeItem.artist} — {activeItem.title}</strong></p>
-      <audio ref={audio} key={activePlaybackKey} src={activeItem.mediaUrl} controls autoPlay onPlay={startTrack} onEnded={finishTrack} onError={failTrack} style={{ width: "100%" }} />
+    {activeInsertion ? <>
+      <h2 style={styles.channel}>{activeInsertion.itemType === "SCHOOL_ANNOUNCEMENT" ? "School Radio" : activeInsertion.campaignName}</h2>
+      <p style={styles.nowPlaying}>{activeInsertion.itemType === "SCHOOL_ANNOUNCEMENT" ? "Announcement playing" : "Campaign playing"}: <strong>{activeInsertion.artist} — {activeInsertion.title}</strong></p>
+      <audio ref={insertionAudio} key={activePlaybackKey} src={activeInsertion.mediaUrl} controls autoPlay onPlay={startTrack} onEnded={finishTrack} onError={failTrack} style={{ width: "100%" }} />
       <p style={styles.online}>Online — secure schedule and proof of play active</p>
+    </> : manifest?.playlist?.length && manifest?.live ? <>
+      <h2 style={styles.channel}>{state.channel?.name || manifest.musicMode?.name}</h2>
+      <LiveChannelPlayer
+        manifest={manifest}
+        onPlaybackEvent={playbackEvent}
+        onActiveItem={handleLiveActiveItem}
+        onMessage={setMessage}
+      />
+      <p style={styles.online}>Online — synchronized live channel and proof of play active</p>
     </> : state.channel?.streamUrl ? <>
       <h2 style={styles.channel}>{state.channel.name}</h2>
       <audio src={state.channel.streamUrl} controls autoPlay style={{ width: "100%" }} />

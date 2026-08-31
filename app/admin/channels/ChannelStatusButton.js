@@ -19,7 +19,7 @@ export default function ChannelStatusButton({
   async function updateStatus() {
     if (!isActive && !canActivate) {
       setMessage(
-        "This channel needs a configured station and at least one assigned zone before it can be activated."
+        "Assign this channel to at least one audio zone before it can be activated."
       );
       return;
     }

@@ -41,8 +41,9 @@ export default async function AdminChannelsPage() {
         <div>
           <h1 style={{ marginBottom: 8 }}>Ruvanas Channels</h1>
           <p style={{ margin: 0, opacity: 0.7 }}>
-            Create friendly audio channels and assign each one to one or more
-            retail zones. Technical stream details remain private.
+            Each active channel runs its own synchronized live programme clock.
+            Premium plans can run several channels simultaneously; a linked
+            technical stream is an optional fallback.
           </p>
         </div>
 
@@ -114,11 +115,7 @@ export default async function AdminChannelsPage() {
                   channel.station?.streamConfig?.streamUrl
                 );
 
-                const canActivate = Boolean(
-                  channel.station &&
-                    streamConfigured &&
-                    channel.zoneAssignments.length > 0
-                );
+                const canActivate = channel.zoneAssignments.length > 0;
 
                 return (
                   <tr
@@ -148,11 +145,9 @@ export default async function AdminChannelsPage() {
                     </td>
 
                     <td style={{ padding: 8 }}>
-                      {channel.station
-                        ? streamConfigured
-                          ? "Configured"
-                          : "Needs setup"
-                        : "Not linked"}
+                      {streamConfigured
+                        ? "Ruvanas live + external fallback"
+                        : "Ruvanas synchronized live"}
                     </td>
 
                     <td style={{ padding: 8 }}>

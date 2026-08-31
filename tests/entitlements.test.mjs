@@ -26,6 +26,8 @@ test("active and trial subscriptions receive plan entitlements", () => {
     const entitlements = resolveEntitlements({ status, plan });
     assert.equal(entitlements.serviceEnabled, true);
     assert.equal(entitlements.stationLimit, 5);
+    assert.equal(entitlements.streamLimit, 5);
+    assert.equal(entitlements.simultaneousStreamsEnabled, true);
     assert.equal(entitlements.promoUploadEnabled, true);
     assert.equal(entitlements.schoolRadioEnabled, true);
     assert.equal(entitlements.schoolPublicPublishingEnabled, false);
@@ -155,6 +157,8 @@ test("suspended, cancelled, missing, and inactive plans deny service", () => {
     const entitlements = resolveEntitlements(subscription);
     assert.equal(entitlements.serviceEnabled, false);
     assert.equal(entitlements.stationLimit, 0);
+    assert.equal(entitlements.streamLimit, 0);
+    assert.equal(entitlements.simultaneousStreamsEnabled, false);
     assert.equal(entitlements.promoUploadEnabled, false);
     assert.equal(entitlements.schoolRadioEnabled, false);
     assert.equal(entitlements.schoolPublicPublishingEnabled, false);
