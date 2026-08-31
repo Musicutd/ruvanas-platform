@@ -10,9 +10,9 @@ export default async function LaunchReadinessPage() {
 
   return <div style={styles.page}>
     <header>
-      <p style={styles.eyebrow}>Stage 14B · Controlled launch handover</p>
+      <p style={styles.eyebrow}>Stage 14C · Launch evidence closure</p>
       <h1 style={styles.heading}>Launch readiness</h1>
-      <p style={styles.subtitle}>Combine current paid-service health, release consistency, and recovery evidence before completing the human-controlled launch checklist. This view never deploys, publishes, changes customer data, or claims that legal and commercial approval has been granted.</p>
+      <p style={styles.subtitle}>Combine current paid-service health, release consistency, recovery evidence, and accountable operator confirmations before controlled pilot sign-off. This view never deploys, publishes, changes customer data, or grants legal and commercial approval automatically.</p>
     </header>
     <LaunchReadiness />
   </div>;
