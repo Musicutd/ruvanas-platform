@@ -27,13 +27,15 @@ Use this runbook only for the paid `ruvanas-platform` service. Keep the free `ru
 
 ## Human launch approval
 
-Record a safe release reference and confirm:
+Open **Super Admin -> Launch readiness** for the active paid release. Record a safe evidence reference and accountable note for each required confirmation:
 
 - GitHub CI and final acceptance passed for the deployed commit;
 - the paid deployment is live and stable;
 - the bounded live smoke passed;
 - the free staging web service remains suspended; and
 - licensing, privacy, safeguarding, retention, pricing and customer commitments are approved for the launch scope.
+
+Record final sign-off only after the page reports that automated readiness is clear and every required confirmation is current. Name the exact approved scope (for example, an internal pilot or a specific customer pilot). A later operational or recovery blocker makes the recorded sign-off non-current until readiness is restored. Revoke a confirmation or withdraw final sign-off whenever its evidence is superseded.
 
 Do not store credentials, private provider links, customer content, student data, recipient details, or signed URLs in handover evidence.
 
