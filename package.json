@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build",
+    "backup:protected-media": "node scripts/protected-media-recovery.mjs backup",
     "ci:media-toolchain": "node scripts/check-media-toolchain.mjs",
     "ci:performance-indexes": "node scripts/check-performance-indexes.mjs",
     "ci:prepare-media-toolchain": "npm rebuild ffmpeg-static --foreground-scripts",
@@ -14,6 +15,8 @@
     "test:integration": "node --test tests/integration/*.test.mjs",
     "test:performance": "node scripts/performance-smoke.mjs",
     "test:smoke": "node scripts/release-smoke.mjs",
+    "verify:protected-media-backup": "node scripts/protected-media-recovery.mjs verify",
+    "drill:protected-media-restore": "node scripts/protected-media-recovery.mjs drill",
     "start": "node scripts/start-production.mjs",
     "start:web": "next start",
     "worker:audio": "node scripts/audio-worker.mjs",
