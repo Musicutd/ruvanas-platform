@@ -1,0 +1,229 @@
+.page {
+  min-height: 100vh;
+  background: #0f1726;
+  color: #f8fafc;
+}
+
+.header {
+  min-height: 68px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 0 max(20px, calc((100vw - 1160px) / 2));
+  border-bottom: 1px solid #29364c;
+  background: #141e2f;
+}
+
+.brand {
+  color: #f4b942;
+  font-weight: 900;
+  letter-spacing: 2px;
+  text-decoration: none;
+}
+
+.accountArea {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.accountLabel {
+  color: #cbd5e1;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.signOut {
+  min-height: 40px;
+  border: 1px solid #64748b;
+  border-radius: 9px;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+  font-weight: 800;
+  padding: 8px 14px;
+}
+
+.shell {
+  width: min(1160px, calc(100% - 40px));
+  margin: 0 auto;
+  padding: 46px 0 72px;
+}
+
+.welcome,
+.sectionHeading,
+.nextAction {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.welcome h1 {
+  margin: 0;
+  font-size: clamp(34px, 5vw, 52px);
+}
+
+.welcome > div > p:last-child,
+.nextAction p,
+.navigationSection > p {
+  color: #bac6d8;
+  line-height: 1.6;
+}
+
+.welcome > div > p:last-child {
+  margin: 12px 0 0;
+  font-size: 18px;
+}
+
+.eyebrow {
+  color: #f4b942;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 1.4px;
+  margin: 0 0 10px;
+}
+
+.roleBadge,
+.healthy,
+.attention {
+  border-radius: 999px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: capitalize;
+}
+
+.roleBadge { background: #26344d; color: #dce5f2; }
+.healthy { background: #123c2b; color: #86efac; }
+.attention { background: #4a3513; color: #fde68a; }
+
+.nextAction {
+  margin: 28px 0;
+  padding: 26px;
+  border: 1px solid #725923;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #2c2416, #19263a);
+}
+
+.nextAction h2,
+.sectionHeading h2 {
+  margin: 0;
+  font-size: clamp(24px, 3vw, 32px);
+}
+
+.nextAction p { max-width: 680px; margin: 10px 0 0; }
+
+.primaryButton {
+  display: inline-flex;
+  min-height: 46px;
+  align-items: center;
+  border-radius: 9px;
+  background: #f4b942;
+  color: #101827;
+  font-weight: 900;
+  padding: 0 18px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.statusSection,
+.toolsSection { margin-top: 34px; }
+
+.statusGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.statusGrid article {
+  border: 1px solid #2b3a54;
+  border-radius: 14px;
+  background: #182235;
+  padding: 20px;
+}
+
+.statusGrid span,
+.statusGrid small { display: block; color: #9cacbf; }
+
+.statusGrid span {
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: .7px;
+  text-transform: uppercase;
+}
+
+.statusGrid strong { display: block; margin: 9px 0 7px; font-size: 25px; }
+
+.navigationGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 18px;
+}
+
+.navigationSection {
+  border: 1px solid #2b3a54;
+  border-radius: 16px;
+  background: #141e2f;
+  padding: 22px;
+}
+
+.navigationSection h3 { margin: 0; font-size: 22px; }
+.navigationSection > p { min-height: 52px; margin: 9px 0 18px; font-size: 14px; }
+.navigationSection ul { list-style: none; margin: 0; padding: 0; }
+.navigationSection li + li { border-top: 1px solid #2a3850; }
+
+.navigationSection a {
+  position: relative;
+  display: block;
+  padding: 14px 28px 14px 0;
+  color: #fff;
+  text-decoration: none;
+}
+
+.navigationSection a:hover strong,
+.navigationSection a:focus-visible strong { color: #f4b942; }
+
+.navigationSection a span {
+  display: block;
+  margin-top: 5px;
+  color: #9cacbf;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.navigationSection a b { position: absolute; right: 0; top: 18px; color: #f4b942; }
+
+.planDetails {
+  margin-top: 26px;
+  border: 1px solid #2b3a54;
+  border-radius: 12px;
+  background: #141e2f;
+  color: #cbd5e1;
+  padding: 16px 18px;
+}
+
+.planDetails summary { cursor: pointer; font-weight: 800; }
+.planDetails > div { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 16px; }
+.planDetails span { color: #9cacbf; }
+.planDetails strong { color: #fff; margin-left: 5px; }
+
+@media (max-width: 880px) {
+  .statusGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .navigationGrid { grid-template-columns: 1fr; }
+  .navigationSection > p { min-height: 0; }
+}
+
+@media (max-width: 560px) {
+  .header { align-items: flex-start; padding-block: 15px; }
+  .accountArea { align-items: flex-end; flex-direction: column; gap: 7px; }
+  .accountLabel { max-width: 180px; text-align: right; }
+  .shell { width: min(100% - 28px, 1160px); padding-top: 32px; }
+  .statusGrid { grid-template-columns: 1fr; }
+  .nextAction { align-items: stretch; }
+  .primaryButton { justify-content: center; width: 100%; box-sizing: border-box; }
+}
