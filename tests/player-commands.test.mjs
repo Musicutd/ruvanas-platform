@@ -72,6 +72,14 @@ test("database command delivery, acknowledgement, expiry, and replacement preser
     const player = await database.player.create({
       data: { organisationId, zoneId: zone.id, name: "Command player", status: "ONLINE", sessionTokenHash: `session-${suffix}` }
     });
+    await database.playerListenerLease.create({
+      data: {
+        organisationId,
+        playerId: player.id,
+        instanceHash: "a".repeat(64),
+        expiresAt: new Date(now.getTime() + 600_000)
+      }
+    });
     const command = await database.playerCommand.create({
       data: { organisationId, playerId: player.id, requestedById: userId, kind: "COLLECT_DIAGNOSTICS", requestedAt: now, expiresAt: new Date(now.getTime() + 600_000) }
     });
@@ -107,6 +115,7 @@ test("database command delivery, acknowledgement, expiry, and replacement preser
     assert.equal((await database.player.findUniqueOrThrow({ where: { id: player.id } })).status, "DISABLED");
     assert.equal(lifecycle.replacement.replacesPlayerId, player.id);
     assert.equal(lifecycle.replacement.status, "PENDING_ENROLMENT");
+    assert.equal(await database.playerListenerLease.count({ where: { playerId: player.id } }), 0);
     assert.equal((await database.playerCommand.findUniqueOrThrow({ where: { id: pending.id } })).status, "CANCELLED");
     assert.equal(await database.auditLog.count({ where: { organisationId, action: "PLAYER_REPLACEMENT_CREATED" } }), 1);
   } finally {
