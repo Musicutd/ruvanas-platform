@@ -4460,6 +4460,7 @@ model PlayerListenerLease {
   instanceHash   String   @db.Char(64)
   lastSeenAt     DateTime @default(now())
   expiresAt      DateTime
+  revokedAt      DateTime?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -4467,7 +4468,7 @@ model PlayerListenerLease {
   player       Player       @relation(fields: [playerId], references: [id], onDelete: Cascade)
 
   @@unique([playerId, instanceHash])
-  @@index([organisationId, expiresAt])
+  @@index([organisationId, revokedAt, expiresAt])
   @@index([playerId, expiresAt])
 }
 
@@ -4871,4 +4872,3 @@ model AnalyticsAggregationCursor {
 
   organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
 }
-
