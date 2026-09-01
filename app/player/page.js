@@ -11,7 +11,7 @@ const PLAYBACK_QUEUE_KEY = "ruvanas_proof_of_play_queue_v1";
 const PLAYED_INSERTIONS_KEY = "ruvanas_played_campaign_insertions_v1";
 const PLAYER_INSTANCE_KEY = "ruvanas_player_instance_v1";
 const PLAYER_INSTANCE_HEADER = "X-Ruvanas-Player-Instance";
-const PLAYER_APP_VERSION = "stage-15d-player-device-lock";
+const PLAYER_APP_VERSION = "stage-15f-guided-shop-activation";
 let volatilePlayerInstanceId = null;
 
 function getPlayerInstanceId() {
