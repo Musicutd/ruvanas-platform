@@ -1205,6 +1205,7 @@ model Organisation {
   playerHeartbeatSamples           PlayerHeartbeatSample[]
   playerHealthIncidents            PlayerHealthIncident[]
   playerCommands                   PlayerCommand[]
+  playerListenerLeases             PlayerListenerLease[]
   streamHealthSamples              StationStreamHealthSample[]
   streamHealthIncidents            StationStreamHealthIncident[]
   jobs                             Job[]
@@ -4441,6 +4442,7 @@ model Player {
   heartbeatSamples  PlayerHeartbeatSample[]
   healthIncidents   PlayerHealthIncident[]
   commands          PlayerCommand[]
+  listenerLeases    PlayerListenerLease[]
   replacesPlayer    Player?                 @relation("PlayerReplacement", fields: [replacesPlayerId], references: [id], onDelete: SetNull)
   replacementPlayer Player?                 @relation("PlayerReplacement")
 
@@ -4449,6 +4451,24 @@ model Player {
   @@index([organisationId, status])
   @@index([lastHeartbeatAt])
   @@index([retiredAt])
+}
+
+model PlayerListenerLease {
+  id             String   @id @default(cuid())
+  organisationId String
+  playerId       String
+  instanceHash   String   @db.Char(64)
+  lastSeenAt     DateTime @default(now())
+  expiresAt      DateTime
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  player       Player       @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([playerId, instanceHash])
+  @@index([organisationId, expiresAt])
+  @@index([playerId, expiresAt])
 }
 
 model PlayerCommand {
@@ -4851,3 +4871,4 @@ model AnalyticsAggregationCursor {
 
   organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
 }
+

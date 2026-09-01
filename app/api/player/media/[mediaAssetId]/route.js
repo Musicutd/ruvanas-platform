@@ -5,6 +5,7 @@ import { getCurrentPlayer } from "@/lib/player-auth";
 import { resolvePlayerProgramming } from "@/lib/player-programming";
 import { getR2Storage } from "@/lib/r2";
 import { isCatalogueLicenceCurrent } from "@/lib/catalogue-upload.mjs";
+import { isPlayerListenerTokenActive } from "@/lib/player-listener-lease.mjs";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -27,6 +28,11 @@ export async function GET(request, { params }) {
   try {
     const player = await getCurrentPlayer();
     if (!player || player.status === "DISABLED") return NextResponse.json({ error: "This player is not enrolled or has been disabled." }, { status: 401 });
+    const listenerToken = request.nextUrl.searchParams.get("listener");
+    const listenerActive = await isPlayerListenerTokenActive(prisma, { player, token: listenerToken });
+    if (!listenerActive) {
+      return NextResponse.json({ error: "This player does not have an active listener slot." }, { status: 429 });
+    }
 
     const mediaAssetId = String(params.mediaAssetId || "");
     const instant = new Date();
@@ -90,3 +96,4 @@ export async function GET(request, { params }) {
     return NextResponse.json({ error: "The audio file could not be played." }, { status: 500 });
   }
 }
+
