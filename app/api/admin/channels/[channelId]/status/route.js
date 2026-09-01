@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requirePlatformAdmin } from "@/lib/access-control";
 import { accessDenied } from "@/lib/api-response";
+import { resolveEntitlements } from "@/lib/entitlements.mjs";
 
 const ALLOWED_STATUSES = ["DRAFT", "ACTIVE", "PAUSED"];
 
@@ -41,6 +42,11 @@ export async function POST(request, { params }) {
           select: {
             id: true
           }
+        },
+        organisation: {
+          include: {
+            subscription: { include: { plan: true, billingContract: true } }
+          }
         }
       }
     });
@@ -57,30 +63,32 @@ export async function POST(request, { params }) {
     }
 
     if (nextStatus === "ACTIVE") {
-      const hasConfiguredStream = Boolean(
-        channel.station?.streamConfig?.streamUrl
-      );
-
-      if (!channel.station) {
+      const entitlements = resolveEntitlements(channel.organisation.subscription);
+      if (!entitlements.serviceEnabled) {
         return NextResponse.json(
           {
-            error:
-              "Link a technical station before activating this channel."
+            error: "This organisation's subscription does not currently allow live streams."
           },
           {
-            status: 400
+            status: 403
           }
         );
       }
 
-      if (!hasConfiguredStream) {
+      const activeStreamCount = await prisma.channel.count({
+        where: {
+          organisationId: channel.organisationId,
+          status: "ACTIVE",
+          id: { not: channel.id }
+        }
+      });
+      if (activeStreamCount >= entitlements.streamLimit) {
         return NextResponse.json(
           {
-            error:
-              "Configure the linked technical station before activating this channel."
+            error: `This plan allows ${entitlements.streamLimit} simultaneous live stream${entitlements.streamLimit === 1 ? "" : "s"}. Pause another channel or upgrade the plan.`
           },
           {
-            status: 400
+            status: 409
           }
         );
       }
@@ -133,7 +141,8 @@ export async function POST(request, { params }) {
           entityId: channel.id,
           details: {
             previousStatus: channel.status,
-            status: nextStatus
+            status: nextStatus,
+            delivery: channel.station?.streamConfig?.streamUrl ? "RUVANAS_LIVE_WITH_EXTERNAL_FALLBACK" : "RUVANAS_LIVE"
           }
         }
       });
