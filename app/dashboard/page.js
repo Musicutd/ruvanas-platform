@@ -31,7 +31,7 @@ export default async function DashboardPage() {
   const stationCount = organisation.stations.length;
   const firstStation = organisation.stations[0];
   const activePlayerStreams = await prisma.playerListenerLease.count({
-    where: { organisationId: organisation.id, expiresAt: { gt: new Date() } }
+    where: { organisationId: organisation.id, revokedAt: null, expiresAt: { gt: new Date() } }
   });
 
   const storageUsedMb = organisation.stations.reduce(
@@ -105,6 +105,7 @@ export default async function DashboardPage() {
             <p style={styles.cardLabel}>Active shop streams</p>
             <h2 style={styles.cardValue}>{activePlayerStreams} / {entitlements.streamLimit}</h2>
             <p style={styles.cardText}>Live enrolled players using this tier now</p>
+            <a href="/dashboard/player-sessions" style={styles.cardLink}>Manage active streams</a>
           </article>
 
           <article style={styles.card}>
@@ -241,6 +242,13 @@ const styles = {
     color: "#b8c3d6",
     margin: "10px 0 0",
     lineHeight: 1.45
+  },
+  cardLink: {
+    color: "#f4b942",
+    display: "inline-block",
+    fontWeight: 800,
+    marginTop: 14,
+    textDecoration: "none"
   },
   nextCard: {
     background: "linear-gradient(135deg, #2c2416, #1b2738)",

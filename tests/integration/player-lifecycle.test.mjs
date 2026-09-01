@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import test from "node:test";
 import { PrismaClient } from "@prisma/client";
 import { createPlaybackProofToken } from "../../lib/playback-proof.mjs";
@@ -24,6 +24,10 @@ async function api(path, { method = "GET", body, cookie, origin = baseUrl, heade
 
 function responseCookie(response) {
   return response.headers.get("set-cookie")?.split(";")[0] || "";
+}
+
+function sessionHash(token) {
+  return createHmac("sha256", sessionSecret).update(token).digest("hex");
 }
 
 test("player enrolment, offline recovery, command delivery, proof replay, and disablement form one controlled lifecycle", async () => {
@@ -69,6 +73,19 @@ test("player enrolment, offline recovery, command delivery, proof replay, and di
     await database.subscription.create({
       data: { organisationId, planId, status: "ACTIVE" }
     });
+    await database.organisationMember.create({
+      data: { organisationId, userId: operator.id, role: "OWNER" }
+    });
+    const rawSessionToken = randomUUID();
+    await database.session.create({
+      data: {
+        userId: operator.id,
+        activeOrganisationId: organisationId,
+        tokenHash: sessionHash(rawSessionToken),
+        expiresAt: new Date(Date.now() + 60 * 60_000)
+      }
+    });
+    const subscriberCookie = `ruvanas_session=${rawSessionToken}`;
 
     const location = await database.location.create({
       data: {
@@ -340,6 +357,42 @@ test("player enrolment, offline recovery, command delivery, proof replay, and di
       { ok: true, accepted: 0, duplicates: 1 }
     );
     assert.equal(await database.proofOfPlayEvent.count({ where: { clientEventId: proofEvent.eventId } }), 1);
+
+    const refreshedLease = await api("/api/player/state", {
+      cookie: playerCookie,
+      headers: { "x-ruvanas-player-instance": firstPlayerInstance }
+    });
+    assert.equal(refreshedLease.status, 200, await refreshedLease.clone().text());
+    const sessionList = await api("/api/player-sessions", { cookie: subscriberCookie });
+    assert.equal(sessionList.status, 200, await sessionList.clone().text());
+    const sessionListBody = await sessionList.json();
+    assert.equal(sessionListBody.active, 1);
+    assert.equal(sessionListBody.limit, 1);
+    assert.equal(sessionListBody.canManage, true);
+    assert.equal(sessionListBody.sessions[0].player.id, player.id);
+    assert.equal(sessionListBody.sessions[0].player.zone.location.name, "Lifecycle location");
+
+    const stoppedSession = await api(`/api/player-sessions/${sessionListBody.sessions[0].id}/revoke`, {
+      method: "POST",
+      cookie: subscriberCookie
+    });
+    assert.equal(stoppedSession.status, 200, await stoppedSession.clone().text());
+    assert.equal((await stoppedSession.json()).ok, true);
+    assert.equal(await database.auditLog.count({
+      where: { organisationId, actorUserId: operator.id, action: "PLAYER_LISTENER_SESSION_REVOKED" }
+    }), 1);
+
+    const stoppedPlayer = await api("/api/player/state", {
+      cookie: playerCookie,
+      headers: { "x-ruvanas-player-instance": firstPlayerInstance }
+    });
+    assert.equal(stoppedPlayer.status, 403);
+    assert.equal((await stoppedPlayer.json()).code, "PLAYER_SESSION_REVOKED");
+    const replacementPlayer = await api("/api/player/state", {
+      cookie: playerCookie,
+      headers: { "x-ruvanas-player-instance": randomUUID() }
+    });
+    assert.equal(replacementPlayer.status, 200, await replacementPlayer.clone().text());
 
     await database.player.update({
       where: { id: player.id },
