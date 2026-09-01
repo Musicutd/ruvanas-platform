@@ -13,9 +13,9 @@ const secret = "stage-15b-player-listener-test-secret";
 const firstInstance = "11111111-1111-4111-8111-111111111111";
 const secondInstance = "22222222-2222-4222-8222-222222222222";
 
-function player(streamLimit = 1) {
+function player(streamLimit = 1, id = "player-1") {
   return {
-    id: "player-1",
+    id,
     organisationId: "organisation-1",
     organisation: {
       subscription: {
@@ -88,7 +88,7 @@ test("player instance IDs are strict and media listener tokens are signed", () =
   assert.equal(appendPlayerListenerToken("/api/player/media/track-1", "signed.token"), "/api/player/media/track-1?listener=signed.token");
 });
 
-test("a one-stream tier renews its holder and refuses a second active browser", async () => {
+test("an enrolled player renews its holder and refuses a copied session on another browser", async () => {
   const database = memoryDatabase();
   const currentPlayer = player(1);
   const instant = new Date("2026-09-01T12:00:00.000Z");
@@ -114,8 +114,8 @@ test("a one-stream tier renews its holder and refuses a second active browser", 
     secret
   });
   assert.equal(denied.ok, false);
-  assert.equal(denied.status, 429);
-  assert.equal(denied.code, "PLAYER_STREAM_LIMIT_REACHED");
+  assert.equal(denied.status, 409);
+  assert.equal(denied.code, "PLAYER_DEVICE_IN_USE");
 
   assert.equal(await releasePlayerListenerLease(database, { player: currentPlayer, instanceId: firstInstance, secret }), true);
   const replacement = await claimPlayerListenerLease(database, {
@@ -125,6 +125,26 @@ test("a one-stream tier renews its holder and refuses a second active browser", 
     secret
   });
   assert.equal(replacement.ok, true);
+});
+
+test("different enrolled players may use separate plan slots while organisation capacity is enforced", async () => {
+  const database = memoryDatabase();
+  const instant = new Date("2026-09-01T12:00:00.000Z");
+  const firstPlayer = player(2, "player-1");
+  const secondPlayer = player(2, "player-2");
+  const thirdPlayer = player(2, "player-3");
+
+  assert.equal((await claimPlayerListenerLease(database, { player: firstPlayer, instanceId: firstInstance, instant, secret })).ok, true);
+  assert.equal((await claimPlayerListenerLease(database, { player: secondPlayer, instanceId: secondInstance, instant, secret })).ok, true);
+  const denied = await claimPlayerListenerLease(database, {
+    player: thirdPlayer,
+    instanceId: "33333333-3333-4333-8333-333333333333",
+    instant,
+    secret
+  });
+  assert.equal(denied.ok, false);
+  assert.equal(denied.status, 429);
+  assert.equal(denied.code, "PLAYER_STREAM_LIMIT_REACHED");
 });
 
 test("expired leases free capacity automatically", async () => {

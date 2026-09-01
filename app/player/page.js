@@ -11,7 +11,7 @@ const PLAYBACK_QUEUE_KEY = "ruvanas_proof_of_play_queue_v1";
 const PLAYED_INSERTIONS_KEY = "ruvanas_played_campaign_insertions_v1";
 const PLAYER_INSTANCE_KEY = "ruvanas_player_instance_v1";
 const PLAYER_INSTANCE_HEADER = "X-Ruvanas-Player-Instance";
-const PLAYER_APP_VERSION = "stage-15c-subscriber-stream-management";
+const PLAYER_APP_VERSION = "stage-15d-player-device-lock";
 let volatilePlayerInstanceId = null;
 
 function getPlayerInstanceId() {
@@ -35,6 +35,7 @@ function playerHeaders(headers = {}) {
 function isPlayerAccessBlocked(response, data) {
   return response.status === 429 ||
     data?.code === "PLAYER_STREAM_LIMIT_REACHED" ||
+    data?.code === "PLAYER_DEVICE_IN_USE" ||
     data?.code === "PLAYER_SESSION_REVOKED" ||
     data?.code === "PLAYER_SERVICE_UNAVAILABLE";
 }
@@ -220,7 +221,7 @@ export default function PlayerPage() {
           sourceStatus: navigator.onLine ? "CONNECTED" : "DISCONNECTED"
         })
       });
-      if (response.status === 429 || response.status === 403) {
+      if (response.status === 429 || response.status === 409 || response.status === 403) {
         const data = await response.json().catch(() => ({}));
         setAccessBlocked(true);
         setAccessBlockedCode(data.code || null);
@@ -342,11 +343,17 @@ export default function PlayerPage() {
   if (accessBlocked) {
     return <main style={styles.page}><section style={styles.card}>
       <p style={styles.eyebrow}>RUVANAS WEB PLAYER</p>
-      <h1 style={styles.heading}>{accessBlockedCode === "PLAYER_SESSION_REVOKED" ? "Player session stopped" : "Player limit reached"}</h1>
+      <h1 style={styles.heading}>{accessBlockedCode === "PLAYER_SESSION_REVOKED"
+        ? "Player session stopped"
+        : accessBlockedCode === "PLAYER_DEVICE_IN_USE"
+          ? "Player already active"
+          : "Player limit reached"}</h1>
       <p style={styles.copy}>{message || "This subscription has no free player stream slots."}</p>
       <p style={styles.copy}>{accessBlockedCode === "PLAYER_SESSION_REVOKED"
         ? "An organisation owner or manager stopped this session. You can reconnect after the short safety window or contact the account manager."
-        : "Close another active player, then try again. An abandoned slot is released automatically after about 90 seconds."}</p>
+        : accessBlockedCode === "PLAYER_DEVICE_IN_USE"
+          ? "Use the active device for this shop, or ask an organisation owner or manager to stop its session before moving the player to a replacement device."
+          : "Close another active player, then try again. An abandoned slot is released automatically after about 90 seconds."}</p>
       <button type="button" style={styles.button} onClick={() => {
         setLoading(true);
         setMessage("");

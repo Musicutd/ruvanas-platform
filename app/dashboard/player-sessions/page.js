@@ -29,7 +29,7 @@ export default async function PlayerSessionsPage({ searchParams }) {
     <section style={styles.content}>
       <p style={styles.eyebrow}>CLIENT STREAM CONTROL</p>
       <h1 style={styles.title}>Active shop streams</h1>
-      <p style={styles.subtitle}>See which enrolled shop players are using your plan and release a session that should no longer be active.</p>
+      <p style={styles.subtitle}>See which enrolled shop players are using your plan and release a session that should no longer be active. Each enrolled player can run on one device at a time.</p>
 
       {query?.released === "1" ? <p style={styles.success}>The player session was stopped and its stream slot is now available.</p> : null}
 
@@ -56,7 +56,7 @@ export default async function PlayerSessionsPage({ searchParams }) {
         </article>)}
       </section>}
 
-      <p style={styles.note}>Stopping a session is recorded in the organisation audit trail. The stopped browser is refused during the safety window; disabling an enrolled player remains available to Ruvanas operations for permanent device retirement.</p>
+      <p style={styles.note}>A different shop or device needs its own enrolled player. Stopping a session is recorded in the organisation audit trail and lets an authorised replacement device take over; disabling an enrolled player remains available to Ruvanas operations for permanent device retirement.</p>
     </section>
   </main>;
 }
