@@ -19,6 +19,20 @@ function waitForMetadata(audio) {
   });
 }
 
+function clampVolume(value) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(1, value));
+}
+
+async function prepareItem(audio, item) {
+  const requestedUrl = new URL(item.mediaUrl, window.location.href).href;
+  if (audio.src !== requestedUrl) {
+    audio.src = item.mediaUrl;
+    audio.load();
+  }
+  await waitForMetadata(audio);
+}
+
 function positionAtClientTime(manifest) {
   const playlist = manifest.playlist || [];
   const crossfade = manifest.live.crossfadeSeconds;
@@ -41,7 +55,13 @@ export default function LiveChannelPlayer({ manifest, onPlaybackEvent, onActiveI
   const manifestRef = useRef(manifest);
   const firstAudio = useRef(null);
   const secondAudio = useRef(null);
-  const timers = useRef({ next: null, frame: null, generation: 0 });
+  const timers = useRef({
+    next: null,
+    frame: null,
+    generation: 0,
+    endedAudio: null,
+    endedHandler: null
+  });
   const [currentIndex, setCurrentIndex] = useState(manifest.live.current.index);
   const [playing, setPlaying] = useState(false);
   const [needsStart, setNeedsStart] = useState(false);
@@ -51,6 +71,11 @@ export default function LiveChannelPlayer({ manifest, onPlaybackEvent, onActiveI
     timers.current.generation += 1;
     window.clearTimeout(timers.current.next);
     window.cancelAnimationFrame(timers.current.frame);
+    if (timers.current.endedAudio && timers.current.endedHandler) {
+      timers.current.endedAudio.removeEventListener("ended", timers.current.endedHandler);
+    }
+    timers.current.endedAudio = null;
+    timers.current.endedHandler = null;
     if (pauseAudio) {
       firstAudio.current?.pause();
       secondAudio.current?.pause();
@@ -58,14 +83,9 @@ export default function LiveChannelPlayer({ manifest, onPlaybackEvent, onActiveI
   }, []);
 
   const playItem = useCallback(async (audio, item, offset, gain) => {
-    const requestedUrl = new URL(item.mediaUrl, window.location.href).href;
-    if (audio.src !== requestedUrl) {
-      audio.src = item.mediaUrl;
-      audio.load();
-    }
-    await waitForMetadata(audio);
+    await prepareItem(audio, item);
     audio.currentTime = Math.min(Math.max(0, offset), Math.max(0, item.durationSeconds - 0.1));
-    audio.volume = Math.min(1, Math.max(0, gain));
+    audio.volume = clampVolume(gain);
     await audio.play();
     onPlaybackEvent(item, "STARTED", audio);
   }, [onPlaybackEvent]);
@@ -82,23 +102,37 @@ export default function LiveChannelPlayer({ manifest, onPlaybackEvent, onActiveI
       if (generation !== timers.current.generation) return;
       const item = playlist[index];
       const delayMs = Math.max(0, (item.durationSeconds - crossfade - offset) * 1000);
-      timers.current.next = window.setTimeout(async () => {
+      const nextIndex = (index + 1) % playlist.length;
+      const nextSlot = activeSlot === 0 ? 1 : 0;
+      const currentAudio = activeSlot === 0 ? firstAudio.current : secondAudio.current;
+      const nextAudio = nextSlot === 0 ? firstAudio.current : secondAudio.current;
+      const nextItem = playlist[nextIndex];
+
+      // Load the incoming track while the current one is still playing. Waiting
+      // until the two-second transition begins is too late on slower networks.
+      const preload = prepareItem(nextAudio, nextItem)
+        .then(() => true)
+        .catch(() => false);
+      let transitionStarted = false;
+      const beginTransition = async () => {
         if (generation !== timers.current.generation) return;
-        const nextIndex = (index + 1) % playlist.length;
-        const nextSlot = activeSlot === 0 ? 1 : 0;
-        const currentAudio = activeSlot === 0 ? firstAudio.current : secondAudio.current;
-        const nextAudio = nextSlot === 0 ? firstAudio.current : secondAudio.current;
-        const nextItem = playlist[nextIndex];
+        if (transitionStarted) return;
+        transitionStarted = true;
+        currentAudio.removeEventListener("ended", beginTransition);
+        timers.current.endedAudio = null;
+        timers.current.endedHandler = null;
         try {
+          if (!(await preload)) await prepareItem(nextAudio, nextItem);
           await playItem(nextAudio, nextItem, 0, 0);
           setCurrentIndex(nextIndex);
           onActiveItem(nextItem, nextAudio);
+          const currentAlreadyEnded = currentAudio.ended;
           const fadeStarted = performance.now();
           const fade = (now) => {
             if (generation !== timers.current.generation) return;
-            const progress = Math.min(1, (now - fadeStarted) / (crossfade * 1000));
-            currentAudio.volume = 1 - progress;
-            nextAudio.volume = progress;
+            const progress = clampVolume((now - fadeStarted) / Math.max(1, crossfade * 1000));
+            currentAudio.volume = clampVolume(1 - progress);
+            nextAudio.volume = currentAlreadyEnded ? 1 : clampVolume(progress);
             if (progress < 1) {
               timers.current.frame = window.requestAnimationFrame(fade);
               return;
@@ -113,7 +147,14 @@ export default function LiveChannelPlayer({ manifest, onPlaybackEvent, onActiveI
           setNeedsStart(true);
           onMessage(error instanceof Error ? error.message : "Playback needs to be started.");
         }
-      }, delayMs);
+      };
+
+      // The clock starts the mix two seconds early. The ended event is a safety
+      // net for timer throttling and prevents a channel from remaining silent.
+      timers.current.endedAudio = currentAudio;
+      timers.current.endedHandler = beginTransition;
+      currentAudio.addEventListener("ended", beginTransition, { once: true });
+      timers.current.next = window.setTimeout(beginTransition, delayMs);
     };
 
     const { index, offset } = positionAtClientTime(activeManifest);
@@ -135,8 +176,8 @@ export default function LiveChannelPlayer({ manifest, onPlaybackEvent, onActiveI
         const finishIncomingFade = (now) => {
           if (generation !== timers.current.generation) return;
           const progress = remainingMs === 0 ? 1 : Math.min(1, (now - fadeStarted) / remainingMs);
-          firstAudio.current.volume = (1 - incomingProgress) * (1 - progress);
-          secondAudio.current.volume = incomingProgress + (1 - incomingProgress) * progress;
+          firstAudio.current.volume = clampVolume((1 - incomingProgress) * (1 - progress));
+          secondAudio.current.volume = clampVolume(incomingProgress + (1 - incomingProgress) * progress);
           if (progress < 1) {
             timers.current.frame = window.requestAnimationFrame(finishIncomingFade);
             return;
@@ -198,3 +239,4 @@ const styles = {
   button: { justifySelf: "start", minHeight: 42, border: 0, borderRadius: 8, padding: "9px 14px", background: "#f4b942", color: "#111827", fontWeight: 900, cursor: "pointer" },
   hiddenAudio: { display: "none" }
 };
+
