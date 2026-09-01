@@ -9,7 +9,34 @@ import LiveChannelPlayer from "./LiveChannelPlayer";
 
 const PLAYBACK_QUEUE_KEY = "ruvanas_proof_of_play_queue_v1";
 const PLAYED_INSERTIONS_KEY = "ruvanas_played_campaign_insertions_v1";
-const PLAYER_APP_VERSION = "stage-15a-live-channel";
+const PLAYER_INSTANCE_KEY = "ruvanas_player_instance_v1";
+const PLAYER_INSTANCE_HEADER = "X-Ruvanas-Player-Instance";
+const PLAYER_APP_VERSION = "stage-15b-active-player-quota";
+let volatilePlayerInstanceId = null;
+
+function getPlayerInstanceId() {
+  if (volatilePlayerInstanceId) return volatilePlayerInstanceId;
+  try {
+    volatilePlayerInstanceId = window.sessionStorage.getItem(PLAYER_INSTANCE_KEY);
+    if (!volatilePlayerInstanceId) {
+      volatilePlayerInstanceId = crypto.randomUUID();
+      window.sessionStorage.setItem(PLAYER_INSTANCE_KEY, volatilePlayerInstanceId);
+    }
+  } catch {
+    volatilePlayerInstanceId = crypto.randomUUID();
+  }
+  return volatilePlayerInstanceId;
+}
+
+function playerHeaders(headers = {}) {
+  return { ...headers, [PLAYER_INSTANCE_HEADER]: getPlayerInstanceId() };
+}
+
+function isPlayerAccessBlocked(response, data) {
+  return response.status === 429 ||
+    data?.code === "PLAYER_STREAM_LIMIT_REACHED" ||
+    data?.code === "PLAYER_SERVICE_UNAVAILABLE";
+}
 
 function readPlaybackQueue() {
   try {
@@ -44,6 +71,7 @@ export default function PlayerPage() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [manifest, setManifest] = useState(null);
+  const [accessBlocked, setAccessBlocked] = useState(false);
   const [activeInsertionId, setActiveInsertionId] = useState(null);
   const timer = useRef(null);
   const manifestTimer = useRef(null);
@@ -61,7 +89,7 @@ export default function PlayerPage() {
     try {
       const response = await fetch("/api/player/proof-of-play", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: playerHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({ events: queued.slice(0, 100) })
       });
       if (!response.ok) return;
@@ -79,23 +107,46 @@ export default function PlayerPage() {
   }, [flushPlaybackQueue]);
 
   const loadManifest = useCallback(async () => {
-    const response = await fetch("/api/player/manifest", { cache: "no-store" });
+    const response = await fetch("/api/player/manifest", {
+      cache: "no-store",
+      headers: playerHeaders()
+    });
     if (response.status === 401) return;
     const data = await response.json();
+    if (isPlayerAccessBlocked(response, data)) {
+      setAccessBlocked(true);
+      setState(null);
+      setManifest(null);
+      setMessage(data.error);
+      return;
+    }
     if (!response.ok) throw new Error(data.error || "Unable to load the playback plan.");
+    setAccessBlocked(false);
     setManifest(data);
     setActiveInsertionId((current) => data.insertions?.some((item) => item.scheduleItemId === current) ? current : null);
   }, []);
 
   const loadState = useCallback(async () => {
-    const response = await fetch("/api/player/state", { cache: "no-store" });
+    const response = await fetch("/api/player/state", {
+      cache: "no-store",
+      headers: playerHeaders()
+    });
     if (response.status === 401) {
       setState(null);
       setLoading(false);
       return;
     }
     const data = await response.json();
+    if (isPlayerAccessBlocked(response, data)) {
+      setAccessBlocked(true);
+      setState(null);
+      setManifest(null);
+      setMessage(data.error);
+      setLoading(false);
+      return;
+    }
     if (!response.ok) throw new Error(data.error || "Unable to load player state.");
+    setAccessBlocked(false);
     setState(data);
     await loadManifest();
     setLoading(false);
@@ -105,7 +156,10 @@ export default function PlayerPage() {
     if (commandBusy.current) return;
     commandBusy.current = true;
     try {
-      const response = await fetch("/api/player/commands", { cache: "no-store" });
+      const response = await fetch("/api/player/commands", {
+        cache: "no-store",
+        headers: playerHeaders()
+      });
       if (!response.ok) return;
       const { command } = await response.json();
       if (!command) return;
@@ -126,7 +180,7 @@ export default function PlayerPage() {
       }
       await fetch(`/api/player/commands/${command.id}/acknowledge`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: playerHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({
           outcome,
           message,
@@ -151,15 +205,23 @@ export default function PlayerPage() {
   useEffect(() => {
     if (!state) return undefined;
     const heartbeat = async () => {
-      await fetch("/api/player/heartbeat", {
+      const response = await fetch("/api/player/heartbeat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: playerHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({
           appVersion: PLAYER_APP_VERSION,
           manifestVersion: manifest?.version || null,
           sourceStatus: navigator.onLine ? "CONNECTED" : "DISCONNECTED"
         })
       });
+      if (response.status === 429 || response.status === 403) {
+        const data = await response.json().catch(() => ({}));
+        setAccessBlocked(true);
+        setManifest(null);
+        setState(null);
+        setMessage(data.error || "This subscription has reached its active player limit.");
+        return;
+      }
       await flushPlaybackQueue();
       await pollPlayerCommands();
     };
@@ -167,6 +229,19 @@ export default function PlayerPage() {
     timer.current = window.setInterval(heartbeat, state.heartbeatIntervalSeconds * 1000);
     return () => window.clearInterval(timer.current);
   }, [state, manifest?.version, flushPlaybackQueue, pollPlayerCommands]);
+
+  useEffect(() => {
+    if (!state) return undefined;
+    const release = () => {
+      fetch("/api/player/heartbeat", {
+        method: "DELETE",
+        headers: playerHeaders(),
+        keepalive: true
+      }).catch(() => {});
+    };
+    window.addEventListener("pagehide", release);
+    return () => window.removeEventListener("pagehide", release);
+  }, [state]);
 
   useEffect(() => {
     window.addEventListener("online", flushPlaybackQueue);
@@ -257,6 +332,20 @@ export default function PlayerPage() {
 
   if (loading) return <main style={styles.page}><p>Connecting player...</p></main>;
 
+  if (accessBlocked) {
+    return <main style={styles.page}><section style={styles.card}>
+      <p style={styles.eyebrow}>RUVANAS WEB PLAYER</p>
+      <h1 style={styles.heading}>Player limit reached</h1>
+      <p style={styles.copy}>{message || "This subscription has no free player stream slots."}</p>
+      <p style={styles.copy}>Close another active player, then try again. An abandoned slot is released automatically after about 90 seconds.</p>
+      <button type="button" style={styles.button} onClick={() => {
+        setLoading(true);
+        setMessage("");
+        loadState().catch((error) => { setMessage(error.message); setLoading(false); });
+      }}>Try again</button>
+    </section></main>;
+  }
+
   if (!state) {
     return <main style={styles.page}><section style={styles.card}>
       <p style={styles.eyebrow}>RUVANAS WEB PLAYER</p>
@@ -343,3 +432,4 @@ const styles = {
   waiting: { marginTop: 28, padding: 18, borderRadius: 10, background: "#1e293b", color: "#cbd5e1", lineHeight: 1.6 },
   error: { color: "#fca5a5", fontWeight: 800 }
 };
+
