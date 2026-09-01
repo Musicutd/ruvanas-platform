@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import WorkflowProgress from "@/app/components/WorkflowProgress";
+import { playerWorkflowSteps, safeWorkflowMessage } from "@/lib/guided-workflows.mjs";
 
 const READINESS_REFRESH_MS = 15_000;
 
@@ -27,6 +29,12 @@ export default function PlayerSetupClient({ players, zones, canManage, configure
   const [error, setError] = useState("");
   const [enrolment, setEnrolment] = useState(null);
   const activePlayers = useMemo(() => playerRows.filter((player) => player.status !== "DISABLED"), [playerRows]);
+  const progress = useMemo(() => playerWorkflowSteps({
+    configured: activePlayers.length > 0,
+    enrolled: activePlayers.some((player) => player.readiness?.checklist?.find((item) => item.key === "ENROLLED")?.complete),
+    connected: activePlayers.some((player) => player.readiness?.checklist?.find((item) => item.key === "CONNECTED")?.complete),
+    playbackConfirmed: activePlayers.some((player) => player.readiness?.ready)
+  }), [activePlayers]);
 
   useEffect(() => {
     setPlayerRows(players);
@@ -43,7 +51,7 @@ export default function PlayerSetupClient({ players, zones, canManage, configure
       setCurrentConfigured(data.configured);
       if (!quiet) setError("");
     } catch (refreshError) {
-      if (!quiet) setError(refreshError.message || "Unable to refresh player readiness.");
+      if (!quiet) setError(safeWorkflowMessage(refreshError, "Unable to refresh player readiness."));
     } finally {
       if (!quiet) setRefreshing(false);
     }
@@ -70,7 +78,7 @@ export default function PlayerSetupClient({ players, zones, canManage, configure
       await refreshReadiness({ quiet: true });
       router.refresh();
     } catch (actionError) {
-      setError(actionError.message || "Unable to prepare the shop player.");
+      setError(safeWorkflowMessage(actionError, "Unable to prepare the shop player."));
     } finally { setBusy(""); }
   }
 
@@ -90,7 +98,7 @@ export default function PlayerSetupClient({ players, zones, canManage, configure
       await refreshReadiness({ quiet: true });
       router.refresh();
     } catch (actionError) {
-      setError(actionError.message || "Unable to replace the shop player.");
+      setError(safeWorkflowMessage(actionError, "Unable to replace the shop player."));
     } finally { setBusy(""); }
   }
 
@@ -109,6 +117,13 @@ export default function PlayerSetupClient({ players, zones, canManage, configure
       <div><span style={styles.label}>Management access</span><strong>{canManage ? "Owner / manager" : "View only"}</strong></div>
       <div><span style={styles.label}>Device rule</span><strong>One device per player</strong></div>
     </section>
+
+    <WorkflowProgress title="First shop go-live" steps={progress} />
+
+    <aside style={styles.guidance}>
+      <strong>Complete one step at a time.</strong>
+      <span>The progress line uses live device evidence. It cannot mark a shop ready until recent playback is confirmed.</span>
+    </aside>
 
     {canManage ? <section style={styles.card}>
       <h2 style={styles.title}>Prepare a shop player</h2>
@@ -148,7 +163,7 @@ export default function PlayerSetupClient({ players, zones, canManage, configure
       </form>
     </section> : null}
 
-    {error ? <p style={styles.error}>{error}</p> : null}
+    {error ? <p style={styles.error} role="alert">{error}</p> : null}
     {enrolment ? <section style={styles.success} aria-live="polite">
       <strong>One-time enrolment code for {enrolment.name}</strong>
       <code style={styles.code}>{enrolment.enrolmentCode}</code>
@@ -193,6 +208,7 @@ const styles = {
   summary: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 14, padding: 20, borderRadius: 14, background: "#182235", border: "1px solid #2b3a54" },
   label: { color: "#9cacbf", display: "block", fontSize: 12, fontWeight: 800, letterSpacing: .8, marginBottom: 7, textTransform: "uppercase" },
   card: { marginTop: 18, padding: 22, borderRadius: 14, background: "#182235", border: "1px solid #2b3a54" },
+  guidance: { display: "grid", gap: 5, marginTop: 18, borderLeft: "4px solid #f4b942", borderRadius: 8, background: "#182235", color: "#dce5f2", padding: "13px 15px", lineHeight: 1.45 },
   title: { margin: "0 0 8px", fontSize: 24 },
   copy: { color: "#bdc8d9", lineHeight: 1.5, margin: "6px 0" },
   form: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 12, alignItems: "end", marginTop: 18 },

@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import WorkflowProgress from "@/app/components/WorkflowProgress";
+import { safeWorkflowMessage, stationWorkflowSteps } from "@/lib/guided-workflows.mjs";
 
 export default function StationSetupPage({ params }) {
   const router = useRouter();
@@ -48,8 +50,8 @@ export default function StationSetupPage({ params }) {
 
       router.push(`/stations/${params.stationId}`);
       router.refresh();
-    } catch {
-      setError("A connection error occurred. Please try again.");
+    } catch (submitError) {
+      setError(safeWorkflowMessage(submitError, "A connection error occurred. Please try again."));
     } finally {
       setLoading(false);
     }
@@ -68,6 +70,16 @@ export default function StationSetupPage({ params }) {
           Enter the Centova Cast account details for this station. These
           values are stored privately and used to control the stream.
         </p>
+
+        <WorkflowProgress
+          title="Station setup"
+          steps={stationWorkflowSteps({ stationCreated: true })}
+        />
+
+        <aside style={styles.guidance}>
+          <strong>Before you begin</strong>
+          <span>Keep the streaming-server welcome email nearby. Ruvanas stores these credentials privately and never displays the passwords again.</span>
+        </aside>
 
         <form onSubmit={handleSubmit} style={styles.form}>
           <label style={styles.label}>
@@ -175,7 +187,7 @@ export default function StationSetupPage({ params }) {
             />
           </label>
 
-          {error ? <p style={styles.error}>{error}</p> : null}
+          {error ? <p style={styles.error} role="alert">{error}</p> : null}
 
           <button type="submit" style={styles.button} disabled={loading}>
             {loading ? "Saving…" : "Save and activate station"}
@@ -229,6 +241,17 @@ const styles = {
   form: {
     display: "grid",
     gap: 20
+  },
+  guidance: {
+    display: "grid",
+    gap: 6,
+    marginBottom: 22,
+    borderLeft: "4px solid #f4b942",
+    borderRadius: 8,
+    background: "#111c2e",
+    color: "#d8e0ec",
+    padding: "13px 15px",
+    lineHeight: 1.45
   },
   row: {
     display: "grid",
