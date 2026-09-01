@@ -1808,7 +1808,11 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
       enrolledAt: new Date(),
       lastHeartbeatAt: new Date()
     } });
-    const playerManifest = await api("/api/player/manifest", { cookie: `ruvanas_player=${rawPlayerToken}` });
+    const playerInstanceId = randomUUID();
+    const playerManifest = await api("/api/player/manifest", {
+      cookie: `ruvanas_player=${rawPlayerToken}`,
+      headers: { "x-ruvanas-player-instance": playerInstanceId }
+    });
     assert.equal(playerManifest.status, 200, await playerManifest.clone().text());
     const playerManifestBody = await playerManifest.json();
     assert.equal(playerManifestBody.state, "READY");
@@ -1968,7 +1972,8 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     });
     assert.equal(tamperedProofOfPlay.status, 400);
 
-    const unavailablePlayerMedia = await api("/api/player/media/not-an-asset", { cookie: `ruvanas_player=${rawPlayerToken}` });
+    const listenerToken = new URL(playerManifestBody.playlist[0].mediaUrl, baseUrl).searchParams.get("listener");
+    const unavailablePlayerMedia = await api(`/api/player/media/not-an-asset?listener=${encodeURIComponent(listenerToken)}`, { cookie: `ruvanas_player=${rawPlayerToken}` });
     assert.equal(unavailablePlayerMedia.status, 404);
     const channels = await Promise.all([
       db.channel.create({
@@ -2096,4 +2101,5 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   assert.equal(lastResponse.status, 429);
   assert.ok(Number(lastResponse.headers.get("retry-after")) > 0);
 });
+
 
