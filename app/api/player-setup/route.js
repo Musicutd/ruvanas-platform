@@ -4,13 +4,52 @@ import { getActiveOrganisationContext } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { playerTokenHash } from "@/lib/player-auth";
 import { createPlayerToken } from "@/lib/player-tokens.mjs";
-import { canManageSubscriberPlayers, createSubscriberPlayer } from "@/lib/subscriber-player-setup.mjs";
+import {
+  canManageSubscriberPlayers,
+  createSubscriberPlayer,
+  listSubscriberPlayers,
+  subscriberPlayerAllowance
+} from "@/lib/subscriber-player-setup.mjs";
+import { subscriberPlayerReadiness } from "@/lib/subscriber-player-readiness.mjs";
 
 const ENROLMENT_HOURS = 24;
 const playerSchema = z.object({
   name: z.string().trim().min(2).max(120),
   zoneId: z.string().trim().min(1).max(200)
 });
+
+export const dynamic = "force-dynamic";
+
+export async function GET() {
+  try {
+    const context = await getActiveOrganisationContext({ subscription: { include: { plan: true, billingContract: true } } });
+    if (!context) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
+    if (!context.membership) return NextResponse.json({ error: "No active organisation is available." }, { status: 403 });
+
+    const now = new Date();
+    const organisation = context.membership.organisation;
+    const players = await listSubscriberPlayers(prisma, { organisationId: organisation.id, instant: now });
+    const allowance = subscriberPlayerAllowance(organisation.subscription, now);
+    return NextResponse.json({
+      ok: true,
+      generatedAt: now,
+      configured: players.filter((player) => player.status !== "DISABLED").length,
+      limit: allowance.limit,
+      canManage: allowance.enabled && canManageSubscriberPlayers(context.membership.role),
+      players: players.map((player) => ({
+        id: player.id,
+        name: player.name,
+        status: player.status,
+        zoneName: player.zone.name,
+        locationName: player.zone.location.name,
+        readiness: subscriberPlayerReadiness(player, now)
+      }))
+    });
+  } catch (error) {
+    console.error("Subscriber player readiness error:", error);
+    return NextResponse.json({ error: "Unable to load shop-player readiness." }, { status: 500 });
+  }
+}
 
 export async function POST(request) {
   try {

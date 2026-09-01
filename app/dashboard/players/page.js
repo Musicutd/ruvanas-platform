@@ -3,6 +3,7 @@ import { getActiveOrganisationContext } from "@/lib/auth";
 import { resolveEntitlements } from "@/lib/entitlements.mjs";
 import { prisma } from "@/lib/prisma";
 import { canManageSubscriberPlayers, listSubscriberPlayers, subscriberPlayerAllowance } from "@/lib/subscriber-player-setup.mjs";
+import { subscriberPlayerReadiness } from "@/lib/subscriber-player-readiness.mjs";
 import PlayerSetupClient from "./PlayerSetupClient";
 
 export const dynamic = "force-dynamic";
@@ -15,9 +16,10 @@ export default async function SubscriberPlayersPage() {
   if (!context) redirect("/login");
   if (!context.membership) redirect("/dashboard");
 
+  const now = new Date();
   const organisation = context.membership.organisation;
-  const players = await listSubscriberPlayers(prisma, { organisationId: organisation.id });
-  const allowance = subscriberPlayerAllowance(organisation.subscription);
+  const players = await listSubscriberPlayers(prisma, { organisationId: organisation.id, instant: now });
+  const allowance = subscriberPlayerAllowance(organisation.subscription, now);
   const configured = players.filter((player) => player.status !== "DISABLED").length;
   const zones = organisation.locations.flatMap((location) => location.zones.map((zone) => ({ id: zone.id, name: zone.name, locationName: location.name })));
   const serviceEnabled = organisation.subscription ? resolveEntitlements(organisation.subscription).serviceEnabled : true;
@@ -30,7 +32,14 @@ export default async function SubscriberPlayersPage() {
       <p style={styles.subtitle}>Prepare one secure enrolled player for each subscribed shop, and replace a shop device without sharing its player identity.</p>
       {!serviceEnabled ? <p style={styles.warning}>Shop-player setup is currently unavailable for this subscription.</p> : null}
       <PlayerSetupClient
-        players={players.map((player) => ({ id: player.id, name: player.name, status: player.status, zoneName: player.zone.name, locationName: player.zone.location.name, lastHeartbeatAt: player.lastHeartbeatAt?.toISOString() || null }))}
+        players={players.map((player) => ({
+          id: player.id,
+          name: player.name,
+          status: player.status,
+          zoneName: player.zone.name,
+          locationName: player.zone.location.name,
+          readiness: subscriberPlayerReadiness(player, now)
+        }))}
         zones={zones}
         canManage={serviceEnabled && canManageSubscriberPlayers(context.membership.role)}
         configured={configured}
