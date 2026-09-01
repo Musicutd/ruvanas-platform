@@ -197,8 +197,8 @@ test("player enrolment, offline recovery, command delivery, proof replay, and di
       cookie: playerCookie,
       headers: { "x-ruvanas-player-instance": randomUUID() }
     });
-    assert.equal(competingState.status, 429);
-    assert.equal((await competingState.json()).code, "PLAYER_STREAM_LIMIT_REACHED");
+    assert.equal(competingState.status, 409);
+    assert.equal((await competingState.json()).code, "PLAYER_DEVICE_IN_USE");
 
     const offlineAt = new Date(Date.now() - 2 * 60_000);
     await database.player.update({
