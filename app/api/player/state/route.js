@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { getCurrentPlayer } from "@/lib/player-auth";
 import { PLAYER_HEARTBEAT_INTERVAL_SECONDS } from "@/lib/player-tokens.mjs";
+import { prisma } from "@/lib/prisma";
+import { claimPlayerListenerLease, readPlayerInstanceId } from "@/lib/player-listener-lease.mjs";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request) {
   try {
     const player = await getCurrentPlayer();
 
@@ -13,6 +15,17 @@ export async function GET() {
         { error: "This player is not enrolled or has been disabled." },
         { status: 401 }
       );
+    }
+
+    const listenerAccess = await claimPlayerListenerLease(prisma, {
+      player,
+      instanceId: readPlayerInstanceId(request)
+    });
+    if (!listenerAccess.ok) {
+      return NextResponse.json(listenerAccess, {
+        status: listenerAccess.status,
+        headers: listenerAccess.retryAfterSeconds ? { "Retry-After": String(listenerAccess.retryAfterSeconds) } : undefined
+      });
     }
 
     const assignment = player.zone.channelAssignments[0];
@@ -33,7 +46,11 @@ export async function GET() {
           }
         : null,
       heartbeatIntervalSeconds: PLAYER_HEARTBEAT_INTERVAL_SECONDS,
-      manifestUrl: "/api/player/manifest"
+      manifestUrl: "/api/player/manifest",
+      listenerQuota: {
+        active: listenerAccess.activeCount,
+        limit: listenerAccess.limit
+      }
     });
   } catch (error) {
     console.error("Player state error:", error);
@@ -43,3 +60,4 @@ export async function GET() {
     );
   }
 }
+
