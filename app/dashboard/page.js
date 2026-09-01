@@ -106,6 +106,7 @@ export default async function DashboardPage() {
             <h2 style={styles.cardValue}>{activePlayerStreams} / {entitlements.streamLimit}</h2>
             <p style={styles.cardText}>Live enrolled players using this tier now</p>
             <a href="/dashboard/player-sessions" style={styles.cardLink}>Manage active streams</a>
+            <a href="/dashboard/players" style={{ ...styles.cardLink, marginLeft: 14 }}>Set up shop players</a>
           </article>
 
           <article style={styles.card}>
