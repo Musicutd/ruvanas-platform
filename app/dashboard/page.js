@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getActiveOrganisationContext } from "@/lib/auth";
 import OrganisationSwitcher from "./OrganisationSwitcher";
 import { resolveEntitlements } from "@/lib/entitlements.mjs";
+import { prisma } from "@/lib/prisma";
 
 export default async function DashboardPage() {
   const context = await getActiveOrganisationContext({
@@ -29,6 +30,9 @@ export default async function DashboardPage() {
   const entitlements = resolveEntitlements(subscription);
   const stationCount = organisation.stations.length;
   const firstStation = organisation.stations[0];
+  const activePlayerStreams = await prisma.playerListenerLease.count({
+    where: { organisationId: organisation.id, expiresAt: { gt: new Date() } }
+  });
 
   const storageUsedMb = organisation.stations.reduce(
     (total, station) => total + station.storageUsedMb,
@@ -95,6 +99,12 @@ export default async function DashboardPage() {
             <p style={styles.cardLabel}>Listener capacity</p>
             <h2 style={styles.cardValue}>{plan?.listenerLimit || 0}</h2>
             <p style={styles.cardText}>Simultaneous listener slots</p>
+          </article>
+
+          <article style={styles.card}>
+            <p style={styles.cardLabel}>Active shop streams</p>
+            <h2 style={styles.cardValue}>{activePlayerStreams} / {entitlements.streamLimit}</h2>
+            <p style={styles.cardText}>Live enrolled players using this tier now</p>
           </article>
 
           <article style={styles.card}>

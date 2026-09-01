@@ -6,6 +6,11 @@ import { queueOutgoingWebhookEvent } from "@/lib/outgoing-webhook-service";
 import { effectivePlayerStatus } from "@/lib/player-tokens.mjs";
 import { normalizeHeartbeatDiagnostics } from "@/lib/player-health.mjs";
 import { recordHeartbeatOperationalEvidence } from "@/lib/player-health-service";
+import {
+  claimPlayerListenerLease,
+  readPlayerInstanceId,
+  releasePlayerListenerLease
+} from "@/lib/player-listener-lease.mjs";
 
 export async function POST(request) {
   try {
@@ -16,6 +21,17 @@ export async function POST(request) {
         { error: "This player is not enrolled or has been disabled." },
         { status: 401 }
       );
+    }
+
+    const listenerAccess = await claimPlayerListenerLease(prisma, {
+      player,
+      instanceId: readPlayerInstanceId(request)
+    });
+    if (!listenerAccess.ok) {
+      return NextResponse.json(listenerAccess, {
+        status: listenerAccess.status,
+        headers: listenerAccess.retryAfterSeconds ? { "Retry-After": String(listenerAccess.retryAfterSeconds) } : undefined
+      });
     }
 
     const forwardedFor = request.headers.get("x-forwarded-for");
@@ -89,13 +105,35 @@ export async function POST(request) {
       return evidence;
     });
 
-    return NextResponse.json({ ok: true, receivedAt: now, recovered: operationalEvidence.recovered });
+    return NextResponse.json({
+      ok: true,
+      receivedAt: now,
+      recovered: operationalEvidence.recovered,
+      listenerQuota: { active: listenerAccess.activeCount, limit: listenerAccess.limit }
+    });
   } catch (error) {
     console.error("Player heartbeat error:", error);
     return NextResponse.json(
       { error: "Unable to record the player heartbeat." },
       { status: 500 }
     );
+  }
+}
+
+export async function DELETE(request) {
+  try {
+    const player = await getCurrentPlayer();
+    if (!player || player.status === "DISABLED") {
+      return NextResponse.json({ error: "This player is not enrolled or has been disabled." }, { status: 401 });
+    }
+    const released = await releasePlayerListenerLease(prisma, {
+      player,
+      instanceId: readPlayerInstanceId(request)
+    });
+    return NextResponse.json({ ok: true, released });
+  } catch (error) {
+    console.error("Player listener release error:", error);
+    return NextResponse.json({ error: "Unable to release the player stream." }, { status: 500 });
   }
 }
 

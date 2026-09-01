@@ -35,6 +35,7 @@ test("player enrolment, offline recovery, command delivery, proof replay, and di
   const streamUrl = `https://stream.example.invalid/${suffix}.mp3`;
   let organisationId;
   let userId;
+  let planId;
 
   try {
     const operator = await database.user.create({
@@ -53,6 +54,21 @@ test("player enrolment, offline recovery, command delivery, proof replay, and di
       }
     });
     organisationId = organisation.id;
+    const plan = await database.plan.create({
+      data: {
+        name: `Player lifecycle ${suffix}`,
+        code: `PLAYER_LIFECYCLE_${suffix}`,
+        monthlyPriceCents: 1000,
+        stationLimit: 1,
+        storageLimitGb: 5,
+        listenerLimit: 25,
+        maxBitrateKbps: 320
+      }
+    });
+    planId = plan.id;
+    await database.subscription.create({
+      data: { organisationId, planId, status: "ACTIVE" }
+    });
 
     const location = await database.location.create({
       data: {
@@ -138,7 +154,11 @@ test("player enrolment, offline recovery, command delivery, proof replay, and di
     });
     assert.equal(replayedEnrolment.status, 400);
 
-    const state = await api("/api/player/state", { cookie: playerCookie });
+    const firstPlayerInstance = randomUUID();
+    const state = await api("/api/player/state", {
+      cookie: playerCookie,
+      headers: { "x-ruvanas-player-instance": firstPlayerInstance }
+    });
     assert.equal(state.status, 200, await state.clone().text());
     const stateBody = await state.json();
     assert.deepEqual(stateBody.player, {
@@ -154,6 +174,14 @@ test("player enrolment, offline recovery, command delivery, proof replay, and di
     });
     assert.equal(stateBody.heartbeatIntervalSeconds, 30);
     assert.equal(stateBody.manifestUrl, "/api/player/manifest");
+    assert.deepEqual(stateBody.listenerQuota, { active: 1, limit: 1 });
+
+    const competingState = await api("/api/player/state", {
+      cookie: playerCookie,
+      headers: { "x-ruvanas-player-instance": randomUUID() }
+    });
+    assert.equal(competingState.status, 429);
+    assert.equal((await competingState.json()).code, "PLAYER_STREAM_LIMIT_REACHED");
 
     const offlineAt = new Date(Date.now() - 2 * 60_000);
     await database.player.update({
@@ -174,7 +202,11 @@ test("player enrolment, offline recovery, command delivery, proof replay, and di
     const heartbeat = await api("/api/player/heartbeat", {
       method: "POST",
       cookie: playerCookie,
-      headers: { "user-agent": "Ruvanas lifecycle assurance", "x-forwarded-for": "192.0.2.10" },
+      headers: {
+        "user-agent": "Ruvanas lifecycle assurance",
+        "x-forwarded-for": "192.0.2.10",
+        "x-ruvanas-player-instance": firstPlayerInstance
+      },
       body: {
         appVersion: "stage-13c",
         manifestVersion: "manifest-13c",
@@ -336,6 +368,7 @@ test("player enrolment, offline recovery, command delivery, proof replay, and di
       await database.organisation.deleteMany({ where: { id: organisationId } });
     }
     if (userId) await database.user.deleteMany({ where: { id: userId } });
+    if (planId) await database.plan.deleteMany({ where: { id: planId } });
     await database.$disconnect();
   }
 });
