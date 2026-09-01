@@ -42,14 +42,15 @@ function memoryDatabase() {
         const lease = leases[index];
         const expired = where.expiresAt?.lte && lease.expiresAt <= where.expiresAt.lte;
         const exact = where.playerId && lease.playerId === where.playerId &&
-          lease.organisationId === where.organisationId && lease.instanceHash === where.instanceHash;
+          lease.organisationId === where.organisationId && lease.instanceHash === where.instanceHash &&
+          (where.revokedAt !== null || lease.revokedAt == null);
         if ((where.expiresAt && lease.organisationId === where.organisationId && expired) || exact) leases.splice(index, 1);
       }
       return { count: before - leases.length };
     },
     async findMany({ where }) {
       return leases
-        .filter((lease) => lease.organisationId === where.organisationId && lease.expiresAt > where.expiresAt.gt)
+        .filter((lease) => lease.organisationId === where.organisationId && lease.revokedAt == null && lease.expiresAt > where.expiresAt.gt)
         .sort((left, right) => left.createdAt - right.createdAt || left.id.localeCompare(right.id));
     },
     async create({ data }) {
@@ -141,3 +142,30 @@ test("expired leases free capacity automatically", async () => {
   assert.equal(database.leases.length, 1);
 });
 
+test("a subscriber-revoked session cannot renew or use its signed media token", async () => {
+  const database = memoryDatabase();
+  const currentPlayer = player(1);
+  const instant = new Date("2026-09-01T12:00:00.000Z");
+  const claimed = await claimPlayerListenerLease(database, { player: currentPlayer, instanceId: firstInstance, instant, secret });
+  const lease = database.leases[0];
+  lease.revokedAt = new Date(instant.getTime() + 10_000);
+  lease.expiresAt = new Date(instant.getTime() + 100_000);
+
+  const denied = await claimPlayerListenerLease(database, {
+    player: currentPlayer,
+    instanceId: firstInstance,
+    instant: new Date(instant.getTime() + 11_000),
+    secret
+  });
+  assert.equal(denied.ok, false);
+  assert.equal(denied.status, 403);
+  assert.equal(denied.code, "PLAYER_SESSION_REVOKED");
+  assert.equal(await isPlayerListenerTokenActive(database, {
+    player: currentPlayer,
+    token: claimed.listenerToken,
+    instant: new Date(instant.getTime() + 11_000),
+    secret
+  }), false);
+  assert.equal(await releasePlayerListenerLease(database, { player: currentPlayer, instanceId: firstInstance, secret }), false);
+  assert.equal(database.leases.length, 1);
+});

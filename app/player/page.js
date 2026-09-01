@@ -11,7 +11,7 @@ const PLAYBACK_QUEUE_KEY = "ruvanas_proof_of_play_queue_v1";
 const PLAYED_INSERTIONS_KEY = "ruvanas_played_campaign_insertions_v1";
 const PLAYER_INSTANCE_KEY = "ruvanas_player_instance_v1";
 const PLAYER_INSTANCE_HEADER = "X-Ruvanas-Player-Instance";
-const PLAYER_APP_VERSION = "stage-15b-active-player-quota";
+const PLAYER_APP_VERSION = "stage-15c-subscriber-stream-management";
 let volatilePlayerInstanceId = null;
 
 function getPlayerInstanceId() {
@@ -35,6 +35,7 @@ function playerHeaders(headers = {}) {
 function isPlayerAccessBlocked(response, data) {
   return response.status === 429 ||
     data?.code === "PLAYER_STREAM_LIMIT_REACHED" ||
+    data?.code === "PLAYER_SESSION_REVOKED" ||
     data?.code === "PLAYER_SERVICE_UNAVAILABLE";
 }
 
@@ -72,6 +73,7 @@ export default function PlayerPage() {
   const [message, setMessage] = useState("");
   const [manifest, setManifest] = useState(null);
   const [accessBlocked, setAccessBlocked] = useState(false);
+  const [accessBlockedCode, setAccessBlockedCode] = useState(null);
   const [activeInsertionId, setActiveInsertionId] = useState(null);
   const timer = useRef(null);
   const manifestTimer = useRef(null);
@@ -115,6 +117,7 @@ export default function PlayerPage() {
     const data = await response.json();
     if (isPlayerAccessBlocked(response, data)) {
       setAccessBlocked(true);
+      setAccessBlockedCode(data.code || null);
       setState(null);
       setManifest(null);
       setMessage(data.error);
@@ -122,6 +125,7 @@ export default function PlayerPage() {
     }
     if (!response.ok) throw new Error(data.error || "Unable to load the playback plan.");
     setAccessBlocked(false);
+    setAccessBlockedCode(null);
     setManifest(data);
     setActiveInsertionId((current) => data.insertions?.some((item) => item.scheduleItemId === current) ? current : null);
   }, []);
@@ -139,6 +143,7 @@ export default function PlayerPage() {
     const data = await response.json();
     if (isPlayerAccessBlocked(response, data)) {
       setAccessBlocked(true);
+      setAccessBlockedCode(data.code || null);
       setState(null);
       setManifest(null);
       setMessage(data.error);
@@ -147,6 +152,7 @@ export default function PlayerPage() {
     }
     if (!response.ok) throw new Error(data.error || "Unable to load player state.");
     setAccessBlocked(false);
+    setAccessBlockedCode(null);
     setState(data);
     await loadManifest();
     setLoading(false);
@@ -217,6 +223,7 @@ export default function PlayerPage() {
       if (response.status === 429 || response.status === 403) {
         const data = await response.json().catch(() => ({}));
         setAccessBlocked(true);
+        setAccessBlockedCode(data.code || null);
         setManifest(null);
         setState(null);
         setMessage(data.error || "This subscription has reached its active player limit.");
@@ -335,9 +342,11 @@ export default function PlayerPage() {
   if (accessBlocked) {
     return <main style={styles.page}><section style={styles.card}>
       <p style={styles.eyebrow}>RUVANAS WEB PLAYER</p>
-      <h1 style={styles.heading}>Player limit reached</h1>
+      <h1 style={styles.heading}>{accessBlockedCode === "PLAYER_SESSION_REVOKED" ? "Player session stopped" : "Player limit reached"}</h1>
       <p style={styles.copy}>{message || "This subscription has no free player stream slots."}</p>
-      <p style={styles.copy}>Close another active player, then try again. An abandoned slot is released automatically after about 90 seconds.</p>
+      <p style={styles.copy}>{accessBlockedCode === "PLAYER_SESSION_REVOKED"
+        ? "An organisation owner or manager stopped this session. You can reconnect after the short safety window or contact the account manager."
+        : "Close another active player, then try again. An abandoned slot is released automatically after about 90 seconds."}</p>
       <button type="button" style={styles.button} onClick={() => {
         setLoading(true);
         setMessage("");
@@ -432,4 +441,3 @@ const styles = {
   waiting: { marginTop: 28, padding: 18, borderRadius: 10, background: "#1e293b", color: "#cbd5e1", lineHeight: 1.6 },
   error: { color: "#fca5a5", fontWeight: 800 }
 };
-
