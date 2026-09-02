@@ -37,4 +37,3 @@ Stage 17A begins the post-foundation product-improvement programme by connecting
 
 - Automated tests cover bounded input, role-sensitive visibility, safe labels, navigation, tenant scoping, rate limiting, audit creation and accessibility markers.
 - Full regression, static-integrity and production-build gates remain required before publication.
-
