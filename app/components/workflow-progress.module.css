@@ -1,0 +1,106 @@
+.progress {
+  margin: 22px 0;
+  border: 1px solid var(--progress-border);
+  border-radius: 14px;
+  background: var(--progress-background);
+  color: var(--progress-text);
+  padding: 18px;
+}
+
+.dark {
+  --progress-border: #30405a;
+  --progress-background: #111c2e;
+  --progress-text: #f8fafc;
+  --progress-muted: #9cacbf;
+  --progress-line: #3b4b65;
+}
+
+.light {
+  --progress-border: #cbd5e1;
+  --progress-background: #f8fafc;
+  --progress-text: #172033;
+  --progress-muted: #64748b;
+  --progress-line: #cbd5e1;
+}
+
+.progress > p {
+  margin: 0 0 14px;
+  color: var(--progress-muted);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: .9px;
+  text-transform: uppercase;
+}
+
+.progress ol {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.progress li {
+  position: relative;
+  display: flex;
+  gap: 9px;
+  min-width: 0;
+}
+
+.progress li:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  top: 14px;
+  left: 31px;
+  width: calc(100% - 24px);
+  border-top: 1px solid var(--progress-line);
+}
+
+.marker {
+  position: relative;
+  z-index: 1;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--progress-line);
+  border-radius: 999px;
+  background: var(--progress-background);
+  color: var(--progress-muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.copy { min-width: 0; padding-right: 8px; }
+.copy strong, .copy small { display: block; }
+.copy strong { font-size: 13px; line-height: 1.35; }
+.copy small { margin-top: 4px; color: var(--progress-muted); font-size: 11px; line-height: 1.4; }
+
+.progress li[data-status="COMPLETE"] .marker {
+  border-color: #22c55e;
+  background: #166534;
+  color: #dcfce7;
+}
+
+.progress li[data-status="CURRENT"] .marker {
+  border-color: #f4b942;
+  background: #f4b942;
+  color: #172033;
+  box-shadow: 0 0 0 3px rgba(244, 185, 66, .18);
+}
+
+.progress li[data-status="CURRENT"] .copy strong { color: #d49212; }
+
+@media (max-width: 650px) {
+  .progress ol { grid-template-columns: 1fr; }
+  .progress li:not(:last-child)::after {
+    top: 29px;
+    left: 14px;
+    width: 0;
+    height: calc(100% - 12px);
+    border-top: 0;
+    border-left: 1px solid var(--progress-line);
+  }
+}
