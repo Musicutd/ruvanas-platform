@@ -1,0 +1,38 @@
+.page { min-height: 100vh; background: #101827; color: #fff; font-family: Arial, sans-serif; }
+.shell { padding: 40px max(20px, calc((100% - 1160px) / 2)) 72px; }
+.guidance { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 14px; align-items: center; margin: 22px 0; padding: 16px; border: 1px solid #6b5729; border-radius: 12px; background: #2c2416; color: #f8e3ae; line-height: 1.5; }
+.guidance a { color: #f4b942; font-weight: 900; }
+.grid { display: grid; grid-template-columns: minmax(300px, .9fr) minmax(0, 1.2fr); gap: 18px; align-items: flex-start; }
+.card { padding: 22px; border: 1px solid #2b3a54; border-radius: 14px; background: #182235; }
+.card h2 { margin: 0 0 16px; font-size: 23px; }
+.card label { display: grid; gap: 7px; margin-top: 16px; color: #dbe3ee; font-weight: 800; }
+.card input, .card select, .card textarea { box-sizing: border-box; width: 100%; border: 1px solid #52627d; border-radius: 8px; background: #fff; color: #172033; padding: 11px 12px; font: inherit; }
+.card textarea { resize: vertical; line-height: 1.5; }
+.card small, .muted { color: #aebbd0; line-height: 1.5; }
+.primary, .secondary { min-height: 44px; border-radius: 8px; padding: 10px 14px; font-weight: 900; cursor: pointer; }
+.primary { width: 100%; margin-top: 18px; border: 1px solid #f4b942; background: #f4b942; color: #172033; }
+.secondary { border: 1px solid #f4b942; background: transparent; color: #f4b942; }
+.primary:disabled { opacity: .6; cursor: wait; }
+.error, .notice { margin: 14px 0; border-radius: 9px; padding: 13px; font-weight: 800; }
+.error { border: 1px solid #9f4b4b; background: #3f1d27; color: #fecaca; }
+.notice { border: 1px solid #256b48; background: #163628; color: #bbf7d0; }
+.list { display: grid; gap: 12px; }
+.ticket { border: 1px solid #30405a; border-radius: 10px; padding: 15px; background: #141e2f; }
+.ticketHeader { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+.ticketHeader > span { flex: 0 0 auto; border-radius: 999px; background: #334155; color: #e2e8f0; padding: 5px 8px; font-size: 11px; font-weight: 900; }
+.ticketHeader > span[data-status="WAITING_CUSTOMER"] { background: #713f12; color: #fde68a; }
+.ticketHeader > span[data-status="RESOLVED"], .ticketHeader > span[data-status="CLOSED"] { background: #14532d; color: #bbf7d0; }
+.ticket p { color: #cbd5e1; line-height: 1.55; white-space: pre-wrap; }
+.ticket dl { display: flex; flex-wrap: wrap; gap: 10px 20px; margin: 12px 0 0; }
+.ticket dl div { display: grid; gap: 3px; }
+.ticket dt { color: #94a3b8; font-size: 10px; font-weight: 900; text-transform: uppercase; }
+.ticket dd { margin: 0; color: #e2e8f0; font-size: 12px; }
+.page :focus-visible { outline: 3px solid #60a5fa; outline-offset: 3px; }
+
+@media (max-width: 760px) {
+  .shell { padding-top: 24px; }
+  .guidance { grid-template-columns: 1fr; }
+  .grid { grid-template-columns: 1fr; }
+  .ticketHeader { flex-direction: column; }
+}
+
