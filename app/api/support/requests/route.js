@@ -126,4 +126,3 @@ export async function POST(request) {
     return denied(500, "Unable to create the support request.");
   }
 }
-
