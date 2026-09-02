@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import WorkflowProgress from "@/app/components/WorkflowProgress";
+import ContextHelp from "@/app/components/ContextHelp";
 import { mediaWorkflowSteps, safeWorkflowMessage } from "@/lib/guided-workflows.mjs";
 import styles from "./media-library.module.css";
 
@@ -97,6 +98,16 @@ export default function MediaLibraryPage() {
           <strong>Use the original audio file.</strong>
           <span>Do not rename another file type to look like audio. Ruvanas checks the real file format and keeps the upload private during review.</span>
         </aside>
+
+        <ContextHelp
+          title="Help with audio uploads"
+          introduction="This area is for your organisation's announcements, jingles, voiceovers and commercials. The Ruvanas-managed music catalogue follows a separate approval process."
+          items={[
+            { title: "Choose the original", description: "Upload the real audio file rather than renaming another file type." },
+            { title: "Describe it clearly", description: "A useful name, type and language make later review and scheduling easier." },
+            { title: "Review comes next", description: "Uploading stores the file securely; it does not automatically place the audio on air." }
+          ]}
+        />
 
         <form onSubmit={handleUpload} className={styles.form} onChange={() => selectedFile && setDetailsReviewed(true)}>
           <label>

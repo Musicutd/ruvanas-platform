@@ -4,6 +4,7 @@ import { resolveEntitlements } from "@/lib/entitlements.mjs";
 import { prisma } from "@/lib/prisma";
 import { canManageSubscriberPlayers, listSubscriberPlayers, subscriberPlayerAllowance } from "@/lib/subscriber-player-setup.mjs";
 import { subscriberPlayerReadiness } from "@/lib/subscriber-player-readiness.mjs";
+import ContextHelp from "@/app/components/ContextHelp";
 import PlayerSetupClient from "./PlayerSetupClient";
 
 export const dynamic = "force-dynamic";
@@ -30,6 +31,15 @@ export default async function SubscriberPlayersPage() {
       <p style={styles.eyebrow}>CLIENT PLAYER SETUP</p>
       <h1 style={styles.heading}>Shop players</h1>
       <p style={styles.subtitle}>Prepare one secure enrolled player for each subscribed shop, and replace a shop device without sharing its player identity.</p>
+      <ContextHelp
+        title="Help with your first shop player"
+        introduction="Use one enrolled player for each subscribed shop or listening zone. The setup page checks the real device connection and playback evidence for you."
+        items={[
+          { title: "Before enrolment", description: "The shop and listening zone must already be available. Ruvanas operations can prepare them when required." },
+          { title: "One-time code", description: "Enter the code only on the device that will remain in that shop. Do not reuse or share it." },
+          { title: "Ready means verified", description: "The player is ready only after enrolment, channel assignment, recent contact and playback evidence." }
+        ]}
+      />
       {!serviceEnabled ? <p style={styles.warning}>Shop-player setup is currently unavailable for this subscription.</p> : null}
       <PlayerSetupClient
         players={players.map((player) => ({

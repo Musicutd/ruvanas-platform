@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import WorkflowProgress from "@/app/components/WorkflowProgress";
+import ContextHelp from "@/app/components/ContextHelp";
 import { safeWorkflowMessage, stationWorkflowSteps } from "@/lib/guided-workflows.mjs";
 
 export default function NewStationPage() {
@@ -74,6 +75,16 @@ export default function NewStationPage() {
           <strong>You only need the basics now.</strong>
           <span>After creating the station, Ruvanas will guide you through the private streaming connection.</span>
         </aside>
+
+        <ContextHelp
+          title="What happens after I create the station?"
+          introduction="Creating the station saves its public identity. Streaming, shop programming and player activation remain controlled follow-up steps."
+          items={[
+            { title: "Name", description: "Use the name customers or staff should recognise." },
+            { title: "Description", description: "Add a short purpose or music style; you can refine it later." },
+            { title: "Next step", description: "After creation, connect the approved streaming service and return to your setup guide." }
+          ]}
+        />
 
         <form onSubmit={handleSubmit} style={styles.form}>
           <label style={styles.label}>
