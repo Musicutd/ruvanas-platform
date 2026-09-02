@@ -57,12 +57,37 @@
 .cancelButton { border: 1px solid #94a3b8; background: #ffffff; color: #172033; }
 .confirmButton { border: 1px solid #b91c1c; background: #b91c1c; color: #ffffff; }
 
+.contextHelp {
+  margin: 20px 0;
+  border: 1px solid #94a3b8;
+  border-radius: 12px;
+  background: #f8fafc;
+  overflow: hidden;
+}
+.contextHelp.dark { border-color: #3b4b65; background: #141e2f; color: #ffffff; }
+.contextHelp > summary { min-height: 44px; box-sizing: border-box; cursor: pointer; padding: 13px 16px; font-weight: 900; }
+.contextHelp > summary::marker { color: #d49212; }
+.contextHelp.dark > summary::marker { color: #f4b942; }
+.contextHelpBody { border-top: 1px solid #cbd5e1; padding: 16px; }
+.contextHelp.dark .contextHelpBody { border-color: #2b3a54; }
+.contextHelpBody > p { margin: 0 0 14px; line-height: 1.6; }
+.contextHelp.light .contextHelpBody > p { color: #475569; }
+.contextHelp.dark .contextHelpBody > p { color: #b8c3d6; }
+.contextHelpBody ul { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; list-style: none; margin: 0; padding: 0; }
+.contextHelpBody li { padding: 12px; border: 1px solid #cbd5e1; border-radius: 9px; }
+.contextHelp.dark .contextHelpBody li { border-color: #30405a; background: #111c2e; }
+.contextHelpBody li strong,
+.contextHelpBody li span { display: block; }
+.contextHelpBody li span { margin-top: 5px; color: #64748b; font-size: 13px; line-height: 1.5; }
+.contextHelp.dark .contextHelpBody li span { color: #9cacbf; }
+
 .pageHeader :focus-visible,
 .emptyState :focus-visible,
 .confirmDialog :focus-visible {
   outline: 3px solid #60a5fa;
   outline-offset: 3px;
 }
+.contextHelp > summary:focus-visible { outline: 3px solid #60a5fa; outline-offset: -3px; }
 
 @media (max-width: 620px) {
   .pageHeader { align-items: stretch; }

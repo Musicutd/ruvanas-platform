@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import WorkflowProgress from "@/app/components/WorkflowProgress";
+import ContextHelp from "@/app/components/ContextHelp";
 import { safeWorkflowMessage, stationWorkflowSteps } from "@/lib/guided-workflows.mjs";
 
 export default function StationSetupPage({ params }) {
@@ -80,6 +81,16 @@ export default function StationSetupPage({ params }) {
           <strong>Before you begin</strong>
           <span>Keep the streaming-server welcome email nearby. Ruvanas stores these credentials privately and never displays the passwords again.</span>
         </aside>
+
+        <ContextHelp
+          title="Where do I find these streaming details?"
+          introduction="Use the welcome or account information supplied for this station by the approved streaming provider. Ask Ruvanas operations if any field is unclear."
+          items={[
+            { title: "Host and port", description: "Copy them exactly from the station's streaming account details." },
+            { title: "Public stream URL", description: "Use the listener-facing stream address, including its secure protocol and mount point when supplied." },
+            { title: "Passwords", description: "Enter the private admin and source passwords here only. They are not displayed again after saving." }
+          ]}
+        />
 
         <form onSubmit={handleSubmit} style={styles.form}>
           <label style={styles.label}>
