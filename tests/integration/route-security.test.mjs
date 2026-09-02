@@ -520,6 +520,15 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   });
   assert.equal(unauthenticatedSupportTicket.status, 401);
 
+  const unauthenticatedSubscriberSupportList = await api("/api/support/requests");
+  assert.equal(unauthenticatedSubscriberSupportList.status, 401);
+
+  const unauthenticatedSubscriberSupportCreate = await api("/api/support/requests", {
+    method: "POST",
+    body: { category: "PLAYER", subject: "No session", description: "No session can create this request." }
+  });
+  assert.equal(unauthenticatedSubscriberSupportCreate.status, 401);
+
   const invalidPlayerEnrolment = await api("/api/player/enrol", {
     method: "POST",
     body: { code: "invalid-enrolment-code" }
