@@ -1,6 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import PageHeader from "@/app/components/PageHeader";
+import EmptyState from "@/app/components/EmptyState";
+import ConfirmActionButton from "@/app/components/ConfirmActionButton";
+import { confirmationCopy, interfaceMessages, safeInterfaceMessage } from "@/lib/interface-guidance.mjs";
 
 const LABELS = {
   PLAYER_OFFLINE: "Player offline",
@@ -36,7 +40,7 @@ export default function NotificationsClient({ organisationName }) {
       setPreferences(preferenceBody.preferences || []);
       setEmailConfigured(preferenceBody.emailConfigured === true);
     } catch (loadError) {
-      setError(loadError.message || "Unable to load notifications.");
+      setError(safeInterfaceMessage(loadError?.message, "Unable to load notifications."));
     }
   }, []);
 
@@ -55,7 +59,7 @@ export default function NotificationsClient({ organisationName }) {
       if (!response.ok) throw new Error(body.error || "Unable to update the notification.");
       await load();
     } catch (actionError) {
-      setError(actionError.message || "Unable to update the notification.");
+      setError(safeInterfaceMessage(actionError?.message, "Unable to update the notification."));
     } finally {
       setBusy("");
     }
@@ -74,22 +78,23 @@ export default function NotificationsClient({ organisationName }) {
       if (!response.ok) throw new Error(body.error || "Unable to update the notification preference.");
       setPreferences((current) => current.map((item) => item.type === type && item.channel === channel ? { ...item, enabled } : item));
     } catch (preferenceError) {
-      setError(preferenceError.message || "Unable to update the notification preference.");
+      setError(safeInterfaceMessage(preferenceError?.message, "Unable to update the notification preference."));
     } finally {
       setBusy("");
     }
   }
 
   return <main style={styles.page}>
-    <header style={styles.header}>
-      <div>
-        <a href="/dashboard" style={styles.back}>← Client dashboard</a>
-        <p style={styles.eyebrow}>STAGE 12A · CONTROLLED EXTERNAL NOTIFICATIONS</p>
-        <h1 style={styles.title}>Operational notifications</h1>
-        <p style={styles.subtitle}>{organisationName} · clear, tenant-safe alerts for playback, streams, campaigns, billing, production, and school review operations.</p>
-      </div>
+    <PageHeader
+      eyebrow="Alerts and preferences"
+      title={interfaceMessages.notifications.title}
+      description={`${organisationName} · playback, stream, campaign, billing, production and school-review alerts in one place.`}
+      backHref="/dashboard"
+      backLabel="Client dashboard"
+      tone="dark"
+    >
       <button type="button" onClick={load} style={styles.secondary}>Refresh</button>
-    </header>
+    </PageHeader>
 
     {error ? <p role="alert" style={styles.error}>{error}</p> : null}
     <section style={styles.summary}>
@@ -100,7 +105,7 @@ export default function NotificationsClient({ organisationName }) {
     <section style={styles.grid}>
       <article style={styles.card}>
         <h2 style={styles.sectionTitle}>Notification centre</h2>
-        {!notifications ? <p style={styles.muted}>Loading notifications…</p> : notifications.deliveries.length === 0 ? <p style={styles.good}>No active notifications.</p> : notifications.deliveries.map((delivery) => (
+        {!notifications ? <p style={styles.muted} role="status">Loading notifications…</p> : notifications.deliveries.length === 0 ? <EmptyState compact tone="dark" title={interfaceMessages.notifications.emptyTitle} description={interfaceMessages.notifications.emptyDescription} /> : notifications.deliveries.map((delivery) => (
           <div key={delivery.id} style={{ ...styles.notification, ...(!delivery.readAt ? styles.unread : {}) }}>
             <div style={styles.notificationHeader}>
               <strong>{delivery.notificationEvent.title}</strong>
@@ -110,7 +115,7 @@ export default function NotificationsClient({ organisationName }) {
             <p style={styles.meta}>{LABELS[delivery.notificationEvent.type] || delivery.notificationEvent.type} · {formatDate(delivery.notificationEvent.occurredAt)}</p>
             <div style={styles.actions}>
               {!delivery.readAt ? <button type="button" disabled={Boolean(busy)} onClick={() => updateDelivery(delivery.id, "READ")} style={styles.secondary}>{busy === `${delivery.id}:READ` ? "Saving…" : "Mark read"}</button> : null}
-              <button type="button" disabled={Boolean(busy)} onClick={() => updateDelivery(delivery.id, "DISMISS")} style={styles.dismiss}>{busy === `${delivery.id}:DISMISS` ? "Saving…" : "Dismiss"}</button>
+              <ConfirmActionButton disabled={Boolean(busy)} onConfirm={() => updateDelivery(delivery.id, "DISMISS")} style={styles.dismiss} {...confirmationCopy("DISMISS_NOTIFICATION", delivery.notificationEvent.title)}>{busy === `${delivery.id}:DISMISS` ? "Saving…" : "Dismiss"}</ConfirmActionButton>
             </div>
           </div>
         ))}
