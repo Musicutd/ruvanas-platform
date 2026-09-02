@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import WorkflowProgress from "@/app/components/WorkflowProgress";
 import ContextHelp from "@/app/components/ContextHelp";
+import SkipLink from "@/app/components/SkipLink";
 import { safeWorkflowMessage, stationWorkflowSteps } from "@/lib/guided-workflows.mjs";
 
 export default function StationSetupPage({ params }) {
@@ -60,7 +61,8 @@ export default function StationSetupPage({ params }) {
 
   return (
     <main style={styles.page}>
-      <section style={styles.card}>
+      <SkipLink />
+      <section style={styles.card} id="main-content">
         <a href={`/stations/${params.stationId}`} style={styles.backLink}>
           ← Back to station
         </a>
@@ -90,6 +92,8 @@ export default function StationSetupPage({ params }) {
             { title: "Public stream URL", description: "Use the listener-facing stream address, including its secure protocol and mount point when supplied." },
             { title: "Passwords", description: "Enter the private admin and source passwords here only. They are not displayed again after saving." }
           ]}
+          articleHref="/dashboard/help#station-setup"
+          articleLabel="Open the streaming setup guide"
         />
 
         <form onSubmit={handleSubmit} style={styles.form}>

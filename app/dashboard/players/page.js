@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { canManageSubscriberPlayers, listSubscriberPlayers, subscriberPlayerAllowance } from "@/lib/subscriber-player-setup.mjs";
 import { subscriberPlayerReadiness } from "@/lib/subscriber-player-readiness.mjs";
 import ContextHelp from "@/app/components/ContextHelp";
+import SkipLink from "@/app/components/SkipLink";
 import PlayerSetupClient from "./PlayerSetupClient";
 
 export const dynamic = "force-dynamic";
@@ -26,8 +27,9 @@ export default async function SubscriberPlayersPage() {
   const serviceEnabled = organisation.subscription ? resolveEntitlements(organisation.subscription).serviceEnabled : true;
 
   return <main style={styles.page}>
+    <SkipLink />
     <header style={styles.header}><a href="/dashboard" style={styles.brand}>RUVANAS</a><a href="/dashboard" style={styles.back}>Back to dashboard</a></header>
-    <section style={styles.content}>
+    <section style={styles.content} id="main-content">
       <p style={styles.eyebrow}>CLIENT PLAYER SETUP</p>
       <h1 style={styles.heading}>Shop players</h1>
       <p style={styles.subtitle}>Prepare one secure enrolled player for each subscribed shop, and replace a shop device without sharing its player identity.</p>
@@ -39,6 +41,8 @@ export default async function SubscriberPlayersPage() {
           { title: "One-time code", description: "Enter the code only on the device that will remain in that shop. Do not reuse or share it." },
           { title: "Ready means verified", description: "The player is ready only after enrolment, channel assignment, recent contact and playback evidence." }
         ]}
+        articleHref="/dashboard/help#shop-players"
+        articleLabel="Open the shop-player guide"
       />
       {!serviceEnabled ? <p style={styles.warning}>Shop-player setup is currently unavailable for this subscription.</p> : null}
       <PlayerSetupClient

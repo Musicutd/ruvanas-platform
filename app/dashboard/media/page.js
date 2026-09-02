@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import WorkflowProgress from "@/app/components/WorkflowProgress";
 import ContextHelp from "@/app/components/ContextHelp";
+import SkipLink from "@/app/components/SkipLink";
 import { mediaWorkflowSteps, safeWorkflowMessage } from "@/lib/guided-workflows.mjs";
 import styles from "./media-library.module.css";
 
@@ -82,12 +83,13 @@ export default function MediaLibraryPage() {
 
   return (
     <main className={styles.page}>
+      <SkipLink />
       <header className={styles.header}>
         <Link href="/dashboard" className={styles.brand}>RUVANAS</Link>
         <Link href="/dashboard" className={styles.back}>Back to your home</Link>
       </header>
 
-      <section className={styles.content}>
+      <section className={styles.content} id="main-content">
         <p className={styles.eyebrow}>AUDIO LIBRARY</p>
         <h1>Upload audio</h1>
         <p className={styles.subtitle}>Add an announcement, jingle, voiceover or commercial to {session.organisation.name}. Every upload is checked before it can be used.</p>
@@ -107,6 +109,8 @@ export default function MediaLibraryPage() {
             { title: "Describe it clearly", description: "A useful name, type and language make later review and scheduling easier." },
             { title: "Review comes next", description: "Uploading stores the file securely; it does not automatically place the audio on air." }
           ]}
+          articleHref="/dashboard/help#audio-uploads"
+          articleLabel="Open the audio-upload guide"
         />
 
         <form onSubmit={handleUpload} className={styles.form} onChange={() => selectedFile && setDetailsReviewed(true)}>

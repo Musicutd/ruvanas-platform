@@ -1,6 +1,8 @@
 import { notFound, redirect } from "next/navigation";
 import { getActiveOrganisationContext } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import ContextHelp from "@/app/components/ContextHelp";
+import SkipLink from "@/app/components/SkipLink";
 
 export default async function StationDetailsPage({ params }) {
   const context = await getActiveOrganisationContext();
@@ -33,12 +35,13 @@ export default async function StationDetailsPage({ params }) {
 
   return (
     <main style={styles.page}>
+      <SkipLink />
       <header style={styles.header}>
         <a href="/dashboard" style={styles.brand}>RUVANAS</a>
         <a href="/dashboard" style={styles.backLink}>Dashboard</a>
       </header>
 
-      <section style={styles.content}>
+      <section style={styles.content} id="main-content">
         <p style={styles.eyebrow}>STATION MANAGEMENT</p>
         <h1 style={styles.title}>{station.name}</h1>
         <p style={styles.subtitle}>
@@ -80,13 +83,28 @@ export default async function StationDetailsPage({ params }) {
           </article>
         </section>
 
+        <ContextHelp
+          title="Help with this station"
+          introduction="The station supplies audio, while Ruvanas-managed programming and enrolled shop players control what each listening location receives."
+          items={[
+            { title: "Station status", description: "Pending setup needs streaming details. Active means the station connection is configured." },
+            { title: "Programming", description: "Approved music modes and schedules are prepared separately for each shop or zone." },
+            { title: "Playback", description: "Use Shop players to enrol devices and verify recent live playback evidence." }
+          ]}
+          articleHref="/dashboard/help#station-setup"
+          articleLabel="Open the station guide"
+        />
+
         <section style={styles.nextCard}>
-          <p style={styles.eyebrow}>COMING NEXT</p>
-          <h2 style={styles.nextTitle}>Media library and AutoDJ</h2>
+          <p style={styles.eyebrow}>NEXT ACTIONS</p>
+          <h2 style={styles.nextTitle}>Content and shop playback</h2>
           <p style={styles.cardText}>
-            Upload music, create playlists, configure schedules, and connect
-            your station to its private streaming infrastructure.
+            Upload your organisation's announcements and promotions, or prepare the secure player used in each subscribed shop.
           </p>
+          <div style={styles.actions}>
+            <a href="/dashboard/media" style={styles.secondaryButton}>Open media library</a>
+            <a href="/dashboard/players" style={styles.setupButton}>Open shop players</a>
+          </div>
         </section>
       </section>
     </main>
@@ -215,6 +233,21 @@ const styles = {
   nextTitle: {
     fontSize: 28,
     margin: "0 0 12px"
+  },
+  actions: {
+    display: "flex",
+    gap: 10,
+    flexWrap: "wrap",
+    marginTop: 18
+  },
+  secondaryButton: {
+    border: "1px solid #806328",
+    borderRadius: 8,
+    color: "#f4b942",
+    padding: "12px 18px",
+    fontSize: 14,
+    fontWeight: 800,
+    textDecoration: "none"
   }
 };
 
