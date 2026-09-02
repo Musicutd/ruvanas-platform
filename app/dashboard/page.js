@@ -3,10 +3,10 @@ import { redirect } from "next/navigation";
 import { getActiveOrganisationContext } from "@/lib/auth";
 import { resolveEntitlements } from "@/lib/entitlements.mjs";
 import { prisma } from "@/lib/prisma";
-import {
-  buildSubscriberNavigation,
-  resolveDashboardNextAction
-} from "@/lib/user-experience-navigation.mjs";
+import { buildSubscriberNavigation } from "@/lib/user-experience-navigation.mjs";
+import { buildSubscriberOnboarding } from "@/lib/subscriber-onboarding.mjs";
+import ContextHelp from "@/app/components/ContextHelp";
+import OnboardingChecklist from "@/app/components/OnboardingChecklist";
 import OrganisationSwitcher from "./OrganisationSwitcher";
 import styles from "./dashboard.module.css";
 
@@ -15,7 +15,8 @@ export const dynamic = "force-dynamic";
 export default async function DashboardPage() {
   const context = await getActiveOrganisationContext({
     subscription: { include: { plan: true, billingContract: true } },
-    stations: { orderBy: { createdAt: "asc" } }
+    stations: { orderBy: { createdAt: "asc" } },
+    locations: { select: { id: true, status: true } }
   });
 
   if (!context) redirect("/login");
@@ -28,15 +29,21 @@ export default async function DashboardPage() {
   const subscription = organisation.subscription;
   const plan = subscription?.plan;
   const entitlements = resolveEntitlements(subscription);
-  const firstStation = organisation.stations[0] || null;
+  const firstStation = organisation.stations.find((station) => station.status === "ACTIVE") || organisation.stations[0] || null;
   const now = new Date();
 
-  const [activePlayerStreams, configuredPlayerCount] = await Promise.all([
+  const [activePlayerStreams, configuredPlayerCount, activeMusicModeCount, publishedScheduleCount] = await Promise.all([
     prisma.playerListenerLease.count({
       where: { organisationId: organisation.id, revokedAt: null, expiresAt: { gt: now } }
     }),
     prisma.player.count({
       where: { organisationId: organisation.id, status: { not: "DISABLED" } }
+    }),
+    prisma.musicMode.count({
+      where: { organisationId: organisation.id, status: "ACTIVE" }
+    }),
+    prisma.musicSchedule.count({
+      where: { organisationId: organisation.id, status: "PUBLISHED" }
     })
   ]);
 
@@ -48,12 +55,18 @@ export default async function DashboardPage() {
     entitlements,
     firstStationId: firstStation?.id || null
   });
-  const nextAction = resolveDashboardNextAction({
+  const onboarding = buildSubscriberOnboarding({
     serviceEnabled: entitlements.serviceEnabled,
-    stationCount: organisation.stations.length,
+    membershipRole: membership.role,
+    firstStationId: firstStation?.id || null,
+    stationReady: firstStation?.status === "ACTIVE",
+    activeLocationCount: organisation.locations.filter((location) => location.status === "ACTIVE").length,
+    activeMusicModeCount,
+    publishedScheduleCount,
     configuredPlayerCount,
     activePlayerStreams
   });
+  const nextAction = onboarding.nextAction;
 
   return (
     <main className={styles.page}>
@@ -85,6 +98,8 @@ export default async function DashboardPage() {
           activeOrganisationId={organisation.id}
         />
 
+        <OnboardingChecklist onboarding={onboarding} />
+
         <section className={styles.nextAction} aria-labelledby="next-action-title">
           <div>
             <p className={styles.eyebrow}>{nextAction.eyebrow}</p>
@@ -93,6 +108,16 @@ export default async function DashboardPage() {
           </div>
           <Link href={nextAction.href} className={styles.primaryButton}>{nextAction.label}</Link>
         </section>
+
+        <ContextHelp
+          title="New to Ruvanas? Open the quick help"
+          introduction="You do not need to configure the whole platform at once. The setup guide above always points to the first unfinished step."
+          items={[
+            { title: "Your tasks", description: "Owners and managers create the station and securely enrol the shop player." },
+            { title: "Ruvanas-managed setup", description: "Locations, approved music modes and published schedules are prepared through controlled administration." },
+            { title: "Live confirmation", description: "A step becomes complete only when the system has real configuration or active-player evidence." }
+          ]}
+        />
 
         <section className={styles.statusSection} aria-labelledby="service-status-title">
           <div className={styles.sectionHeading}>
