@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getActiveOrganisationContext } from "@/lib/auth";
-import { resolveEntitlements } from "@/lib/entitlements.mjs";
+import { resolveEffectivePlan, resolveEntitlements } from "@/lib/entitlements.mjs";
 import { prisma } from "@/lib/prisma";
 import { buildSubscriberNavigation } from "@/lib/user-experience-navigation.mjs";
 import { buildSubscriberOnboarding } from "@/lib/subscriber-onboarding.mjs";
@@ -28,7 +28,7 @@ export default async function DashboardPage() {
 
   const organisation = membership.organisation;
   const subscription = organisation.subscription;
-  const plan = subscription?.plan;
+  const plan = resolveEffectivePlan(subscription);
   const entitlements = resolveEntitlements(subscription);
   const firstStation = organisation.stations.find((station) => station.status === "ACTIVE") || organisation.stations[0] || null;
   const now = new Date();
@@ -137,7 +137,7 @@ export default async function DashboardPage() {
             <article>
               <span>Plan</span>
               <strong>{plan?.name || "Trial"}</strong>
-              <small>{subscription?.status === "TRIAL" ? "Trial active" : subscription?.status || "No active plan"}</small>
+              <small>{entitlements.complimentaryAccess ? "Complimentary access — no charge" : subscription?.status === "TRIAL" ? "Trial active" : subscription?.status || "No active plan"}</small>
             </article>
             <article>
               <span>Shop players</span>
@@ -188,6 +188,7 @@ export default async function DashboardPage() {
         <details className={styles.planDetails}>
           <summary>View plan and technical limits</summary>
           <div>
+            {entitlements.complimentaryAccess ? <span>Access <strong>Complimentary until stopped by Ruvanas</strong></span> : null}
             <span>Stations <strong>{organisation.stations.length} / {entitlements.stationLimit}</strong></span>
             <span>Listener capacity <strong>{entitlements.listenerLimit}</strong></span>
             <span>Maximum quality <strong>{entitlements.maxBitrateKbps} kbps</strong></span>
