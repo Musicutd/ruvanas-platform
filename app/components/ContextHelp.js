@@ -1,6 +1,7 @@
+import Link from "next/link";
 import styles from "./interface-patterns.module.css";
 
-export default function ContextHelp({ title = "Need help?", introduction, items = [], tone = "dark" }) {
+export default function ContextHelp({ title = "Need help?", introduction, items = [], tone = "dark", articleHref, articleLabel = "Open full help" }) {
   return (
     <details className={`${styles.contextHelp} ${styles[tone]}`}>
       <summary>{title}</summary>
@@ -12,6 +13,7 @@ export default function ContextHelp({ title = "Need help?", introduction, items 
             <span>{item.description}</span>
           </li>
         ))}</ul> : null}
+        {articleHref ? <Link href={articleHref} className={styles.contextHelpLink}>{articleLabel} →</Link> : null}
       </div>
     </details>
   );

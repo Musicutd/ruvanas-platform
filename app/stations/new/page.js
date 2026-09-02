@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import WorkflowProgress from "@/app/components/WorkflowProgress";
 import ContextHelp from "@/app/components/ContextHelp";
+import SkipLink from "@/app/components/SkipLink";
 import { safeWorkflowMessage, stationWorkflowSteps } from "@/lib/guided-workflows.mjs";
 
 export default function NewStationPage() {
@@ -54,7 +55,8 @@ export default function NewStationPage() {
 
   return (
     <main style={styles.page}>
-      <section style={styles.card}>
+      <SkipLink />
+      <section style={styles.card} id="main-content">
         <a href="/dashboard" style={styles.backLink}>
           ← Back to dashboard
         </a>
@@ -84,6 +86,8 @@ export default function NewStationPage() {
             { title: "Description", description: "Add a short purpose or music style; you can refine it later." },
             { title: "Next step", description: "After creation, connect the approved streaming service and return to your setup guide." }
           ]}
+          articleHref="/dashboard/help#station-setup"
+          articleLabel="Open the station guide"
         />
 
         <form onSubmit={handleSubmit} style={styles.form}>

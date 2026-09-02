@@ -80,6 +80,23 @@
 .contextHelpBody li span { display: block; }
 .contextHelpBody li span { margin-top: 5px; color: #64748b; font-size: 13px; line-height: 1.5; }
 .contextHelp.dark .contextHelpBody li span { color: #9cacbf; }
+.contextHelpLink { display: inline-block; margin-top: 15px; border-radius: 8px; background: #f4b942; color: #172033; padding: 9px 13px; font-weight: 900; text-decoration: none; }
+
+.skipLink {
+  position: fixed;
+  z-index: 1000;
+  top: 10px;
+  left: 10px;
+  transform: translateY(-160%);
+  border-radius: 8px;
+  background: #ffffff;
+  color: #172033;
+  padding: 10px 14px;
+  font-weight: 900;
+  text-decoration: none;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, .28);
+}
+.skipLink:focus { transform: translateY(0); outline: 3px solid #60a5fa; outline-offset: 2px; }
 
 .pageHeader :focus-visible,
 .emptyState :focus-visible,
@@ -88,6 +105,7 @@
   outline-offset: 3px;
 }
 .contextHelp > summary:focus-visible { outline: 3px solid #60a5fa; outline-offset: -3px; }
+.contextHelpLink:focus-visible { outline: 3px solid #60a5fa; outline-offset: 3px; }
 
 @media (max-width: 620px) {
   .pageHeader { align-items: stretch; }
