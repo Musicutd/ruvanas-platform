@@ -7,6 +7,7 @@ import { buildSubscriberNavigation } from "@/lib/user-experience-navigation.mjs"
 import { buildSubscriberOnboarding } from "@/lib/subscriber-onboarding.mjs";
 import ContextHelp from "@/app/components/ContextHelp";
 import OnboardingChecklist from "@/app/components/OnboardingChecklist";
+import SkipLink from "@/app/components/SkipLink";
 import OrganisationSwitcher from "./OrganisationSwitcher";
 import styles from "./dashboard.module.css";
 
@@ -70,6 +71,7 @@ export default async function DashboardPage() {
 
   return (
     <main className={styles.page}>
+      <SkipLink />
       <header className={styles.header}>
         <Link href="/dashboard" className={styles.brand}>RUVANAS</Link>
         <div className={styles.accountArea}>
@@ -80,7 +82,7 @@ export default async function DashboardPage() {
         </div>
       </header>
 
-      <div className={styles.shell}>
+      <div className={styles.shell} id="main-content">
         <section className={styles.welcome} aria-labelledby="dashboard-title">
           <div>
             <p className={styles.eyebrow}>YOUR RUVANAS HOME</p>
@@ -117,6 +119,8 @@ export default async function DashboardPage() {
             { title: "Ruvanas-managed setup", description: "Locations, approved music modes and published schedules are prepared through controlled administration." },
             { title: "Live confirmation", description: "A step becomes complete only when the system has real configuration or active-player evidence." }
           ]}
+          articleHref="/dashboard/help#getting-started"
+          articleLabel="Open the getting-started guide"
         />
 
         <section className={styles.statusSection} aria-labelledby="service-status-title">
