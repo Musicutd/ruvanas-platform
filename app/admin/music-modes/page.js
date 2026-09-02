@@ -3,6 +3,9 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import MusicModeStatusButton from "./MusicModeStatusButton";
+import PageHeader from "@/app/components/PageHeader";
+import EmptyState from "@/app/components/EmptyState";
+import { interfaceMessages } from "@/lib/interface-guidance.mjs";
 
 export default async function MusicModesPage() {
   const user = await getCurrentUser();
@@ -20,26 +23,25 @@ export default async function MusicModesPage() {
 
   return (
     <main style={styles.page}>
-      <div style={styles.header}>
-        <div>
-          <p style={styles.eyebrow}>Radio Control</p>
-          <h1 style={styles.title}>Music modes</h1>
-          <p style={styles.description}>
-            Define reusable, organisation-owned music profiles and activate them when they are ready for scheduling.
-          </p>
-        </div>
+      <PageHeader
+        eyebrow="Radio control"
+        title={interfaceMessages.musicModes.title}
+        description="Build reusable customer music profiles and activate them only when their approved tracks are ready for scheduling."
+      >
         <Link href="/admin/music-modes/new" style={styles.action}>Create music mode</Link>
-      </div>
+      </PageHeader>
 
       {modes.length === 0 ? (
-        <section style={styles.empty}>
-          <strong>No music modes yet.</strong>
-          <p style={styles.emptyText}>Create a draft mode now; approved tracks can be added as the catalogue becomes available.</p>
-        </section>
+        <EmptyState
+          title={interfaceMessages.musicModes.emptyTitle}
+          description={interfaceMessages.musicModes.emptyDescription}
+          actionHref="/admin/music-modes/new"
+          actionLabel="Create music mode"
+        />
       ) : (
         <section style={styles.tableWrap}>
           <table style={styles.table}>
-            <thead><tr><th style={styles.th}>Mode</th><th style={styles.th}>Organisation</th><th style={styles.th}>Tracks</th><th style={styles.th}>Status</th><th style={styles.th}>Updated</th><th style={styles.th}>Action</th></tr></thead>
+            <thead><tr><th scope="col" style={styles.th}>Mode</th><th scope="col" style={styles.th}>Organisation</th><th scope="col" style={styles.th}>Tracks</th><th scope="col" style={styles.th}>Status</th><th scope="col" style={styles.th}>Updated</th><th scope="col" style={styles.th}>Action</th></tr></thead>
             <tbody>{modes.map((mode) => (
               <tr key={mode.id} style={styles.row}>
                 <td style={styles.strong}><div>{mode.name}</div><small style={styles.muted}>{mode.slug}</small></td>

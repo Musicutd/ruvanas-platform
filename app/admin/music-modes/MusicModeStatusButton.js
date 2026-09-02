@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import ConfirmActionButton from "@/app/components/ConfirmActionButton";
+import { confirmationCopy, safeInterfaceMessage } from "@/lib/interface-guidance.mjs";
 
 export default function MusicModeStatusButton({ modeId, status, trackCount }) {
   const router = useRouter();
@@ -19,9 +21,10 @@ export default function MusicModeStatusButton({ modeId, status, trackCount }) {
       if (!response.ok) throw new Error(data.error || "Unable to update the music mode.");
       router.refresh();
     } catch (updateError) {
-      setError(updateError instanceof Error ? updateError.message : "Unable to update the music mode.");
+      setError(safeInterfaceMessage(updateError instanceof Error ? updateError.message : "", "Unable to update the music mode."));
     } finally { setSaving(false); }
   }
 
-  return <div><button type="button" disabled={saving || (nextStatus === "ACTIVE" && trackCount === 0)} onClick={update} style={{border:"1px solid #94a3b8",borderRadius:6,padding:"7px 10px",fontWeight:800,background:"#fff",cursor:"pointer"}}>{saving ? "Saving…" : nextStatus === "ACTIVE" ? "Activate" : "Archive"}</button>{error ? <div style={{color:"#991b1b",fontSize:12,marginTop:5}}>{error}</div> : null}</div>;
+  const buttonStyle = {border:"1px solid #94a3b8",borderRadius:6,padding:"7px 10px",fontWeight:800,background:"#fff",cursor:"pointer"};
+  return <div>{nextStatus === "ARCHIVED" ? <ConfirmActionButton disabled={saving} onConfirm={update} style={buttonStyle} {...confirmationCopy("ARCHIVE_MUSIC_MODE", "This music mode")}>{saving ? "Saving…" : "Archive"}</ConfirmActionButton> : <button type="button" disabled={saving || trackCount === 0} onClick={update} style={buttonStyle}>{saving ? "Saving…" : "Activate"}</button>}{error ? <div role="alert" style={{color:"#991b1b",fontSize:12,marginTop:5}}>{error}</div> : null}</div>;
 }

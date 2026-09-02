@@ -1,6 +1,9 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import StreamSourceOperations from "./StreamSourceOperations";
+import PageHeader from "@/app/components/PageHeader";
+import EmptyState from "@/app/components/EmptyState";
+import { interfaceMessages } from "@/lib/interface-guidance.mjs";
 
 export default async function AdminStationsPage() {
   const stations = await prisma.station.findMany({
@@ -15,19 +18,15 @@ export default async function AdminStationsPage() {
 
   return (
     <main style={styles.page}>
-      <div style={styles.header}>
-        <div>
-          <p style={styles.eyebrow}>Technical streaming</p>
-          <h1 style={styles.title}>All Stations</h1>
-          <p style={styles.description}>
-            Create a station, configure its streaming provider, and review source reliability independently from player health.
-          </p>
-        </div>
-
+      <PageHeader
+        eyebrow="Radio control"
+        title={interfaceMessages.stations.title}
+        description="Create stations, add their private streaming connections and review source reliability separately from player health."
+      >
         <Link href="/admin/stations/new" style={styles.addButton}>
           Add station
         </Link>
-      </div>
+      </PageHeader>
 
       <StreamSourceOperations />
 
@@ -35,18 +34,23 @@ export default async function AdminStationsPage() {
         <h2 style={styles.sectionTitle}>Existing stations</h2>
 
         {stations.length === 0 ? (
-          <p style={styles.emptyState}>No stations have been created yet.</p>
+          <EmptyState
+            title={interfaceMessages.stations.emptyTitle}
+            description={interfaceMessages.stations.emptyDescription}
+            actionHref="/admin/stations/new"
+            actionLabel="Add station"
+          />
         ) : (
           <div style={styles.tableWrapper}>
             <table style={styles.table}>
               <thead>
                 <tr>
-                  <th style={styles.tableHeader}>Station</th>
-                  <th style={styles.tableHeader}>Organisation</th>
-                  <th style={styles.tableHeader}>Status</th>
-                  <th style={styles.tableHeader}>Streaming</th>
-                  <th style={styles.tableHeader}>Created</th>
-                  <th style={styles.tableHeader}>Action</th>
+                  <th scope="col" style={styles.tableHeader}>Station</th>
+                  <th scope="col" style={styles.tableHeader}>Organisation</th>
+                  <th scope="col" style={styles.tableHeader}>Status</th>
+                  <th scope="col" style={styles.tableHeader}>Streaming</th>
+                  <th scope="col" style={styles.tableHeader}>Created</th>
+                  <th scope="col" style={styles.tableHeader}>Action</th>
                 </tr>
               </thead>
 
