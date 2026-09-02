@@ -2,6 +2,9 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
+import PageHeader from "@/app/components/PageHeader";
+import EmptyState from "@/app/components/EmptyState";
+import { interfaceMessages } from "@/lib/interface-guidance.mjs";
 
 export default async function MusicSchedulesPage() {
   const user = await getCurrentUser();
@@ -15,8 +18,8 @@ export default async function MusicSchedulesPage() {
     orderBy: [{ createdAt: "desc" }]
   });
   return <main style={styles.page}>
-    <div style={styles.header}><div><p style={styles.eyebrow}>Radio Control</p><h1 style={styles.title}>Music schedules</h1><p style={styles.description}>Versioned weekly programming in each location’s local timezone. Zone schedules override location-wide schedules only while a matching slot is active.</p></div><Link href="/admin/music-schedules/new" style={styles.action}>Create schedule</Link></div>
-    {schedules.length === 0 ? <section style={styles.empty}><strong>No schedules yet.</strong><p>Create a draft or publish the first weekly schedule.</p></section> : <section style={styles.tableWrap}><table style={styles.table}><thead><tr><th style={styles.th}>Schedule</th><th style={styles.th}>Target</th><th style={styles.th}>Organisation</th><th style={styles.th}>Version</th><th style={styles.th}>Slots</th><th style={styles.th}>Status</th><th style={styles.th}>Timezone</th></tr></thead><tbody>{schedules.map((item)=><tr key={item.id} style={styles.row}><td style={styles.strong}>{item.name}</td><td style={styles.td}>{item.zone ? `${item.zone.location.name} / ${item.zone.name}` : item.location?.name}</td><td style={styles.td}>{item.organisation.name}</td><td style={styles.td}>v{item.version}</td><td style={styles.td}>{item._count.slots}</td><td style={styles.td}>{item.status}</td><td style={styles.td}>{item.timezone}</td></tr>)}</tbody></table></section>}
+    <PageHeader eyebrow="Radio control" title={interfaceMessages.schedules.title} description="Plan weekly programmes in each location's local timezone. Zone schedules take priority only while one of their slots is active."><Link href="/admin/music-schedules/new" style={styles.action}>Create schedule</Link></PageHeader>
+    {schedules.length === 0 ? <EmptyState title={interfaceMessages.schedules.emptyTitle} description={interfaceMessages.schedules.emptyDescription} actionHref="/admin/music-schedules/new" actionLabel="Create schedule" /> : <section style={styles.tableWrap} aria-label="Music schedules"><table style={styles.table}><thead><tr><th scope="col" style={styles.th}>Schedule</th><th scope="col" style={styles.th}>Target</th><th scope="col" style={styles.th}>Organisation</th><th scope="col" style={styles.th}>Version</th><th scope="col" style={styles.th}>Slots</th><th scope="col" style={styles.th}>Status</th><th scope="col" style={styles.th}>Timezone</th></tr></thead><tbody>{schedules.map((item)=><tr key={item.id} style={styles.row}><td style={styles.strong}>{item.name}</td><td style={styles.td}>{item.zone ? `${item.zone.location.name} / ${item.zone.name}` : item.location?.name}</td><td style={styles.td}>{item.organisation.name}</td><td style={styles.td}>v{item.version}</td><td style={styles.td}>{item._count.slots}</td><td style={styles.td}>{item.status}</td><td style={styles.td}>{item.timezone}</td></tr>)}</tbody></table></section>}
   </main>;
 }
 

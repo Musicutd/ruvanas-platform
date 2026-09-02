@@ -5,6 +5,9 @@ import SchoolRadioEntitlementControl from "./SchoolRadioEntitlementControl";
 import SchoolPublicPublishingEntitlementControl from "./SchoolPublicPublishingEntitlementControl";
 import RetailMediaEntitlementControl from "./RetailMediaEntitlementControl";
 import DigitalSignageEntitlementControl from "./DigitalSignageEntitlementControl";
+import PageHeader from "@/app/components/PageHeader";
+import EmptyState from "@/app/components/EmptyState";
+import { interfaceMessages } from "@/lib/interface-guidance.mjs";
 
 export default async function AdminOrganisationsPage() {
   const adminUser = await getAdminUser();
@@ -33,46 +36,44 @@ export default async function AdminOrganisationsPage() {
 
   return (
     <main style={styles.page}>
-      <div style={styles.header}>
-        <div>
-          <p style={styles.eyebrow}>Platform management</p>
-          <h1 style={styles.title}>Organisations</h1>
-          <p style={styles.description}>
-            Organisations are the top-level account for brands, locations,
-            stations, channels, and team members.
-          </p>
-        </div>
-
+      <PageHeader
+        eyebrow="Platform management"
+        title={interfaceMessages.organisations.title}
+        description="Customer accounts contain their brands, locations, stations, channels and team members."
+      >
         <Link href="/admin/organisations/new" style={styles.addButton}>
           Add organisation
         </Link>
-      </div>
+      </PageHeader>
 
       <section style={styles.section}>
         <h2 style={styles.sectionTitle}>Existing organisations</h2>
 
         {organisations.length === 0 ? (
-          <p style={styles.emptyState}>
-            No organisations have been created yet.
-          </p>
+          <EmptyState
+            title={interfaceMessages.organisations.emptyTitle}
+            description={interfaceMessages.organisations.emptyDescription}
+            actionHref="/admin/organisations/new"
+            actionLabel="Add organisation"
+          />
         ) : (
           <div style={styles.tableWrapper}>
             <table style={styles.table}>
               <thead>
                 <tr>
-                  <th style={styles.tableHeader}>Organisation</th>
-                  <th style={styles.tableHeader}>Plan</th>
-                  <th style={styles.tableHeader}>Subscription</th>
-                  <th style={styles.tableHeader}>School Radio</th>
-                  <th style={styles.tableHeader}>School Public Publishing</th>
-                  <th style={styles.tableHeader}>Retail Media</th>
-                  <th style={styles.tableHeader}>Digital Signage</th>
-                  <th style={styles.tableHeader}>Members</th>
-                  <th style={styles.tableHeader}>Brands</th>
-                  <th style={styles.tableHeader}>Locations</th>
-                  <th style={styles.tableHeader}>Channels</th>
-                  <th style={styles.tableHeader}>Stations</th>
-                  <th style={styles.tableHeader}>Created</th>
+                  <th scope="col" style={styles.tableHeader}>Organisation</th>
+                  <th scope="col" style={styles.tableHeader}>Plan</th>
+                  <th scope="col" style={styles.tableHeader}>Subscription</th>
+                  <th scope="col" style={styles.tableHeader}>School Radio</th>
+                  <th scope="col" style={styles.tableHeader}>School Public Publishing</th>
+                  <th scope="col" style={styles.tableHeader}>Retail Media</th>
+                  <th scope="col" style={styles.tableHeader}>Digital Signage</th>
+                  <th scope="col" style={styles.tableHeader}>Members</th>
+                  <th scope="col" style={styles.tableHeader}>Brands</th>
+                  <th scope="col" style={styles.tableHeader}>Locations</th>
+                  <th scope="col" style={styles.tableHeader}>Channels</th>
+                  <th scope="col" style={styles.tableHeader}>Stations</th>
+                  <th scope="col" style={styles.tableHeader}>Created</th>
                 </tr>
               </thead>
 

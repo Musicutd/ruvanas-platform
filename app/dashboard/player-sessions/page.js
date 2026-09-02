@@ -3,6 +3,10 @@ import { getActiveOrganisationContext } from "@/lib/auth";
 import { resolveEntitlements } from "@/lib/entitlements.mjs";
 import { canManagePlayerSessions, listActivePlayerSessions } from "@/lib/player-session-management.mjs";
 import { prisma } from "@/lib/prisma";
+import PageHeader from "@/app/components/PageHeader";
+import EmptyState from "@/app/components/EmptyState";
+import { ConfirmSubmitButton } from "@/app/components/ConfirmActionButton";
+import { confirmationCopy, interfaceMessages } from "@/lib/interface-guidance.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -22,16 +26,10 @@ export default async function PlayerSessionsPage({ searchParams }) {
   const canManage = canManagePlayerSessions(context.membership.role);
 
   return <main style={styles.page}>
-    <header style={styles.header}>
-      <a href="/dashboard" style={styles.brand}>RUVANAS</a>
-      <a href="/dashboard" style={styles.backLink}>Back to dashboard</a>
-    </header>
     <section style={styles.content}>
-      <p style={styles.eyebrow}>CLIENT STREAM CONTROL</p>
-      <h1 style={styles.title}>Active shop streams</h1>
-      <p style={styles.subtitle}>See which enrolled shop players are using your plan and release a session that should no longer be active. Each enrolled player can run on one device at a time.</p>
+      <PageHeader eyebrow="Client stream control" title={interfaceMessages.playerSessions.title} description="See which enrolled shop players are using your plan and release a session that should no longer be active. Each enrolled player can run on one device at a time." backHref="/dashboard" backLabel="Client dashboard" tone="dark" />
 
-      {query?.released === "1" ? <p style={styles.success}>The player session was stopped and its stream slot is now available.</p> : null}
+      {query?.released === "1" ? <p role="status" aria-live="polite" style={styles.success}>The player session was stopped and its stream slot is now available.</p> : null}
 
       <section style={styles.summary}>
         <div><span style={styles.summaryLabel}>Organisation</span><strong>{organisation.name}</strong></div>
@@ -39,10 +37,7 @@ export default async function PlayerSessionsPage({ searchParams }) {
         <div><span style={styles.summaryLabel}>Your access</span><strong>{canManage ? "Can stop sessions" : "View only"}</strong></div>
       </section>
 
-      {!sessions.length ? <section style={styles.empty}>
-        <h2 style={styles.sessionTitle}>No active shop streams</h2>
-        <p style={styles.copy}>A player appears here as soon as it starts using a stream slot.</p>
-      </section> : <section style={styles.list}>
+      {!sessions.length ? <EmptyState tone="dark" title={interfaceMessages.playerSessions.emptyTitle} description={interfaceMessages.playerSessions.emptyDescription} /> : <section style={styles.list} aria-label="Active shop streams">
         {sessions.map((session) => <article key={session.id} style={styles.sessionCard}>
           <div>
             <p style={styles.status}>LIVE SESSION</p>
@@ -50,8 +45,8 @@ export default async function PlayerSessionsPage({ searchParams }) {
             <p style={styles.copy}>{session.player.zone.location.name} / {session.player.zone.name}</p>
             <p style={styles.meta}>Last confirmed {timeLabel(session.lastSeenAt)} · lease renews automatically</p>
           </div>
-          {canManage ? <form action={`/api/player-sessions/${session.id}/revoke`} method="post">
-            <button type="submit" style={styles.stopButton}>Stop this session</button>
+          {canManage ? <form id={`stop-session-${session.id}`} action={`/api/player-sessions/${session.id}/revoke`} method="post">
+            <ConfirmSubmitButton formId={`stop-session-${session.id}`} style={styles.stopButton} {...confirmationCopy("STOP_PLAYER_SESSION", session.player.name)}>Stop this session</ConfirmSubmitButton>
           </form> : null}
         </article>)}
       </section>}

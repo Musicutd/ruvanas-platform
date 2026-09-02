@@ -1,6 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import PageHeader from "@/app/components/PageHeader";
+import EmptyState from "@/app/components/EmptyState";
+import { interfaceMessages, safeInterfaceMessage } from "@/lib/interface-guidance.mjs";
 
 function initialDates() {
   const to = new Date();
@@ -35,7 +38,7 @@ export default function OperationalAnalyticsClient({ organisationName, canExport
       if (!response.ok) throw new Error(body.error || "Unable to load operational analytics.");
       setPayload(body);
     } catch (reportError) {
-      setError(reportError.message);
+      setError(safeInterfaceMessage(reportError?.message, "Unable to load operational analytics."));
     } finally {
       setLoading(false);
     }
@@ -68,23 +71,17 @@ export default function OperationalAnalyticsClient({ organisationName, canExport
       }
       throw new Error("The export is taking longer than expected. Please try again.");
     } catch (exportError) {
-      setExportState({ status: "FAILED", message: exportError.message });
+      setExportState({ status: "FAILED", message: safeInterfaceMessage(exportError?.message, "Unable to prepare the protected CSV.") });
     }
   }
 
   const report = payload?.report;
   return <main style={styles.page}>
-    <header style={styles.header}>
-      <div>
-        <a href="/dashboard" style={styles.back}>← Client dashboard</a>
-        <p style={styles.eyebrow}>STAGE 5C · OPERATIONAL ANALYTICS</p>
-        <h1 style={styles.title}>One evidence-led view</h1>
-        <p style={styles.subtitle}>{organisationName} · playback, player health, content, storage, and school operations without audience inflation.</p>
-      </div>
+    <PageHeader eyebrow="Monitor and report" title={interfaceMessages.analytics.title} description={`${organisationName} · playback, player health, content, storage and school operations without audience inflation.`} backHref="/dashboard" backLabel="Client dashboard" tone="dark">
       {canExport ? <button type="button" onClick={requestExport} disabled={loading || ["QUEUED", "PROCESSING"].includes(exportState.status)} style={styles.exportButton}>
         {["QUEUED", "PROCESSING"].includes(exportState.status) ? "Preparing CSV…" : "Export protected CSV"}
       </button> : null}
-    </header>
+    </PageHeader>
 
     <section style={styles.notice}><strong>Evidence boundary:</strong> {report?.evidenceNotice || "Operational totals are not audience measurements."}</section>
     <section style={styles.filters} aria-label="Analytics date range">
@@ -116,7 +113,7 @@ export default function OperationalAnalyticsClient({ organisationName, canExport
 
       <section style={styles.card}>
         <h2 style={styles.sectionTitle}>Daily operational evidence</h2>
-        {report.days.length === 0 ? <p style={styles.muted}>No aggregate evidence exists in this period yet.</p> : <div style={{ overflowX: "auto" }}><table style={styles.table}>
+        {report.days.length === 0 ? <EmptyState compact tone="dark" title={interfaceMessages.analytics.emptyTitle} description={interfaceMessages.analytics.emptyDescription} /> : <div style={{ overflowX: "auto" }}><table style={styles.table}>
           <thead><tr>{["UTC day", "Planned", "Started", "Confirmed", "Failed", "Interrupted", "Heartbeat samples"].map((label) => <th key={label} style={styles.th}>{label}</th>)}</tr></thead>
           <tbody>{report.days.map((day) => <tr key={day.date}><td style={styles.tdStrong}>{day.date}</td><td style={styles.number}>{day.plannedCount}</td><td style={styles.number}>{day.playbackStartedCount}</td><td style={styles.number}>{day.playbackCompletedCount}</td><td style={styles.number}>{day.playbackFailedCount}</td><td style={styles.number}>{day.playbackInterruptedCount}</td><td style={styles.number}>{day.heartbeatCount}</td></tr>)}</tbody>
         </table></div>}

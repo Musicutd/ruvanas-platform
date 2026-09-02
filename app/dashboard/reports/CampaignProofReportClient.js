@@ -1,6 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import PageHeader from "@/app/components/PageHeader";
+import EmptyState from "@/app/components/EmptyState";
+import { interfaceMessages, safeInterfaceMessage } from "@/lib/interface-guidance.mjs";
 
 function initialDates() {
   const to = new Date();
@@ -36,7 +39,7 @@ export default function CampaignProofReportClient({ organisationName }) {
       if (!response.ok) throw new Error(body.error || "Unable to load the report.");
       setPayload(body);
     } catch (reportError) {
-      setError(reportError.message);
+      setError(safeInterfaceMessage(reportError?.message, "Unable to load proof-of-play reporting."));
     } finally {
       setLoading(false);
     }
@@ -71,24 +74,18 @@ export default function CampaignProofReportClient({ organisationName }) {
       }
       throw new Error("The export is taking longer than expected. Please try again.");
     } catch (exportError) {
-      setExportState({ status: "FAILED", message: exportError.message });
+      setExportState({ status: "FAILED", message: safeInterfaceMessage(exportError?.message, "Unable to prepare the report export.") });
     }
   }
 
   const report = payload?.report;
   const dimensions = payload?.dimensions || { campaigns: [], locations: [], locationGroups: [] };
   return <main style={styles.page}>
-    <header style={styles.header}>
-      <div>
-        <a href="/dashboard" style={styles.back}>← Client dashboard</a>
-        <p style={styles.eyebrow}>CAMPAIGN PERFORMANCE</p>
-        <h1 style={styles.title}>Proof-of-play reports</h1>
-        <p style={styles.subtitle}>{organisationName} · planned insertions reconciled with device-confirmed playback.</p>
-      </div>
+    <PageHeader eyebrow="Campaign performance" title={interfaceMessages.reports.title} description={`${organisationName} · planned insertions reconciled with device-confirmed playback.`} backHref="/dashboard" backLabel="Client dashboard" tone="dark">
       <button type="button" onClick={requestExport} disabled={loading || ["QUEUED", "PROCESSING"].includes(exportState.status)} style={styles.exportButton}>
         {["QUEUED", "PROCESSING"].includes(exportState.status) ? "Preparing CSV…" : "Export CSV"}
       </button>
-    </header>
+    </PageHeader>
 
     <section style={styles.notice} aria-label="Measurement notice">
       <strong>Measurement basis:</strong> device-confirmed playback. These figures do not measure listeners, audience, impressions, or reach.
@@ -124,7 +121,7 @@ export default function CampaignProofReportClient({ organisationName }) {
       <section style={styles.card}>
         <h2 style={styles.sectionTitle}>Hourly campaign detail</h2>
         {report.truncated ? <p style={styles.notice}>Showing the first 2,000 of {report.totalRows} rows. Use the CSV export for the complete result.</p> : null}
-        {report.rows.length === 0 ? <p style={styles.muted}>No compiled campaign insertions match this period.</p> : <div style={{ overflowX: "auto" }}><table style={styles.table}>
+        {report.rows.length === 0 ? <EmptyState compact tone="dark" title={interfaceMessages.reports.emptyTitle} description={interfaceMessages.reports.emptyDescription} /> : <div style={{ overflowX: "auto" }}><table style={styles.table}>
           <thead><tr>{["Local time", "Campaign / promo", "Location / group", "Planned", "Started", "Confirmed", "Failed"].map((label) => <th key={label} style={styles.th}>{label}</th>)}</tr></thead>
           <tbody>{report.rows.map((row) => <tr key={[row.campaignId, row.promoVersionId, row.locationId, row.locationGroupId, row.localDate, row.localHour].join("-")}>
             <td style={styles.tdStrong}>{row.localDate}<small style={styles.detail}>{String(row.localHour).padStart(2, "0")}:00 · {row.timezone}</small></td>

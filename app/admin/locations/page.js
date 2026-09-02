@@ -1,5 +1,8 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
+import PageHeader from "@/app/components/PageHeader";
+import EmptyState from "@/app/components/EmptyState";
+import { interfaceMessages } from "@/lib/interface-guidance.mjs";
 
 export default async function AdminLocationsPage() {
   const locations = await prisma.location.findMany({
@@ -17,23 +20,12 @@ export default async function AdminLocationsPage() {
   });
 
   return (
-    <div style={{ padding: 24 }}>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 16,
-          flexWrap: "wrap"
-        }}
+    <main style={{ maxWidth: 1180, margin: "0 auto", padding: "40px 16px 64px", color: "#172033" }}>
+      <PageHeader
+        eyebrow="Customer setup"
+        title={interfaceMessages.locations.title}
+        description="Manage physical shops, venues and branches together with their listening areas, opening hours and channel assignments."
       >
-        <div>
-          <h1 style={{ marginBottom: 8 }}>Retail Locations</h1>
-          <p style={{ margin: 0, opacity: 0.7 }}>
-            Manage physical stores, venues, branches, and their in-store audio zones.
-          </p>
-        </div>
-
         <Link
           href="/admin/locations/new"
           style={{
@@ -48,26 +40,15 @@ export default async function AdminLocationsPage() {
         >
           Add location
         </Link>
-      </div>
+      </PageHeader>
 
       {locations.length === 0 ? (
-        <div
-          style={{
-            marginTop: 24,
-            padding: 20,
-            border: "1px solid #2a2a2a",
-            borderRadius: 10
-          }}
-        >
-          <p style={{ marginTop: 0, fontWeight: 700 }}>
-            No retail locations yet.
-          </p>
-
-          <p style={{ marginBottom: 0, opacity: 0.7 }}>
-            Create your first location to represent a physical shop, restaurant,
-            office, hotel, or other venue where Ruvanas audio will play.
-          </p>
-        </div>
+        <EmptyState
+          title={interfaceMessages.locations.emptyTitle}
+          description={interfaceMessages.locations.emptyDescription}
+          actionHref="/admin/locations/new"
+          actionLabel="Add location"
+        />
       ) : (
         <div style={{ overflowX: "auto", marginTop: 24 }}>
           <table
@@ -84,15 +65,15 @@ export default async function AdminLocationsPage() {
                   borderBottom: "1px solid #444"
                 }}
               >
-                <th style={{ padding: 8 }}>Location</th>
-                <th style={{ padding: 8 }}>Organisation</th>
-                <th style={{ padding: 8 }}>Brand</th>
-                <th style={{ padding: 8 }}>Timezone</th>
-                <th style={{ padding: 8 }}>Zones</th>
-                <th style={{ padding: 8 }}>Groups</th>
-                <th style={{ padding: 8 }}>Status</th>
-                <th style={{ padding: 8 }}>Created</th>
-                <th style={{ padding: 8 }}></th>
+                <th scope="col" style={{ padding: 8 }}>Location</th>
+                <th scope="col" style={{ padding: 8 }}>Organisation</th>
+                <th scope="col" style={{ padding: 8 }}>Brand</th>
+                <th scope="col" style={{ padding: 8 }}>Timezone</th>
+                <th scope="col" style={{ padding: 8 }}>Zones</th>
+                <th scope="col" style={{ padding: 8 }}>Groups</th>
+                <th scope="col" style={{ padding: 8 }}>Status</th>
+                <th scope="col" style={{ padding: 8 }}>Created</th>
+                <th scope="col" style={{ padding: 8 }}>Action</th>
               </tr>
             </thead>
 
@@ -165,7 +146,7 @@ export default async function AdminLocationsPage() {
       <div style={{ marginTop: 24 }}>
         <Link href="/admin/stations">← Back to stations</Link>
       </div>
-    </div>
+    </main>
   );
 }
 
