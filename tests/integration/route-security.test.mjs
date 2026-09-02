@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 25106)
-Total output lines: 2114
-
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
@@ -688,7 +685,794 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   );
   assert.equal(ownerSchoolEntitlementAttempt.status, 403);
 
-  const ownerOrg…10106 tokens truncated…tatus, 200, await viewerSwitchSchool.clone().text());
+  const ownerOrganisationCreateAttempt = await api("/api/admin/organisations", {
+    method: "POST",
+    cookie: cookieA,
+    body: { name: "Forbidden organisation", planId: "not-a-plan" }
+  });
+  assert.equal(ownerOrganisationCreateAttempt.status, 403);
+
+  const ownerComplianceAttempt = await api("/api/admin/compliance", {
+    method: "POST",
+    cookie: cookieA,
+    body: { action: "PREVIEW_RETENTION", organisationId: accountABody.organisation.id }
+  });
+  assert.equal(ownerComplianceAttempt.status, 403);
+
+  const ownerAIDraftAttempt = await api("/api/admin/ai/jobs", {
+    method: "POST",
+    cookie: cookieA,
+    body: {
+      organisationId: accountABody.organisation.id,
+      assistantType: "PROMO_SCRIPT",
+      dataClassification: "INTERNAL",
+      title: "Forbidden draft",
+      audience: "Customers",
+      brief: "An organisation owner must not use this platform-admin route.",
+      durationSeconds: 30
+    }
+  });
+  assert.equal(ownerAIDraftAttempt.status, 403);
+
+  const ownerIntegrationAttempt = await api("/api/admin/integrations/connections", {
+    method: "POST",
+    cookie: cookieA,
+    body: { organisationId: accountABody.organisation.id, name: "Forbidden connection", endpointUrl: "https://partner.example/hooks", subscribedEventTypes: ["campaign.published"] }
+  });
+  assert.equal(ownerIntegrationAttempt.status, 403);
+
+  const ownerIntegrationRecoveryAttempt = await api("/api/admin/integrations/connections/not-a-connection/dispatch", {
+    method: "POST",
+    cookie: cookieA,
+    body: { action: "RECOVER_ABANDONED", note: "Organisation owners cannot recover delivery evidence." }
+  });
+  assert.equal(ownerIntegrationRecoveryAttempt.status, 403);
+
+  const ownerNetworkCreateAttempt = await api("/api/school-radio/network", {
+    method: "POST",
+    cookie: cookieA,
+    body: { action: "CREATE_NETWORK", name: "Forbidden academy" }
+  });
+  assert.equal(ownerNetworkCreateAttempt.status, 403);
+
+  const productionOrderResponse = await api("/api/studio/orders", {
+    method: "POST",
+    cookie: cookieA,
+    body: {
+      title: "Integration production brief",
+      promotionDetails: "Create a short retail promotion for the integration test organisation.",
+      languageCodes: ["en"],
+      targetDurationSeconds: 30,
+      campaignStartsOn: dateOffset(2),
+      campaignEndsOn: dateOffset(10),
+      contactName: "Integration Owner A",
+      contactEmail: `integration-a-${suffix}@example.invalid`,
+      fundingType: "PAID_ADD_ON",
+      priority: "STANDARD",
+      submitNow: true
+    }
+  });
+  assert.equal(productionOrderResponse.status, 201, await productionOrderResponse.clone().text());
+  const productionOrder = (await productionOrderResponse.json()).order;
+  assert.equal(productionOrder.organisationId, accountABody.organisation.id);
+  assert.equal(productionOrder.status, "SUBMITTED");
+  assert.equal(productionOrder.fundingStatus, "PENDING");
+
+  const ownerStartProductionAttempt = await api(`/api/studio/orders/${productionOrder.id}/status`, {
+    method: "PATCH",
+    cookie: cookieA,
+    body: { action: "START_PRODUCTION" }
+  });
+  assert.equal(ownerStartProductionAttempt.status, 403);
+
+  const crossTenantProductionOrderAttempt = await api(`/api/studio/orders/${productionOrder.id}/status`, {
+    method: "PATCH",
+    cookie: cookieB,
+    body: { action: "CANCEL", note: "Cross-tenant attempt" }
+  });
+  assert.equal(crossTenantProductionOrderAttempt.status, 404);
+
+  const db = new PrismaClient();
+  try {
+    await db.user.update({
+      where: { id: accountABody.user.id },
+      data: { role: "SUPER_ADMIN" }
+    });
+
+    const platformStreamHealth = await api("/api/admin/streams/health", { cookie: cookieA });
+    assert.equal(platformStreamHealth.status, 200, await platformStreamHealth.clone().text());
+    assert.ok(Array.isArray((await platformStreamHealth.json()).stations));
+
+    const platformJobs = await api("/api/admin/jobs", { cookie: cookieA });
+    assert.equal(platformJobs.status, 200, await platformJobs.clone().text());
+    assert.ok(Array.isArray((await platformJobs.json()).jobs));
+
+    const platformOperationalHealth = await api("/api/admin/operations/health", { cookie: cookieA });
+    assert.equal(platformOperationalHealth.status, 200, await platformOperationalHealth.clone().text());
+    const platformOperationalBody = await platformOperationalHealth.json();
+    assert.ok(["HEALTHY", "ATTENTION", "CRITICAL"].includes(platformOperationalBody.status));
+    assert.ok(Array.isArray(platformOperationalBody.deployment.instances));
+    assert.ok(platformOperationalBody.queues.jobs);
+    assert.equal(JSON.stringify(platformOperationalBody).includes("instanceId"), false);
+
+    const platformRecoveryReadiness = await api("/api/admin/recovery", { cookie: cookieA });
+    assert.equal(platformRecoveryReadiness.status, 200, await platformRecoveryReadiness.clone().text());
+    const platformRecoveryBody = await platformRecoveryReadiness.json();
+    assert.ok(["READY", "ATTENTION", "NOT_READY"].includes(platformRecoveryBody.status));
+    assert.equal(platformRecoveryBody.assets.length, 2);
+    assert.equal(JSON.stringify(platformRecoveryBody).includes("passwordHash"), false);
+
+    const platformLaunchReadiness = await api("/api/admin/launch-readiness", { cookie: cookieA });
+    assert.equal(platformLaunchReadiness.status, 200, await platformLaunchReadiness.clone().text());
+    const platformLaunchBody = await platformLaunchReadiness.json();
+    assert.ok(["READY_FOR_OPERATOR_SIGN_OFF", "ATTENTION", "BLOCKED"].includes(platformLaunchBody.status));
+    assert.equal(platformLaunchBody.signoff.requiredCount, 5);
+    assert.equal(JSON.stringify(platformLaunchBody).includes("passwordHash"), false);
+
+    const missingStreamProbe = await api("/api/admin/streams/not-a-station/probe", { method: "POST", cookie: cookieA });
+    assert.equal(missingStreamProbe.status, 404);
+
+    const missingStreamIncident = await api("/api/admin/streams/health/not-an-incident", {
+      method: "PATCH",
+      cookie: cookieA,
+      body: { action: "ACKNOWLEDGE", note: "No matching stream incident." }
+    });
+    assert.equal(missingStreamIncident.status, 404);
+
+    const metricsLocation = await db.location.create({
+      data: {
+        organisationId: accountABody.organisation.id,
+        name: `Summary Metrics Location ${suffix}`,
+        slug: `summary-metrics-${suffix}`
+      }
+    });
+
+    const integrationResponse = await api("/api/admin/integrations/connections", {
+      method: "POST",
+      cookie: cookieA,
+      body: { organisationId: accountABody.organisation.id, name: `Integration webhook ${suffix}`, endpointUrl: "https://partner.example/webhooks/ruvanas", subscribedEventTypes: ["campaign.published", "player.health_changed", "proof.accepted", "production.status_changed"] }
+    });
+    assert.equal(integrationResponse.status, 201, await integrationResponse.clone().text());
+    const integrationBody = await integrationResponse.json();
+    assert.match(integrationBody.secret, /^rvwhsec_[a-f0-9]{64}$/);
+    const storedIntegration = await db.integrationConnection.findUnique({ where: { id: integrationBody.connection.id } });
+    assert.notEqual(storedIntegration.encryptedSecret, integrationBody.secret);
+
+    const abandonedWebhook = await db.outgoingWebhookEvent.create({
+      data: {
+        organisationId: accountABody.organisation.id,
+        connectionId: integrationBody.connection.id,
+        eventType: "campaign.published",
+        idempotencyKey: `route-recovery:${suffix}`,
+        payload: { campaignId: `campaign-${suffix}` },
+        status: "ABANDONED",
+        attemptCount: 5,
+        lastError: "WEBHOOK_HTTP_503"
+      }
+    });
+    const integrationRecovery = await api(`/api/admin/integrations/connections/${integrationBody.connection.id}/dispatch`, {
+      method: "POST",
+      cookie: cookieA,
+      body: { action: "RECOVER_ABANDONED", note: "Endpoint incident resolved and retry approved." }
+    });
+    assert.equal(integrationRecovery.status, 200, await integrationRecovery.clone().text());
+    assert.equal((await integrationRecovery.json()).recovered, 1);
+    const recoveredWebhook = await db.outgoingWebhookEvent.findUniqueOrThrow({ where: { id: abandonedWebhook.id } });
+    assert.equal(recoveredWebhook.status, "FAILED");
+    assert.equal(recoveredWebhook.recoveryCount, 1);
+    assert.equal(await db.auditLog.count({ where: { entityId: integrationBody.connection.id, action: "INTEGRATION_ABANDONED_RECOVERY_QUEUED" } }), 1);
+
+    const serviceAccountResponse = await api("/api/admin/security/service-accounts", {
+      method: "POST",
+      cookie: cookieA,
+      body: { organisationId: accountABody.organisation.id, name: `Integration API ${suffix}`, scopes: ["organisation:read", "locations:read", "metrics:write"] }
+    });
+    assert.equal(serviceAccountResponse.status, 201, await serviceAccountResponse.clone().text());
+    const serviceAccountBody = await serviceAccountResponse.json();
+    const publicIdentity = await api("/api/v1/service-account", { headers: { authorization: `Bearer ${serviceAccountBody.apiKey}` } });
+    assert.equal(publicIdentity.status, 200, await publicIdentity.clone().text());
+    assert.equal((await publicIdentity.json()).organisation.id, accountABody.organisation.id);
+    assert.ok(Number(publicIdentity.headers.get("x-ratelimit-remaining")) < 120);
+    const publicLocations = await api("/api/v1/locations?limit=10", { headers: { authorization: `Bearer ${serviceAccountBody.apiKey}` } });
+    assert.equal(publicLocations.status, 200, await publicLocations.clone().text());
+    const publicLocationItems = (await publicLocations.json()).data;
+    assert.ok(Array.isArray(publicLocationItems));
+    assert.ok(publicLocationItems.some((location) => location.id === metricsLocation.id));
+
+    const metricConnectionResponse = await api("/api/admin/integrations/connections", {
+      method: "POST",
+      cookie: cookieA,
+      body: { organisationId: accountABody.organisation.id, name: `POS summaries ${suffix}`, kind: "POS_METRICS", providerKey: "INTEGRATION_POS_V1" }
+    });
+    assert.equal(metricConnectionResponse.status, 201, await metricConnectionResponse.clone().text());
+    const metricConnection = (await metricConnectionResponse.json()).connection;
+    assert.equal(metricConnection.kind, "POS_METRICS");
+    assert.equal(metricConnection.encryptedSecret, undefined);
+
+    const metricPayload = {
+      connectionId: metricConnection.id,
+      metrics: [{
+        externalId: `pos:${suffix}:hour-1`,
+        locationId: publicLocationItems[0].id,
+        metricType: "POS_TRANSACTION_COUNT",
+        value: 23,
+        unit: "COUNT",
+        windowStartedAt: new Date(Date.now() - 3_600_000).toISOString(),
+        windowEndedAt: new Date().toISOString(),
+        sourceTimestamp: new Date().toISOString(),
+        dimensions: { department: "All retail", sourceLocationRef: `qa-${suffix}` }
+      }]
+    };
+    const metricImport = await api("/api/v1/integration-metrics", { method: "POST", headers: { authorization: `Bearer ${serviceAccountBody.apiKey}` }, body: metricPayload });
+    assert.equal(metricImport.status, 201, await metricImport.clone().text());
+    const metricImportBody = await metricImport.json();
+    assert.equal(metricImportBody.acceptedCount, 1);
+    assert.equal(metricImportBody.duplicateCount, 0);
+    assert.match(metricImportBody.notice, /do not prove/);
+
+    const duplicateMetricImport = await api("/api/v1/integration-metrics", { method: "POST", headers: { authorization: `Bearer ${serviceAccountBody.apiKey}` }, body: metricPayload });
+    assert.equal(duplicateMetricImport.status, 201, await duplicateMetricImport.clone().text());
+    assert.equal((await duplicateMetricImport.json()).duplicateCount, 1);
+    assert.equal(await db.integrationMetricSummary.count({ where: { connectionId: metricConnection.id } }), 1);
+    assert.equal(await db.auditLog.count({ where: { action: "INTEGRATION_METRICS_IMPORTED", entityId: metricConnection.id } }), 2);
+
+    const aiDraftResponse = await api("/api/admin/ai/jobs", {
+      method: "POST",
+      cookie: cookieA,
+      body: {
+        organisationId: accountABody.organisation.id,
+        assistantType: "PROMO_SCRIPT",
+        dataClassification: "CUSTOMER_CONTENT",
+        title: "Integration weekend offer",
+        audience: "Retail visitors",
+        brief: "Create an editable draft using only the verified offer information supplied by the administrator.",
+        callToAction: "Ask a team member for details.",
+        tone: "friendly and concise",
+        durationSeconds: 30
+      }
+    });
+    assert.equal(aiDraftResponse.status, 201, await aiDraftResponse.clone().text());
+    const aiDraftBody = await aiDraftResponse.json();
+    assert.equal(aiDraftBody.job.status, "NEEDS_REVIEW");
+    assert.equal(aiDraftBody.job.privateDataSent, false);
+    assert.match(aiDraftBody.job.draftText, /DRAFT PROMO SCRIPT/);
+    assert.equal(await db.auditLog.count({ where: { action: "AI_DRAFT_CREATED", entityId: aiDraftBody.job.id } }), 1);
+
+    const aiReviewResponse = await api(`/api/admin/ai/jobs/${aiDraftBody.job.id}/review`, {
+      method: "PATCH",
+      cookie: cookieA,
+      body: {
+        decision: "APPROVED",
+        editedText: `${aiDraftBody.job.draftText}\n\nHuman editor: facts checked.`,
+        reviewNote: "Integration human review"
+      }
+    });
+    assert.equal(aiReviewResponse.status, 200, await aiReviewResponse.clone().text());
+    const aiReviewBody = await aiReviewResponse.json();
+    assert.equal(aiReviewBody.job.status, "APPROVED");
+    assert.match(aiReviewBody.job.approvedText, /Human editor: facts checked/);
+    assert.equal(await db.recommendationFeedback.count({ where: { aiJobId: aiDraftBody.job.id, decision: "APPROVED" } }), 1);
+    assert.equal(await db.auditLog.count({ where: { action: "AI_DRAFT_APPROVED", entityId: aiDraftBody.job.id } }), 1);
+
+    const saveRetentionPolicy = await api("/api/admin/compliance", {
+      method: "POST",
+      cookie: cookieA,
+      body: {
+        action: "UPDATE_RETENTION",
+        organisationId: accountABody.organisation.id,
+        rawPlaybackDays: 395,
+        playerHeartbeatDays: 90,
+        audioProjectDays: 730,
+        supportTicketDays: 730,
+        auditDays: 2555
+      }
+    });
+    assert.equal(saveRetentionPolicy.status, 200, await saveRetentionPolicy.clone().text());
+
+    const retentionPreview = await api("/api/admin/compliance", {
+      method: "POST",
+      cookie: cookieA,
+      body: { action: "PREVIEW_RETENTION", organisationId: accountABody.organisation.id }
+    });
+    assert.equal(retentionPreview.status, 201, await retentionPreview.clone().text());
+    assert.equal((await retentionPreview.json()).job.dryRun, true);
+
+    const supportTicketResponse = await api("/api/admin/support/tickets", {
+      method: "POST",
+      cookie: cookieA,
+      body: { organisationId: accountABody.organisation.id, subject: "Integration player incident", description: "Linked operational support case.", linkedEntityType: "Organisation", linkedEntityId: accountABody.organisation.id, priority: "HIGH" }
+    });
+    assert.equal(supportTicketResponse.status, 201, await supportTicketResponse.clone().text());
+    assert.equal((await supportTicketResponse.json()).ticket.organisationId, accountABody.organisation.id);
+
+    const dataRequestResponse = await api("/api/admin/compliance", {
+      method: "POST",
+      cookie: cookieA,
+      body: { action: "CREATE_DATA_REQUEST", organisationId: accountABody.organisation.id, type: "EXPORT", subjectEmail: `integration-a-${suffix}@example.invalid` }
+    });
+    assert.equal(dataRequestResponse.status, 201, await dataRequestResponse.clone().text());
+
+    const auditExportResponse = await api("/api/admin/compliance", {
+      method: "POST",
+      cookie: cookieA,
+      body: { action: "CREATE_AUDIT_EXPORT", organisationId: accountABody.organisation.id }
+    });
+    assert.equal(auditExportResponse.status, 201, await auditExportResponse.clone().text());
+    const auditExportBody = await auditExportResponse.json();
+    assert.equal(auditExportBody.job.status, "READY");
+    assert.ok(auditExportBody.job.auditSeal.sealHash);
+    assert.match(auditExportBody.downloadUrl, /organisationId=/);
+
+    const authorisePaidAddon = await api(`/api/studio/orders/${productionOrder.id}/funding`, {
+      method: "PATCH",
+      cookie: cookieA,
+      body: { action: "AUTHORISE_PAID_ADD_ON", externalReference: `integration-${suffix}` }
+    });
+    assert.equal(authorisePaidAddon.status, 200, await authorisePaidAddon.clone().text());
+    assert.equal((await authorisePaidAddon.json()).order.fundingStatus, "RESERVED");
+
+    const startProduction = await api(`/api/studio/orders/${productionOrder.id}/status`, {
+      method: "PATCH",
+      cookie: cookieA,
+      body: { action: "START_PRODUCTION" }
+    });
+    assert.equal(startProduction.status, 200, await startProduction.clone().text());
+
+    const assignProduction = await api(`/api/studio/orders/${productionOrder.id}/assignment`, {
+      method: "PATCH",
+      cookie: cookieA,
+      body: { userId: accountABody.user.id }
+    });
+    assert.equal(assignProduction.status, 200, await assignProduction.clone().text());
+
+    const createProductionScript = await api(`/api/studio/orders/${productionOrder.id}/scripts`, {
+      method: "POST",
+      cookie: cookieA,
+      body: { languageCode: "en", content: "This is the first immutable integration production script.", productionNotes: "Integration only." }
+    });
+    assert.equal(createProductionScript.status, 201, await createProductionScript.clone().text());
+    assert.equal((await createProductionScript.json()).script.version, 1);
+
+    const requestProductionApproval = await api(`/api/studio/orders/${productionOrder.id}/status`, {
+      method: "PATCH",
+      cookie: cookieA,
+      body: { action: "REQUEST_APPROVAL" }
+    });
+    assert.equal(requestProductionApproval.status, 200, await requestProductionApproval.clone().text());
+
+    const approveProduction = await api(`/api/studio/orders/${productionOrder.id}/status`, {
+      method: "PATCH",
+      cookie: cookieA,
+      body: { action: "APPROVE" }
+    });
+    assert.equal(approveProduction.status, 200, await approveProduction.clone().text());
+    assert.equal((await approveProduction.json()).order.status, "APPROVED");
+    const deliverWithoutMaster = await api(`/api/studio/orders/${productionOrder.id}/status`, {
+      method: "PATCH",
+      cookie: cookieA,
+      body: { action: "DELIVER" }
+    });
+    assert.equal(deliverWithoutMaster.status, 409);
+    assert.equal(
+      await db.productionOrderEvent.count({ where: { orderId: productionOrder.id } }),
+      7
+    );
+    assert.equal(
+      await db.auditLog.count({ where: { organisationId: accountABody.organisation.id, entityId: productionOrder.id, entityType: "ProductionOrder" } }),
+      6
+    );
+    assert.equal(
+      await db.outgoingWebhookEvent.count({ where: { connectionId: integrationBody.connection.id, eventType: "production.status_changed" } }),
+      3
+    );
+
+    const starterPlan = await db.plan.findUnique({ where: { code: "STARTER" } });
+    assert.ok(starterPlan);
+    const createdOrganisationResponse = await api("/api/admin/organisations", {
+      method: "POST",
+      cookie: cookieA,
+      body: {
+        name: `School Radio QA ${suffix}`,
+        planId: starterPlan.id,
+        assignCurrentUser: true
+      }
+    });
+    assert.equal(
+      createdOrganisationResponse.status,
+      201,
+      await createdOrganisationResponse.clone().text()
+    );
+    const createdOrganisation = (await createdOrganisationResponse.json()).organisation;
+    assert.equal(createdOrganisation.subscription.planId, starterPlan.id);
+    assert.ok(
+      await db.organisationMember.findUnique({
+        where: {
+          userId_organisationId: {
+            userId: accountABody.user.id,
+            organisationId: createdOrganisation.id
+          }
+        }
+      })
+    );
+    assert.equal(
+      await db.auditLog.count({
+        where: {
+          organisationId: createdOrganisation.id,
+          action: "ORGANISATION_CREATED",
+          entityId: createdOrganisation.id
+        }
+      }),
+      1
+    );
+
+    const enableControlledSchoolPublishing = await api(
+      `/api/admin/organisations/${accountABody.organisation.id}/school-publishing`,
+      { method: "PATCH", cookie: cookieA, body: { enabled: true } }
+    );
+    assert.equal(enableControlledSchoolPublishing.status, 200, await enableControlledSchoolPublishing.clone().text());
+    assert.equal((await enableControlledSchoolPublishing.json()).subscription.effectiveSchoolPublicPublishingEnabled, true);
+    assert.equal((await db.subscription.findUnique({ where: { organisationId: accountABody.organisation.id } })).schoolPublicPublishingEnabled, true);
+
+    const enableSchoolRadio = await api(
+      `/api/admin/organisations/${accountABody.organisation.id}/school-radio`,
+      { method: "PATCH", cookie: cookieA, body: { enabled: true } }
+    );
+    assert.equal(enableSchoolRadio.status, 200, await enableSchoolRadio.clone().text());
+    assert.equal(
+      (await enableSchoolRadio.json()).subscription.effectiveSchoolRadioEnabled,
+      true
+    );
+    assert.equal(
+      (
+        await db.subscription.findUnique({
+          where: { organisationId: accountABody.organisation.id }
+        })
+      ).schoolRadioEnabled,
+      true
+    );
+    assert.equal(
+      await db.auditLog.count({
+        where: {
+          organisationId: accountABody.organisation.id,
+          action: "SCHOOL_RADIO_ENTITLEMENT_ENABLED"
+        }
+      }),
+      1
+    );
+
+    const initialSafeguardingReadiness = await api("/api/school-radio/safeguarding-readiness", { cookie: cookieA });
+    assert.equal(initialSafeguardingReadiness.status, 200, await initialSafeguardingReadiness.clone().text());
+    const initialReadinessBody = await initialSafeguardingReadiness.json();
+    assert.equal(initialReadinessBody.readiness.status, "DRAFT");
+    assert.equal(initialReadinessBody.safety.directStudentAccessEnabled, false);
+    assert.ok(initialReadinessBody.gaps.length > 0);
+
+    const submitSafeguardingReadiness = await api("/api/school-radio/safeguarding-readiness", {
+      method: "POST",
+      cookie: cookieA,
+      body: {
+        action: "SUBMIT_FOR_REVIEW",
+        targetCountries: ["MT"],
+        minimumStudentAge: 8,
+        maximumStudentAge: 18,
+        consentModel: "BOTH",
+        studentIdentityMode: "INVITATION_ONLY",
+        privacyContactEmail: "privacy@school.example",
+        rawRecordingRetentionDays: 90,
+        consentEvidenceRetentionDays: 730,
+        localPolicyReference: "Integration safeguarding policy v1",
+        notes: "Controlled test readiness pack.",
+        staffModerationConfirmed: true,
+        noDirectMessagingConfirmed: true,
+        privateByDefaultConfirmed: true
+      }
+    });
+    assert.equal(submitSafeguardingReadiness.status, 200, await submitSafeguardingReadiness.clone().text());
+    const submittedReadinessBody = await submitSafeguardingReadiness.json();
+    assert.equal(submittedReadinessBody.readiness.status, "READY_FOR_REVIEW");
+    assert.deepEqual(submittedReadinessBody.gaps, []);
+    assert.equal(submittedReadinessBody.safety.directStudentAccessEnabled, false);
+    assert.equal(submittedReadinessBody.safety.publicPublishingEnabled, false);
+    assert.equal(await db.auditLog.count({ where: { organisationId: accountABody.organisation.id, action: "SCHOOL_SAFEGUARDING_READINESS_SUBMITTED" } }), 1);
+
+    const approveSafeguardingReadiness = await api("/api/admin/school-safeguarding", {
+      method: "POST",
+      cookie: cookieA,
+      body: { readinessId: submittedReadinessBody.readiness.id, decision: "APPROVED", notes: "Integration policy pack reviewed." }
+    });
+    assert.equal(approveSafeguardingReadiness.status, 201, await approveSafeguardingReadiness.clone().text());
+    const approvedReadinessBody = await approveSafeguardingReadiness.json();
+    assert.equal(approvedReadinessBody.guardedStudentAccessEligible, true);
+    assert.equal(approvedReadinessBody.publicPublishingPolicyEligible, true);
+    assert.equal((await db.schoolSafeguardingReadiness.findUnique({ where: { id: submittedReadinessBody.readiness.id } })).status, "APPROVED");
+    assert.equal(await db.schoolSafeguardingReview.count({ where: { readinessId: submittedReadinessBody.readiness.id, decision: "APPROVED" } }), 1);
+    assert.equal(await db.auditLog.count({ where: { organisationId: accountABody.organisation.id, action: "SCHOOL_SAFEGUARDING_READINESS_APPROVED" } }), 1);
+
+    const enablePublicSchoolPolicy = await api("/api/school-radio/publication-policy", {
+      method: "PATCH",
+      cookie: cookieA,
+      body: { publishingPolicy: "PUBLIC", reason: "Integration controlled public publishing approval." }
+    });
+    assert.equal(enablePublicSchoolPolicy.status, 200, await enablePublicSchoolPolicy.clone().text());
+    assert.equal((await enablePublicSchoolPolicy.json()).profile.publishingPolicy, "PUBLIC");
+
+    const approvedPackEdit = await api("/api/school-radio/safeguarding-readiness", {
+      method: "POST",
+      cookie: cookieA,
+      body: { action: "SAVE_DRAFT", targetCountries: ["MT"] }
+    });
+    assert.equal(approvedPackEdit.status, 409);
+
+    const schoolGroupResponse = await api("/api/school-radio/editorial", {
+      method: "POST", cookie: cookieA,
+      body: { action: "CREATE_GROUP", name: `Integration Radio Club ${suffix}`, academicYear: "2026/27" }
+    });
+    assert.equal(schoolGroupResponse.status, 201, await schoolGroupResponse.clone().text());
+    const schoolGroup = (await schoolGroupResponse.json()).result;
+
+    const schoolContributorResponse = await api("/api/school-radio/editorial", {
+      method: "POST", cookie: cookieA,
+      body: { action: "CREATE_CONTRIBUTOR", studentGroupId: schoolGroup.id, displayName: "Integration Student", referenceCode: `student-${suffix}` }
+    });
+    assert.equal(schoolContributorResponse.status, 201, await schoolContributorResponse.clone().text());
+    const schoolContributor = (await schoolContributorResponse.json()).result;
+    const studentEmail = `integration-student-${suffix}@example.invalid`;
+
+    const inviteWithoutConsent = await api("/api/school-radio/student-access", {
+      method: "POST", cookie: cookieA,
+      body: { action: "INVITE", contributorId: schoolContributor.id, email: studentEmail }
+    });
+    assert.equal(inviteWithoutConsent.status, 409);
+
+    const schoolConsentResponse = await api("/api/school-radio/editorial", {
+      method: "POST", cookie: cookieA,
+      body: { action: "RECORD_CONSENT", contributorId: schoolContributor.id, status: "GRANTED", notes: "Integration school-level consent." }
+    });
+    assert.equal(schoolConsentResponse.status, 201, await schoolConsentResponse.clone().text());
+
+    const studentInvitationResponse = await api("/api/school-radio/student-access", {
+      method: "POST", cookie: cookieA,
+      body: { action: "INVITE", contributorId: schoolContributor.id, email: studentEmail }
+    });
+    assert.equal(studentInvitationResponse.status, 201, await studentInvitationResponse.clone().text());
+    const studentInvitation = await studentInvitationResponse.json();
+    assert.match(studentInvitation.invitationPath, /^\/school-student\/accept#token=[a-f0-9]{64}$/);
+    assert.equal(await db.schoolStudentAccess.count({ where: { contributorId: schoolContributor.id, status: "INVITED" } }), 1);
+
+    const studentToken = new URLSearchParams(new URL(studentInvitation.invitationPath, baseUrl).hash.slice(1)).get("token");
+    const acceptStudentInvitation = await api("/api/school-student/accept", {
+      method: "POST",
+      body: { token: studentToken, password: "student-password-123" }
+    });
+    assert.equal(acceptStudentInvitation.status, 200, await acceptStudentInvitation.clone().text());
+    const studentCookie = sessionCookie(acceptStudentInvitation);
+    assert.ok(studentCookie);
+
+    const studentWorkspace = await api("/api/school-student/workspace", { cookie: studentCookie });
+    assert.equal(studentWorkspace.status, 200, await studentWorkspace.clone().text());
+    const studentWorkspaceBody = await studentWorkspace.json();
+    assert.equal(studentWorkspaceBody.student.displayName, "Integration Student");
+    assert.equal(studentWorkspaceBody.safety.staffDashboardAccess, false);
+    assert.equal(studentWorkspaceBody.safety.directMessagingEnabled, false);
+    assert.equal(studentWorkspaceBody.safety.publicPublishingEnabled, false);
+
+    const studentStaffApiAttempt = await api("/api/school-radio/editorial", { cookie: studentCookie });
+    assert.equal(studentStaffApiAttempt.status, 403);
+    const studentMeAttempt = await api("/api/me", { cookie: studentCookie });
+    assert.equal(studentMeAttempt.status, 403);
+
+    const activeStudentAccess = await db.schoolStudentAccess.findUnique({ where: { contributorId: schoolContributor.id } });
+    assert.equal(activeStudentAccess.status, "ACTIVE");
+    assert.equal(activeStudentAccess.invitationTokenHash, null);
+    const revokeStudentAccess = await api("/api/school-radio/student-access", {
+      method: "POST", cookie: cookieA,
+      body: { action: "REVOKE", accessId: activeStudentAccess.id, reason: "Integration safeguarding revocation." }
+    });
+    assert.equal(revokeStudentAccess.status, 200, await revokeStudentAccess.clone().text());
+    assert.equal((await api("/api/school-student/workspace", { cookie: studentCookie })).status, 401);
+    assert.equal(await db.auditLog.count({ where: { organisationId: accountABody.organisation.id, action: "SCHOOL_STUDENT_INVITATION_ACCEPTED" } }), 1);
+    assert.equal(await db.auditLog.count({ where: { organisationId: accountABody.organisation.id, action: "SCHOOL_STUDENT_ACCESS_REVOKED" } }), 1);
+
+    const schoolProgrammeResponse = await api("/api/school-radio/editorial", {
+      method: "POST", cookie: cookieA,
+      body: { action: "CREATE_PROGRAMME", title: `Integration Student Voices ${suffix}`, studentGroupId: schoolGroup.id }
+    });
+    assert.equal(schoolProgrammeResponse.status, 201, await schoolProgrammeResponse.clone().text());
+    const schoolProgramme = (await schoolProgrammeResponse.json()).result;
+
+    const schoolEpisodeResponse = await api("/api/school-radio/editorial", {
+      method: "POST", cookie: cookieA,
+      body: { action: "CREATE_EPISODE", programmeId: schoolProgramme.id, title: "First supervised episode", contributorIds: [schoolContributor.id] }
+    });
+    assert.equal(schoolEpisodeResponse.status, 201, await schoolEpisodeResponse.clone().text());
+    const schoolEpisode = (await schoolEpisodeResponse.json()).result;
+    assert.equal(schoolEpisode.publicationScope, "INTERNAL_ONLY");
+
+    const enableSecondSchoolRadio = await api(
+      `/api/admin/organisations/${createdOrganisation.id}/school-radio`,
+      { method: "PATCH", cookie: cookieA, body: { enabled: true } }
+    );
+    assert.equal(enableSecondSchoolRadio.status, 200, await enableSecondSchoolRadio.clone().text());
+
+    const createSchoolNetwork = await api("/api/school-radio/network", {
+      method: "POST",
+      cookie: cookieA,
+      body: { action: "CREATE_NETWORK", name: `Integration Academy ${suffix}` }
+    });
+    assert.equal(createSchoolNetwork.status, 201, await createSchoolNetwork.clone().text());
+    const schoolNetwork = (await createSchoolNetwork.json()).result;
+
+    for (const organisationId of [accountABody.organisation.id, createdOrganisation.id]) {
+      const addSchool = await api("/api/school-radio/network", {
+        method: "POST",
+        cookie: cookieA,
+        body: { action: "ADD_SCHOOL", schoolNetworkId: schoolNetwork.id, organisationId }
+      });
+      assert.equal(addSchool.status, 201, await addSchool.clone().text());
+    }
+
+    const exchangeMedia = await db.mediaAsset.create({
+      data: {
+        organisationId: accountABody.organisation.id,
+        name: `School exchange episode ${suffix}`,
+        originalName: "school-exchange-episode.mp3",
+        storageKey: `integration/school-exchange/${suffix}.mp3`,
+        mimeType: "audio/mpeg",
+        sizeBytes: 4096n,
+        durationSeconds: 180,
+        mediaType: "ANNOUNCEMENT",
+        libraryType: "ORGANISATION_PROMO",
+        status: "READY"
+      }
+    });
+    const exchangePromoAsset = await db.promoAsset.create({
+      data: {
+        organisationId: accountABody.organisation.id,
+        name: `School exchange episode ${suffix}`,
+        mediaType: "ANNOUNCEMENT",
+        languageCode: "en"
+      }
+    });
+    const exchangePromoVersion = await db.promoVersion.create({
+      data: {
+        promoAssetId: exchangePromoAsset.id,
+        mediaAssetId: exchangeMedia.id,
+        version: 1,
+        status: "APPROVED",
+        qcStatus: "PASSED",
+        languageCode: "en",
+        durationSeconds: 180,
+        reviewedAt: new Date()
+      }
+    });
+    await db.promoAsset.update({ where: { id: exchangePromoAsset.id }, data: { currentApprovedVersionId: exchangePromoVersion.id } });
+
+    await db.schoolEpisode.update({ where: { id: schoolEpisode.id }, data: { status: "APPROVED", approvedAt: new Date() } });
+    await db.schoolSubmission.create({
+      data: {
+        organisationId: accountABody.organisation.id,
+        episodeId: schoolEpisode.id,
+        promoVersionId: exchangePromoVersion.id,
+        revision: 1,
+        status: "SUBMITTED",
+        submittedByUserId: accountABody.user.id
+      }
+    });
+    const publishExchangeOffer = await api("/api/school-radio/network/exchange", {
+      method: "POST", cookie: cookieA,
+      body: { action: "PUBLISH_OFFER", episodeId: schoolEpisode.id, consentConfirmed: true }
+    });
+    assert.equal(publishExchangeOffer.status, 201, await publishExchangeOffer.clone().text());
+    const exchangeOffer = (await publishExchangeOffer.json()).result;
+    assert.equal(await db.auditLog.count({ where: { schoolNetworkId: schoolNetwork.id, action: "SCHOOL_EPISODE_EXCHANGE_OFFER_PUBLISHED", entityId: exchangeOffer.id } }), 1);
+
+    const podcastSeriesResponse = await api("/api/school-radio/podcasts", {
+      method: "POST", cookie: cookieA,
+      body: { action: "CREATE_SERIES", title: `Integration Student Voices ${suffix}`, programmeId: schoolProgramme.id }
+    });
+    assert.equal(podcastSeriesResponse.status, 201, await podcastSeriesResponse.clone().text());
+    const podcastSeries = (await podcastSeriesResponse.json()).result;
+
+    const podcastEpisodeResponse = await api("/api/school-radio/podcasts", {
+      method: "POST", cookie: cookieA,
+      body: { action: "CREATE_EPISODE", seriesId: podcastSeries.id, episodeId: schoolEpisode.id, accessibleDescription: "A supervised school news episode." }
+    });
+    assert.equal(podcastEpisodeResponse.status, 201, await podcastEpisodeResponse.clone().text());
+    const podcastEpisode = (await podcastEpisodeResponse.json()).result;
+
+    const savePodcastEditor = await api("/api/school-radio/podcasts", {
+      method: "POST", cookie: cookieA,
+      body: {
+        action: "SAVE_EDITOR",
+        podcastEpisodeId: podcastEpisode.id,
+        languageCode: "en",
+        transcriptSegments: [{ startMs: 0, endMs: 5000, text: "Welcome to our supervised school radio update.", speaker: schoolContributor.displayName }],
+        chapters: [{ startMs: 0, title: "Introduction" }],
+        accessibleDescription: "A supervised school news episode.",
+        submitTranscript: true
+      }
+    });
+    assert.equal(savePodcastEditor.status, 200, await savePodcastEditor.clone().text());
+
+    const approvePodcastTranscript = await api("/api/school-radio/podcasts", {
+      method: "POST", cookie: cookieA,
+      body: { action: "APPROVE_TRANSCRIPT", podcastEpisodeId: podcastEpisode.id }
+    });
+    assert.equal(approvePodcastTranscript.status, 200, await approvePodcastTranscript.clone().text());
+
+    const publishPublicPodcast = await api("/api/school-radio/podcasts", {
+      method: "POST", cookie: cookieA,
+      body: { action: "PUBLISH", podcastEpisodeId: podcastEpisode.id, publicationScope: "PUBLIC" }
+    });
+    assert.equal(publishPublicPodcast.status, 200, await publishPublicPodcast.clone().text());
+    assert.equal((await publishPublicPodcast.json()).result.publicationScope, "PUBLIC");
+
+    const publicSchoolSlug = (await db.organisation.findUnique({ where: { id: accountABody.organisation.id }, select: { slug: true } })).slug;
+    const publicSchoolEpisodes = await api(`/api/public/school-radio/${publicSchoolSlug}/episodes`);
+    assert.equal(publicSchoolEpisodes.status, 200, await publicSchoolEpisodes.clone().text());
+    const publicSchoolBody = await publicSchoolEpisodes.json();
+    assert.equal(publicSchoolBody.episodes.length, 1);
+    assert.equal(publicSchoolBody.episodes[0].title, "First supervised episode");
+    assert.equal(publicSchoolBody.episodes[0].transcript[0].text, "Welcome to our supervised school radio update.");
+    assert.equal("speaker" in publicSchoolBody.episodes[0].transcript[0], false);
+    assert.equal(JSON.stringify(publicSchoolBody).includes(schoolContributor.id), false);
+    assert.equal(JSON.stringify(publicSchoolBody).includes(JSON.stringify(schoolContributor.displayName)), false);
+
+    const returnSchoolPolicyToPrivate = await api("/api/school-radio/publication-policy", {
+      method: "PATCH", cookie: cookieA,
+      body: { publishingPolicy: "PRIVATE", reason: "Integration immediate withdrawal verification." }
+    });
+    assert.equal(returnSchoolPolicyToPrivate.status, 200, await returnSchoolPolicyToPrivate.clone().text());
+    assert.equal((await returnSchoolPolicyToPrivate.json()).withdrawnCount, 1);
+    assert.equal((await db.schoolPodcastEpisode.findUnique({ where: { id: podcastEpisode.id } })).status, "UNPUBLISHED");
+    assert.equal(await db.schoolPublicationDecision.count({ where: { podcastEpisodeId: podcastEpisode.id, decision: "AUTO_WITHDRAWN" } }), 1);
+    assert.equal((await api(`/api/public/school-radio/${publicSchoolSlug}/episodes`)).status, 404);
+
+    const createHiddenNetwork = await api("/api/school-radio/network", {
+      method: "POST",
+      cookie: cookieA,
+      body: { action: "CREATE_NETWORK", name: `Hidden Academy ${suffix}` }
+    });
+    assert.equal(createHiddenNetwork.status, 201, await createHiddenNetwork.clone().text());
+
+    const addNetworkViewer = await api("/api/school-radio/network", {
+      method: "POST",
+      cookie: cookieA,
+      body: { action: "ADD_MEMBER", schoolNetworkId: schoolNetwork.id, email: `integration-b-${suffix}@example.invalid`, role: "VIEWER" }
+    });
+    assert.equal(addNetworkViewer.status, 201, await addNetworkViewer.clone().text());
+    const networkViewer = (await addNetworkViewer.json()).result;
+
+    const viewerNetworkRollup = await api("/api/school-radio/network", { cookie: cookieB });
+    assert.equal(viewerNetworkRollup.status, 200, await viewerNetworkRollup.clone().text());
+    const viewerRollupBody = await viewerNetworkRollup.json();
+    assert.equal(viewerRollupBody.networks.length, 1);
+    assert.equal(viewerRollupBody.networks[0].id, schoolNetwork.id);
+    assert.equal(viewerRollupBody.networks[0].schools.length, 2);
+    assert.deepEqual(viewerRollupBody.networks[0].members, []);
+    assert.equal(JSON.stringify(viewerRollupBody).includes(`Integration Radio Club ${suffix}`), false);
+    assert.equal(viewerRollupBody.safety.studentIdentityVisibleAcrossSchools, false);
+
+    const viewerPauseAttempt = await api("/api/school-radio/network", {
+      method: "POST",
+      cookie: cookieB,
+      body: { action: "SET_SCHOOL_STATUS", schoolNetworkId: schoolNetwork.id, networkSchoolId: viewerRollupBody.networks[0].schools[0].id, active: false }
+    });
+    assert.equal(viewerPauseAttempt.status, 403);
+
+    const grantViewerSchoolAccess = await api("/api/school-radio/network", {
+      method: "POST",
+      cookie: cookieA,
+      body: { action: "GRANT_SCHOOL_ACCESS", schoolNetworkId: schoolNetwork.id, networkMemberId: networkViewer.id, organisationId: accountABody.organisation.id, organisationRole: "VIEWER" }
+    });
+    assert.equal(grantViewerSchoolAccess.status, 200, await grantViewerSchoolAccess.clone().text());
+
+    const viewerSwitchSchool = await api("/api/school-radio/network", {
+      method: "POST",
+      cookie: cookieB,
+      body: { action: "SWITCH_SCHOOL", schoolNetworkId: schoolNetwork.id, organisationId: accountABody.organisation.id }
+    });
+    assert.equal(viewerSwitchSchool.status, 200, await viewerSwitchSchool.clone().text());
     const viewerActiveOrganisation = await api("/api/me", { cookie: cookieB });
     assert.equal((await viewerActiveOrganisation.json()).organisation.id, accountABody.organisation.id);
     assert.equal(await db.auditLog.count({ where: { schoolNetworkId: schoolNetwork.id, action: "SCHOOL_NETWORK_SCHOOL_ACCESS_GRANTED" } }), 1);
