@@ -41,6 +41,11 @@ export default function HelpCentreClient({ organisationName, help }) {
           {articles.length} {articles.length === 1 ? "help article" : "help articles"}{query.trim() ? " found" : " available"}
         </p>
 
+        <aside className={styles.supportPrompt}>
+          <div><strong>Still need help?</strong><span>Send a secure support request and keep its reference for follow-up.</span></div>
+          <Link href="/dashboard/support">Open support requests</Link>
+        </aside>
+
         {articles.length ? <div className={styles.articleList}>{articles.map((article) => (
           <article key={article.id} id={article.id} className={styles.article}>
             <p className={styles.category}>{article.category}</p>
@@ -60,3 +65,4 @@ export default function HelpCentreClient({ organisationName, help }) {
     </main>
   );
 }
+
