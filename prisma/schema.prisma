@@ -189,6 +189,12 @@ enum SubscriptionStatus {
   SUSPENDED
 }
 
+enum ComplimentaryAccessStatus {
+  ISSUED
+  ACTIVE
+  REVOKED
+}
+
 enum BillingProvider {
   MANUAL
   GENERIC_HMAC
@@ -1112,6 +1118,9 @@ model User {
   notificationDeliveries            NotificationDelivery[]
   updatedRecoveryControls           RecoveryControl[]                @relation("RecoveryControlUpdatedBy")
   recordedRecoveryEvidence          RecoveryEvidence[]               @relation("RecoveryEvidenceRecordedBy")
+  createdComplimentaryAccessCodes   ComplimentaryAccessCode[]        @relation("ComplimentaryAccessCreatedBy")
+  redeemedComplimentaryAccessCodes  ComplimentaryAccessCode[]        @relation("ComplimentaryAccessRedeemedBy")
+  revokedComplimentaryAccessCodes   ComplimentaryAccessCode[]        @relation("ComplimentaryAccessRevokedBy")
 }
 
 model Organisation {
@@ -1221,6 +1230,7 @@ model Organisation {
   digitalSignagePlaylists          DigitalSignagePlaylist[]
   digitalSignageDeliveryProofs     DigitalSignageDeliveryProof[]
   digitalSignageTakeovers          DigitalSignageTakeover[]
+  complimentaryAccessCodes         ComplimentaryAccessCode[]
 }
 
 model OrganisationMember {
@@ -1369,27 +1379,71 @@ model Plan {
   createdAt                     DateTime @default(now())
   updatedAt                     DateTime @updatedAt
 
-  subscriptions Subscription[]
+  subscriptions            Subscription[]
+  complimentaryAccessCodes ComplimentaryAccessCode[]
 }
 
 model Subscription {
-  id                            String             @id @default(cuid())
-  organisationId                String             @unique
-  planId                        String
-  status                        SubscriptionStatus @default(TRIAL)
-  currentPeriodEnd              DateTime?
-  schoolRadioEnabled            Boolean?
-  schoolPublicPublishingEnabled Boolean?
-  retailMediaEnabled            Boolean?
-  digitalSignageEnabled         Boolean?
-  createdAt                     DateTime           @default(now())
-  updatedAt                     DateTime           @updatedAt
+  id                                         String             @id @default(cuid())
+  organisationId                             String             @unique
+  planId                                     String
+  status                                     SubscriptionStatus @default(TRIAL)
+  currentPeriodEnd                           DateTime?
+  schoolRadioEnabled                         Boolean?
+  schoolPublicPublishingEnabled              Boolean?
+  retailMediaEnabled                         Boolean?
+  digitalSignageEnabled                      Boolean?
+  complimentaryAccessCodeId                  String?            @unique
+  complimentaryAccessActive                  Boolean            @default(false)
+  complimentaryAccessActivatedAt             DateTime?
+  complimentaryPlanName                      String?
+  complimentaryPlanCode                      String?
+  complimentaryStationLimit                  Int?
+  complimentaryStorageLimitGb                Int?
+  complimentaryListenerLimit                 Int?
+  complimentaryMaxBitrateKbps                Int?
+  complimentaryIncludesCatalogue             Boolean?
+  complimentaryPromoUploadEnabled            Boolean?
+  complimentarySchoolRadioEnabled            Boolean?
+  complimentarySchoolPublicPublishingEnabled Boolean?
+  complimentaryRetailMediaEnabled            Boolean?
+  complimentaryDigitalSignageEnabled         Boolean?
+  createdAt                                  DateTime           @default(now())
+  updatedAt                                  DateTime           @updatedAt
 
-  organisation           Organisation                 @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  plan                   Plan                         @relation(fields: [planId], references: [id])
-  billingContract        BillingContract?
-  billingInvoices        BillingInvoice[]
-  billingReconciliations BillingUsageReconciliation[]
+  organisation            Organisation                 @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  plan                    Plan                         @relation(fields: [planId], references: [id])
+  billingContract         BillingContract?
+  billingInvoices         BillingInvoice[]
+  billingReconciliations  BillingUsageReconciliation[]
+  complimentaryAccessCode ComplimentaryAccessCode?     @relation("ActiveComplimentaryAccess", fields: [complimentaryAccessCodeId], references: [id], onDelete: SetNull)
+}
+
+model ComplimentaryAccessCode {
+  id               String                    @id @default(cuid())
+  codeHash         String                    @unique
+  codeSuffix       String
+  organisationId   String
+  planId           String
+  status           ComplimentaryAccessStatus @default(ISSUED)
+  note             String?
+  createdByUserId  String
+  redeemedByUserId String?
+  revokedByUserId  String?
+  redeemedAt       DateTime?
+  revokedAt        DateTime?
+  createdAt        DateTime                  @default(now())
+  updatedAt        DateTime                  @updatedAt
+
+  organisation       Organisation  @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  plan               Plan          @relation(fields: [planId], references: [id], onDelete: Restrict)
+  createdBy          User          @relation("ComplimentaryAccessCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  redeemedBy         User?         @relation("ComplimentaryAccessRedeemedBy", fields: [redeemedByUserId], references: [id], onDelete: SetNull)
+  revokedBy          User?         @relation("ComplimentaryAccessRevokedBy", fields: [revokedByUserId], references: [id], onDelete: SetNull)
+  activeSubscription Subscription? @relation("ActiveComplimentaryAccess")
+
+  @@index([organisationId, status, createdAt])
+  @@index([planId, status])
 }
 
 model BillingAccount {
@@ -4454,15 +4508,15 @@ model Player {
 }
 
 model PlayerListenerLease {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   organisationId String
   playerId       String
-  instanceHash   String   @db.Char(64)
-  lastSeenAt     DateTime @default(now())
+  instanceHash   String    @db.Char(64)
+  lastSeenAt     DateTime  @default(now())
   expiresAt      DateTime
   revokedAt      DateTime?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   player       Player       @relation(fields: [playerId], references: [id], onDelete: Cascade)
