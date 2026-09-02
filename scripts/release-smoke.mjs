@@ -33,7 +33,7 @@ async function expectProtectedApi(path) {
   results.push({ path, status: response.status, expectation: "AUTHENTICATED_API" });
 }
 
-await expectPublicPage("/", "The beat of your brand.");
+await expectPublicPage("/", "Every space deserves its");
 await expectPublicPage("/login", "Welcome back");
 await expectPublicPage("/register", "Create your account");
 await expectPublicPage("/player", "Connecting player...");
