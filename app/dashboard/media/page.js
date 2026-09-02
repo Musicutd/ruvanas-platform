@@ -1,240 +1,162 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import WorkflowProgress from "@/app/components/WorkflowProgress";
+import { mediaWorkflowSteps, safeWorkflowMessage } from "@/lib/guided-workflows.mjs";
+import styles from "./media-library.module.css";
 
 export default function MediaLibraryPage() {
   const router = useRouter();
-
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState(null);
   const [uploading, setUploading] = useState(false);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState("");
   const [result, setResult] = useState(null);
+  const [selectedFile, setSelectedFile] = useState("");
+  const [detailsReviewed, setDetailsReviewed] = useState(false);
+
+  const progress = useMemo(() => mediaWorkflowSteps({
+    fileSelected: Boolean(selectedFile),
+    detailsReviewed,
+    uploaded: Boolean(result)
+  }), [selectedFile, detailsReviewed, result]);
 
   useEffect(() => {
     let cancelled = false;
-
     (async () => {
       try {
-        const res = await fetch("/api/me");
-        if (!res.ok) {
-          if (!cancelled) {
-            router.push("/login");
-          }
+        const response = await fetch("/api/me");
+        if (!response.ok) {
+          if (!cancelled) router.push("/login");
           return;
         }
-        const data = await res.json();
-        if (!cancelled) {
-          setSession(data);
-        }
+        const data = await response.json();
+        if (!cancelled) setSession(data);
       } catch {
-        if (!cancelled) {
-          router.push("/login");
-        }
+        if (!cancelled) router.push("/login");
       } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
+        if (!cancelled) setLoading(false);
       }
     })();
-
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [router]);
-
-  if (loading) {
-    return (
-      <div className="p-6">
-        <p>Loading media library…</p>
-      </div>
-    );
-  }
-
-  if (!session) {
-    return null;
-  }
-
-  const organisation = session.organisation;
-  const user = session.user;
 
   async function handleUpload(event) {
     event.preventDefault();
-    setError(null);
+    setError("");
     setResult(null);
+    setDetailsReviewed(true);
     setUploading(true);
 
     try {
-      const form = event.target;
-      const fileInput = form.file;
-      const nameInput = form.name;
-      const mediaTypeInput = form.mediaType;
-      const durationInput = form.durationSeconds;
-      const languageInput = form.languageCode;
-
-      if (!fileInput.files || fileInput.files.length === 0) {
-        throw new Error("Please select an audio file");
-      }
-
-      const file = fileInput.files[0];
-      const name = nameInput.value.trim() || file.name;
-      const mediaType = mediaTypeInput.value;
-      const durationSeconds = durationInput.value
-        ? Number(durationInput.value)
-        : null;
+      const form = event.currentTarget;
+      const file = form.file.files?.[0];
+      if (!file) throw new Error("Choose an audio file before uploading.");
 
       const formData = new FormData();
       formData.append("file", file);
-      formData.append("organisationId", organisation.id);
-      formData.append("name", name);
-      formData.append("mediaType", mediaType);
-      formData.append("languageCode", languageInput.value.trim() || "und");
-      if (durationSeconds) {
-        formData.append("durationSeconds", String(durationSeconds));
-      }
+      formData.append("organisationId", session.organisation.id);
+      formData.append("name", form.name.value.trim() || file.name);
+      formData.append("mediaType", form.mediaType.value);
+      formData.append("languageCode", form.languageCode.value.trim() || "und");
+      if (form.durationSeconds.value) formData.append("durationSeconds", String(Number(form.durationSeconds.value)));
 
-      const res = await fetch("/api/media/upload", {
-        method: "POST",
-        body: formData
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || "Upload failed");
-      }
+      const response = await fetch("/api/media/upload", { method: "POST", body: formData });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "The upload could not be completed.");
 
       setResult(data);
       form.reset();
-    } catch (err) {
-      setError(err.message || String(err));
+    } catch (uploadError) {
+      setError(safeWorkflowMessage(uploadError, "The upload could not be completed. Please try again."));
     } finally {
       setUploading(false);
     }
   }
 
+  if (loading) return <main className={styles.page}><p>Loading your media library…</p></main>;
+  if (!session) return null;
+
   return (
-    <div className="p-6">
-      <h1 className="text-2xl font-semibold mb-4">Media Library</h1>
+    <main className={styles.page}>
+      <header className={styles.header}>
+        <Link href="/dashboard" className={styles.brand}>RUVANAS</Link>
+        <Link href="/dashboard" className={styles.back}>Back to your home</Link>
+      </header>
 
-      <div className="max-w-xl">
-        <form onSubmit={handleUpload} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">
-              Audio file
+      <section className={styles.content}>
+        <p className={styles.eyebrow}>AUDIO LIBRARY</p>
+        <h1>Upload audio</h1>
+        <p className={styles.subtitle}>Add an announcement, jingle, voiceover or commercial to {session.organisation.name}. Every upload is checked before it can be used.</p>
+
+        <WorkflowProgress title="Audio upload" steps={progress} />
+
+        <aside className={styles.guidance}>
+          <strong>Use the original audio file.</strong>
+          <span>Do not rename another file type to look like audio. Ruvanas checks the real file format and keeps the upload private during review.</span>
+        </aside>
+
+        <form onSubmit={handleUpload} className={styles.form} onChange={() => selectedFile && setDetailsReviewed(true)}>
+          <label>
+            <span>1. Choose the audio file</span>
+            <input type="file" name="file" accept="audio/*" required disabled={uploading} onChange={(event) => { setSelectedFile(event.target.files?.[0]?.name || ""); setDetailsReviewed(false); setResult(null); }} />
+            <small>{selectedFile || "Choose the file from this computer or device."}</small>
+          </label>
+
+          <div className={styles.columns}>
+            <label>
+              <span>Audio name <em>optional</em></span>
+              <input type="text" name="name" maxLength={160} placeholder="Example: Morning welcome" disabled={uploading} />
             </label>
-            <input
-              type="file"
-              name="file"
-              accept="audio/*"
-              required
-              disabled={uploading}
-              className="w-full border rounded px-3 py-2"
-            />
+            <label>
+              <span>Audio type</span>
+              <select name="mediaType" defaultValue="COMMERCIAL" disabled={uploading}>
+                <option value="COMMERCIAL">Commercial</option>
+                <option value="JINGLE">Jingle</option>
+                <option value="ANNOUNCEMENT">Announcement</option>
+                <option value="VOICEOVER">Voiceover</option>
+              </select>
+            </label>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium mb-1">
-              Name (optional)
+          <div className={styles.columns}>
+            <label>
+              <span>Language</span>
+              <input type="text" name="languageCode" defaultValue="und" maxLength={20} placeholder="en, mt or en-GB" disabled={uploading} />
+              <small>Use “und” if the audio has no spoken language.</small>
             </label>
-            <input
-              type="text"
-              name="name"
-              placeholder="e.g. Morning Jingle"
-              disabled={uploading}
-              className="w-full border rounded px-3 py-2"
-            />
+            <label>
+              <span>Duration in seconds <em>optional</em></span>
+              <input type="number" name="durationSeconds" min="1" max="86400" placeholder="Example: 30" disabled={uploading} />
+            </label>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium mb-1">
-              Type
-            </label>
-            <select
-              name="mediaType"
-              defaultValue="COMMERCIAL"
-              disabled={uploading}
-              className="w-full border rounded px-3 py-2"
-            >
-              <option value="COMMERCIAL">Commercial</option>
-              <option value="JINGLE">Jingle</option>
-              <option value="ANNOUNCEMENT">Announcement</option>
-              <option value="VOICEOVER">Voiceover</option>
-            </select>
-          </div>
+          {error ? <div className={styles.error} role="alert"><strong>Upload needs attention</strong><span>{error}</span></div> : null}
 
-          <div>
-            <label className="block text-sm font-medium mb-1">
-              Language code
-            </label>
-            <input
-              type="text"
-              name="languageCode"
-              defaultValue="und"
-              placeholder="en, mt, en-GB"
-              disabled={uploading}
-              className="w-full border rounded px-3 py-2"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1">
-              Duration (seconds, optional)
-            </label>
-            <input
-              type="number"
-              name="durationSeconds"
-              min="1"
-              placeholder="e.g. 30"
-              disabled={uploading}
-              className="w-full border rounded px-3 py-2"
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={uploading}
-            className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50"
-          >
-            {uploading ? "Uploading…" : "Upload"}
+          <button type="submit" disabled={uploading || !selectedFile}>
+            {uploading ? "Uploading securely…" : "Upload for review"}
           </button>
         </form>
 
-        {error && (
-          <div className="mt-4 p-3 border border-red-300 bg-red-50 text-red-700 rounded">
-            {error}
-          </div>
-        )}
-
-        {result && (
-          <div className="mt-4 p-3 border border-green-300 bg-green-50 text-green-700 rounded">
-            <p className="font-medium">Upload received for review</p>
-            <ul className="mt-2 text-sm">
-              <li>Name: {result.name}</li>
-              <li>Type: {result.mediaType}</li>
-              <li>Version: {result.version}</li>
-              <li>Review status: {result.status}</li>
-              <li>Language: {result.languageCode}</li>
-              <li>Size: {Number(result.sizeBytes).toLocaleString()} bytes</li>
-              {result.durationSeconds && (
-                <li>Duration: {result.durationSeconds} s</li>
-              )}
-              <li>
-                Playback URL:{" "}
-                <a
-                  href={result.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="underline"
-                >
-                  {result.url}
-                </a>
-              </li>
-            </ul>
-          </div>
-        )}
-      </div>
-    </div>
+        {result ? (
+          <section className={styles.success} aria-live="polite">
+            <strong>Upload received for review</strong>
+            <p>{result.name} is safely stored as version {result.version}. Current status: {result.status}.</p>
+            <dl>
+              <div><dt>Type</dt><dd>{result.mediaType}</dd></div>
+              <div><dt>Language</dt><dd>{result.languageCode}</dd></div>
+              <div><dt>File size</dt><dd>{Number(result.sizeBytes).toLocaleString()} bytes</dd></div>
+              {result.durationSeconds ? <div><dt>Duration</dt><dd>{result.durationSeconds} seconds</dd></div> : null}
+            </dl>
+            <div className={styles.successActions}>
+              <a href={result.url} target="_blank" rel="noreferrer">Check uploaded audio</a>
+              <button type="button" onClick={() => { setResult(null); setSelectedFile(""); setDetailsReviewed(false); }}>Upload another file</button>
+            </div>
+          </section>
+        ) : null}
+      </section>
+    </main>
   );
 }
