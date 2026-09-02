@@ -60,4 +60,3 @@ test("subscriber support is linked from navigation and the Help Centre", async (
   assert.match(route, /context\.user\.role === "STUDENT"/);
   assert.doesNotMatch(route, /description: input\.description[\s\S]{0,500}details: \{[\s\S]{0,500}description:/);
 });
-
