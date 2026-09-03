@@ -89,7 +89,7 @@ export default function TeamWorkspace() {
   return (
     <main className={styles.page}>
       <div className={styles.shell}>
-        <nav className={styles.topNav}><a href="/dashboard" className={styles.brand}>RUVANAS</a><div><a href="/dashboard">Dashboard</a><a href="/dashboard/account">Account</a><a href="/dashboard/help">Help</a><a href="/dashboard/support">Support</a></div></nav>
+        <nav className={styles.topNav}><a href="/dashboard" className={styles.brand}>RUVANAS</a><div><a href="/dashboard">Dashboard</a><a href="/dashboard/profile">Profile</a><a href="/dashboard/account">Account</a><a href="/dashboard/help">Help</a><a href="/dashboard/support">Support</a></div></nav>
 
         <header className={styles.hero}>
           <div><p className={styles.eyebrow}>ORGANISATION & ACCESS</p><h1>Your team</h1><p>Keep responsibilities clear and give every colleague only the access they need.</p></div>
