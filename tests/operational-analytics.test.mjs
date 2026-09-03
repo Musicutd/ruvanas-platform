@@ -59,6 +59,22 @@ test("summary and CSV keep operational evidence distinct from audience measureme
   assert.doesNotMatch(csv, /listeners|reach/i);
 });
 
+test("customer CSV includes professional location, player, and station sections when available", () => {
+  const csv = operationalAnalyticsCsv({
+    days: [],
+    breakdowns: {
+      locations: [{ name: "Valletta", completed: 19, exceptions: 1, confirmationRate: .95 }],
+      players: [{ name: "Reception", completed: 10, exceptions: 0, confirmationRate: 1 }],
+      stations: [{ name: "Ruvanas Radio", completed: 19 }]
+    }
+  });
+
+  assert.match(csv, /Location performance/);
+  assert.match(csv, /Player performance/);
+  assert.match(csv, /Station performance/);
+  assert.match(csv, /"Valletta","19","1","95%"/);
+});
+
 test("analytics export links are signed, scoped, and expiring", () => {
   const secret = "a".repeat(64);
   const input = { jobId: "job-a", organisationId: "org-a", requestedByUserId: "user-a", expiresAt: new Date("2026-08-29T00:00:00Z") };
