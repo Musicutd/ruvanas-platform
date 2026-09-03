@@ -79,11 +79,14 @@ test("subscriber command centre keeps shortcuts permission-filtered and accessib
   assert.match(styles, /:focus-visible/);
 });
 
-test("admin command centre uses role-filtered tabs and accessible real-data charts", async () => {
-  const [layout, tabs, dashboard, styles] = await Promise.all([
+test("admin command centre uses role-filtered tabs and accessible interactive analytics", async () => {
+  const [layout, tabs, dashboard, service, exportRoute, proofOfPlay, styles] = await Promise.all([
     readFile(new URL("../app/admin/layout.js", import.meta.url), "utf8"),
     readFile(new URL("../app/admin/AdminNavigationTabs.js", import.meta.url), "utf8"),
     readFile(new URL("../app/admin/page.js", import.meta.url), "utf8"),
+    readFile(new URL("../lib/admin-analytics-service.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/admin/analytics/summary/route.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/admin/proof-of-play/page.js", import.meta.url), "utf8"),
     readFile(new URL("../app/admin/admin-dashboard.module.css", import.meta.url), "utf8")
   ]);
 
@@ -91,8 +94,19 @@ test("admin command centre uses role-filtered tabs and accessible real-data char
   assert.match(layout, /<AdminNavigationTabs navigation=\{navigation\}/);
   assert.match(tabs, /role="tablist"/);
   assert.match(tabs, /aria-selected/);
-  assert.match(dashboard, /analyticsHourlyAggregate\.groupBy/);
+  assert.match(service, /analyticsHourlyAggregate\.groupBy/);
+  assert.match(dashboard, /ADMIN_ANALYTICS_RANGES\.map/);
+  assert.match(dashboard, /api\/admin\/analytics\/summary/);
+  assert.match(dashboard, /Operational action centre/);
+  assert.match(dashboard, /Top organisations/);
+  assert.match(dashboard, /Top stations/);
   assert.match(dashboard, /role="img"/);
   assert.match(dashboard, /<title id="playback-chart-title"/);
+  assert.match(exportRoute, /requirePlatformAdmin/);
+  assert.match(exportRoute, /access\.user\.role === "SUPER_ADMIN"/);
+  assert.match(exportRoute, /ADMIN_MANAGEMENT_REPORT_DOWNLOADED/);
+  assert.match(exportRoute, /private, no-store/);
+  assert.match(proofOfPlay, /normaliseAdminAnalyticsRange\(params\?\.range\)/);
+  assert.match(proofOfPlay, /aria-label=\{periodLabel\}/);
   assert.match(styles, /@media \(max-width: 650px\)/);
 });
