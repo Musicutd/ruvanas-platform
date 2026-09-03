@@ -1017,6 +1017,8 @@ model User {
   updatedAt    DateTime @updatedAt
 
   memberships                       OrganisationMember[]
+  sentOrganisationInvitations       OrganisationInvitation[]         @relation("OrganisationInvitationInvitedBy")
+  acceptedOrganisationInvitations   OrganisationInvitation[]         @relation("OrganisationInvitationAcceptedBy")
   auditLogs                         AuditLog[]                       @relation("AuditActor")
   sessions                          Session[]
   submittedPromoVersions            PromoVersion[]                   @relation("PromoVersionSubmittedBy")
@@ -1131,6 +1133,7 @@ model Organisation {
   updatedAt DateTime @updatedAt
 
   members                          OrganisationMember[]
+  invitations                      OrganisationInvitation[]
   subscription                     Subscription?
   stations                         Station[]
   brands                           Brand[]
@@ -1245,6 +1248,29 @@ model OrganisationMember {
 
   @@unique([userId, organisationId])
   @@index([organisationId])
+}
+
+model OrganisationInvitation {
+  id               String   @id @default(cuid())
+  organisationId   String
+  email            String
+  role             UserRole
+  tokenHash        String?  @unique
+  expiresAt        DateTime
+  acceptedAt       DateTime?
+  revokedAt        DateTime?
+  invitedByUserId  String
+  acceptedByUserId String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  invitedBy    User         @relation("OrganisationInvitationInvitedBy", fields: [invitedByUserId], references: [id], onDelete: Restrict)
+  acceptedBy   User?        @relation("OrganisationInvitationAcceptedBy", fields: [acceptedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([organisationId, email])
+  @@index([organisationId, acceptedAt, revokedAt, expiresAt])
+  @@index([invitedByUserId])
 }
 
 model SchoolNetwork {
