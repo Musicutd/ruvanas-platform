@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import {
   buildAdminNavigation,
   buildSubscriberNavigation,
@@ -61,4 +62,19 @@ test("admin navigation keeps each destination unique", () => {
     .flatMap((section) => section.items)
     .map((item) => item.href);
   assert.equal(new Set(hrefs).size, hrefs.length);
+});
+
+test("subscriber command centre keeps shortcuts permission-filtered and accessible", async () => {
+  const [dashboard, styles] = await Promise.all([
+    readFile(new URL("../app/dashboard/page.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/dashboard/dashboard.module.css", import.meta.url), "utf8")
+  ]);
+
+  assert.match(dashboard, /allNavigationItems\.find/);
+  assert.match(dashboard, /aria-label="Portal navigation"/);
+  assert.match(dashboard, /<progress/);
+  assert.match(dashboard, /SERVICE PULSE/);
+  assert.match(dashboard, /QUICK ACTIONS/);
+  assert.match(styles, /@media \(max-width: 520px\)/);
+  assert.match(styles, /:focus-visible/);
 });
