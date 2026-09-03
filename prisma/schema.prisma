@@ -1021,6 +1021,7 @@ model User {
   acceptedOrganisationInvitations   OrganisationInvitation[]         @relation("OrganisationInvitationAcceptedBy")
   auditLogs                         AuditLog[]                       @relation("AuditActor")
   sessions                          Session[]
+  passwordResetTokens               PasswordResetToken[]
   submittedPromoVersions            PromoVersion[]                   @relation("PromoVersionSubmittedBy")
   reviewedPromoVersions             PromoVersion[]                   @relation("PromoVersionReviewedBy")
   publishedCampaigns                Campaign[]                       @relation("CampaignPublishedBy")
@@ -1251,18 +1252,18 @@ model OrganisationMember {
 }
 
 model OrganisationInvitation {
-  id               String   @id @default(cuid())
+  id               String    @id @default(cuid())
   organisationId   String
   email            String
   role             UserRole
-  tokenHash        String?  @unique
+  tokenHash        String?   @unique
   expiresAt        DateTime
   acceptedAt       DateTime?
   revokedAt        DateTime?
   invitedByUserId  String
   acceptedByUserId String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   invitedBy    User         @relation("OrganisationInvitationInvitedBy", fields: [invitedByUserId], references: [id], onDelete: Restrict)
@@ -4217,6 +4218,20 @@ model Session {
   @@index([activeOrganisationId])
   @@index([expiresAt])
   @@index([revokedAt])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@index([expiresAt, usedAt])
 }
 
 model EnterpriseSecurityPolicy {

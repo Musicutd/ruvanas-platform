@@ -12,6 +12,12 @@ Migration `20260928000000_stage_12c_operational_observability` adds an operation
 
 The migration is additive and does not change playback, schedules, publishing, delivery, billing, or tenant data. During rollback, the previous application can run with the table present. Retain heartbeat evidence until the applicable operational-retention decision is made; stop workers before any corrective schema operation.
 
+## Stage 18K Secure Account Recovery
+
+Migration `20261002000000_stage_18k_secure_account_recovery` adds short-lived password-reset records whose private token is never stored. Only a SHA-256 fingerprint, expiry, usage time and account relation are retained. New requests invalidate older unused links, and successful recovery consumes the link and revokes every existing account session.
+
+The migration is additive and does not alter existing passwords or sessions. Keep used recovery evidence during an application rollback; expired records can later be removed by a separately controlled retention job. Set `RUVANAS_PUBLIC_URL` to the paid service HTTPS origin before enabling recovery email delivery.
+
 ## Stage 12B External Delivery Resilience and Recovery
 
 Migration `20260927000000_stage_12b_delivery_resilience` adds an additive recovery counter and last-recovered timestamp to outgoing webhook events. A database check bounds the counter from zero through three. Existing events default to zero and all attempt, status and idempotency evidence remains unchanged.
