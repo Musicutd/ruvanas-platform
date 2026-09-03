@@ -79,3 +79,20 @@ test("subscriber command centre keeps shortcuts permission-filtered and accessib
   assert.match(styles, /:focus-visible/);
 });
 
+test("admin command centre uses role-filtered tabs and accessible real-data charts", async () => {
+  const [layout, tabs, dashboard, styles] = await Promise.all([
+    readFile(new URL("../app/admin/layout.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/admin/AdminNavigationTabs.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/admin/page.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/admin/admin-dashboard.module.css", import.meta.url), "utf8")
+  ]);
+
+  assert.match(layout, /buildAdminNavigation\(adminUser\.role\)/);
+  assert.match(layout, /<AdminNavigationTabs navigation=\{navigation\}/);
+  assert.match(tabs, /role="tablist"/);
+  assert.match(tabs, /aria-selected/);
+  assert.match(dashboard, /analyticsHourlyAggregate\.groupBy/);
+  assert.match(dashboard, /role="img"/);
+  assert.match(dashboard, /<title id="playback-chart-title"/);
+  assert.match(styles, /@media \(max-width: 650px\)/);
+});
