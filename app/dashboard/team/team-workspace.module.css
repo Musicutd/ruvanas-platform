@@ -1,0 +1,53 @@
+.page { min-height: 100vh; background: #0d1523; color: #f8fafc; font-family: Arial, sans-serif; }
+.shell { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 0 0 60px; }
+.topNav { min-height: 72px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #25344b; }
+.brand { color: #f4b942 !important; font-weight: 900; letter-spacing: 2px; }
+.topNav a { color: #cad5e5; text-decoration: none; font-weight: 800; }
+.topNav div { display: flex; gap: 24px; }
+.hero { display: flex; justify-content: space-between; gap: 24px; align-items: flex-end; padding: 52px 0 32px; }
+.hero h1 { margin: 4px 0 8px; font-size: clamp(42px, 7vw, 70px); letter-spacing: -2px; }
+.hero p { max-width: 700px; margin: 0; color: #aebed2; font-size: 18px; line-height: 1.55; }
+.eyebrow { margin: 0 0 8px !important; color: #f4b942 !important; font-size: 12px !important; font-weight: 900; letter-spacing: 1.5px; }
+.roleBadge, .sectionHeading > span { padding: 9px 13px; border: 1px solid #50617b; border-radius: 999px; color: #dbe5f2; font-size: 13px; font-weight: 900; }
+.notice, .error { margin-bottom: 18px; padding: 13px 16px; border-radius: 10px; font-weight: 700; }
+.notice { border: 1px solid #27785a; background: #12382f; color: #b7f7d9; }
+.error { border: 1px solid #a34959; background: #421e2b; color: #ffe0e6; }
+.summaryGrid { display: grid; grid-template-columns: 1.25fr .75fr; gap: 20px; }
+.organisationCard, .accessGuide, .inviteSection, .teamSection, .pendingSection, .footer { border: 1px solid #2c3e59; border-radius: 16px; background: #151f31; }
+.organisationCard, .accessGuide { padding: 26px; }
+.organisationCard h2, .accessGuide h2, .inviteSection h2, .teamSection h2, .pendingSection h2 { margin: 0; font-size: 26px; }
+.organisationCard dl { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 24px 0; }
+.organisationCard dl div { padding: 14px; border-radius: 10px; background: #0d1726; }
+.organisationCard dt { color: #8fa1ba; font-size: 12px; font-weight: 800; text-transform: uppercase; }
+.organisationCard dd { margin: 7px 0 0; font-size: 18px; font-weight: 900; text-transform: capitalize; }
+.renameForm, .inviteForm { display: flex; align-items: flex-end; gap: 12px; }
+.renameForm label, .inviteForm label, .invitationLink label { display: grid; flex: 1; gap: 7px; color: #cbd7e7; font-size: 13px; font-weight: 800; }
+.renameForm input, .inviteForm input, .inviteForm select, .invitationLink input, .memberActions select { width: 100%; box-sizing: border-box; padding: 11px 12px; border: 1px solid #4a5e7a; border-radius: 8px; background: #0d1625; color: #fff; font-size: 15px; }
+.renameForm button, .inviteForm button, .invitationLink button { padding: 12px 16px; border: 0; border-radius: 8px; background: #f4b942; color: #101827; font-weight: 900; cursor: pointer; }
+.accessGuide ul { display: grid; gap: 0; margin: 18px 0 0; padding: 0; list-style: none; }
+.accessGuide li { display: grid; gap: 3px; padding: 12px 0; border-top: 1px solid #2a3a52; }
+.accessGuide span { color: #9eafc5; font-size: 13px; line-height: 1.45; }
+.inviteSection, .teamSection, .pendingSection { margin-top: 20px; padding: 26px; }
+.inviteSection { display: grid; grid-template-columns: .8fr 1.2fr; gap: 26px; align-items: start; }
+.inviteSection > div > p:not(.eyebrow) { color: #9fb0c6; line-height: 1.55; }
+.inviteForm { display: grid; grid-template-columns: 1.2fr .8fr auto; }
+.invitationLink { grid-column: 1 / -1; display: flex; gap: 12px; align-items: flex-end; padding: 16px; border: 1px solid #2b7a5b; border-radius: 10px; background: #102e28; }
+.sectionHeading { display: flex; justify-content: space-between; gap: 16px; align-items: flex-end; margin-bottom: 18px; }
+.memberList, .pendingList { display: grid; gap: 10px; }
+.memberCard { display: grid; grid-template-columns: 44px minmax(180px, 1fr) minmax(130px, .45fr) auto; gap: 15px; align-items: center; padding: 15px; border: 1px solid #2c3d56; border-radius: 11px; background: #101a2a; }
+.avatar { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 50%; background: #f4b942; color: #0d1523; font-size: 18px; font-weight: 900; }
+.memberIdentity, .memberRole { display: grid; gap: 4px; }
+.memberIdentity span, .memberIdentity small, .memberRole small, .pendingList span, .pendingList small { color: #91a2b9; font-size: 12px; }
+.memberRole > span { font-weight: 900; }
+.memberActions { display: flex; gap: 8px; align-items: center; }
+.memberActions select { min-width: 145px; }
+.memberActions button, .pendingList button { padding: 9px 11px; border: 1px solid #7d4050; border-radius: 7px; background: transparent; color: #ffc9d2; font-weight: 800; cursor: pointer; }
+.pendingList article { display: flex; justify-content: space-between; gap: 16px; align-items: center; padding: 15px; border: 1px solid #2c3d56; border-radius: 10px; background: #101a2a; }
+.pendingList article div { display: grid; gap: 4px; }
+.footer { display: grid; gap: 5px; margin-top: 20px; padding: 20px 24px; color: #9fb0c6; }
+.footer strong { color: #fff; }
+.back { display: inline-block; margin-top: 40px; color: #f4b942; text-decoration: none; font-weight: 800; }
+.loading { color: #bdc8d9; font-size: 18px; }
+.page button:disabled, .page select:disabled { cursor: wait !important; opacity: .6; }
+@media (max-width: 900px) { .summaryGrid, .inviteSection { grid-template-columns: 1fr; } .memberCard { grid-template-columns: 44px 1fr; } .memberRole, .memberActions { grid-column: 2; } }
+@media (max-width: 620px) { .shell { width: min(100% - 24px, 1180px); } .topNav div { gap: 12px; } .topNav div a:nth-child(2) { display: none; } .hero { align-items: start; flex-direction: column; } .organisationCard dl { grid-template-columns: 1fr; } .renameForm, .inviteForm, .invitationLink { display: grid; grid-template-columns: 1fr; } .memberActions { display: grid; } }

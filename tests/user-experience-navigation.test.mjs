@@ -25,6 +25,7 @@ test("subscriber navigation is organised by tasks and hides unavailable products
   ]);
   const items = navigation.flatMap((section) => section.items);
   assert.equal(items.find((item) => item.id === "station").href, "/stations/station-1");
+  assert.equal(items.find((item) => item.id === "team").href, "/dashboard/team");
   assert.ok(items.some((item) => item.id === "retail"));
   assert.ok(!items.some((item) => item.id === "school"));
   assert.ok(!items.some((item) => item.id === "signage"));
