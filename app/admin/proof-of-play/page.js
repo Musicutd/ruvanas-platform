@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { adminAnalyticsPeriod, normaliseAdminAnalyticsRange } from "@/lib/admin-analytics.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -6,8 +7,12 @@ function percent(value) {
   return `${Math.round(value * 100)}%`;
 }
 
-export default async function ProofOfPlayPage() {
-  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+export default async function ProofOfPlayPage({ searchParams }) {
+  const params = await Promise.resolve(searchParams);
+  const range = normaliseAdminAnalyticsRange(params?.range);
+  const now = new Date();
+  const { currentStart: since } = adminAnalyticsPeriod(range, now);
+  const periodLabel = `Last ${range} days`;
   const recentWhere = { occurredAt: { gte: since } };
   const [started, completed, failed, interrupted, activePlayers, events] = await Promise.all([
     prisma.proofOfPlayEvent.count({ where: { ...recentWhere, eventType: "STARTED" } }),
@@ -39,13 +44,13 @@ export default async function ProofOfPlayPage() {
         <p style={styles.subtitle}>Confirmed player activity, deduplicated by device event ID and attributed to the signed schedule manifest that authorised playback.</p>
       </header>
 
-      <section style={styles.metrics} aria-label="Last 24 hours">
-        <Metric label="Playback starts" value={started} />
-        <Metric label="Completed" value={completed} />
-        <Metric label="Failed" value={failed} tone={failed ? "warning" : "normal"} />
-        <Metric label="Interrupted" value={interrupted} tone={interrupted ? "warning" : "normal"} />
-        <Metric label="Completion rate" value={percent(completionRate)} />
-        <Metric label="Active players" value={activePlayers.length} />
+      <section style={styles.metrics} aria-label={periodLabel}>
+        <Metric label="Playback starts" value={started} periodLabel={periodLabel} />
+        <Metric label="Completed" value={completed} periodLabel={periodLabel} />
+        <Metric label="Failed" value={failed} tone={failed ? "warning" : "normal"} periodLabel={periodLabel} />
+        <Metric label="Interrupted" value={interrupted} tone={interrupted ? "warning" : "normal"} periodLabel={periodLabel} />
+        <Metric label="Completion rate" value={percent(completionRate)} periodLabel={periodLabel} />
+        <Metric label="Active players" value={activePlayers.length} periodLabel={periodLabel} />
       </section>
 
       <section style={styles.card}>
@@ -72,11 +77,11 @@ export default async function ProofOfPlayPage() {
   );
 }
 
-function Metric({ label, value, tone = "normal" }) {
+function Metric({ label, value, tone = "normal", periodLabel }) {
   return <article style={{ ...styles.metric, ...(tone === "warning" ? styles.metricWarning : {}) }}>
     <span style={styles.metricLabel}>{label}</span>
     <strong style={styles.metricValue}>{value}</strong>
-    <small style={styles.metricPeriod}>Last 24 hours</small>
+    <small style={styles.metricPeriod}>{periodLabel}</small>
   </article>;
 }
 
