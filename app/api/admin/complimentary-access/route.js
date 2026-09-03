@@ -8,6 +8,7 @@ import {
   generateComplimentaryCode,
   hashComplimentaryCode
 } from "@/lib/complimentary-access.mjs";
+import { runSerializableTransaction } from "@/lib/transaction-retry.mjs";
 
 const createSchema = z.object({
   organisationId: z.string().cuid(),
@@ -37,7 +38,13 @@ export async function POST(request) {
     }
 
     const plainCode = generateComplimentaryCode();
-    const created = await prisma.$transaction(async (tx) => {
+    const created = await runSerializableTransaction(prisma, async (tx) => {
+      const existingCode = await tx.complimentaryAccessCode.findFirst({
+        where: { organisationId: organisation.id, status: { in: ["ISSUED", "ACTIVE"] } },
+        select: { status: true, codeSuffix: true }
+      });
+      if (existingCode?.status === "ACTIVE") throw new Error("COMPLIMENTARY_ACCESS_ACTIVE");
+      if (existingCode) throw new Error(`COMPLIMENTARY_CODE_ISSUED:${existingCode.codeSuffix}`);
       const code = await tx.complimentaryAccessCode.create({
         data: {
           codeHash: hashComplimentaryCode(plainCode),
@@ -69,6 +76,13 @@ export async function POST(request) {
       plan: { id: plan.id, name: plan.name, code: plan.code }
     }, { status: 201 });
   } catch (error) {
+    if (error?.message === "COMPLIMENTARY_ACCESS_ACTIVE") {
+      return NextResponse.json({ error: "This organisation already has active complimentary access. Stop it before creating another code." }, { status: 409 });
+    }
+    if (error?.message?.startsWith("COMPLIMENTARY_CODE_ISSUED:")) {
+      const codeSuffix = error.message.split(":")[1];
+      return NextResponse.json({ error: `This organisation already has an unused code ending ${codeSuffix}. Cancel it before creating another.` }, { status: 409 });
+    }
     console.error("Issue complimentary access code error:", error);
     return NextResponse.json({ error: "Unable to issue the complimentary access code." }, { status: 500 });
   }

@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { getActiveOrganisationContext } from "@/lib/auth";
 import { resolveEffectivePlan, resolveEntitlements } from "@/lib/entitlements.mjs";
 import { prisma } from "@/lib/prisma";
-import { buildSubscriberNavigation } from "@/lib/user-experience-navigation.mjs";
+import { buildSubscriberNavigation, buildSubscriberProductCards } from "@/lib/user-experience-navigation.mjs";
 import { buildSubscriberOnboarding } from "@/lib/subscriber-onboarding.mjs";
 import ContextHelp from "@/app/components/ContextHelp";
 import OnboardingChecklist from "@/app/components/OnboardingChecklist";
@@ -70,6 +70,7 @@ export default async function DashboardPage() {
     entitlements,
     firstStationId: firstStation?.id || null
   });
+  const products = buildSubscriberProductCards({ entitlements });
   const onboarding = buildSubscriberOnboarding({
     serviceEnabled: entitlements.serviceEnabled,
     membershipRole: membership.role,
@@ -102,24 +103,6 @@ export default async function DashboardPage() {
   return (
     <main className={styles.page}>
       <SkipLink />
-      <header className={styles.header}>
-        <Link href="/dashboard" className={styles.brand}>RUVANAS</Link>
-        <nav className={styles.headerNav} aria-label="Portal navigation">
-          <Link href="/dashboard" aria-current="page">Home</Link>
-          <Link href="/dashboard/profile">Profile</Link>
-          <Link href="/dashboard/account">Account</Link>
-          <Link href="/dashboard/team">Team</Link>
-          <Link href="/dashboard/help">Help</Link>
-          <Link href="/dashboard/support">Support</Link>
-        </nav>
-        <div className={styles.accountArea}>
-          <span className={styles.accountLabel}>{organisation.name}</span>
-          <form action="/api/auth/logout" method="post">
-            <button className={styles.signOut} type="submit">Sign out</button>
-          </form>
-        </div>
-      </header>
-
       <div className={styles.shell} id="main-content">
         <section className={styles.welcome} aria-labelledby="dashboard-title">
           <div>
@@ -174,6 +157,28 @@ export default async function DashboardPage() {
         </div>
 
         <OnboardingChecklist onboarding={onboarding} />
+
+        <section className={styles.productSection} aria-labelledby="product-dashboard-title">
+          <div className={styles.sectionHeading}>
+            <div>
+              <p className={styles.eyebrow}>YOUR RUVANAS PRODUCTS</p>
+              <h2 id="product-dashboard-title">Choose a dashboard</h2>
+            </div>
+          </div>
+          <div className={styles.productGrid}>
+            {products.map((product) => (
+              <Link href={product.actionHref} key={product.id} className={product.available ? styles.productCard : styles.productCardLocked}>
+                <div className={styles.productCardTop}>
+                  <span>{product.symbol}</span>
+                  <small>{product.status}</small>
+                </div>
+                <strong>{product.label}</strong>
+                <p>{product.description}</p>
+                <b>{product.available ? "Open dashboard →" : "Review plans →"}</b>
+              </Link>
+            ))}
+          </div>
+        </section>
 
         <section className={styles.quickSection} aria-labelledby="quick-actions-title">
           <div className={styles.sectionHeading}>

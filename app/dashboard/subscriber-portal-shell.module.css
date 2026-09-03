@@ -1,0 +1,47 @@
+.portal { min-height: 100vh; background: #eef2f7; color: #172033; }
+.topbar { position: sticky; top: 0; z-index: 60; min-height: 68px; display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 22px; padding: 0 24px; border-bottom: 1px solid #27354b; background: #0d1727; box-shadow: 0 8px 28px rgba(15, 23, 42, .16); }
+.brand { color: #f4b942; font-size: 17px; font-weight: 950; letter-spacing: 2px; text-decoration: none; }
+.organisation { min-width: 0; justify-self: end; display: flex; align-items: baseline; gap: 9px; color: #f8fafc; }
+.organisation span { max-width: 260px; overflow: hidden; font-size: 13px; font-weight: 850; text-overflow: ellipsis; white-space: nowrap; }
+.organisation small { color: #93a3ba; font-size: 11px; text-transform: capitalize; }
+.signOut, .menuButton { min-height: 38px; border: 1px solid #53627a; border-radius: 8px; background: transparent; color: #e8eef7; cursor: pointer; font: inherit; font-size: 12px; font-weight: 850; padding: 0 13px; }
+.menuButton { display: none; }
+.signOut:hover, .signOut:focus-visible, .menuButton:hover, .menuButton:focus-visible { border-color: #f4b942; color: #f4b942; }
+.workspace { display: grid; grid-template-columns: 270px minmax(0, 1fr); align-items: start; }
+.sidebar { position: sticky; top: 68px; height: calc(100vh - 68px); overflow-y: auto; border-right: 1px solid #d5dde8; background: #fff; padding: 22px 15px 40px; box-sizing: border-box; }
+.identity { padding: 0 10px 19px; border-bottom: 1px solid #e4e9f0; }
+.identity span, .identity strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.identity span { color: #7b8798; font-size: 10px; font-weight: 850; letter-spacing: .8px; text-transform: uppercase; }
+.identity strong { margin-top: 5px; font-size: 13px; }
+.home, .activeHome { margin-top: 15px; min-height: 43px; display: flex; align-items: center; justify-content: space-between; border-radius: 9px; color: #4b5870; font-size: 13px; font-weight: 900; padding: 0 11px; text-decoration: none; }
+.activeHome { background: #17243a; color: #fff; }
+.home:hover, .home:focus-visible { background: #f1f4f8; color: #172033; }
+.navSection { margin-top: 23px; }
+.navSection h2 { margin: 0 10px; color: #8d5d00; font-size: 10px; font-weight: 950; letter-spacing: 1px; text-transform: uppercase; }
+.navSection > p { margin: 6px 10px 9px; color: #8a95a5; font-size: 10px; line-height: 1.4; }
+.navSection ul { margin: 0; padding: 0; list-style: none; }
+.link, .activeLink, .lockedLink { min-height: 38px; display: flex; align-items: center; justify-content: space-between; gap: 8px; border-radius: 8px; color: #536075; font-size: 12px; font-weight: 800; padding: 0 10px; text-decoration: none; }
+.link:hover, .link:focus-visible { background: #f1f4f8; color: #172033; }
+.activeLink { background: #fff4d7; color: #6d4800; box-shadow: inset 3px 0 #e4a72f; }
+.lockedLink { color: #8b95a4; }
+.lockedLink small { color: #a16d09; font-size: 9px; font-weight: 900; }
+.content { min-width: 0; min-height: calc(100vh - 68px); }
+.scrim { display: none; }
+.brand:focus-visible, .home:focus-visible, .activeHome:focus-visible, .link:focus-visible, .activeLink:focus-visible, .lockedLink:focus-visible { outline: 3px solid #6ea8fe; outline-offset: 2px; }
+
+@media (max-width: 980px) {
+  .topbar { grid-template-columns: auto auto 1fr auto; padding-inline: 16px; }
+  .menuButton { display: inline-flex; align-items: center; }
+  .workspace { grid-template-columns: 1fr; }
+  .sidebar { position: fixed; z-index: 55; top: 68px; bottom: 0; left: 0; width: min(310px, 86vw); height: auto; transform: translateX(-105%); transition: transform .2s ease; box-shadow: 16px 0 35px rgba(15, 23, 42, .2); }
+  .sidebarOpen { transform: translateX(0); }
+  .scrim { position: fixed; z-index: 50; inset: 68px 0 0; display: block; width: 100%; border: 0; background: rgba(15, 23, 42, .45); }
+}
+
+@media (max-width: 620px) {
+  .topbar { min-height: 62px; grid-template-columns: auto auto 1fr; gap: 9px; padding-inline: 12px; }
+  .organisation { display: none; }
+  .signOut { padding-inline: 9px; }
+  .sidebar { top: 62px; }
+  .scrim { inset-block-start: 62px; }
+}
