@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getAdminUser } from "@/lib/requireAdmin";
 import { buildAdminNavigation } from "@/lib/user-experience-navigation.mjs";
+import AdminNavigationTabs from "./AdminNavigationTabs";
 import styles from "./admin-navigation.module.css";
 
 export default async function AdminLayout({ children }) {
@@ -14,8 +15,9 @@ export default async function AdminLayout({ children }) {
     <div className={styles.page}>
       <header className={styles.header}>
         <div className={styles.topbar}>
-          <div>
-            <Link href="/admin/organisations" className={styles.brand}>Ruvanas Admin</Link>
+          <div className={styles.brandArea}>
+            <Link href="/admin" className={styles.brand}>RUVANAS</Link>
+            <span className={styles.adminLabel}>Administration</span>
             <span className={styles.identity}>
               {adminUser.name || adminUser.email} · {adminUser.role.replaceAll("_", " ").toLowerCase()}
             </span>
@@ -28,25 +30,9 @@ export default async function AdminLayout({ children }) {
           </div>
         </div>
 
-        <nav className={styles.navigation} aria-label="Admin navigation">
-          <div className={styles.navigationInner}>
-            {navigation.map((section) => (
-              <details className={styles.group} key={section.id}>
-                <summary>
-                  <span>{section.label}</span>
-                  <small>{section.description}</small>
-                </summary>
-                <div className={styles.links}>
-                  {section.items.map((item) => (
-                    <Link key={item.href} href={item.href}>{item.label}</Link>
-                  ))}
-                </div>
-              </details>
-            ))}
-          </div>
-        </nav>
+        <AdminNavigationTabs navigation={navigation} />
       </header>
-      <main>{children}</main>
+      <main className={styles.content}>{children}</main>
     </div>
   );
 }

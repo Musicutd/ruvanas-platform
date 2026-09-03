@@ -1,134 +1,42 @@
-.page { min-height: 100vh; background: #fff; }
-
-.header {
-  border-bottom: 1px solid #cbd5e1;
-  background: #fff;
-}
-
-.topbar {
-  max-width: 1180px;
-  margin: 0 auto;
-  padding: 15px 24px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  flex-wrap: wrap;
-}
-
-.brand {
-  color: #111827;
-  font-size: 17px;
-  font-weight: 900;
-  text-decoration: none;
-}
-
-.identity {
-  margin-left: 12px;
-  color: #64748b;
-  font-size: 13px;
-  font-weight: 700;
-  text-transform: capitalize;
-}
-
+.page { min-height: 100vh; background: #f2f5f9; color: #172033; }
+.header { position: relative; z-index: 30; border-bottom: 1px solid #cbd5e1; background: #0e1828; box-shadow: 0 7px 24px rgba(15, 23, 42, .1); }
+.topbar { min-height: 72px; max-width: 1240px; margin: 0 auto; padding: 0 24px; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.brandArea { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.brand { color: #f4b942; font-size: 17px; font-weight: 950; letter-spacing: 1.8px; text-decoration: none; }
+.adminLabel { border-left: 1px solid #48566b; color: #f8fafc; font-size: 14px; font-weight: 850; padding-left: 12px; }
+.identity { overflow: hidden; color: #9cabc0; font-size: 12px; font-weight: 700; text-overflow: ellipsis; text-transform: capitalize; white-space: nowrap; }
 .actions { display: flex; align-items: center; gap: 9px; }
-
-.clientLink,
-.signOut {
-  min-height: 40px;
-  box-sizing: border-box;
-  display: inline-flex;
-  align-items: center;
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
-  background: #fff;
-  color: #1e293b;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 800;
-  padding: 0 13px;
-  text-decoration: none;
-}
-
+.clientLink, .signOut { min-height: 39px; box-sizing: border-box; display: inline-flex; align-items: center; border: 1px solid #526078; border-radius: 8px; background: transparent; color: #e7edf6; font: inherit; font-size: 12px; font-weight: 850; padding: 0 13px; text-decoration: none; }
 .signOut { cursor: pointer; }
+.clientLink:hover, .clientLink:focus-visible, .signOut:hover, .signOut:focus-visible { border-color: #f4b942; color: #f4b942; }
 
-.navigation {
-  border-top: 1px solid #e2e8f0;
-  background: #f8fafc;
-}
-
-.navigationInner {
-  max-width: 1180px;
-  margin: 0 auto;
-  padding: 10px 24px 12px;
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 9px;
-}
-
-.group {
-  position: relative;
-  min-width: 0;
-}
-
-.group summary {
-  min-height: 52px;
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  border: 1px solid #cbd5e1;
-  border-radius: 9px;
-  background: #fff;
-  color: #1e293b;
-  cursor: pointer;
-  list-style: none;
-  padding: 8px 11px;
-}
-
-.group summary::-webkit-details-marker { display: none; }
-.group summary::after { content: "+"; position: absolute; right: 10px; top: 17px; color: #64748b; font-weight: 900; }
-.group[open] summary::after { content: "−"; }
-.group summary span { padding-right: 16px; font-size: 13px; font-weight: 900; }
-.group summary small { display: none; }
-
-.links {
-  position: absolute;
-  z-index: 20;
-  top: calc(100% + 6px);
-  left: 0;
-  width: min(270px, calc(100vw - 32px));
-  box-sizing: border-box;
-  display: grid;
-  gap: 4px;
-  border: 1px solid #cbd5e1;
-  border-radius: 10px;
-  background: #fff;
-  box-shadow: 0 14px 30px rgba(15, 23, 42, .16);
-  padding: 8px;
-}
-
-.links a {
-  border-radius: 7px;
-  color: #334155;
-  font-size: 14px;
-  font-weight: 800;
-  padding: 10px;
-  text-decoration: none;
-}
-
-.links a:hover,
-.links a:focus-visible { background: #fff7e3; color: #854d0e; }
+.navigation { background: #fff; }
+.tabs { max-width: 1240px; margin: 0 auto; padding: 0 24px; display: flex; align-items: stretch; gap: 4px; overflow-x: auto; scrollbar-width: thin; }
+.tab, .activeTab { min-height: 50px; display: inline-flex; align-items: center; border-bottom: 3px solid transparent; color: #657287; font-size: 12px; font-weight: 900; padding: 0 15px; text-decoration: none; white-space: nowrap; }
+.tab:hover, .tab:focus-visible { color: #172033; background: #f8fafc; }
+.activeTab { border-bottom-color: #d59620; color: #172033; background: #fff9eb; }
+.subNavigation { border-top: 1px solid #e2e8f0; background: #f8fafc; }
+.subNavigation { min-height: 58px; padding: 0 max(24px, calc((100vw - 1192px) / 2)); display: flex; align-items: center; gap: 26px; }
+.subNavigationIntro { min-width: 185px; display: flex; flex-direction: column; }
+.subNavigationIntro strong { color: #182236; font-size: 12px; }
+.subNavigationIntro span { margin-top: 3px; color: #7b8798; font-size: 10px; }
+.subNavigationLinks { display: flex; align-items: center; gap: 5px; overflow-x: auto; padding: 8px 0; }
+.subLink, .activeSubLink { border-radius: 7px; color: #536177; font-size: 11px; font-weight: 850; padding: 8px 10px; text-decoration: none; white-space: nowrap; }
+.subLink:hover, .subLink:focus-visible { background: #e9eef5; color: #172033; }
+.activeSubLink { background: #182236; color: #fff; }
+.content { min-height: calc(100vh - 122px); }
 
 @media (max-width: 900px) {
-  .navigationInner { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .group:first-child { grid-column: 1 / -1; }
+  .identity { display: none; }
+  .subNavigation { align-items: flex-start; flex-direction: column; gap: 5px; padding-block: 12px; }
+  .subNavigationLinks { width: 100%; }
 }
 
-@media (max-width: 560px) {
-  .topbar { align-items: flex-start; padding-inline: 16px; }
-  .identity { display: block; margin: 5px 0 0; }
-  .navigationInner { grid-template-columns: 1fr; padding-inline: 16px; }
-  .group:first-child { grid-column: auto; }
-  .links { position: static; width: 100%; margin-top: 5px; box-shadow: none; }
+@media (max-width: 580px) {
+  .topbar { min-height: 64px; padding-inline: 15px; }
+  .adminLabel { display: none; }
+  .clientLink { display: none; }
+  .tabs { padding-inline: 9px; }
+  .tab, .activeTab { padding-inline: 11px; }
+  .subNavigation { padding-inline: 15px; }
 }
