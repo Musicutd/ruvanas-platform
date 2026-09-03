@@ -10,8 +10,8 @@ import {
 import { buildSubscriberNavigation } from "../lib/user-experience-navigation.mjs";
 
 test("subscriber help topics are unique, bounded and written as safe operating guidance", () => {
-  assert.equal(subscriberHelpArticles.length, 8);
-  assert.equal(new Set(subscriberHelpArticles.map((article) => article.id)).size, 8);
+  assert.equal(subscriberHelpArticles.length, 9);
+  assert.equal(new Set(subscriberHelpArticles.map((article) => article.id)).size, subscriberHelpArticles.length);
   for (const article of subscriberHelpArticles) {
     assert.match(article.id, /^[a-z0-9-]+$/);
     assert.ok(article.title.length <= 80);
