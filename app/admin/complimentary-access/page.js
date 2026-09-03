@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getAdminUser } from "@/lib/requireAdmin";
-import { describePlanFeatures } from "@/lib/complimentary-access.mjs";
+import { complimentaryPlanProducts, describePlanFeatures } from "@/lib/complimentary-access.mjs";
 import ComplimentaryAccessAdmin from "./ComplimentaryAccessAdmin";
 
 export const dynamic = "force-dynamic";
@@ -32,6 +32,7 @@ export default async function ComplimentaryAccessPage() {
         id: plan.id,
         name: plan.name,
         code: plan.code,
+        products: complimentaryPlanProducts(plan),
         features: describePlanFeatures(plan)
       }))}
       organisations={organisations}

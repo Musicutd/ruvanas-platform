@@ -65,7 +65,19 @@
 .pulseRows dt { color: #9cacbf; font-size: 13px; }
 .pulseRows dd { margin: 0; color: #fff; font-weight: 900; text-align: right; }
 
-.quickSection, .statusSection, .toolsSection { margin-top: 38px; }
+.productSection, .quickSection, .statusSection, .toolsSection { margin-top: 38px; }
+.productGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 18px; }
+.productCard, .productCardLocked { min-height: 205px; display: flex; flex-direction: column; border: 1px solid #34435d; border-radius: 17px; background: linear-gradient(145deg, #17243a, #111b2b); color: #fff; padding: 22px; text-decoration: none; transition: transform .16s ease, border-color .16s ease; }
+.productCard:hover, .productCard:focus-visible { transform: translateY(-3px); border-color: #f4b942; }
+.productCardLocked { opacity: .72; }
+.productCardLocked:hover, .productCardLocked:focus-visible { opacity: 1; border-color: #8fa1b9; }
+.productCardTop { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.productCardTop span { border-radius: 999px; background: #293852; color: #f4b942; font-size: 10px; font-weight: 950; letter-spacing: 1px; padding: 6px 9px; }
+.productCardTop small { color: #9ae6b4; font-size: 11px; font-weight: 900; }
+.productCardLocked .productCardTop small { color: #f8d58a; }
+.productCard > strong, .productCardLocked > strong { margin-top: 23px; font-size: 23px; }
+.productCard p, .productCardLocked p { flex: 1; margin: 9px 0 18px; color: #aebbd0; line-height: 1.55; }
+.productCard > b, .productCardLocked > b { color: #f4b942; font-size: 13px; }
 .quickGrid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-top: 18px; }
 .quickCard { position: relative; min-height: 154px; display: flex; flex-direction: column; border: 1px solid #2b3a54; border-radius: 15px; background: #141f31; color: #fff; padding: 19px 38px 18px 18px; text-decoration: none; transition: border-color .16s ease, transform .16s ease, background .16s ease; }
 .quickCard:hover, .quickCard:focus-visible { border-color: #f4b942; background: #19263a; transform: translateY(-2px); }
@@ -101,6 +113,7 @@
 .planDetails strong { color: #fff; margin-left: 5px; }
 
 @media (max-width: 1040px) {
+  .productGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .quickGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .statusGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
@@ -115,6 +128,7 @@
 }
 
 @media (max-width: 660px) {
+  .productGrid { grid-template-columns: 1fr; }
   .quickGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .nextActionFooter { align-items: stretch; flex-direction: column; }
   .progressSummary { max-width: none; }

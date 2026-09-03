@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import {
   buildAdminNavigation,
   buildSubscriberNavigation,
+  buildSubscriberProductCards,
   resolveDashboardNextAction
 } from "../lib/user-experience-navigation.mjs";
 
@@ -19,9 +20,10 @@ test("subscriber navigation is organised by tasks and hides unavailable products
   });
 
   assert.deepEqual(navigation.map((section) => section.label), [
-    "Run your radio",
-    "Create and schedule",
-    "Monitor and report"
+    "Product dashboards",
+    "Audio & playout",
+    "Studios & media",
+    "Account & insights"
   ]);
   const items = navigation.flatMap((section) => section.items);
   assert.equal(items.find((item) => item.id === "station").href, "/stations/station-1");
@@ -30,6 +32,16 @@ test("subscriber navigation is organised by tasks and hides unavailable products
   assert.ok(items.some((item) => item.id === "retail"));
   assert.ok(!items.some((item) => item.id === "school"));
   assert.ok(!items.some((item) => item.id === "signage"));
+  assert.equal(items.find((item) => item.id === "schoolHome").available, false);
+  assert.equal(items.find((item) => item.id === "schoolHome").href, "/dashboard/account");
+});
+
+test("three product dashboards stay visible while unavailable products lead to plan review", () => {
+  const products = buildSubscriberProductCards({ entitlements: { serviceEnabled: true, schoolRadioEnabled: false } });
+  assert.deepEqual(products.map((product) => product.label), ["Retail Radio", "School Radio", "Online Radio"]);
+  assert.equal(products.find((product) => product.id === "retailHome").actionHref, "/dashboard/retail");
+  assert.equal(products.find((product) => product.id === "radioHome").actionHref, "/dashboard/radio");
+  assert.equal(products.find((product) => product.id === "schoolHome").actionHref, "/dashboard/account");
 });
 
 test("subscriber navigation sends a new organisation to station creation", () => {
@@ -67,18 +79,25 @@ test("admin navigation keeps each destination unique", () => {
 });
 
 test("subscriber command centre keeps shortcuts permission-filtered and accessible", async () => {
-  const [dashboard, styles] = await Promise.all([
+  const [dashboard, layout, shell, shellStyles, styles] = await Promise.all([
     readFile(new URL("../app/dashboard/page.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/dashboard/layout.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/dashboard/SubscriberPortalShell.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/dashboard/subscriber-portal-shell.module.css", import.meta.url), "utf8"),
     readFile(new URL("../app/dashboard/dashboard.module.css", import.meta.url), "utf8")
   ]);
 
   assert.match(dashboard, /allNavigationItems\.find/);
-  assert.match(dashboard, /aria-label="Portal navigation"/);
+  assert.match(dashboard, /buildSubscriberProductCards/);
+  assert.match(layout, /buildSubscriberNavigation/);
+  assert.match(shell, /aria-label="Subscriber portal"/);
+  assert.match(shell, /aria-expanded=\{open\}/);
   assert.match(dashboard, /<progress/);
   assert.match(dashboard, /SERVICE PULSE/);
   assert.match(dashboard, /QUICK ACTIONS/);
   assert.match(styles, /@media \(max-width: 520px\)/);
   assert.match(styles, /:focus-visible/);
+  assert.match(shellStyles, /@media \(max-width: 980px\)/);
 });
 
 test("admin command centre uses role-filtered tabs and accessible interactive analytics", async () => {

@@ -5,6 +5,7 @@ import {
   canRedeemComplimentaryAccess,
   clearComplimentaryAccess,
   complimentaryCodeSuffix,
+  complimentaryPlanProducts,
   complimentaryPlanSnapshot,
   generateComplimentaryCode,
   hashComplimentaryCode,
@@ -86,4 +87,9 @@ test("stopping complimentary access clears every override and restores normal bi
 
 test("inactive tiers cannot be snapshotted for complimentary access", () => {
   assert.throws(() => complimentaryPlanSnapshot({ ...tier, active: false }), /active tier/i);
+});
+
+test("complimentary tiers identify the product dashboards they unlock", () => {
+  assert.deepEqual(complimentaryPlanProducts(tier), ["Retail Radio", "Online Radio", "School Radio"]);
+  assert.deepEqual(complimentaryPlanProducts({ ...tier, promoUploadEnabled: false, retailMediaEnabled: false, digitalSignageEnabled: false, schoolRadioEnabled: false }), ["Online Radio"]);
 });
