@@ -41,37 +41,96 @@ const services = [
   ["Room to grow", "Start with one location or station, then add streams, schools, signage and campaigns as you expand."],
 ];
 
-const tiers = [
+const pricingFamilies = [
   {
-    name: "Start",
-    price: "9.99",
-    description: "For one independent location getting its sound online.",
-    features: ["1 active stream or location", "50 online listeners", "10 GB media storage", "Audio up to 192 kbps", "Scheduling and AutoDJ"],
+    id: "retail",
+    eyebrow: "In-house & Retail Radio",
+    title: "Build the right atmosphere in every location.",
+    text: "Professional music, messages and reporting for independent shops, growing businesses and multi-site brands.",
+    tiers: [
+      {
+        slug: "retail-start",
+        name: "Retail Start",
+        price: "9.99",
+        description: "For one independent shop or customer-facing space.",
+        features: ["1 active location", "10 GB media storage", "Audio up to 192 kbps", "Scheduling and AutoDJ", "Web player and device enrolment"],
+      },
+      {
+        slug: "retail-business",
+        name: "Retail Business",
+        price: "29",
+        description: "For a growing business operating several locations.",
+        featured: true,
+        features: ["Up to 3 active locations", "50 GB media storage", "Audio up to 256 kbps", "Branded promos and announcements", "Proof of play and reporting"],
+      },
+      {
+        slug: "retail-network",
+        name: "Retail Network",
+        price: "69",
+        description: "For established brands that need central control.",
+        features: ["Up to 10 active locations", "200 GB media storage", "High-quality 320 kbps audio", "Advanced analytics and campaigns", "Retail media and signage tools"],
+      },
+    ],
   },
   {
-    name: "Business",
-    price: "29",
-    description: "For growing businesses that need more control.",
-    features: ["Up to 3 active streams", "250 online listeners", "50 GB media storage", "Audio up to 256 kbps", "Promos and reporting"],
+    id: "school",
+    eyebrow: "School Radio",
+    title: "Give every school a safe, creative voice.",
+    text: "Purpose-built tools for supervised production, protected publishing and confident school-wide broadcasting.",
+    tiers: [
+      {
+        slug: "school-starter",
+        name: "School Starter",
+        price: "19",
+        description: "For one school beginning its radio journey.",
+        features: ["1 School Radio workspace", "25 GB protected media", "Supervised student production", "Review and approval workflows", "Scheduled school broadcasts"],
+      },
+      {
+        slug: "school-pro",
+        name: "School Pro",
+        price: "49",
+        description: "For an active school with a growing programme.",
+        featured: true,
+        features: ["Everything in School Starter", "100 GB protected media", "Live supervised sessions", "Podcast and episode production", "Digital noticeboards and analytics"],
+      },
+      {
+        slug: "school-academy",
+        name: "School Academy",
+        price: "129",
+        description: "For academies and groups managing several schools.",
+        features: ["Up to 10 school workspaces", "Multi-school administration", "Verified episode exchange", "Central safeguarding oversight", "Priority onboarding and support"],
+      },
+    ],
   },
   {
-    name: "Pro",
-    price: "69",
-    description: "For established brands, stations and schools.",
-    featured: true,
-    features: ["Up to 10 active streams", "1,000 online listeners", "200 GB media storage", "High-quality 320 kbps audio", "Advanced analytics and School Radio"],
-  },
-  {
-    name: "Brand",
-    price: "149",
-    description: "For multi-site organisations with ambitious reach.",
-    features: ["Up to 30 active streams", "5,000 online listeners", "500 GB media storage", "Retail media and digital signage", "Cross-media campaigns and priority support"],
-  },
-  {
-    name: "Enterprise",
-    price: "Custom",
-    description: "For networks that need a tailored platform.",
-    features: ["Negotiated streams and listeners", "Multi-school or multi-brand operations", "Enterprise identity and API access", "Tailored onboarding and governance", "Dedicated commercial agreement"],
+    id: "online",
+    eyebrow: "Complete Online Radio",
+    title: "Launch a station built to reach listeners everywhere.",
+    text: "Live and automated broadcasting, public listening and professional station operations in one complete platform.",
+    tiers: [
+      {
+        slug: "online-start",
+        name: "Online Start",
+        price: "14.99",
+        description: "For a new online station building its audience.",
+        features: ["1 public radio channel", "Up to 100 simultaneous listeners", "25 GB media storage", "Audio up to 192 kbps", "AutoDJ and public web player"],
+      },
+      {
+        slug: "online-pro",
+        name: "Online Pro",
+        price: "49",
+        description: "For an established station ready to grow.",
+        featured: true,
+        features: ["Up to 3 public channels", "Up to 1,000 simultaneous listeners", "200 GB media storage", "High-quality 320 kbps audio", "Live shows, AutoDJ and analytics"],
+      },
+      {
+        slug: "online-network",
+        name: "Online Network",
+        price: "119",
+        description: "For ambitious broadcasters running a network.",
+        features: ["Up to 10 public channels", "Up to 5,000 simultaneous listeners", "500 GB media storage", "Advanced scheduling and operations", "Priority support and growth planning"],
+      },
+    ],
   },
 ];
 
@@ -282,30 +341,50 @@ export default function HomePage() {
 
       <section className={styles.pricingSection} id="pricing">
         <div className={styles.pricingHeader}>
-          <p className={styles.sectionEyebrow}>Simple launch pricing</p>
-          <h2>A tier for every kind of broadcaster.</h2>
-          <p>Begin with the essentials and move up when you need more locations, listeners, storage or specialist tools.</p>
+          <p className={styles.sectionEyebrow}>Plans shaped around your platform</p>
+          <h2>Choose the service you need. Grow when you are ready.</h2>
+          <p>Retail, School Radio and complete online broadcasting each have their own tiers, limits and specialist tools.</p>
         </div>
 
-        <div className={styles.pricingGrid}>
-          {tiers.map((tier) => (
-            <article className={`${styles.priceCard} ${tier.featured ? styles.featuredTier : ""}`} key={tier.name}>
-              {tier.featured ? <span className={styles.popularLabel}>Most popular</span> : null}
-              <h3>{tier.name}</h3>
-              <p className={styles.tierDescription}>{tier.description}</p>
-              <div className={styles.price}>
-                {tier.price === "Custom" ? <strong>Custom</strong> : <><span>€</span><strong>{tier.price}</strong><small>/ month</small></>}
+        <div className={styles.pricingFamilies}>
+          {pricingFamilies.map((family, familyIndex) => (
+            <section className={styles.pricingFamily} id={`pricing-${family.id}`} key={family.id}>
+              <div className={styles.familyHeader}>
+                <span>{String(familyIndex + 1).padStart(2, "0")}</span>
+                <div>
+                  <p>{family.eyebrow}</p>
+                  <h3>{family.title}</h3>
+                </div>
+                <p>{family.text}</p>
               </div>
-              <a className={tier.featured ? styles.priceCtaFeatured : styles.priceCta} href="/register">
-                {tier.price === "Custom" ? "Start a conversation" : `Choose ${tier.name}`} <ArrowIcon />
-              </a>
-              <ul>
-                {tier.features.map((feature) => <li key={feature}><span>✓</span>{feature}</li>)}
-              </ul>
-            </article>
+              <div className={styles.pricingGrid}>
+                {family.tiers.map((tier) => (
+                  <article className={`${styles.priceCard} ${tier.featured ? styles.featuredTier : ""}`} key={tier.name}>
+                    {tier.featured ? <span className={styles.popularLabel}>Most popular</span> : null}
+                    <h4>{tier.name}</h4>
+                    <p className={styles.tierDescription}>{tier.description}</p>
+                    <div className={styles.price}>
+                      <span>€</span><strong>{tier.price}</strong><small>/ month</small>
+                    </div>
+                    <a className={tier.featured ? styles.priceCtaFeatured : styles.priceCta} href={`/register?platform=${family.id}&tier=${tier.slug}`}>
+                      Choose {tier.name} <ArrowIcon />
+                    </a>
+                    <ul>
+                      {tier.features.map((feature) => <li key={feature}><span>✓</span>{feature}</li>)}
+                    </ul>
+                  </article>
+                ))}
+              </div>
+            </section>
           ))}
         </div>
-        <p className={styles.pricingNote}>Prices are shown in euro and exclude applicable tax. Music licensing, production, media and bespoke service costs may be agreed separately. Enterprise limits and inclusions are tailored to each organisation.</p>
+
+        <div className={styles.enterprisePlan}>
+          <div><p>Enterprise</p><h3>Need a larger or specially configured service?</h3></div>
+          <p>We can tailor streams, listeners, schools, storage, identity, governance, onboarding and support around your organisation.</p>
+          <a href="/register?platform=enterprise">Talk to Ruvanas <ArrowIcon /></a>
+        </div>
+        <p className={styles.pricingNote}>Prices are shown in euro and exclude applicable tax. Music licensing, production, media, unusually high delivery volumes and bespoke services may be agreed separately. Final eligibility and service configuration are confirmed during onboarding.</p>
       </section>
 
       <section className={styles.storySection} id="story">
