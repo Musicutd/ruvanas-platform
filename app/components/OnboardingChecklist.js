@@ -8,7 +8,7 @@ export default function OnboardingChecklist({ onboarding }) {
     <details className={styles.guide} open={!onboarding.complete} id="first-use-setup">
       <summary>
         <span>
-          <strong>{onboarding.complete ? "First setup complete" : "Set up your first shop radio"}</strong>
+          <strong>{onboarding.complete ? "First setup complete" : "Set up your first radio service"}</strong>
           <small>{progressLabel} · Select to hide or show this guide</small>
         </span>
         <span className={onboarding.complete ? styles.completeBadge : styles.progressBadge}>
@@ -36,3 +36,4 @@ export default function OnboardingChecklist({ onboarding }) {
     </details>
   );
 }
+
