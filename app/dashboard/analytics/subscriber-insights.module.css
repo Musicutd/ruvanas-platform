@@ -1,0 +1,162 @@
+.page { min-height: 100vh; background: radial-gradient(circle at 10% 4%, rgba(244, 185, 66, .08), transparent 27%), #0d1523; color: #f8fafc; padding: 32px max(20px, calc((100% - 1180px) / 2)) 76px; }
+.headerActions { display: flex; gap: 9px; flex-wrap: wrap; }
+.secondaryButton, .exportButton { min-height: 42px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; border-radius: 9px; font: inherit; font-size: 13px; font-weight: 900; padding: 0 15px; text-decoration: none; }
+.secondaryButton { border: 1px solid #52627d; color: #dbe5f2; }
+.exportButton { border: 0; background: #f4b942; color: #101827; cursor: pointer; }
+.exportButton:disabled { cursor: wait; opacity: .65; }
+.secondaryButton:hover, .secondaryButton:focus-visible { border-color: #f4b942; color: #f4b942; }
+.exportButton:hover:not(:disabled), .exportButton:focus-visible:not(:disabled) { background: #ffd36e; }
+
+.controlBar { position: relative; z-index: 2; display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 22px; margin-top: 22px; border: 1px solid #2c3b53; border-radius: 14px; background: #152034; padding: 15px 17px; }
+.controlBar > div strong, .controlBar > div span { display: block; }
+.controlBar > div strong { font-size: 13px; }
+.controlBar > div span { margin-top: 4px; color: #91a0b5; font-size: 11px; }
+.controlBar nav { display: flex; gap: 5px; }
+.controlBar nav button { min-height: 36px; border: 1px solid #3c4b62; border-radius: 8px; background: transparent; color: #c2cede; cursor: pointer; font-weight: 850; padding: 0 11px; }
+.controlBar nav button[aria-pressed="true"] { border-color: #f4b942; background: #f4b942; color: #101827; }
+.controlBar details { position: relative; }
+.controlBar summary { cursor: pointer; color: #f4b942; font-size: 12px; font-weight: 900; list-style: none; }
+.controlBar summary::-webkit-details-marker { display: none; }
+.controlBar details > div { position: absolute; top: calc(100% + 15px); right: 0; min-width: 420px; display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; border: 1px solid #40516c; border-radius: 12px; background: #172338; box-shadow: 0 18px 40px rgba(0, 0, 0, .32); padding: 15px; }
+.controlBar label { display: grid; gap: 6px; color: #b7c3d4; font-size: 11px; font-weight: 800; }
+.controlBar input { min-height: 38px; box-sizing: border-box; border: 1px solid #5d6d84; border-radius: 7px; background: #fff; color: #101827; padding: 6px 8px; }
+.controlBar details button { align-self: end; min-height: 38px; border: 0; border-radius: 7px; background: #f4b942; color: #101827; cursor: pointer; font-weight: 900; padding: 0 13px; }
+
+.evidenceNotice, .status, .error { border-radius: 10px; padding: 12px 14px; line-height: 1.5; }
+.evidenceNotice { margin: 16px 0 0; border: 1px solid #5d4d27; background: #282115; color: #f4dfa9; font-size: 12px; }
+.status { border: 1px solid #286849; background: #123525; color: #a7f3d0; }
+.error { border: 1px solid #9f4b4b; background: #3f1d27; color: #fecaca; }
+
+.loading { display: grid; grid-template-columns: repeat(4, 1fr); gap: 13px; margin-top: 20px; }
+.loading span { height: 120px; border-radius: 14px; background: linear-gradient(100deg, #162237 30%, #26344b 50%, #162237 70%); background-size: 220% 100%; animation: pulse 1.4s infinite; }
+@keyframes pulse { to { background-position-x: -220%; } }
+
+.metrics { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-top: 20px; }
+.metric, .warningMetric { min-height: 122px; box-sizing: border-box; display: flex; flex-direction: column; border: 1px solid #2c3b53; border-radius: 14px; background: #162236; padding: 18px; }
+.warningMetric { border-color: #7e6031; background: #292116; }
+.metric span, .warningMetric span { color: #93a3b9; font-size: 10px; font-weight: 900; letter-spacing: .75px; text-transform: uppercase; }
+.metric strong, .warningMetric strong { margin: 11px 0 7px; font-size: 27px; line-height: 1; }
+.warningMetric strong { color: #f8cb6d; }
+.metric small, .warningMetric small { margin-top: auto; color: #9eacc0; font-size: 10px; line-height: 1.4; }
+
+.primaryGrid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(280px, .7fr); gap: 16px; margin-top: 17px; }
+.chartCard, .mixCard, .actionCard, .breakdownCard, .operationsCard, .schoolCard, .dailyCard { border: 1px solid #2c3b53; border-radius: 16px; background: #141f31; box-shadow: 0 15px 38px rgba(0, 0, 0, .12); }
+.chartCard, .mixCard, .actionCard, .breakdownCard, .operationsCard, .schoolCard { padding: 23px; }
+.sectionHeading { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; }
+.sectionHeading h2, .cardHeading h2 { margin: 0; font-size: 21px; }
+.sectionHeading > div > p:last-child, .cardHeading > p:last-child { margin: 7px 0 0; color: #91a0b5; font-size: 11px; line-height: 1.5; }
+.sectionHeading > span { color: #9cabbe; font-size: 11px; font-weight: 850; }
+.sectionHeading > a { color: #f4b942; font-size: 11px; font-weight: 900; text-decoration: none; }
+.eyebrow { margin: 0 0 7px; color: #f4b942; font-size: 10px; font-weight: 950; letter-spacing: 1.2px; }
+.legend { display: flex; gap: 15px; color: #aebacc; font-size: 10px; }
+.legend span { display: flex; align-items: center; gap: 6px; }
+.legend i { width: 15px; height: 3px; border-radius: 99px; }
+.completedLegend { background: #f4b942; }
+.exceptionLegend { background: #f87171; }
+.chartWrap { margin-top: 13px; overflow: hidden; }
+.chartWrap svg { display: block; width: 100%; min-height: 220px; }
+.gridLine { stroke: #2d3a4f; stroke-width: 1; }
+.completedLine, .exceptionLine { fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-width: 3; }
+.completedLine { stroke: #f4b942; }
+.exceptionLine { stroke: #f87171; stroke-width: 2.25; }
+.completedPoint { fill: #152034; stroke: #f4b942; stroke-width: 3; }
+.exceptionPoint { fill: #152034; stroke: #f87171; stroke-width: 2; }
+.axisLabel { fill: #8494a9; font-size: 9px; font-weight: 700; }
+
+.mixCard { display: flex; flex-direction: column; }
+.cardHeading p:first-child { margin-bottom: 7px; }
+.mixList { display: grid; gap: 19px; margin-top: 26px; }
+.mixList > div > span { display: flex; justify-content: space-between; gap: 14px; }
+.mixList b { color: #b9c5d6; font-size: 11px; }
+.mixList strong { font-size: 12px; }
+.mixList > div > i { height: 8px; display: block; overflow: hidden; margin-top: 8px; border-radius: 999px; background: #29364a; }
+.mixList > div > i b { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #b97b12, #f4b942); }
+
+.actionCard, .breakdownCard { margin-top: 17px; }
+.actionList { display: grid; gap: 9px; margin-top: 17px; }
+.actionList article { display: grid; grid-template-columns: 54px 1fr auto; align-items: center; gap: 16px; border: 1px solid #35445b; border-radius: 12px; padding: 14px; }
+.actionList .critical { border-color: #7b3d4b; background: #291b27; }
+.actionList .warning { border-color: #745d2f; background: #282116; }
+.actionList .neutral { background: #18253a; }
+.actionCount { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 12px; background: #283750; color: #f4b942; font-size: 17px; }
+.actionList h3 { margin: 0; font-size: 14px; }
+.actionList p { margin: 5px 0 0; color: #9dabbf; font-size: 11px; line-height: 1.45; }
+.actionList a { border: 1px solid #52627a; border-radius: 8px; color: #fff; font-size: 11px; font-weight: 900; padding: 9px 11px; text-decoration: none; }
+.actionList a:hover, .actionList a:focus-visible { border-color: #f4b942; color: #f4b942; }
+.allClear { display: flex; align-items: center; gap: 14px; margin-top: 17px; border: 1px solid #286849; border-radius: 12px; background: #123525; padding: 16px; }
+.allClear > span { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 50%; background: #1f7951; font-weight: 950; }
+.allClear strong { color: #b7f7d5; }
+.allClear p { margin: 4px 0 0; color: #8bd8b2; font-size: 11px; }
+
+.tabs { display: flex; gap: 6px; margin-top: 18px; border-bottom: 1px solid #2d3b51; }
+.tabs button { min-height: 42px; display: flex; align-items: center; gap: 8px; border: 0; border-bottom: 3px solid transparent; background: transparent; color: #9eacc0; cursor: pointer; font-weight: 900; padding: 0 13px; }
+.tabs button[aria-selected="true"] { border-bottom-color: #f4b942; color: #fff; }
+.tabs button span { border-radius: 999px; background: #29364a; color: #b8c4d4; font-size: 9px; padding: 3px 6px; }
+.ranking { display: grid; }
+.ranking article { display: grid; grid-template-columns: 30px minmax(150px, 1fr) auto; align-items: center; gap: 12px; border-bottom: 1px solid #29364a; padding: 13px 0; }
+.rank { color: #6f8098; font-size: 11px; font-weight: 900; }
+.rankingName strong, .rankingName small, .rankingValue strong, .rankingValue small { display: block; }
+.rankingName strong { font-size: 12px; }
+.rankingName small, .rankingValue small { margin-top: 4px; color: #8f9fb5; font-size: 9px; }
+.rankingValue { text-align: right; }
+.rankingValue strong { font-size: 13px; }
+.ranking article > i { grid-column: 2 / -1; height: 4px; overflow: hidden; border-radius: 99px; background: #29364a; }
+.ranking article > i b { display: block; height: 100%; border-radius: inherit; background: #f4b942; }
+
+.secondaryGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 17px; }
+.operationsCard dl, .schoolCard dl { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin: 20px 0 0; }
+.operationsCard dl div, .schoolCard dl div { border: 1px solid #2d3b51; border-radius: 10px; background: #172338; padding: 13px; }
+.operationsCard dt, .schoolCard dt { color: #91a0b5; font-size: 9px; font-weight: 900; letter-spacing: .55px; text-transform: uppercase; }
+.operationsCard dd, .schoolCard dd { margin: 7px 0 0; font-size: 18px; font-weight: 900; }
+.reportLinks { display: flex; gap: 18px; margin-top: 17px; }
+.reportLinks a, .schoolCard > a { color: #f4b942; font-size: 11px; font-weight: 900; text-decoration: none; }
+.schoolCard > a { display: inline-block; margin-top: 17px; }
+
+.dailyCard { margin-top: 17px; overflow: hidden; }
+.dailyCard summary { display: flex; align-items: center; justify-content: space-between; gap: 20px; cursor: pointer; list-style: none; padding: 18px 22px; }
+.dailyCard summary::-webkit-details-marker { display: none; }
+.dailyCard summary span b, .dailyCard summary span small { display: block; }
+.dailyCard summary span b { font-size: 14px; }
+.dailyCard summary span small { margin-top: 4px; color: #91a0b5; font-size: 10px; }
+.dailyCard summary > strong { color: #f4b942; font-size: 11px; }
+.tableWrap { overflow-x: auto; border-top: 1px solid #2d3b51; padding: 0 20px 20px; }
+.tableWrap table { width: 100%; min-width: 800px; border-collapse: collapse; }
+.tableWrap th { color: #91a0b5; font-size: 10px; text-align: left; }
+.tableWrap th, .tableWrap td { border-bottom: 1px solid #29364a; padding: 11px 8px; }
+.tableWrap td { font-size: 11px; font-variant-numeric: tabular-nums; }
+.tableWrap td:not(:first-child) { text-align: right; }
+.retention { color: #7f8fa5; font-size: 10px; line-height: 1.5; margin: 15px 3px 0; }
+
+@media (max-width: 1050px) {
+  .metrics { grid-template-columns: repeat(3, 1fr); }
+  .primaryGrid { grid-template-columns: 1fr; }
+  .mixCard { min-height: 300px; }
+}
+@media (max-width: 780px) {
+  .controlBar { grid-template-columns: 1fr; gap: 14px; }
+  .controlBar nav { overflow-x: auto; }
+  .controlBar details > div { left: 0; right: auto; min-width: min(420px, calc(100vw - 64px)); }
+  .secondaryGrid { grid-template-columns: 1fr; }
+  .actionList article { grid-template-columns: 48px 1fr; }
+  .actionList a { grid-column: 2; justify-self: start; }
+}
+@media (max-width: 600px) {
+  .page { padding-inline: 14px; }
+  .headerActions { width: 100%; }
+  .secondaryButton, .exportButton { flex: 1; }
+  .metrics { grid-template-columns: 1fr 1fr; }
+  .metric, .warningMetric { min-height: 112px; }
+  .sectionHeading { align-items: flex-start; flex-direction: column; }
+  .legend { margin-top: 7px; }
+  .chartCard, .mixCard, .actionCard, .breakdownCard, .operationsCard, .schoolCard { padding: 18px; }
+  .chartWrap { margin-inline: -10px; }
+  .chartWrap svg { min-height: 180px; }
+  .tabs { overflow-x: auto; }
+  .ranking article { grid-template-columns: 24px 1fr auto; }
+}
+@media (max-width: 420px) {
+  .metrics { grid-template-columns: 1fr; }
+  .controlBar nav button { flex: 0 0 auto; }
+  .controlBar details > div { grid-template-columns: 1fr; min-width: calc(100vw - 64px); }
+  .operationsCard dl, .schoolCard dl { grid-template-columns: 1fr; }
+}

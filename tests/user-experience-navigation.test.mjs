@@ -110,3 +110,24 @@ test("admin command centre uses role-filtered tabs and accessible interactive an
   assert.match(proofOfPlay, /aria-label=\{periodLabel\}/);
   assert.match(styles, /@media \(max-width: 650px\)/);
 });
+
+test("subscriber service insights are visual, actionable, responsive, and tenant-scoped", async () => {
+  const [client, service, styles] = await Promise.all([
+    readFile(new URL("../app/dashboard/analytics/OperationalAnalyticsClient.js", import.meta.url), "utf8"),
+    readFile(new URL("../lib/operational-analytics-service.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/dashboard/analytics/subscriber-insights.module.css", import.meta.url), "utf8")
+  ]);
+
+  assert.match(client, /title="Service insights"/);
+  assert.match(client, /SUBSCRIBER_INSIGHT_RANGES\.map/);
+  assert.match(client, /role="tablist"/);
+  assert.match(client, /aria-selected/);
+  assert.match(client, /role="img"/);
+  assert.match(client, /<title id="subscriber-chart-title"/);
+  assert.match(client, /subscriberInsightActions/);
+  assert.match(service, /analyticsHourlyAggregate\.groupBy/);
+  assert.match(service, /where: \{ organisationId, bucketStart:/);
+  assert.match(service, /buildSubscriberBreakdowns/);
+  assert.match(service, /buildStationBreakdown/);
+  assert.match(styles, /@media \(max-width: 600px\)/);
+});
