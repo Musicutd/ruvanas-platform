@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
@@ -11,6 +11,11 @@ export default function LoginPage() {
   });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [resetComplete, setResetComplete] = useState(false);
+
+  useEffect(() => {
+    setResetComplete(new URLSearchParams(window.location.search).get("password-reset") === "1");
+  }, []);
 
   function updateField(event) {
     setForm((current) => ({
@@ -95,6 +100,12 @@ export default function LoginPage() {
               required
             />
           </label>
+
+          <div style={styles.passwordHelp}>
+            <a href="/forgot-password" style={styles.link}>Forgot your password?</a>
+          </div>
+
+          {resetComplete ? <p style={styles.success} role="status">Your password was reset. Sign in with your new password.</p> : null}
 
           {error ? <p style={styles.error}>{error}</p> : null}
 
@@ -193,6 +204,19 @@ const styles = {
     borderRadius: 8,
     padding: 12,
     lineHeight: 1.45
+  },
+  success: {
+    margin: 0,
+    border: "1px solid #3b8060",
+    background: "#143629",
+    color: "#c6f6db",
+    borderRadius: 8,
+    padding: 12,
+    lineHeight: 1.45
+  },
+  passwordHelp: {
+    marginTop: -8,
+    textAlign: "right"
   },
   footer: {
     margin: "24px 0 0",
