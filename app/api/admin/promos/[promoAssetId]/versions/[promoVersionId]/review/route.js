@@ -1,12 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser } from "@/lib/auth";
-import {
-  ORGANISATION_MANAGER_ROLES,
-  requireOrganisationAccess
-} from "@/lib/access-control";
-import { accessDenied } from "@/lib/api-response";
+import { requirePlatformAdmin } from "@/lib/access-control";
 import { reviewPromoVersion } from "@/lib/promo-versioning.mjs";
 
 export const dynamic = "force-dynamic";
@@ -18,12 +13,9 @@ const reviewSchema = z.object({
 
 export async function PATCH(request, { params }) {
   try {
-    const user = await getCurrentUser();
-    if (!user) {
-      return NextResponse.json(
-        { error: "Your session has expired. Please sign in again." },
-        { status: 401 }
-      );
+    const access = await requirePlatformAdmin();
+    if (!access.ok) {
+      return NextResponse.json({ error: access.error }, { status: access.status });
     }
 
     const promoAssetId = String(params.promoAssetId || "");
@@ -50,15 +42,6 @@ export async function PATCH(request, { params }) {
         { error: "The promotional version was not found." },
         { status: 404 }
       );
-    }
-
-    const access = await requireOrganisationAccess(
-      version.promoAsset.organisationId,
-      ORGANISATION_MANAGER_ROLES
-    );
-
-    if (!access.ok) {
-      return accessDenied(access);
     }
 
     if (

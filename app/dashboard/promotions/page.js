@@ -7,7 +7,8 @@ import styles from "./promotions.module.css";
 
 export const dynamic = "force-dynamic";
 
-export default async function SubscriberPromotionsPage() {
+export default async function SubscriberPromotionsPage({ searchParams }) {
+  const query = await searchParams;
   const context = await getActiveOrganisationContext();
   if (!context) redirect("/login");
   if (!context.membership) redirect("/dashboard");
@@ -37,7 +38,10 @@ export default async function SubscriberPromotionsPage() {
             <span>Ruvanas quality and rights checks stay protected.</span>
           </aside>
         </div>
-        <PromotionWorkspace organisationName={context.membership.organisation.name} />
+        <PromotionWorkspace
+          organisationName={context.membership.organisation.name}
+          initialPromoVersionId={String(query?.promoVersionId || "")}
+        />
       </section>
     </main>
   );

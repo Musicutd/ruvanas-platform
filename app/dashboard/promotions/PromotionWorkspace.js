@@ -13,7 +13,7 @@ function timeLabel(minute) {
   return `${String(Math.floor(minute / 60)).padStart(2, "0")}:${String(minute % 60).padStart(2, "0")}`;
 }
 
-export default function PromotionWorkspace({ organisationName }) {
+export default function PromotionWorkspace({ organisationName, initialPromoVersionId = "" }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
@@ -24,7 +24,7 @@ export default function PromotionWorkspace({ organisationName }) {
   const [publishReview, setPublishReview] = useState("");
   const [form, setForm] = useState({
     name: "",
-    promoVersionId: "",
+    promoVersionId: initialPromoVersionId,
     effectiveFrom: today(),
     effectiveTo: nextWeek(),
     targetKey: "ALL_LOCATIONS:all",
@@ -42,7 +42,12 @@ export default function PromotionWorkspace({ organisationName }) {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Unable to load promotions.");
       setData(payload);
-      setForm((current) => ({ ...current, promoVersionId: current.promoVersionId || payload.promos[0]?.id || "" }));
+      setForm((current) => ({
+        ...current,
+        promoVersionId: payload.promos.some((promo) => promo.id === current.promoVersionId)
+          ? current.promoVersionId
+          : payload.promos[0]?.id || ""
+      }));
     } catch (loadError) {
       setError(loadError.message);
     } finally {
