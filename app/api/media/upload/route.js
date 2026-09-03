@@ -381,14 +381,12 @@ export async function POST(request) {
             promoAssetId: promoAsset.id,
             mediaAssetId: storedAsset.id,
             version: versionNumber,
-            status: "IN_REVIEW",
+            status: "DRAFT",
             qcStatus: "PENDING",
             sourceType: "UPLOAD",
             languageCode,
             checksumSha256: checksum,
             durationSeconds: parsed.data.durationSeconds,
-            submittedById: user.id,
-            submittedAt: new Date(),
             processingJobs: {
               create: buildPromoProcessingJobs()
             }
@@ -409,7 +407,8 @@ export async function POST(request) {
               mediaType: promoAsset.mediaType,
               languageCode,
               sizeBytes: storedAsset.sizeBytes.toString(),
-              checksum
+              checksum,
+              status: "DRAFT"
             }
           }
         });
