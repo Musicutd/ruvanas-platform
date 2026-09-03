@@ -106,6 +106,7 @@ export default async function DashboardPage() {
         <Link href="/dashboard" className={styles.brand}>RUVANAS</Link>
         <nav className={styles.headerNav} aria-label="Portal navigation">
           <Link href="/dashboard" aria-current="page">Home</Link>
+          <Link href="/dashboard/account">Account</Link>
           <Link href="/dashboard/team">Team</Link>
           <Link href="/dashboard/help">Help</Link>
           <Link href="/dashboard/support">Support</Link>
