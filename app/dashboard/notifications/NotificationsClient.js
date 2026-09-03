@@ -1,54 +1,57 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import PageHeader from "@/app/components/PageHeader";
 import EmptyState from "@/app/components/EmptyState";
 import ConfirmActionButton from "@/app/components/ConfirmActionButton";
 import { confirmationCopy, interfaceMessages, safeInterfaceMessage } from "@/lib/interface-guidance.mjs";
+import { groupSubscriberNotifications, subscriberNotificationDetails } from "@/lib/subscriber-notification-centre.mjs";
+import styles from "./notifications.module.css";
 
-const LABELS = {
-  PLAYER_OFFLINE: "Player offline",
-  STREAM_ERROR: "Stream error",
-  CAMPAIGN_FAILURE: "Campaign failure",
-  PRODUCTION_ORDER_UPDATE: "Production order update",
-  BILLING_STATE: "Billing state",
-  SCHOOL_REVIEW_REQUEST: "School review request",
-  CONSENT_EXPIRY: "Consent expiry"
-};
+const VIEWS = [
+  { id: "ALL", label: "All" },
+  { id: "UNREAD", label: "Unread" },
+  { id: "CRITICAL", label: "Needs attention" }
+];
+const TYPE_OPTIONS = Object.entries(subscriberNotificationDetails).map(([value, details]) => ({ value, label: details.label }));
 
 export default function NotificationsClient({ organisationName }) {
-  const [notifications, setNotifications] = useState(null);
+  const [centre, setCentre] = useState(null);
   const [preferences, setPreferences] = useState([]);
   const [emailConfigured, setEmailConfigured] = useState(false);
+  const [view, setView] = useState("ALL");
+  const [type, setType] = useState("ALL");
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
 
   const load = useCallback(async () => {
     setError("");
     try {
+      const query = new URLSearchParams({ view, type, take: "100" });
       const [notificationResponse, preferenceResponse] = await Promise.all([
-        fetch("/api/notifications", { cache: "no-store" }),
+        fetch(`/api/notifications?${query}`, { cache: "no-store" }),
         fetch("/api/notifications/preferences", { cache: "no-store" })
       ]);
-      const [notificationBody, preferenceBody] = await Promise.all([
-        notificationResponse.json(),
-        preferenceResponse.json()
-      ]);
+      const [notificationBody, preferenceBody] = await Promise.all([notificationResponse.json(), preferenceResponse.json()]);
       if (!notificationResponse.ok) throw new Error(notificationBody.error || "Unable to load notifications.");
       if (!preferenceResponse.ok) throw new Error(preferenceBody.error || "Unable to load notification preferences.");
-      setNotifications(notificationBody);
+      setCentre(notificationBody);
       setPreferences(preferenceBody.preferences || []);
       setEmailConfigured(preferenceBody.emailConfigured === true);
     } catch (loadError) {
       setError(safeInterfaceMessage(loadError?.message, "Unable to load notifications."));
     }
-  }, []);
+  }, [type, view]);
 
   useEffect(() => { load(); }, [load]);
+  const groups = useMemo(() => groupSubscriberNotifications(centre?.deliveries || []), [centre]);
 
   async function updateDelivery(deliveryId, action) {
     setBusy(`${deliveryId}:${action}`);
     setError("");
+    setNotice("");
     try {
       const response = await fetch(`/api/notifications/${deliveryId}`, {
         method: "PATCH",
@@ -57,6 +60,7 @@ export default function NotificationsClient({ organisationName }) {
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || "Unable to update the notification.");
+      setNotice(action === "READ" ? "Notification marked as read." : "Notification dismissed. Its operational record is retained.");
       await load();
     } catch (actionError) {
       setError(safeInterfaceMessage(actionError?.message, "Unable to update the notification."));
@@ -65,18 +69,41 @@ export default function NotificationsClient({ organisationName }) {
     }
   }
 
-  async function updatePreference(type, channel, enabled) {
-    setBusy(`preference:${channel}:${type}`);
+  async function bulkUpdate(action) {
+    setBusy(`bulk:${action}`);
     setError("");
+    setNotice("");
+    try {
+      const response = await fetch("/api/notifications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action })
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || "Unable to update the notification list.");
+      setNotice(body.updated === 1 ? "1 notification updated." : `${body.updated} notifications updated.`);
+      await load();
+    } catch (actionError) {
+      setError(safeInterfaceMessage(actionError?.message, "Unable to update the notification list."));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function updatePreference(notificationType, channel, enabled) {
+    setBusy(`preference:${channel}:${notificationType}`);
+    setError("");
+    setNotice("");
     try {
       const response = await fetch("/api/notifications/preferences", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type, channel, enabled })
+        body: JSON.stringify({ type: notificationType, channel, enabled })
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || "Unable to update the notification preference.");
-      setPreferences((current) => current.map((item) => item.type === type && item.channel === channel ? { ...item, enabled } : item));
+      setPreferences((current) => current.map((item) => item.type === notificationType && item.channel === channel ? { ...item, enabled } : item));
+      setNotice("Notification preference saved.");
     } catch (preferenceError) {
       setError(safeInterfaceMessage(preferenceError?.message, "Unable to update the notification preference."));
     } finally {
@@ -84,104 +111,100 @@ export default function NotificationsClient({ organisationName }) {
     }
   }
 
-  return <main style={styles.page}>
-    <PageHeader
-      eyebrow="Alerts and preferences"
-      title={interfaceMessages.notifications.title}
-      description={`${organisationName} · playback, stream, campaign, billing, production and school-review alerts in one place.`}
-      backHref="/dashboard"
-      backLabel="Client dashboard"
-      tone="dark"
-    >
-      <button type="button" onClick={load} style={styles.secondary}>Refresh</button>
+  const summary = centre?.summary || {};
+  return <main className={styles.page} id="main-content">
+    <PageHeader eyebrow="Your service updates" title="Notification centre" description={`${organisationName} · understand what changed, what needs attention and where to continue.`} backHref="/dashboard" backLabel="Client dashboard" tone="dark">
+      <button type="button" onClick={load} className={styles.outlineButton} disabled={Boolean(busy)}>Refresh updates</button>
     </PageHeader>
 
-    {error ? <p role="alert" style={styles.error}>{error}</p> : null}
-    <section style={styles.summary}>
-      <div><span style={styles.summaryLabel}>Unread</span><strong style={styles.summaryValue}>{notifications?.unread ?? "—"}</strong></div>
-      <p style={styles.summaryText}>{emailConfigured ? "Email delivery is available by explicit opt-in. Signed webhooks are managed by a Ruvanas Super Admin under API & integrations." : "In-app delivery is active. Email remains safely disabled until the provider is configured; signed webhooks are managed under API & integrations."}</p>
+    {error ? <p role="alert" className={styles.error}>{error}</p> : null}
+    {notice ? <p role="status" className={styles.notice}>{notice}</p> : null}
+
+    <section className={styles.summaryGrid} aria-label="Notification summary">
+      <SummaryCard label="Unread" value={summary.unread} tone="gold" />
+      <SummaryCard label="Needs attention" value={summary.critical} tone="red" />
+      <SummaryCard label="Warnings" value={summary.warning} tone="amber" />
+      <SummaryCard label="Active updates" value={summary.total} tone="blue" />
     </section>
 
-    <section style={styles.grid}>
-      <article style={styles.card}>
-        <h2 style={styles.sectionTitle}>Notification centre</h2>
-        {!notifications ? <p style={styles.muted} role="status">Loading notifications…</p> : notifications.deliveries.length === 0 ? <EmptyState compact tone="dark" title={interfaceMessages.notifications.emptyTitle} description={interfaceMessages.notifications.emptyDescription} /> : notifications.deliveries.map((delivery) => (
-          <div key={delivery.id} style={{ ...styles.notification, ...(!delivery.readAt ? styles.unread : {}) }}>
-            <div style={styles.notificationHeader}>
-              <strong>{delivery.notificationEvent.title}</strong>
-              <span style={{ ...styles.badge, ...severityStyle(delivery.notificationEvent.severity) }}>{delivery.notificationEvent.severity}</span>
-            </div>
-            <p style={styles.message}>{delivery.notificationEvent.message}</p>
-            <p style={styles.meta}>{LABELS[delivery.notificationEvent.type] || delivery.notificationEvent.type} · {formatDate(delivery.notificationEvent.occurredAt)}</p>
-            <div style={styles.actions}>
-              {!delivery.readAt ? <button type="button" disabled={Boolean(busy)} onClick={() => updateDelivery(delivery.id, "READ")} style={styles.secondary}>{busy === `${delivery.id}:READ` ? "Saving…" : "Mark read"}</button> : null}
-              <ConfirmActionButton disabled={Boolean(busy)} onConfirm={() => updateDelivery(delivery.id, "DISMISS")} style={styles.dismiss} {...confirmationCopy("DISMISS_NOTIFICATION", delivery.notificationEvent.title)}>{busy === `${delivery.id}:DISMISS` ? "Saving…" : "Dismiss"}</ConfirmActionButton>
-            </div>
+    <section className={styles.workspace}>
+      <div className={styles.inboxCard}>
+        <div className={styles.toolbar}>
+          <div className={styles.tabs} role="group" aria-label="Notification view">
+            {VIEWS.map((item) => <button key={item.id} type="button" className={`${styles.tab} ${view === item.id ? styles.activeTab : ""}`} aria-pressed={view === item.id} onClick={() => setView(item.id)}>{item.label}{item.id === "UNREAD" && summary.unread ? <span>{summary.unread}</span> : null}</button>)}
           </div>
-        ))}
-      </article>
+          <label className={styles.filterLabel}>Update type
+            <select className={styles.select} value={type} onChange={(event) => setType(event.target.value)}>
+              <option value="ALL">All service areas</option>
+              {TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+          </label>
+        </div>
 
-      <aside style={styles.card}>
-        <h2 style={styles.sectionTitle}>Delivery preferences</h2>
-        <p style={styles.preferenceHeading}>In-app</p>
-        <p style={styles.muted}>Choose which operational events appear here. Critical platform safeguards may still be shown where legally or operationally required.</p>
-        <div style={styles.preferenceList}>{preferences.filter((item) => item.channel === "IN_APP").map((preference) => (
-          <label key={`${preference.channel}:${preference.type}`} style={styles.preference}>
-            <span>{LABELS[preference.type] || preference.type}</span>
-            <input type="checkbox" checked={preference.enabled} disabled={busy === `preference:${preference.channel}:${preference.type}`} onChange={(event) => updatePreference(preference.type, preference.channel, event.target.checked)} />
-          </label>
-        ))}</div>
-        <p style={styles.preferenceHeading}>Email — explicit opt-in</p>
-        <p style={styles.muted}>{emailConfigured ? "Messages contain only bounded operational summaries and direct you back to the secure portal." : "Unavailable until a Ruvanas administrator configures the approved email provider."}</p>
-        <div style={styles.preferenceList}>{preferences.filter((item) => item.channel === "EMAIL").map((preference) => (
-          <label key={`${preference.channel}:${preference.type}`} style={{ ...styles.preference, ...(!emailConfigured ? styles.preferenceDisabled : {}) }}>
-            <span>{LABELS[preference.type] || preference.type}</span>
-            <input type="checkbox" checked={preference.enabled} disabled={!emailConfigured || busy === `preference:${preference.channel}:${preference.type}`} onChange={(event) => updatePreference(preference.type, preference.channel, event.target.checked)} />
-          </label>
-        ))}</div>
+        <div className={styles.bulkActions}>
+          <button type="button" className={styles.smallButton} disabled={Boolean(busy) || !summary.unread} onClick={() => bulkUpdate("MARK_ALL_READ")}>Mark all as read</button>
+          <ConfirmActionButton className={styles.smallButton} disabled={Boolean(busy) || summary.total <= summary.unread} title="Dismiss all read notifications?" message="Read notifications will leave this active list. Their operational records will not be deleted." confirmLabel="Dismiss read notifications" cancelLabel="Keep notifications" onConfirm={() => bulkUpdate("DISMISS_READ")}>Dismiss read</ConfirmActionButton>
+        </div>
+
+        {!centre ? <p className={styles.loading} role="status">Loading your updates…</p> : groups.length === 0 ? <EmptyState compact tone="dark" title={interfaceMessages.notifications.emptyTitle} description={type === "ALL" ? interfaceMessages.notifications.emptyDescription : "No active updates match this service-area filter."} /> : groups.map((group) => (
+          <section key={group.id} className={styles.group} aria-labelledby={`group-${group.id}`}>
+            <h2 id={`group-${group.id}`} className={styles.groupTitle}>{group.label}</h2>
+            <div className={styles.notificationList}>{group.items.map((delivery) => (
+              <article key={delivery.id} className={`${styles.notification} ${!delivery.readAt ? styles.unread : ""}`}>
+                <div className={styles.notificationTop}>
+                  <div className={styles.labelRow}><span className={styles.category}>{delivery.category}</span><span className={`${styles.severity} ${styles[delivery.severity.toLowerCase()]}`}>{severityLabel(delivery.severity)}</span></div>
+                  <time className={styles.time} dateTime={new Date(delivery.occurredAt).toISOString()}>{formatDate(delivery.occurredAt)}</time>
+                </div>
+                <h3 className={styles.notificationTitle}>{delivery.title}</h3>
+                <p className={styles.message}>{delivery.message}</p>
+                <div className={styles.actions}>
+                  <Link className={styles.primaryLink} href={delivery.actionHref}>{delivery.actionLabel} →</Link>
+                  {!delivery.readAt ? <button type="button" className={styles.textButton} disabled={Boolean(busy)} onClick={() => updateDelivery(delivery.id, "READ")}>{busy === `${delivery.id}:READ` ? "Saving…" : "Mark read"}</button> : <span className={styles.readState}>Read</span>}
+                  <ConfirmActionButton disabled={Boolean(busy)} onConfirm={() => updateDelivery(delivery.id, "DISMISS")} className={styles.textButton} {...confirmationCopy("DISMISS_NOTIFICATION", delivery.title)}>{busy === `${delivery.id}:DISMISS` ? "Saving…" : "Dismiss"}</ConfirmActionButton>
+                </div>
+              </article>
+            ))}</div>
+          </section>
+        ))}
+      </div>
+
+      <aside className={styles.preferencesCard} aria-labelledby="preference-title">
+        <div className={styles.stickyPanel}>
+          <p className={styles.panelEyebrow}>PERSONAL SETTINGS</p>
+          <h2 id="preference-title" className={styles.panelTitle}>How you receive updates</h2>
+          <p className={styles.panelCopy}>These choices apply only to your account in {organisationName}.</p>
+          <PreferenceGroup title="In the portal" description="Choose what appears in this notification centre." channel="IN_APP" preferences={preferences} busy={busy} updatePreference={updatePreference} />
+          <PreferenceGroup title="By email" description={emailConfigured ? "Optional summaries return you to the secure portal." : "Email is unavailable until Ruvanas configures an approved provider."} channel="EMAIL" preferences={preferences} busy={busy} updatePreference={updatePreference} disabled={!emailConfigured} />
+          <p className={styles.safety}>Essential security or legal notices may still be shown. Signed integration delivery remains controlled by Ruvanas administration.</p>
+        </div>
       </aside>
     </section>
   </main>;
 }
 
+function SummaryCard({ label, value, tone }) {
+  return <article className={`${styles.summaryCard} ${styles[`summary${tone}`]}`}><span>{label}</span><strong>{value ?? "—"}</strong></article>;
+}
+
+function PreferenceGroup({ title, description, channel, preferences, busy, updatePreference, disabled = false }) {
+  return <details className={styles.preferenceGroup} open={channel === "IN_APP"}>
+    <summary>{title}</summary>
+    <p>{description}</p>
+    <div className={styles.preferenceList}>{preferences.filter((item) => item.channel === channel).map((preference) => (
+      <label key={`${channel}:${preference.type}`} className={`${styles.preference} ${disabled ? styles.disabledPreference : ""}`}>
+        <span>{subscriberNotificationDetails[preference.type]?.label || preference.type}</span>
+        <input type="checkbox" checked={preference.enabled} disabled={disabled || busy === `preference:${channel}:${preference.type}`} onChange={(event) => updatePreference(preference.type, channel, event.target.checked)} />
+      </label>
+    ))}</div>
+  </details>;
+}
+
 function formatDate(value) {
-  return value ? new Date(value).toLocaleString() : "Not recorded";
+  return value ? new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" }).format(new Date(value)) : "Time unavailable";
 }
 
-function severityStyle(severity) {
-  if (severity === "CRITICAL") return { background: "#fee2e2", color: "#991b1b" };
-  if (severity === "WARNING") return { background: "#fef3c7", color: "#92400e" };
-  return { background: "#dbeafe", color: "#1e40af" };
+function severityLabel(value) {
+  if (value === "CRITICAL") return "Needs attention";
+  if (value === "WARNING") return "Warning";
+  return "Information";
 }
-
-const styles = {
-  page: { minHeight: "100vh", background: "#101827", color: "#fff", padding: "40px max(20px, calc((100% - 1160px) / 2)) 72px", fontFamily: "Arial, sans-serif" },
-  header: { display: "flex", justifyContent: "space-between", gap: 24, alignItems: "end", flexWrap: "wrap" },
-  back: { color: "#b8c3d6", textDecoration: "none", fontWeight: 700 },
-  eyebrow: { color: "#f4b942", letterSpacing: 1.5, fontSize: 12, fontWeight: 800, margin: "24px 0 10px" },
-  title: { fontSize: "clamp(34px, 5vw, 52px)", margin: 0 },
-  subtitle: { color: "#b8c3d6", lineHeight: 1.6, fontSize: 17, margin: "14px 0 0", maxWidth: 800 },
-  summary: { marginTop: 22, display: "flex", gap: 24, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", padding: 18, border: "1px solid #6b5729", borderRadius: 12, background: "#2c2416" },
-  summaryLabel: { display: "block", color: "#f8e3ae", fontSize: 12, fontWeight: 800, textTransform: "uppercase" },
-  summaryValue: { display: "block", fontSize: 30, marginTop: 4 },
-  summaryText: { color: "#f8e3ae", lineHeight: 1.5, maxWidth: 700, margin: 0 },
-  grid: { display: "grid", gridTemplateColumns: "minmax(0, 2fr) minmax(270px, 1fr)", gap: 18, marginTop: 20 },
-  card: { border: "1px solid #2b3a54", borderRadius: 12, padding: 20, background: "#182235", alignSelf: "start" },
-  sectionTitle: { margin: "0 0 16px", fontSize: 22 },
-  notification: { padding: 16, border: "1px solid #2b3a54", borderRadius: 10, marginBottom: 12, background: "#141e2f" },
-  unread: { borderColor: "#f4b942", boxShadow: "inset 4px 0 #f4b942" },
-  notificationHeader: { display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" },
-  badge: { padding: "4px 8px", borderRadius: 999, fontSize: 11, fontWeight: 900 },
-  message: { color: "#dbe3ee", lineHeight: 1.55, margin: "10px 0 6px" },
-  meta: { color: "#94a3b8", fontSize: 12, margin: 0 },
-  actions: { display: "flex", gap: 8, marginTop: 12 },
-  secondary: { border: "1px solid #f4b942", borderRadius: 7, padding: "9px 12px", background: "transparent", color: "#f4b942", fontWeight: 800, cursor: "pointer" },
-  dismiss: { border: "1px solid #52627d", borderRadius: 7, padding: "9px 12px", background: "transparent", color: "#dbe3ee", fontWeight: 800, cursor: "pointer" },
-  preferenceList: { display: "grid", gap: 4 },
-  preferenceHeading: { margin: "20px 0 4px", color: "#f4b942", fontWeight: 900, textTransform: "uppercase", letterSpacing: 0.8, fontSize: 12 },
-  preference: { display: "flex", justifyContent: "space-between", gap: 16, padding: "11px 0", borderBottom: "1px solid #2b3a54", color: "#dbe3ee", fontWeight: 700 },
-  preferenceDisabled: { opacity: 0.55 },
-  muted: { color: "#aebbd0", lineHeight: 1.55 },
-  good: { padding: 12, borderRadius: 8, background: "#163628", color: "#bbf7d0", fontWeight: 800 },
-  error: { color: "#fecaca", background: "#3f1d27", border: "1px solid #9f4b4b", borderRadius: 8, padding: 12, margin: "16px 0 0" }
-};
