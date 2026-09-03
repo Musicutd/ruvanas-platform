@@ -13,6 +13,20 @@ import styles from "./dashboard.module.css";
 
 export const dynamic = "force-dynamic";
 
+function usagePercent(value, limit) {
+  if (!limit || limit < 1) return 0;
+  return Math.min(100, Math.round((value / limit) * 100));
+}
+
+const quickActionSymbols = {
+  station: "ON AIR",
+  players: "PLAY",
+  media: "AUDIO",
+  school: "SCHOOL",
+  sessions: "LIVE",
+  notifications: "UPDATES"
+};
+
 export default async function DashboardPage() {
   const context = await getActiveOrganisationContext({
     subscription: { include: { plan: true, billingContract: true } },
@@ -68,12 +82,33 @@ export default async function DashboardPage() {
     activePlayerStreams
   });
   const nextAction = onboarding.nextAction;
+  const allNavigationItems = navigation.flatMap((section) => section.items);
+  const quickActionIds = [
+    "station",
+    "players",
+    "media",
+    entitlements.schoolRadioEnabled ? "school" : "sessions",
+    "notifications"
+  ];
+  const quickActions = quickActionIds
+    .map((id) => allNavigationItems.find((item) => item.id === id))
+    .filter(Boolean);
+  const storageUsedGb = storageUsedMb / 1024;
+  const setupProgress = usagePercent(onboarding.completedCount, onboarding.totalCount);
+  const playerUsage = usagePercent(configuredPlayerCount, entitlements.streamLimit);
+  const liveUsage = usagePercent(activePlayerStreams, entitlements.streamLimit);
+  const storageUsage = usagePercent(storageUsedGb, entitlements.storageLimitGb);
 
   return (
     <main className={styles.page}>
       <SkipLink />
       <header className={styles.header}>
         <Link href="/dashboard" className={styles.brand}>RUVANAS</Link>
+        <nav className={styles.headerNav} aria-label="Portal navigation">
+          <Link href="/dashboard" aria-current="page">Home</Link>
+          <Link href="/dashboard/help">Help</Link>
+          <Link href="/dashboard/support">Support</Link>
+        </nav>
         <div className={styles.accountArea}>
           <span className={styles.accountLabel}>{organisation.name}</span>
           <form action="/api/auth/logout" method="post">
@@ -85,9 +120,9 @@ export default async function DashboardPage() {
       <div className={styles.shell} id="main-content">
         <section className={styles.welcome} aria-labelledby="dashboard-title">
           <div>
-            <p className={styles.eyebrow}>YOUR RUVANAS HOME</p>
+            <p className={styles.eyebrow}>SUBSCRIBER PORTAL</p>
             <h1 id="dashboard-title">Hello {user.name || "there"}</h1>
-            <p>Everything you need to run your radio, organised around the jobs you do.</p>
+            <p>Your radio service, daily tasks and support in one clear place.</p>
           </div>
           <span className={styles.roleBadge}>{membership.role.replaceAll("_", " ").toLowerCase()}</span>
         </section>
@@ -100,28 +135,61 @@ export default async function DashboardPage() {
           activeOrganisationId={organisation.id}
         />
 
+        <div className={styles.overviewGrid}>
+          <section className={styles.nextAction} aria-labelledby="next-action-title">
+            <div className={styles.nextActionCopy}>
+              <p className={styles.eyebrow}>{nextAction.eyebrow}</p>
+              <h2 id="next-action-title">{nextAction.title}</h2>
+              <p>{nextAction.description}</p>
+            </div>
+            <div className={styles.nextActionFooter}>
+              <div className={styles.progressSummary}>
+                <span>{onboarding.completedCount} of {onboarding.totalCount} setup checks complete</span>
+                <progress value={onboarding.completedCount} max={onboarding.totalCount} aria-label={`${setupProgress}% of setup complete`} />
+              </div>
+              <Link href={nextAction.href} className={styles.primaryButton}>{nextAction.label}</Link>
+            </div>
+          </section>
+
+          <aside className={styles.servicePulse} aria-labelledby="service-pulse-title">
+            <div className={styles.pulseHeader}>
+              <div>
+                <p className={styles.eyebrow}>SERVICE PULSE</p>
+                <h2 id="service-pulse-title">Radio status</h2>
+              </div>
+              <span className={entitlements.serviceEnabled ? styles.pulseDotHealthy : styles.pulseDotAttention} aria-hidden="true" />
+            </div>
+            <strong className={entitlements.serviceEnabled ? styles.pulseHealthy : styles.pulseAttention}>
+              {entitlements.serviceEnabled ? "Available" : "Action needed"}
+            </strong>
+            <dl className={styles.pulseRows}>
+              <div><dt>Plan</dt><dd>{plan?.name || "Trial"}</dd></div>
+              <div><dt>Live streams</dt><dd>{activePlayerStreams} of {entitlements.streamLimit}</dd></div>
+              <div><dt>Players ready</dt><dd>{configuredPlayerCount}</dd></div>
+            </dl>
+          </aside>
+        </div>
+
         <OnboardingChecklist onboarding={onboarding} />
 
-        <section className={styles.nextAction} aria-labelledby="next-action-title">
-          <div>
-            <p className={styles.eyebrow}>{nextAction.eyebrow}</p>
-            <h2 id="next-action-title">{nextAction.title}</h2>
-            <p>{nextAction.description}</p>
+        <section className={styles.quickSection} aria-labelledby="quick-actions-title">
+          <div className={styles.sectionHeading}>
+            <div>
+              <p className={styles.eyebrow}>QUICK ACTIONS</p>
+              <h2 id="quick-actions-title">Where do you want to go?</h2>
+            </div>
           </div>
-          <Link href={nextAction.href} className={styles.primaryButton}>{nextAction.label}</Link>
+          <div className={styles.quickGrid}>
+            {quickActions.map((item) => (
+              <Link href={item.href} key={item.id} className={styles.quickCard}>
+                <span className={styles.quickSymbol}>{quickActionSymbols[item.id] || "OPEN"}</span>
+                <strong>{item.label}</strong>
+                <small>{item.description}</small>
+                <b aria-hidden="true">→</b>
+              </Link>
+            ))}
+          </div>
         </section>
-
-        <ContextHelp
-          title="New to Ruvanas? Open the quick help"
-          introduction="You do not need to configure the whole platform at once. The setup guide above always points to the first unfinished step."
-          items={[
-            { title: "Your tasks", description: "Owners and managers create the station and securely enrol the shop player." },
-            { title: "Ruvanas-managed setup", description: "Locations, approved music modes and published schedules are prepared through controlled administration." },
-            { title: "Live confirmation", description: "A step becomes complete only when the system has real configuration or active-player evidence." }
-          ]}
-          articleHref="/dashboard/help#getting-started"
-          articleLabel="Open the getting-started guide"
-        />
 
         <section className={styles.statusSection} aria-labelledby="service-status-title">
           <div className={styles.sectionHeading}>
@@ -140,19 +208,22 @@ export default async function DashboardPage() {
               <small>{entitlements.complimentaryAccess ? "Complimentary access — no charge" : subscription?.status === "TRIAL" ? "Trial active" : subscription?.status || "No active plan"}</small>
             </article>
             <article>
-              <span>Shop players</span>
+              <span>Players ready</span>
               <strong>{configuredPlayerCount} / {entitlements.streamLimit}</strong>
               <small>Secure players prepared</small>
+              <progress value={playerUsage} max="100" aria-label={`${playerUsage}% of player allowance used`} />
             </article>
             <article>
               <span>Live now</span>
               <strong>{activePlayerStreams} / {entitlements.streamLimit}</strong>
               <small>Stream slots in use</small>
+              <progress value={liveUsage} max="100" aria-label={`${liveUsage}% of live stream allowance used`} />
             </article>
             <article>
               <span>Audio storage</span>
-              <strong>{(storageUsedMb / 1024).toFixed(2)} GB</strong>
+              <strong>{storageUsedGb.toFixed(2)} GB</strong>
               <small>of {entitlements.storageLimitGb} GB available</small>
+              <progress value={storageUsage} max="100" aria-label={`${storageUsage}% of audio storage used`} />
             </article>
           </div>
         </section>
@@ -165,9 +236,12 @@ export default async function DashboardPage() {
             </div>
           </div>
           <div className={styles.navigationGrid}>
-            {navigation.map((section) => (
+            {navigation.map((section, sectionIndex) => (
               <article key={section.id} className={styles.navigationSection}>
-                <h3>{section.label}</h3>
+                <div className={styles.navigationTitle}>
+                  <span aria-hidden="true">{String(sectionIndex + 1).padStart(2, "0")}</span>
+                  <h3>{section.label}</h3>
+                </div>
                 <p>{section.description}</p>
                 <ul>
                   {section.items.map((item) => (
@@ -185,6 +259,18 @@ export default async function DashboardPage() {
           </div>
         </section>
 
+        <ContextHelp
+          title="Need a hand? Open quick help"
+          introduction="You do not need to configure the whole platform at once. The setup guide always points to the first unfinished step."
+          items={[
+            { title: "Your tasks", description: "Owners and managers create the station and securely enrol each player." },
+            { title: "Ruvanas-managed setup", description: "Locations, approved music modes and published schedules are prepared through controlled administration." },
+            { title: "Live confirmation", description: "A step becomes complete only when the system has real configuration or active-player evidence." }
+          ]}
+          articleHref="/dashboard/help#getting-started"
+          articleLabel="Open the getting-started guide"
+        />
+
         <details className={styles.planDetails}>
           <summary>View plan and technical limits</summary>
           <div>
@@ -198,3 +284,4 @@ export default async function DashboardPage() {
     </main>
   );
 }
+
