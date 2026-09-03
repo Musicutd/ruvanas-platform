@@ -101,4 +101,3 @@ jobs:
       - name: Stop application
         if: always()
         run: test ! -f /tmp/ruvanas-next.pid || kill $(cat /tmp/ruvanas-next.pid) || true
-

@@ -173,4 +173,3 @@ test("limit checks stop at the configured boundary", () => {
   assert.equal(isWithinLimit(6, 5), false);
 });
 
-
