@@ -1,0 +1,21 @@
+.page { min-height: 100vh; display: grid; place-items: center; padding: 32px 20px; background: radial-gradient(circle at top left, #20304b 0, #101827 42%, #0b1220 100%); color: #fff; font-family: Arial, sans-serif; }
+.card { width: min(100%, 580px); box-sizing: border-box; padding: 38px; border: 1px solid #32445f; border-radius: 20px; background: rgba(24, 34, 53, .96); box-shadow: 0 24px 70px rgba(0,0,0,.32); }
+.brand { color: #f4b942; font-weight: 900; letter-spacing: 2px; text-decoration: none; }
+.eyebrow { margin: 32px 0 10px; color: #f4b942; font-size: 12px; font-weight: 900; letter-spacing: 1.5px; }
+.card h1 { margin: 0; font-size: clamp(32px, 6vw, 48px); letter-spacing: -1px; }
+.subtitle { color: #bdc8d9; font-size: 17px; line-height: 1.6; }
+.subtitle strong { color: #fff; }
+.summary { display: grid; gap: 0; margin: 24px 0; border: 1px solid #34465f; border-radius: 12px; overflow: hidden; }
+.summary div { display: grid; grid-template-columns: 110px 1fr; gap: 16px; padding: 13px 16px; border-bottom: 1px solid #34465f; }
+.summary div:last-child { border-bottom: 0; }
+.summary dt { color: #8fa0b8; font-weight: 700; }
+.summary dd { margin: 0; overflow-wrap: anywhere; font-weight: 800; }
+.form { display: grid; gap: 17px; }
+.form label { display: grid; gap: 8px; color: #dce5f1; font-size: 14px; font-weight: 800; }
+.form input { width: 100%; box-sizing: border-box; padding: 13px 14px; border: 1px solid #51647f; border-radius: 9px; background: #0d1625; color: #fff; font-size: 16px; }
+.form button { border: 0; border-radius: 9px; padding: 14px 18px; background: #f4b942; color: #101827; font-size: 16px; font-weight: 900; cursor: pointer; }
+.form button:disabled { cursor: wait; opacity: .65; }
+.security, .footer { margin: 0; color: #9eacc0; font-size: 13px; line-height: 1.55; }
+.error { margin: 0; padding: 12px 14px; border: 1px solid #a94a59; border-radius: 9px; background: #421f2b; color: #ffe1e5; line-height: 1.5; }
+.footer { margin-top: 26px; padding-top: 20px; border-top: 1px solid #2f3d54; }
+@media (max-width: 540px) { .card { padding: 28px 22px; } .summary div { grid-template-columns: 1fr; gap: 4px; } }
