@@ -104,6 +104,7 @@ export default async function SubscriberAccountPage() {
           <Link href="/dashboard" className={styles.brand}>RUVANAS</Link>
           <div>
             <Link href="/dashboard">Dashboard</Link>
+            <Link href="/dashboard/profile">Profile</Link>
             <Link href="/dashboard/team">Team</Link>
             <Link href="/dashboard/help">Help</Link>
           </div>
