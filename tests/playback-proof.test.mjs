@@ -26,3 +26,12 @@ test("proof-of-play tokens reject tampered attribution", () => {
   assert.equal(verifyPlaybackProofToken({ ...input, playerId: "player-2" }, token, secret), false);
   assert.equal(verifyPlaybackProofToken(input, "not-a-token", secret), false);
 });
+
+test("programming-source evidence is authenticated independently of the rolling-deployment token", () => {
+  const legacyToken = createPlaybackProofToken(input, secret);
+  const sourceToken = createPlaybackProofToken({ ...input, programmingSource: "DEFAULT_AUTODJ" }, secret);
+  assert.equal(verifyPlaybackProofToken(input, legacyToken, secret), true);
+  assert.equal(verifyPlaybackProofToken({ ...input, programmingSource: "DEFAULT_AUTODJ" }, sourceToken, secret), true);
+  assert.equal(verifyPlaybackProofToken({ ...input, programmingSource: "BACKUP_AUTODJ" }, sourceToken, secret), false);
+  assert.equal(verifyPlaybackProofToken(input, sourceToken, secret), false);
+});

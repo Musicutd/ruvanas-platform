@@ -4,6 +4,7 @@ import { getActiveOrganisationContext } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { resolveEntitlements } from "@/lib/entitlements.mjs";
 import { normaliseSchedulePayload, resolveMusicSchedule } from "@/lib/music-scheduling.mjs";
+import { musicModeIsPlayable, playableLiveMusicModeEntries } from "@/lib/music-mode-playback.mjs";
 import {
   canManageSubscriberProgramming,
   previousProgrammingDate,
@@ -12,6 +13,10 @@ import {
 } from "@/lib/subscriber-programming.mjs";
 
 export const dynamic = "force-dynamic";
+
+const playbackModeInclude = {
+  tracks: { include: { track: { include: { mediaAsset: true } } } }
+};
 
 const scheduleSchema = z.object({
   targetType: z.enum(["LOCATION", "ZONE"]),
@@ -51,13 +56,18 @@ function safeSchedule(schedule) {
       startMinute: slot.startMinute,
       endMinute: slot.endMinute,
       musicModeId: slot.musicModeId,
-      musicMode: slot.musicMode
+      musicMode: {
+        id: slot.musicMode.id,
+        name: slot.musicMode.name,
+        status: slot.musicMode.status
+      }
     }))
   };
 }
 
 async function loadProgramming(organisationId, role) {
-  const [locations, musicModes, schedules] = await Promise.all([
+  const now = new Date();
+  const [locations, musicModes, schedules, channels] = await Promise.all([
     prisma.location.findMany({
       where: { organisationId, status: "ACTIVE" },
       select: {
@@ -67,7 +77,15 @@ async function loadProgramming(organisationId, role) {
         timezone: true,
         zones: {
           where: { status: "ACTIVE" },
-          select: { id: true, name: true, status: true },
+          select: {
+            id: true,
+            name: true,
+            status: true,
+            channelAssignments: {
+              where: { activeFrom: { lte: now }, OR: [{ activeTo: null }, { activeTo: { gt: now } }] },
+              select: { channelId: true }
+            }
+          },
           orderBy: { name: "asc" }
         }
       },
@@ -80,7 +98,7 @@ async function loadProgramming(organisationId, role) {
         name: true,
         description: true,
         status: true,
-        _count: { select: { tracks: true } }
+        ...playbackModeInclude
       },
       orderBy: { name: "asc" }
     }),
@@ -90,16 +108,32 @@ async function loadProgramming(organisationId, role) {
         location: { select: { id: true, name: true } },
         zone: { select: { id: true, name: true, location: { select: { id: true, name: true } } } },
         slots: {
-          include: { musicMode: { select: { id: true, name: true, status: true } } },
+          include: { musicMode: { include: playbackModeInclude } },
           orderBy: [{ weekday: "asc" }, { startMinute: "asc" }]
         }
       },
       orderBy: [{ updatedAt: "desc" }, { version: "desc" }],
       take: 100
+    }),
+    prisma.channel.findMany({
+      where: { organisationId, status: "ACTIVE" },
+      include: {
+        station: { select: { id: true, name: true, status: true } },
+        zoneAssignments: {
+          where: { activeFrom: { lte: now }, OR: [{ activeTo: null }, { activeTo: { gt: now } }] },
+          include: { zone: { select: { id: true, name: true, location: { select: { name: true } } } } }
+        },
+        autoDjPolicy: {
+          include: {
+            defaultMusicMode: { include: playbackModeInclude },
+            backupMusicMode: { include: playbackModeInclude }
+          }
+        }
+      },
+      orderBy: { name: "asc" }
     })
   ]);
 
-  const now = new Date();
   const targets = locations.flatMap((location) => [
     {
       id: location.id,
@@ -107,7 +141,8 @@ async function loadProgramming(organisationId, role) {
       name: location.name,
       locationName: location.name,
       timezone: location.timezone,
-      status: location.status
+      status: location.status,
+      channelIds: [...new Set(location.zones.flatMap((zone) => zone.channelAssignments.map((assignment) => assignment.channelId)))]
     },
     ...location.zones.map((zone) => ({
       id: zone.id,
@@ -115,7 +150,8 @@ async function loadProgramming(organisationId, role) {
       name: zone.name,
       locationName: location.name,
       timezone: location.timezone,
-      status: zone.status
+      status: zone.status,
+      channelIds: [...new Set(zone.channelAssignments.map((assignment) => assignment.channelId))]
     }))
   ]);
 
@@ -129,15 +165,26 @@ async function loadProgramming(organisationId, role) {
       schedule.locationId === locationId ||
       (target.type === "ZONE" && schedule.zoneId === target.id)
     ));
-    const current = resolveMusicSchedule({ schedules: relevant, instant: now, timezone: target.timezone });
+    const channel = target.channelIds.length === 1 ? channels.find((entry) => entry.id === target.channelIds[0]) : null;
+    const current = resolveMusicSchedule({
+      schedules: relevant,
+      instant: now,
+      timezone: target.timezone,
+      autoDjPolicy: channel?.autoDjPolicy || { enabled: false, playbackPolicy: "FOLLOW_LOCATION_HOURS" },
+      musicModeAvailable: (mode) => musicModeIsPlayable(mode, now)
+    });
     return {
       ...target,
+      channelId: channel?.id || null,
+      channelName: channel?.name || null,
       current: current.musicMode ? {
         musicModeId: current.musicMode.id,
         musicModeName: current.musicMode.name,
         scheduleId: current.scheduleId,
-        reason: current.reason
-      } : null
+        reason: current.reason,
+        sourceLabel: current.sourceLabel
+      } : null,
+      programmingState: current.reason
     };
   });
 
@@ -149,9 +196,31 @@ async function loadProgramming(organisationId, role) {
       id: mode.id,
       name: mode.name,
       description: mode.description,
-      trackCount: mode._count.tracks
+      trackCount: mode.tracks.length,
+      playableTrackCount: playableLiveMusicModeEntries(mode, now).length
     })),
-    schedules: safeSchedules
+    schedules: safeSchedules,
+    channels: channels.map((channel) => ({
+      id: channel.id,
+      name: channel.name,
+      stationName: channel.station?.name || null,
+      assignments: channel.zoneAssignments.map((assignment) => `${assignment.zone.location.name} / ${assignment.zone.name}`),
+      autoDjPolicy: channel.autoDjPolicy ? {
+        id: channel.autoDjPolicy.id,
+        enabled: channel.autoDjPolicy.enabled,
+        playbackPolicy: channel.autoDjPolicy.playbackPolicy,
+        defaultMusicModeId: channel.autoDjPolicy.defaultMusicModeId,
+        backupMusicModeId: channel.autoDjPolicy.backupMusicModeId,
+        defaultMusicMode: channel.autoDjPolicy.defaultMusicMode ? {
+          id: channel.autoDjPolicy.defaultMusicMode.id,
+          name: channel.autoDjPolicy.defaultMusicMode.name
+        } : null,
+        backupMusicMode: channel.autoDjPolicy.backupMusicMode ? {
+          id: channel.autoDjPolicy.backupMusicMode.id,
+          name: channel.autoDjPolicy.backupMusicMode.name
+        } : null
+      } : null
+    }))
   };
 }
 
