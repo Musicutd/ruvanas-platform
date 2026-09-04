@@ -11,9 +11,14 @@ export default function NewMusicModeForm({ organisations, tracks }) {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const selectedCount = useMemo(() => Object.values(selected).filter(Boolean).length, [selected]);
+  const availableTracks = useMemo(() => tracks.filter((track) =>
+    track.mediaAsset.libraryType === "RUVANAS_CATALOGUE" ||
+    track.mediaAsset.organisationId === form.organisationId
+  ), [form.organisationId, tracks]);
 
   function updateField(event) {
     setForm((current) => ({ ...current, [event.target.name]: event.target.value }));
+    if (event.target.name === "organisationId") setSelected({});
   }
 
   function toggleTrack(trackId) {
@@ -47,7 +52,7 @@ export default function NewMusicModeForm({ organisations, tracks }) {
         <label style={styles.label}>Slug (optional)<input maxLength={120} name="slug" value={form.slug} onChange={updateField} placeholder="generated-from-name" style={styles.input} /></label>
         <label style={styles.label}>Description<textarea maxLength={500} name="description" value={form.description} onChange={updateField} rows={4} style={styles.input} /></label>
         <fieldset style={styles.fieldset}><legend style={styles.legend}>Approved tracks ({selectedCount} selected)</legend>
-          {tracks.length === 0 ? <p style={styles.empty}>No rights-cleared catalogue tracks are ready. You can still save this mode as a draft.</p> : tracks.map((track)=><label key={track.id} style={styles.track}><input type="checkbox" checked={Boolean(selected[track.id])} onChange={()=>toggleTrack(track.id)} /><span><strong>{track.artist} — {track.title}</strong>{track.isExplicit ? " (explicit)" : ""}</span></label>)}
+          {!form.organisationId ? <p style={styles.empty}>Choose an organisation to see its approved music and the shared Ruvanas catalogue.</p> : availableTracks.length === 0 ? <p style={styles.empty}>No rights-cleared music is ready. You can still save this mode as a draft.</p> : availableTracks.map((track)=><label key={track.id} style={styles.track}><input type="checkbox" checked={Boolean(selected[track.id])} onChange={()=>toggleTrack(track.id)} /><span><strong>{track.artist} — {track.title}</strong>{track.isExplicit ? " (explicit)" : ""}<small>{track.mediaAsset.libraryType === "ORGANISATION_MUSIC" ? " · Organisation music" : " · Ruvanas catalogue"}</small></span></label>)}
         </fieldset>
         <div style={styles.actions}><button disabled={saving} style={styles.button}>{saving ? "Creating…" : "Create draft mode"}</button><Link href="/admin/music-modes">Cancel</Link></div>
       </form>

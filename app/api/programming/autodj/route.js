@@ -59,10 +59,10 @@ export async function PUT(request) {
     }
     const modeById = new Map(modes.map((mode) => [mode.id, mode]));
     if (input.enabled && !musicModeIsPlayable(modeById.get(input.defaultMusicModeId))) {
-      return NextResponse.json({ error: "The default music mode needs at least one playable, licensed catalogue track." }, { status: 400 });
+      return NextResponse.json({ error: "The default music mode needs at least one playable, rights-approved track." }, { status: 400 });
     }
     if (input.backupMusicModeId && !musicModeIsPlayable(modeById.get(input.backupMusicModeId))) {
-      return NextResponse.json({ error: "The backup music mode needs at least one playable, licensed catalogue track." }, { status: 400 });
+      return NextResponse.json({ error: "The backup music mode needs at least one playable, rights-approved track." }, { status: 400 });
     }
 
     const saved = await prisma.$transaction(async (tx) => {

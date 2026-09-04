@@ -66,7 +66,7 @@ test("expired catalogue rights remove a track from music-mode eligibility", () =
   );
 });
 
-test("private or non-music assets cannot leak into another organisation mode", () => {
+test("promo or non-music assets cannot enter an organisation music mode", () => {
   const privateTrack = {
     status: "READY",
     mediaAsset: {
@@ -77,7 +77,7 @@ test("private or non-music assets cannot leak into another organisation mode", (
     }
   };
 
-  assert.equal(canUseTrackForOrganisation(privateTrack, "organisation-1"), true);
+  assert.equal(canUseTrackForOrganisation(privateTrack, "organisation-1"), false);
   assert.equal(canUseTrackForOrganisation(privateTrack, "organisation-2"), false);
   assert.equal(
     canUseTrackForOrganisation(
@@ -89,5 +89,28 @@ test("private or non-music assets cannot leak into another organisation mode", (
     ),
     false
   );
+});
+
+test("approved organisation music is usable only by its owner with complete shared rights", () => {
+  const approvedMusic = {
+    status: "READY",
+    rightsHolder: "Organisation 1",
+    rightsReference: "LICENCE-1",
+    rightsBasis: "DIRECT_LICENCE",
+    permittedTerritories: "Worldwide",
+    permittedUses: ["RETAIL_RADIO", "SCHOOL_RADIO", "ONLINE_RADIO"],
+    rightsConfirmedAt: new Date("2026-09-04T00:00:00.000Z"),
+    rightsReviewStatus: "APPROVED",
+    mediaAsset: {
+      status: "READY",
+      mediaType: "MUSIC",
+      libraryType: "ORGANISATION_MUSIC",
+      organisationId: "organisation-1"
+    }
+  };
+
+  assert.equal(canUseTrackForOrganisation(approvedMusic, "organisation-1"), true);
+  assert.equal(canUseTrackForOrganisation(approvedMusic, "organisation-2"), false);
+  assert.equal(canUseTrackForOrganisation({ ...approvedMusic, rightsReviewStatus: "IN_REVIEW" }, "organisation-1"), false);
 });
 

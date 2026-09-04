@@ -568,6 +568,15 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   });
   assert.equal(unauthenticatedMusicMode.status, 401);
 
+  const unauthenticatedOrganisationMusic = await api("/api/media/music");
+  assert.equal(unauthenticatedOrganisationMusic.status, 401);
+
+  const unauthenticatedMusicSubmission = await api("/api/media/music/not-a-track/submit", { method: "PATCH" });
+  assert.equal(unauthenticatedMusicSubmission.status, 401);
+
+  const unauthenticatedMusicReview = await api("/api/admin/media/music");
+  assert.equal(unauthenticatedMusicReview.status, 401);
+
   const unauthenticatedMusicSchedule = await api("/api/admin/music-schedules", {
     method: "POST",
     body: { organisationId: "not-an-organisation", targetType: "LOCATION", targetId: "not-a-location", name: "No session", slots: [] }
@@ -667,6 +676,13 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     }
   });
   assert.equal(ownerMusicModeAttempt.status, 403);
+
+  const ownerMusicRightsReviewAttempt = await api("/api/admin/media/music/not-a-track/review", {
+    method: "PATCH",
+    cookie: cookieA,
+    body: { decision: "APPROVE", notes: "Not permitted" }
+  });
+  assert.equal(ownerMusicRightsReviewAttempt.status, 403);
 
   const ownerMusicScheduleAttempt = await api("/api/admin/music-schedules", {
     method: "POST",

@@ -84,6 +84,20 @@ test("unavailable catalogue entries are removed from a manifest",()=>{
   assert.equal(manifest.state,"NO_PLAYABLE_TRACKS");
 });
 
+test("approved universally-cleared organisation music can use the existing live manifest",()=>{
+  const organisationEntry={weight:100,track:{
+    id:"organisation-track",title:"Local master",artist:"Local artist",status:"READY",
+    rightsHolder:"Organisation 1",rightsReference:"LICENCE-1",rightsBasis:"OWNED_MASTER",
+    permittedTerritories:"Worldwide",permittedUses:["RETAIL_RADIO","SCHOOL_RADIO","ONLINE_RADIO"],
+    rightsConfirmedAt:new Date("2026-09-01T00:00:00.000Z"),rightsReviewStatus:"APPROVED",
+    mediaAsset:{id:"organisation-asset",durationSeconds:180,status:"READY",mediaType:"MUSIC",libraryType:"ORGANISATION_MUSIC",organisationId:"organisation-1"}
+  }};
+  const organisationResolution={...resolution,musicMode:{...resolution.musicMode,organisationId:"organisation-1",tracks:[organisationEntry]}};
+  const manifest=buildPlayerManifest({player,resolution:organisationResolution,proofSecret,instant:new Date("2026-09-04T12:00:00.000Z")});
+  assert.equal(manifest.state,"READY");
+  assert.equal(manifest.playlist[0].trackId,"organisation-track");
+});
+
 test("tracks too short for the live crossfade are not treated as playable",()=>{
   const tooShort={...resolution,musicMode:{...resolution.musicMode,tracks:[entry("short",100,{mediaAsset:{id:"asset-short",durationSeconds:2,status:"READY",mediaType:"MUSIC",libraryType:"RUVANAS_CATALOGUE",organisationId:null}})]}};
   const manifest=buildPlayerManifest({player,resolution:tooShort,proofSecret,instant:new Date("2026-08-31T10:02:00.000Z")});
