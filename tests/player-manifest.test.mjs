@@ -84,6 +84,56 @@ test("unavailable catalogue entries are removed from a manifest",()=>{
   assert.equal(manifest.state,"NO_PLAYABLE_TRACKS");
 });
 
+test("manifest exposes bounded unified decision evidence without leaking resolver payloads",()=>{
+  const instant=new Date("2026-08-31T10:02:00.000Z");
+  const playoutDecision={
+    decisionId:"e".repeat(64),decisionKey:"e".repeat(64),sourceType:"PROGRAMME_SCHEDULE",sourceId:"programme-1",
+    sourceRevision:"programme-1:v2",reason:"SELECTED_PROGRAMME_SCHEDULE",priority:850,proofClassification:"SCHEDULED",
+    validFrom:instant,validUntil:new Date("2026-08-31T10:05:00.000Z"),nextDecisionAt:new Date("2026-08-31T10:05:00.000Z"),
+    fallbackChain:[{sourceType:"PROGRAMME_SCHEDULE",sourceId:"programme-1",label:"Breakfast",priority:850,available:true,unavailableReason:null}],
+    unavailableReasons:[],requiredInsertions:[],operatorAlert:null,selectedPayload:{privateData:"must-not-leak"}
+  };
+  const manifest=buildPlayerManifest({player,resolution:{...resolution,reason:"PROGRAMME_MUSIC_MODE"},playoutDecision,proofSecret,instant});
+  assert.equal(manifest.playoutDecision.decisionId,"e".repeat(64));
+  assert.equal(manifest.playoutDecision.validUntil,"2026-08-31T10:05:00.000Z");
+  assert.equal(manifest.playoutDecision.sourceType,"PROGRAMME_SCHEDULE");
+  assert.equal(JSON.stringify(manifest).includes("must-not-leak"),false);
+});
+
+test("a different unified source revision changes the manifest version",()=>{
+  const instant=new Date("2026-08-31T10:02:00.000Z");
+  const base={
+    decisionId:"a".repeat(64),decisionKey:"a".repeat(64),sourceType:"DEFAULT_AUTODJ",sourceId:"mode-1",sourceRevision:"v1",
+    reason:"SELECTED_DEFAULT_AUTODJ",priority:400,proofClassification:"AUTODJ",validFrom:instant,
+    validUntil:new Date("2026-08-31T10:05:00.000Z"),nextDecisionAt:new Date("2026-08-31T10:05:00.000Z"),
+    fallbackChain:[],unavailableReasons:[],requiredInsertions:[],operatorAlert:null,selectedPayload:null
+  };
+  const first=buildPlayerManifest({player,resolution,playoutDecision:base,proofSecret,instant});
+  const second=buildPlayerManifest({player,resolution,playoutDecision:{...base,decisionId:"b".repeat(64),decisionKey:"b".repeat(64),sourceRevision:"v2"},proofSecret,instant});
+  assert.notEqual(first.version,second.version);
+});
+
+test("players on one channel keep a shared manifest version when only target decision IDs differ",()=>{
+  const instant=new Date("2026-08-31T10:02:00.000Z");
+  const decision={
+    decisionId:"a".repeat(64),decisionKey:"a".repeat(64),sourceType:"DEFAULT_AUTODJ",sourceId:"mode-1",sourceRevision:"v1",
+    reason:"SELECTED_DEFAULT_AUTODJ",priority:400,proofClassification:"AUTODJ",validFrom:instant,
+    validUntil:new Date("2026-08-31T10:05:00.000Z"),nextDecisionAt:new Date("2026-08-31T10:05:00.000Z"),
+    fallbackChain:[],unavailableReasons:[],requiredInsertions:[],operatorAlert:null,selectedPayload:null
+  };
+  const first=buildPlayerManifest({player,resolution,playoutDecision:decision,proofSecret,instant});
+  const second=buildPlayerManifest({player:{...player,id:"player-2"},resolution,playoutDecision:{...decision,decisionId:"b".repeat(64),decisionKey:"b".repeat(64)},proofSecret,instant});
+  assert.equal(first.version,second.version);
+});
+
+test("timed programme sources anchor synchronized playback to their occurrence",()=>{
+  const instant=new Date("2026-08-31T10:02:00.000Z");
+  const liveAnchorAt=new Date("2026-08-31T10:00:00.000Z");
+  const manifest=buildPlayerManifest({player,resolution:{...resolution,reason:"PROGRAMME_MUSIC_MODE",liveAnchorAt},proofSecret,instant});
+  assert.equal(manifest.live.epochAt,"2026-08-31T10:00:00.000Z");
+  assert.equal(manifest.live.positionSeconds,120);
+});
+
 test("approved universally-cleared organisation music can use the existing live manifest",()=>{
   const organisationEntry={weight:100,track:{
     id:"organisation-track",title:"Local master",artist:"Local artist",status:"READY",
