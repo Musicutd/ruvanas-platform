@@ -4,6 +4,7 @@ import SkipLink from "@/app/components/SkipLink";
 import ProgrammingWorkspace from "./ProgrammingWorkspace";
 import SmartPlaylistsWorkspace from "./SmartPlaylistsWorkspace";
 import RadioClocksWorkspace from "./RadioClocksWorkspace";
+import AdvancedSchedulerWorkspace from "./AdvancedSchedulerWorkspace";
 import styles from "./programming.module.css";
 
 export const dynamic = "force-dynamic";
@@ -38,6 +39,7 @@ export default async function SubscriberProgrammingPage() {
         <div className={styles.workspace}>
           <SmartPlaylistsWorkspace />
           <RadioClocksWorkspace />
+          <AdvancedSchedulerWorkspace />
           <ProgrammingWorkspace organisationName={context.membership.organisation.name} />
         </div>
       </section>
