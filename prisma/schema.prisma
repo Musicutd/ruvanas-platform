@@ -1759,6 +1759,7 @@ model Channel {
   autoDjPolicy       AutoDjPolicy?
 
   @@unique([organisationId, slug])
+  @@unique([id, organisationId])
   @@index([organisationId])
   @@index([brandId])
   @@index([stationId])
@@ -1783,7 +1784,7 @@ model ChannelAssignment {
 model AutoDjPolicy {
   id                 String               @id @default(cuid())
   organisationId     String
-  channelId          String               @unique
+  channelId          String
   enabled            Boolean              @default(false)
   defaultMusicModeId String?
   backupMusicModeId  String?
@@ -1792,10 +1793,11 @@ model AutoDjPolicy {
   updatedAt          DateTime             @updatedAt
 
   organisation     Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  channel          Channel      @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  defaultMusicMode MusicMode?   @relation("AutoDjDefaultMusicMode", fields: [defaultMusicModeId], references: [id], onDelete: Restrict)
-  backupMusicMode  MusicMode?   @relation("AutoDjBackupMusicMode", fields: [backupMusicModeId], references: [id], onDelete: Restrict)
+  channel          Channel      @relation(fields: [channelId, organisationId], references: [id, organisationId], onDelete: Cascade)
+  defaultMusicMode MusicMode?   @relation("AutoDjDefaultMusicMode", fields: [defaultMusicModeId, organisationId], references: [id, organisationId], onDelete: Restrict)
+  backupMusicMode  MusicMode?   @relation("AutoDjBackupMusicMode", fields: [backupMusicModeId, organisationId], references: [id, organisationId], onDelete: Restrict)
 
+  @@unique([channelId, organisationId])
   @@index([organisationId, enabled])
   @@index([defaultMusicModeId])
   @@index([backupMusicModeId])
@@ -2637,6 +2639,7 @@ model MusicMode {
   backupForAutoDjPolicies  AutoDjPolicy[]   @relation("AutoDjBackupMusicMode")
 
   @@unique([organisationId, slug])
+  @@unique([id, organisationId])
   @@index([organisationId, status])
 }
 

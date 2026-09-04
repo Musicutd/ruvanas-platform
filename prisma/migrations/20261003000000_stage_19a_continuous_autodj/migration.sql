@@ -19,12 +19,14 @@ CREATE TABLE "AutoDjPolicy" (
 
 ALTER TABLE "ProofOfPlayEvent" ADD COLUMN "programmingSource" VARCHAR(32);
 
-CREATE UNIQUE INDEX "AutoDjPolicy_channelId_key" ON "AutoDjPolicy"("channelId");
+CREATE UNIQUE INDEX "AutoDjPolicy_channelId_organisationId_key" ON "AutoDjPolicy"("channelId", "organisationId");
+CREATE UNIQUE INDEX "Channel_id_organisationId_key" ON "Channel"("id", "organisationId");
+CREATE UNIQUE INDEX "MusicMode_id_organisationId_key" ON "MusicMode"("id", "organisationId");
 CREATE INDEX "AutoDjPolicy_organisationId_enabled_idx" ON "AutoDjPolicy"("organisationId", "enabled");
 CREATE INDEX "AutoDjPolicy_defaultMusicModeId_idx" ON "AutoDjPolicy"("defaultMusicModeId");
 CREATE INDEX "AutoDjPolicy_backupMusicModeId_idx" ON "AutoDjPolicy"("backupMusicModeId");
 
 ALTER TABLE "AutoDjPolicy" ADD CONSTRAINT "AutoDjPolicy_organisationId_fkey" FOREIGN KEY ("organisationId") REFERENCES "Organisation"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE "AutoDjPolicy" ADD CONSTRAINT "AutoDjPolicy_channelId_fkey" FOREIGN KEY ("channelId") REFERENCES "Channel"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE "AutoDjPolicy" ADD CONSTRAINT "AutoDjPolicy_defaultMusicModeId_fkey" FOREIGN KEY ("defaultMusicModeId") REFERENCES "MusicMode"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-ALTER TABLE "AutoDjPolicy" ADD CONSTRAINT "AutoDjPolicy_backupMusicModeId_fkey" FOREIGN KEY ("backupMusicModeId") REFERENCES "MusicMode"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "AutoDjPolicy" ADD CONSTRAINT "AutoDjPolicy_channelId_organisationId_fkey" FOREIGN KEY ("channelId", "organisationId") REFERENCES "Channel"("id", "organisationId") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "AutoDjPolicy" ADD CONSTRAINT "AutoDjPolicy_defaultMusicModeId_organisationId_fkey" FOREIGN KEY ("defaultMusicModeId", "organisationId") REFERENCES "MusicMode"("id", "organisationId") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "AutoDjPolicy" ADD CONSTRAINT "AutoDjPolicy_backupMusicModeId_organisationId_fkey" FOREIGN KEY ("backupMusicModeId", "organisationId") REFERENCES "MusicMode"("id", "organisationId") ON DELETE RESTRICT ON UPDATE CASCADE;

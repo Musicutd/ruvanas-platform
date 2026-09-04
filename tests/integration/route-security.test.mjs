@@ -1684,7 +1684,14 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
       }
     });
     assert.equal(saveAutoDj.status, 200, await saveAutoDj.clone().text());
-    const storedAutoDj = await db.autoDjPolicy.findUniqueOrThrow({ where: { channelId: autoDjChannel.id } });
+    const storedAutoDj = await db.autoDjPolicy.findUniqueOrThrow({
+      where: {
+        channelId_organisationId: {
+          channelId: autoDjChannel.id,
+          organisationId: accountABody.organisation.id
+        }
+      }
+    });
     assert.equal(storedAutoDj.organisationId, accountABody.organisation.id);
     assert.equal(storedAutoDj.enabled, true);
     assert.equal(storedAutoDj.defaultMusicModeId, musicModeBody.mode.id);
@@ -1727,6 +1734,48 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
       }
     });
     assert.equal(crossTenantAutoDj.status, 404);
+
+    const databaseGuardChannel = await db.channel.create({
+      data: {
+        organisationId: accountABody.organisation.id,
+        name: `AutoDJ database guard ${suffix}`,
+        slug: `autodj-database-guard-${suffix}`,
+        status: "ACTIVE"
+      }
+    });
+    const foreignDefaultMode = await db.musicMode.create({
+      data: {
+        organisationId: accountBBody.organisation.id,
+        name: `Foreign AutoDJ mode ${suffix}`,
+        slug: `foreign-autodj-mode-${suffix}`,
+        status: "ACTIVE"
+      }
+    });
+    await assert.rejects(
+      db.autoDjPolicy.create({
+        data: {
+          organisationId: accountABody.organisation.id,
+          channelId: databaseGuardChannel.id,
+          defaultMusicModeId: foreignDefaultMode.id
+        }
+      })
+    );
+    const foreignChannel = await db.channel.create({
+      data: {
+        organisationId: accountBBody.organisation.id,
+        name: `Foreign AutoDJ channel ${suffix}`,
+        slug: `foreign-autodj-channel-${suffix}`,
+        status: "ACTIVE"
+      }
+    });
+    await assert.rejects(
+      db.autoDjPolicy.create({
+        data: {
+          organisationId: accountABody.organisation.id,
+          channelId: foreignChannel.id
+        }
+      })
+    );
 
     const location = await db.location.create({
       data: {

@@ -66,9 +66,12 @@ export async function PUT(request) {
     }
 
     const saved = await prisma.$transaction(async (tx) => {
-      const previous = await tx.autoDjPolicy.findUnique({ where: { channelId: channel.id } });
+      const policyKey = { channelId: channel.id, organisationId };
+      const previous = await tx.autoDjPolicy.findUnique({
+        where: { channelId_organisationId: policyKey }
+      });
       const policy = await tx.autoDjPolicy.upsert({
-        where: { channelId: channel.id },
+        where: { channelId_organisationId: policyKey },
         create: { organisationId, channelId: channel.id, ...input },
         update: input
       });

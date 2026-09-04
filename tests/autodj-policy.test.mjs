@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   buildContinuousProgrammingWeek,
@@ -7,6 +8,19 @@ import {
 } from "../lib/autodj-policy.mjs";
 
 const active = (id) => ({ id, name: id, status: "ACTIVE" });
+
+test("AutoDJ policy relationships enforce the organisation boundary in schema and migration", () => {
+  const schema = readFileSync(new URL("../prisma/schema.prisma", import.meta.url), "utf8");
+  const migration = readFileSync(new URL("../prisma/migrations/20261003000000_stage_19a_continuous_autodj/migration.sql", import.meta.url), "utf8");
+
+  assert.match(schema, /fields: \[channelId, organisationId\], references: \[id, organisationId\]/);
+  assert.match(schema, /fields: \[defaultMusicModeId, organisationId\], references: \[id, organisationId\]/);
+  assert.match(schema, /fields: \[backupMusicModeId, organisationId\], references: \[id, organisationId\]/);
+  assert.match(schema, /@@unique\(\[channelId, organisationId\]\)/);
+  assert.match(migration, /FOREIGN KEY \("channelId", "organisationId"\)/);
+  assert.match(migration, /FOREIGN KEY \("defaultMusicModeId", "organisationId"\)/);
+  assert.match(migration, /FOREIGN KEY \("backupMusicModeId", "organisationId"\)/);
+});
 
 test("enabled AutoDJ requires a default and keeps backup distinct", () => {
   assert.throws(() => normalizeAutoDjPolicyInput({ enabled: true }), /default music mode/i);

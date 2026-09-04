@@ -1,8 +1,8 @@
-# Stage 19A — 24/7 AutoDJ continuous playout
+# Stage 19.1 — 24/7 AutoDJ continuous playout
 
 ## Outcome
 
-Stage 19A adds an optional, channel-owned Continuous AutoDJ policy. A published schedule remains authoritative whenever it has a valid playable programme. When no schedule applies, or a scheduled music mode becomes unavailable, the resolver can continue with a configured default music mode and then an optional backup music mode.
+Stage 19.1 (originally prepared as Stage 19A) adds an optional, channel-owned Continuous AutoDJ policy. A published schedule remains authoritative whenever it has a valid playable programme. When no schedule applies, or a scheduled music mode becomes unavailable, the resolver can continue with a configured default music mode and then an optional backup music mode.
 
 The change is additive. Existing schedules, campaigns, School Radio insertions, synchronized channel clocks, two-second transitions, listener limits and proof-of-play behaviour remain in place.
 
@@ -21,7 +21,7 @@ The weekly preview identifies scheduled periods and automatically covered gaps b
 
 ## Resolution order
 
-Stage 19A does not weaken or reorder existing higher-priority programming. Emergency, live, exact-time, School Radio and campaign insertion behaviour remains with its existing resolver and player rules. The music-bed resolver follows this order:
+Stage 19.1 does not weaken or reorder existing higher-priority programming. Emergency, live, exact-time, School Radio and campaign insertion behaviour remains with its existing resolver and player rules. The music-bed resolver follows this order:
 
 1. Valid zone schedule (`ZONE_SLOT`).
 2. Valid location schedule (`LOCATION_SLOT`).
@@ -75,6 +75,7 @@ Warning notifications are deduplicated by channel, warning code and local day. A
 - Only owners and managers can update policy settings.
 - The existing radio-service entitlement must be active.
 - Channels and music modes must belong to the same organisation.
+- Composite database relationships enforce the same-organisation boundary for the policy, channel, default mode and backup mode even if a future caller bypasses the current route validation.
 - Default and backup modes are revalidated server-side against catalogue, media, rights and licence state.
 - Proof source labels are signed; the player cannot change a scheduled event into an AutoDJ event without invalidating its proof token.
 
@@ -88,6 +89,8 @@ The additive migration introduces:
 - `AUTODJ_FAILURE` notification support
 
 It does not drop, rename or rewrite existing production data.
+
+Stage 19.1 deliberately supports approved Ruvanas-catalogue music only. Organisation-owned music expansion belongs to the shared Media Library Pro eligibility work in Stage 19.2; the interface and validation therefore do not imply that organisation promo uploads are currently eligible as AutoDJ music.
 
 ## Verification coverage
 
