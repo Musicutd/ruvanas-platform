@@ -124,5 +124,5 @@ test("Stage 19.5 keeps tenancy, versioning, active-state and compatibility bound
   assert.match(page, /AdvancedSchedulerWorkspace/);
   assert.match(component, /SEVEN-DAY COMPILED PREVIEW/);
   assert.match(rules, /MAX_PROGRAMME_HORIZON_DAYS/);
-  assert.match(roadmap, /19\.5 \| Advanced Scheduler \| IN DEVELOPMENT/);
+  assert.match(roadmap, /19\.5 \| Advanced Scheduler \| DEPLOYED \| \[#104\]/);
 });
