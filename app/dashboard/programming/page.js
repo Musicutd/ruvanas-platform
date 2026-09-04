@@ -5,6 +5,7 @@ import ProgrammingWorkspace from "./ProgrammingWorkspace";
 import SmartPlaylistsWorkspace from "./SmartPlaylistsWorkspace";
 import RadioClocksWorkspace from "./RadioClocksWorkspace";
 import AdvancedSchedulerWorkspace from "./AdvancedSchedulerWorkspace";
+import ExternalLiveWorkspace from "./ExternalLiveWorkspace";
 import styles from "./programming.module.css";
 
 export const dynamic = "force-dynamic";
@@ -37,6 +38,7 @@ export default async function SubscriberProgrammingPage() {
           </div>
         </div>
         <div className={styles.workspace}>
+          <ExternalLiveWorkspace />
           <SmartPlaylistsWorkspace />
           <RadioClocksWorkspace />
           <AdvancedSchedulerWorkspace />

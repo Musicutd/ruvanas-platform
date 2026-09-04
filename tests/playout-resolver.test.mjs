@@ -135,5 +135,5 @@ test("the player routes keep unified decisions tenant-bound, signed and document
   assert.match(manifest, /playoutDecisionEvidence/);
   assert.doesNotMatch(manifest, /selectedPayload/);
   assert.match(proofRoute, /PROGRAMME_SHOW_RUNDOWN/);
-  assert.match(roadmap, /19\.6 \| Unified Playout Engine \| IN DEVELOPMENT/);
+  assert.match(roadmap, /19\.6 \| Unified Playout Engine \| DEPLOYED/);
 });

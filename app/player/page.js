@@ -419,6 +419,11 @@ export default function PlayerPage() {
       <p style={styles.nowPlaying}>{activeInsertion.itemType === "SCHOOL_ANNOUNCEMENT" ? "Announcement playing" : "Campaign playing"}: <strong>{activeInsertion.artist} — {activeInsertion.title}</strong></p>
       <audio ref={insertionAudio} key={activePlaybackKey} src={activeInsertion.mediaUrl} controls autoPlay onPlay={startTrack} onEnded={finishTrack} onError={failTrack} style={{ width: "100%" }} />
       <p style={styles.online}>Online — secure schedule and proof of play active</p>
+    </> : manifest?.externalLive ? <>
+      <h2 style={styles.channel}>{state.channel?.name || manifest.externalLive.sourceLabel}</h2>
+      <p style={styles.nowPlaying}>Live source: <strong>{manifest.externalLive.sourceLabel}</strong></p>
+      <audio src={manifest.externalLive.mediaUrl} controls autoPlay style={{ width: "100%" }} onError={() => setMessage("The live source is temporarily unavailable. Ruvanas will return to scheduled programming on the next manifest refresh.")} />
+      <p style={styles.online}>Online — protected external live source · listener quota active</p>
     </> : manifest?.playlist?.length && manifest?.live ? <>
       <h2 style={styles.channel}>{state.channel?.name || manifest.musicMode?.name}</h2>
       <LiveChannelPlayer

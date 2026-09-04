@@ -276,6 +276,20 @@ enum StreamProbeStatus {
   SKIPPED
 }
 
+enum ExternalLiveSourceStatus {
+  DRAFT
+  READY
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+}
+
+enum ExternalLiveCredentialType {
+  NONE
+  BASIC
+  BEARER
+}
+
 enum PlayoutEventType {
   WORKER_STARTED
   WORKER_STOPPED
@@ -1232,6 +1246,8 @@ model User {
   createdProgrammeSchedules          ProgrammeSchedule[]              @relation("ProgrammeScheduleCreatedBy")
   createdProgrammeScheduleVersions   ProgrammeScheduleVersion[]       @relation("ProgrammeScheduleVersionCreatedBy")
   publishedProgrammeScheduleVersions ProgrammeScheduleVersion[]       @relation("ProgrammeScheduleVersionPublishedBy")
+  createdExternalLiveSources         ExternalLiveSource[]             @relation("ExternalLiveSourceCreatedBy")
+  activatedExternalLiveSources       ExternalLiveSource[]             @relation("ExternalLiveSourceActivatedBy")
 }
 
 model Organisation {
@@ -1349,6 +1365,7 @@ model Organisation {
   digitalSignageTakeovers          DigitalSignageTakeover[]
   complimentaryAccessCodes         ComplimentaryAccessCode[]
   autoDjPolicies                   AutoDjPolicy[]
+  externalLiveSources              ExternalLiveSource[]
 }
 
 model OrganisationMember {
@@ -1855,16 +1872,17 @@ model Channel {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
-  organisation       Organisation        @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  brand              Brand?              @relation(fields: [brandId], references: [id], onDelete: SetNull)
-  station            Station?            @relation(fields: [stationId], references: [id], onDelete: SetNull)
-  zoneAssignments    ChannelAssignment[]
-  playoutEvents      PlayoutEvent[]
-  playoutIntents     PlayoutIntent[]
-  proofOfPlayEvents  ProofOfPlayEvent[]
-  liveStudioSessions LiveStudioSession[]
-  autoDjPolicy       AutoDjPolicy?
-  programmeSchedule  ProgrammeSchedule?
+  organisation        Organisation         @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  brand               Brand?               @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  station             Station?             @relation(fields: [stationId], references: [id], onDelete: SetNull)
+  zoneAssignments     ChannelAssignment[]
+  playoutEvents       PlayoutEvent[]
+  playoutIntents      PlayoutIntent[]
+  proofOfPlayEvents   ProofOfPlayEvent[]
+  liveStudioSessions  LiveStudioSession[]
+  autoDjPolicy        AutoDjPolicy?
+  programmeSchedule   ProgrammeSchedule?
+  externalLiveSources ExternalLiveSource[]
 
   @@unique([organisationId, slug])
   @@unique([id, organisationId])
@@ -2034,6 +2052,45 @@ model StationStreamHealthIncident {
   @@index([organisationId, status, severity])
   @@index([stationId, status])
   @@index([lastObservedAt])
+}
+
+model ExternalLiveSource {
+  id                  String                     @id @default(cuid())
+  organisationId      String
+  channelId           String
+  name                String
+  providerKey         String                     @default("GENERIC_HTTP")
+  streamUrl           String
+  credentialType      ExternalLiveCredentialType @default(NONE)
+  credentialUsername  String?
+  credentialEncrypted String?
+  status              ExternalLiveSourceStatus   @default(DRAFT)
+  startsAt            DateTime?
+  endsAt              DateTime?
+  healthStatus        StreamProbeStatus?
+  lastHealthCheckedAt DateTime?
+  lastHealthyAt       DateTime?
+  consecutiveFailures Int                        @default(0)
+  lastLatencyMs       Int?
+  lastHttpStatus      Int?
+  lastContentType     String?
+  lastErrorCode       String?
+  createdByUserId     String
+  activatedByUserId   String?
+  activatedAt         DateTime?
+  suspendedAt         DateTime?
+  createdAt           DateTime                   @default(now())
+  updatedAt           DateTime                   @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  channel      Channel      @relation(fields: [channelId, organisationId], references: [id, organisationId], onDelete: Cascade)
+  createdBy    User         @relation("ExternalLiveSourceCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  activatedBy  User?        @relation("ExternalLiveSourceActivatedBy", fields: [activatedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([organisationId, channelId, name])
+  @@index([organisationId, status])
+  @@index([channelId, status, startsAt, endsAt])
+  @@index([healthStatus, lastHealthCheckedAt])
 }
 
 model PlayoutEvent {
