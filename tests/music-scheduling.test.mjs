@@ -77,3 +77,58 @@ test("closed locations and inactive modes never resolve", () => {
   });
   assert.equal(inactive.reason, "NO_MATCHING_SLOT");
 });
+
+test("scheduled programming overrides AutoDJ and gaps use the default", () => {
+  const policy = {
+    enabled: true,
+    playbackPolicy: "RUN_24_7",
+    defaultMusicMode: activeMode("default"),
+    backupMusicMode: activeMode("backup")
+  };
+  const scheduled = resolveMusicSchedule({
+    instant: new Date("2026-08-31T10:00:00.000Z"),
+    timezone: "UTC",
+    schedules: [schedule({ slots: [{ id: "slot", weekday: 1, startMinute: 540, endMinute: 720, priority: 0, musicMode: activeMode("scheduled") }] })],
+    autoDjPolicy: policy
+  });
+  assert.equal(scheduled.reason, "LOCATION_SLOT");
+  assert.equal(scheduled.musicMode.id, "scheduled");
+
+  const gap = resolveMusicSchedule({
+    instant: new Date("2026-08-31T13:00:00.000Z"),
+    timezone: "UTC",
+    schedules: [],
+    autoDjPolicy: policy
+  });
+  assert.equal(gap.reason, "DEFAULT_AUTODJ");
+  assert.equal(gap.fallbackCause, "SCHEDULE_GAP");
+  assert.equal(gap.alert, null);
+});
+
+test("24/7 policy runs while closed but opening-hours policy does not", () => {
+  const defaultMusicMode = activeMode("default");
+  const closed = resolveMusicSchedule({
+    instant: new Date("2026-08-31T23:00:00.000Z"), timezone: "UTC", locationOpen: false, schedules: [],
+    autoDjPolicy: { enabled: true, playbackPolicy: "FOLLOW_LOCATION_HOURS", defaultMusicMode }
+  });
+  assert.equal(closed.reason, "LOCATION_CLOSED");
+
+  const continuous = resolveMusicSchedule({
+    instant: new Date("2026-08-31T23:00:00.000Z"), timezone: "UTC", locationOpen: false, schedules: [],
+    autoDjPolicy: { enabled: true, playbackPolicy: "RUN_24_7", defaultMusicMode }
+  });
+  assert.equal(continuous.reason, "DEFAULT_AUTODJ");
+});
+
+test("an unavailable scheduled mode fails over and raises a warning", () => {
+  const result = resolveMusicSchedule({
+    instant: new Date("2026-08-31T10:00:00.000Z"),
+    timezone: "UTC",
+    schedules: [schedule({ slots: [{ id: "slot", weekday: 1, startMinute: 0, endMinute: 1439, priority: 0, musicMode: activeMode("broken") }] })],
+    autoDjPolicy: { enabled: true, playbackPolicy: "RUN_24_7", defaultMusicMode: activeMode("default") },
+    musicModeAvailable: (mode) => mode.id !== "broken"
+  });
+  assert.equal(result.reason, "DEFAULT_AUTODJ");
+  assert.equal(result.fallbackCause, "SCHEDULED_MODE_UNAVAILABLE");
+  assert.equal(result.alert.code, "SCHEDULED_MODE_UNAVAILABLE");
+});

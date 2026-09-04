@@ -282,8 +282,10 @@ export default function PlayerPage() {
           eventId: crypto.randomUUID(),
           manifestVersion: manifest.version,
           proofToken: current.proofToken,
+          programmingSourceProofToken: current.programmingSourceProofToken,
           scheduleItemId: current.scheduleItemId,
           itemType: current.itemType,
+          programmingSource: current.programmingSource,
           trackId: current.trackId,
           eventType: "INTERRUPTED",
           occurredAt: new Date().toISOString(),
@@ -322,8 +324,10 @@ export default function PlayerPage() {
       eventId: crypto.randomUUID(),
       manifestVersion: manifest.version,
       proofToken: item.proofToken,
+      programmingSourceProofToken: item.programmingSourceProofToken,
       scheduleItemId: item.scheduleItemId,
       itemType: item.itemType,
+      programmingSource: item.programmingSource,
       ...(item.itemType === "MUSIC" ? { trackId: item.trackId } : {}),
       eventType,
       occurredAt: new Date().toISOString(),
@@ -428,7 +432,7 @@ export default function PlayerPage() {
       <h2 style={styles.channel}>{state.channel.name}</h2>
       <audio src={state.channel.streamUrl} controls autoPlay style={{ width: "100%" }} />
       <p style={styles.online}>Online — live channel fallback</p>
-    </> : <div style={styles.waiting}>{manifest?.state === "LOCATION_CLOSED" ? "This location is currently closed. Playback will resume during opening hours." : "No playable schedule or channel is assigned to this zone yet. This player will update automatically."}</div>}
+    </> : <div style={manifest?.programmingAlert?.severity === "CRITICAL" ? styles.critical : styles.waiting}>{manifest?.state === "LOCATION_CLOSED" ? "This location is currently closed. Playback will resume during opening hours." : manifest?.programmingAlert?.message || "No playable schedule or channel is assigned to this zone yet. This player will update automatically."}</div>}
     {message ? <p style={styles.error}>{message}</p> : null}
   </section></main>;
 }
@@ -446,5 +450,6 @@ const styles = {
   nowPlaying: { color: "#e2e8f0", lineHeight: 1.5 },
   online: { display: "inline-block", color: "#86efac", fontWeight: 800 },
   waiting: { marginTop: 28, padding: 18, borderRadius: 10, background: "#1e293b", color: "#cbd5e1", lineHeight: 1.6 },
+  critical: { marginTop: 28, padding: 18, borderRadius: 10, border: "1px solid #ef4444", background: "#3b171b", color: "#fecaca", lineHeight: 1.6, fontWeight: 800 },
   error: { color: "#fca5a5", fontWeight: 800 }
 };

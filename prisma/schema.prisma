@@ -112,6 +112,7 @@ enum RecoveryEvidenceResult {
 enum NotificationType {
   PLAYER_OFFLINE
   STREAM_ERROR
+  AUTODJ_FAILURE
   CAMPAIGN_FAILURE
   PRODUCTION_ORDER_UPDATE
   BILLING_STATE
@@ -548,6 +549,11 @@ enum MusicScheduleStatus {
   DRAFT
   PUBLISHED
   ARCHIVED
+}
+
+enum AutoDjPlaybackPolicy {
+  FOLLOW_LOCATION_HOURS
+  RUN_24_7
 }
 
 enum ProofOfPlayEventType {
@@ -1235,6 +1241,7 @@ model Organisation {
   digitalSignageDeliveryProofs     DigitalSignageDeliveryProof[]
   digitalSignageTakeovers          DigitalSignageTakeover[]
   complimentaryAccessCodes         ComplimentaryAccessCode[]
+  autoDjPolicies                   AutoDjPolicy[]
 }
 
 model OrganisationMember {
@@ -1749,8 +1756,10 @@ model Channel {
   playoutIntents     PlayoutIntent[]
   proofOfPlayEvents  ProofOfPlayEvent[]
   liveStudioSessions LiveStudioSession[]
+  autoDjPolicy       AutoDjPolicy?
 
   @@unique([organisationId, slug])
+  @@unique([id, organisationId])
   @@index([organisationId])
   @@index([brandId])
   @@index([stationId])
@@ -1770,6 +1779,28 @@ model ChannelAssignment {
 
   @@unique([channelId, zoneId])
   @@index([zoneId])
+}
+
+model AutoDjPolicy {
+  id                 String               @id @default(cuid())
+  organisationId     String
+  channelId          String
+  enabled            Boolean              @default(false)
+  defaultMusicModeId String?
+  backupMusicModeId  String?
+  playbackPolicy     AutoDjPlaybackPolicy @default(FOLLOW_LOCATION_HOURS)
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  organisation     Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  channel          Channel      @relation(fields: [channelId, organisationId], references: [id, organisationId], onDelete: Cascade)
+  defaultMusicMode MusicMode?   @relation("AutoDjDefaultMusicMode", fields: [defaultMusicModeId, organisationId], references: [id, organisationId], onDelete: Restrict)
+  backupMusicMode  MusicMode?   @relation("AutoDjBackupMusicMode", fields: [backupMusicModeId, organisationId], references: [id, organisationId], onDelete: Restrict)
+
+  @@unique([channelId, organisationId])
+  @@index([organisationId, enabled])
+  @@index([defaultMusicModeId])
+  @@index([backupMusicModeId])
 }
 
 model Station {
@@ -2601,11 +2632,14 @@ model MusicMode {
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
 
-  organisation  Organisation     @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  tracks        MusicModeTrack[]
-  scheduleSlots ScheduleSlot[]
+  organisation             Organisation     @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  tracks                   MusicModeTrack[]
+  scheduleSlots            ScheduleSlot[]
+  defaultForAutoDjPolicies AutoDjPolicy[]   @relation("AutoDjDefaultMusicMode")
+  backupForAutoDjPolicies  AutoDjPolicy[]   @relation("AutoDjBackupMusicMode")
 
   @@unique([organisationId, slug])
+  @@unique([id, organisationId])
   @@index([organisationId, status])
 }
 
@@ -4714,6 +4748,7 @@ model ProofOfPlayEvent {
   channelId             String?
   mediaAssetId          String
   manifestVersion       String
+  programmingSource     String?              @db.VarChar(32)
   eventType             ProofOfPlayEventType
   occurredAt            DateTime
   receivedAt            DateTime             @default(now())

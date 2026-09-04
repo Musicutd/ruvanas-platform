@@ -51,8 +51,9 @@ test("subscriber navigation exposes programming only when radio service is enabl
 });
 
 test("subscriber programming API is tenant-derived, role-controlled and catalogue-safe", async () => {
-  const [route, page] = await Promise.all([
+  const [route, autoDjRoute, page] = await Promise.all([
     readFile(new URL("../app/api/programming/route.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/programming/autodj/route.js", import.meta.url), "utf8"),
     readFile(new URL("../app/dashboard/programming/page.js", import.meta.url), "utf8")
   ]);
   assert.match(route, /organisationId = context\.membership\.organisationId/);
@@ -60,6 +61,10 @@ test("subscriber programming API is tenant-derived, role-controlled and catalogu
   assert.match(route, /status: "ACTIVE"/);
   assert.match(route, /requirePublishPreview\(data\)/);
   assert.doesNotMatch(route, /data\.organisationId/);
+  assert.match(autoDjRoute, /organisationId = context\.membership\.organisationId/);
+  assert.match(autoDjRoute, /canManageSubscriberProgramming\(context\.membership\.role\)/);
+  assert.match(autoDjRoute, /musicModeIsPlayable/);
+  assert.doesNotMatch(autoDjRoute, /parsed\.data\.organisationId/);
   assert.match(page, /Catalogue protected/);
 });
 

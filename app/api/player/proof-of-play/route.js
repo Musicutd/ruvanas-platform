@@ -17,8 +17,10 @@ const eventSchema = z.object({
   eventId: z.string().uuid(),
   manifestVersion: z.string().regex(/^[0-9a-f]{24}$/),
   proofToken: z.string().regex(/^[0-9a-f]{64}$/),
+  programmingSourceProofToken: z.string().regex(/^[0-9a-f]{64}$/).optional().nullable(),
   scheduleItemId: z.string().regex(/^[0-9a-f]{64}$/),
   itemType: z.enum(["MUSIC", "PROMO", "SCHOOL_ANNOUNCEMENT"]),
+  programmingSource: z.enum(["ZONE_SLOT", "LOCATION_SLOT", "DEFAULT_AUTODJ", "BACKUP_AUTODJ", "CAMPAIGN", "SCHOOL_PROGRAMMING"]).optional().nullable(),
   trackId: z.string().cuid().optional().nullable(),
   eventType: z.enum(["STARTED", "COMPLETED", "FAILED", "INTERRUPTED"]),
   occurredAt: z.string().datetime({ offset: true }),
@@ -30,6 +32,9 @@ const eventSchema = z.object({
   }
   if (event.itemType !== "MUSIC" && event.trackId) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: "Insertion events cannot claim a catalogue track.", path: ["trackId"] });
+  }
+  if (event.programmingSource && !event.programmingSourceProofToken) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "Programming source evidence needs its signed token.", path: ["programmingSourceProofToken"] });
   }
 });
 
@@ -97,13 +102,20 @@ export async function POST(request) {
         scheduleItemId: event.scheduleItemId,
         contentId
       }, event.proofToken, process.env.SESSION_SECRET);
+      const signedProgrammingSource = !event.programmingSource || verifyPlaybackProofToken({
+        playerId: player.id,
+        manifestVersion: event.manifestVersion,
+        scheduleItemId: event.scheduleItemId,
+        contentId,
+        programmingSource: event.programmingSource
+      }, event.programmingSourceProofToken, process.env.SESSION_SECRET);
       const validPromoTime = !intent || (
         occurredAt.getTime() >= intent.plannedStart.getTime() - MAX_PROMO_START_EARLY_MS &&
         occurredAt.getTime() <= intent.plannedStart.getTime() + MAX_PROMO_COMPLETION_LATE_MS
       );
       const validChannel = !intent?.channelId || intent.channelId === channelId;
 
-      if (!contentId || !signedForPlayer || !validIntentType || !validPromoTime || !validChannel || age > MAX_EVENT_AGE_MS || age < -MAX_CLOCK_SKEW_MS) {
+      if (!contentId || !signedForPlayer || !signedProgrammingSource || !validIntentType || !validPromoTime || !validChannel || age > MAX_EVENT_AGE_MS || age < -MAX_CLOCK_SKEW_MS) {
         return NextResponse.json({ error: "One or more playback events could not be verified." }, { status: 400 });
       }
     }
@@ -128,6 +140,7 @@ export async function POST(request) {
             playoutIntentId: intent?.id || null,
             mediaAssetId: track?.mediaAssetId || intent?.mediaAssetId,
             manifestVersion: event.manifestVersion,
+            programmingSource: event.programmingSource || null,
             eventType: event.eventType,
             occurredAt: new Date(event.occurredAt),
             positionSeconds: event.positionSeconds ?? null,

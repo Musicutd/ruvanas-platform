@@ -38,6 +38,17 @@ test("players on the same channel receive one shared live rotation and refresh p
   assert.notEqual(first.live.current.offsetSeconds,second.live.current.offsetSeconds);
 });
 
+test("AutoDJ manifests preserve live rotation and expose a safe programming source",()=>{
+  const autodj={...resolution,reason:"DEFAULT_AUTODJ",scheduleId:null,scheduleVersion:null,slotId:null,sourceLabel:"Continuous AutoDJ",fallbackCause:"SCHEDULE_GAP"};
+  const manifest=buildPlayerManifest({player,resolution:autodj,proofSecret,instant:new Date("2026-08-31T10:02:00.000Z")});
+  assert.equal(manifest.programmingSource,"DEFAULT_AUTODJ");
+  assert.equal(manifest.schedule.source,"DEFAULT_AUTODJ");
+  assert.equal(manifest.schedule.fallbackCause,"SCHEDULE_GAP");
+  assert.ok(manifest.playlist.every((item)=>item.programmingSource === "DEFAULT_AUTODJ"));
+  assert.ok(manifest.playlist.every((item)=>/^[0-9a-f]{64}$/.test(item.programmingSourceProofToken)));
+  assert.ok(manifest.live.cycleDurationSeconds > 0);
+});
+
 test("manifest includes signed campaign insertions without exposing storage details",()=>{
   const campaignPlayout={insertions:[{
     scheduleItemId:"c".repeat(64),campaignId:"campaign-1",campaignName:"Lunch offer",promoVersionId:"promo-version-1",
@@ -69,6 +80,13 @@ test("manifest includes signed private school announcement insertions",()=>{
 test("unavailable catalogue entries are removed from a manifest",()=>{
   const unsafe={...resolution,musicMode:{...resolution.musicMode,tracks:[entry("draft",100,{status:"DRAFT"}),entry("expired",100,{licenceExpiresAt:new Date("2026-08-30T00:00:00.000Z")}),entry("private",100,{mediaAsset:{id:"asset-private",status:"READY",mediaType:"MUSIC",libraryType:"ORGANISATION_PROMO",organisationId:"org-1"}})]}};
   const manifest=buildPlayerManifest({player,resolution:unsafe,proofSecret,instant:new Date("2026-08-31T10:02:00.000Z")});
+  assert.equal(manifest.playlist.length,0);
+  assert.equal(manifest.state,"NO_PLAYABLE_TRACKS");
+});
+
+test("tracks too short for the live crossfade are not treated as playable",()=>{
+  const tooShort={...resolution,musicMode:{...resolution.musicMode,tracks:[entry("short",100,{mediaAsset:{id:"asset-short",durationSeconds:2,status:"READY",mediaType:"MUSIC",libraryType:"RUVANAS_CATALOGUE",organisationId:null}})]}};
+  const manifest=buildPlayerManifest({player,resolution:tooShort,proofSecret,instant:new Date("2026-08-31T10:02:00.000Z")});
   assert.equal(manifest.playlist.length,0);
   assert.equal(manifest.state,"NO_PLAYABLE_TRACKS");
 });

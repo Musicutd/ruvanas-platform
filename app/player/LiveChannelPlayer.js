@@ -215,7 +215,7 @@ export default function LiveChannelPlayer({ manifest, onPlaybackEvent, onActiveI
     <p style={styles.nowPlaying}>Now playing: <strong>{current.artist} — {current.title}</strong></p>
     <div style={styles.statusRow}>
       <span style={styles.liveBadge}>LIVE</span>
-      <span>Shared channel clock · {manifest.live.crossfadeSeconds}-second mix</span>
+      <span>Shared channel clock · {manifest.live.crossfadeSeconds}-second mix · {manifest.schedule?.sourceLabel || "Radio programming"}</span>
     </div>
     <button type="button" style={styles.button} onClick={() => {
       if (playing) {

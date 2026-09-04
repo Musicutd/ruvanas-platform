@@ -134,6 +134,12 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   const unauthenticatedManifest = await api("/api/player/manifest");
   assert.equal(unauthenticatedManifest.status, 401);
 
+  const unauthenticatedAutoDjUpdate = await api("/api/programming/autodj", {
+    method: "PUT",
+    body: { channelId: "not-a-channel", enabled: false, playbackPolicy: "FOLLOW_LOCATION_HOURS" }
+  });
+  assert.equal(unauthenticatedAutoDjUpdate.status, 401);
+
   const unauthenticatedPlayerMedia = await api("/api/player/media/not-an-asset");
   assert.equal(unauthenticatedPlayerMedia.status, 401);
 
@@ -1657,6 +1663,119 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
       method: "PATCH", cookie: cookieA, body: { status: "ACTIVE" }
     });
     assert.equal(activateMode.status, 200, await activateMode.clone().text());
+
+    const autoDjChannel = await db.channel.create({
+      data: {
+        organisationId: accountABody.organisation.id,
+        name: `Continuous AutoDJ ${suffix}`,
+        slug: `continuous-autodj-${suffix}`,
+        status: "ACTIVE"
+      }
+    });
+    const saveAutoDj = await api("/api/programming/autodj", {
+      method: "PUT",
+      cookie: cookieA,
+      body: {
+        channelId: autoDjChannel.id,
+        enabled: true,
+        defaultMusicModeId: musicModeBody.mode.id,
+        backupMusicModeId: null,
+        playbackPolicy: "RUN_24_7"
+      }
+    });
+    assert.equal(saveAutoDj.status, 200, await saveAutoDj.clone().text());
+    const storedAutoDj = await db.autoDjPolicy.findUniqueOrThrow({
+      where: {
+        channelId_organisationId: {
+          channelId: autoDjChannel.id,
+          organisationId: accountABody.organisation.id
+        }
+      }
+    });
+    assert.equal(storedAutoDj.organisationId, accountABody.organisation.id);
+    assert.equal(storedAutoDj.enabled, true);
+    assert.equal(storedAutoDj.defaultMusicModeId, musicModeBody.mode.id);
+    assert.equal(storedAutoDj.playbackPolicy, "RUN_24_7");
+    assert.equal(await db.auditLog.count({ where: { action: "CONTINUOUS_AUTODJ_POLICY_UPDATED", entityId: storedAutoDj.id } }), 1);
+    assert.equal(await db.auditLog.count({ where: { action: "CONTINUOUS_AUTODJ_ENABLED", entityId: storedAutoDj.id } }), 1);
+    assert.equal(await db.auditLog.count({ where: { action: "AUTODJ_DEFAULT_MODE_CHANGED", entityId: storedAutoDj.id } }), 1);
+    assert.equal(await db.auditLog.count({ where: { action: "AUTODJ_PLAYBACK_POLICY_CHANGED", entityId: storedAutoDj.id } }), 1);
+
+    const archivedMode = await db.musicMode.create({
+      data: {
+        organisationId: accountABody.organisation.id,
+        name: `Archived AutoDJ ${suffix}`,
+        slug: `archived-autodj-${suffix}`,
+        status: "ARCHIVED"
+      }
+    });
+    const archivedDefaultAttempt = await api("/api/programming/autodj", {
+      method: "PUT",
+      cookie: cookieA,
+      body: {
+        channelId: autoDjChannel.id,
+        enabled: true,
+        defaultMusicModeId: archivedMode.id,
+        backupMusicModeId: null,
+        playbackPolicy: "RUN_24_7"
+      }
+    });
+    assert.equal(archivedDefaultAttempt.status, 400);
+
+    const crossTenantAutoDj = await api("/api/programming/autodj", {
+      method: "PUT",
+      cookie: cookieB,
+      body: {
+        channelId: autoDjChannel.id,
+        enabled: false,
+        defaultMusicModeId: null,
+        backupMusicModeId: null,
+        playbackPolicy: "FOLLOW_LOCATION_HOURS"
+      }
+    });
+    assert.equal(crossTenantAutoDj.status, 404);
+
+    const databaseGuardChannel = await db.channel.create({
+      data: {
+        organisationId: accountABody.organisation.id,
+        name: `AutoDJ database guard ${suffix}`,
+        slug: `autodj-database-guard-${suffix}`,
+        status: "ACTIVE"
+      }
+    });
+    const foreignDefaultMode = await db.musicMode.create({
+      data: {
+        organisationId: accountBBody.organisation.id,
+        name: `Foreign AutoDJ mode ${suffix}`,
+        slug: `foreign-autodj-mode-${suffix}`,
+        status: "ACTIVE"
+      }
+    });
+    await assert.rejects(
+      db.autoDjPolicy.create({
+        data: {
+          organisationId: accountABody.organisation.id,
+          channelId: databaseGuardChannel.id,
+          defaultMusicModeId: foreignDefaultMode.id
+        }
+      })
+    );
+    const foreignChannel = await db.channel.create({
+      data: {
+        organisationId: accountBBody.organisation.id,
+        name: `Foreign AutoDJ channel ${suffix}`,
+        slug: `foreign-autodj-channel-${suffix}`,
+        status: "ACTIVE"
+      }
+    });
+    await assert.rejects(
+      db.autoDjPolicy.create({
+        data: {
+          organisationId: accountABody.organisation.id,
+          channelId: foreignChannel.id
+        }
+      })
+    );
 
     const location = await db.location.create({
       data: {

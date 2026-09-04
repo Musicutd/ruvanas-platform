@@ -2,7 +2,7 @@
 
 ## Baseline
 
-- Architecture baseline: `origin/main` at `08ac638`
+- Architecture baseline: `origin/main` at `49ff8cd`
 - Architecture gate: Stage 19.0
 - Detailed audit: [`stage-19-0-online-radio-architecture-audit.md`](./stage-19-0-online-radio-architecture-audit.md)
 - Status values: `NOT STARTED`, `IN DESIGN`, `IN DEVELOPMENT`, `PR OPEN`, `MERGED`, `DEPLOYED`, `BLOCKED`
@@ -13,8 +13,8 @@
 
 | Stage | Scope | Status | PR | Main commit | Paid deployment | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| 19.0 | Online Radio architecture and reuse audit | PR OPEN | [#100](https://github.com/Musicutd/ruvanas-platform/pull/100) | — | — | Documentation-only safety gate. |
-| 19.1 | 24/7 AutoDJ | PR OPEN | [#99](https://github.com/Musicutd/ruvanas-platform/pull/99) | — | — | Candidate commit `8ee8647`; must be reconciled with the 19.0 audit before merge. |
+| 19.0 | Online Radio architecture and reuse audit | MERGED | [#100](https://github.com/Musicutd/ruvanas-platform/pull/100) | `49ff8cd` | Not required | Documentation-only safety gate accepted. |
+| 19.1 | 24/7 AutoDJ | IN DEVELOPMENT | [#99](https://github.com/Musicutd/ruvanas-platform/pull/99) | — | — | Rebased after 19.0; tenant-safe database relationships, catalogue-only scope, migration and regression gates are validated locally. Awaiting publication of the reconciled branch. |
 | 19.2 | Media Library Pro + rights metadata foundation | NOT STARTED | — | — | — | Generalise media eligibility before advanced programming. |
 | 19.3 | Smart Playlists | NOT STARTED | — | — | — | Saved, explainable rules feeding rotations. |
 | 19.4 | Radio Clocks | NOT STARTED | — | — | — | Reuse schedule and Show Builder primitives. |
