@@ -6,27 +6,28 @@ import { PrismaClient } from "@prisma/client";
 const baseUrl = process.env.INTEGRATION_BASE_URL || "http://127.0.0.1:3100";
 const db = new PrismaClient();
 
-async function api(path, { method = "GET", body, cookie } = {}) {
+async function api(path, { method = "GET", body, cookie, clientAddress } = {}) {
   const headers = { origin: baseUrl };
   if (cookie) headers.cookie = cookie;
+  if (clientAddress) headers["x-forwarded-for"] = clientAddress;
   if (body !== undefined) headers["content-type"] = "application/json";
   return fetch(`${baseUrl}${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), redirect: "manual" });
 }
 
 function sessionCookie(response) { return response.headers.get("set-cookie")?.split(";")[0] || ""; }
 
-async function register(label) {
+async function register(label, clientAddress) {
   const suffix = randomUUID();
   const email = `advanced-scheduler-${label}-${suffix}@example.invalid`;
-  const response = await api("/api/auth/register", { method: "POST", body: { name: `${label} Scheduler Owner`, organisationName: `${label} Scheduler ${suffix}`, email, password: "correct-horse-battery-staple" } });
+  const response = await api("/api/auth/register", { method: "POST", clientAddress, body: { name: `${label} Scheduler Owner`, organisationName: `${label} Scheduler ${suffix}`, email, password: "correct-horse-battery-staple" } });
   assert.equal(response.status, 201, await response.clone().text());
   const body = await response.json();
   return { cookie: sessionCookie(response), organisationId: body.organisation.id, userId: body.user.id };
 }
 
 test("Advanced Scheduler versions, publication and tenancy remain controlled", async () => {
-  const owner = await register("Primary");
-  const outsider = await register("Outside");
+  const owner = await register("Primary", "192.0.2.201");
+  const outsider = await register("Outside", "192.0.2.202");
   assert.equal((await api("/api/programming/advanced-scheduler")).status, 401);
 
   const channel = await db.channel.create({ data: { organisationId: owner.organisationId, name: "Main Online Radio", slug: `main-${randomUUID()}`, status: "ACTIVE" } });
