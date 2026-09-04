@@ -84,6 +84,19 @@ test("unavailable catalogue entries are removed from a manifest",()=>{
   assert.equal(manifest.state,"NO_PLAYABLE_TRACKS");
 });
 
+test("external live manifests expose only the protected same-origin relay",()=>{
+  const liveResolution={reason:"EXTERNAL_LIVE",musicMode:null,sourceLabel:"Remote studio",liveSource:{id:"live-source-1",providerKey:"ICECAST"}};
+  const manifest=buildPlayerManifest({player,resolution:liveResolution,listenerToken:"listener-token",proofSecret,instant:new Date("2026-08-31T10:02:00.000Z")});
+  assert.equal(manifest.state,"READY");
+  assert.equal(manifest.programmingSource,"EXTERNAL_LIVE");
+  assert.equal(manifest.externalLive.sourceId,"live-source-1");
+  assert.equal(manifest.externalLive.providerKey,"ICECAST");
+  assert.equal(manifest.externalLive.mediaUrl,"/api/player/live/live-source-1?listener=listener-token");
+  assert.equal(manifest.live,null);
+  assert.deepEqual(manifest.playlist,[]);
+  assert.equal(JSON.stringify(manifest).includes("streamUrl"),false);
+});
+
 test("manifest exposes bounded unified decision evidence without leaking resolver payloads",()=>{
   const instant=new Date("2026-08-31T10:02:00.000Z");
   const playoutDecision={

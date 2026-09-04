@@ -19,8 +19,8 @@
 | 19.3 | Smart Playlists | DEPLOYED | [#102](https://github.com/Musicutd/ruvanas-platform/pull/102) | `4ca7812` | Paid auto-deploy | Saved, explainable rules materialise into the existing Music Mode rotation pipeline; paid service verified. |
 | 19.4 | Radio Clocks | DEPLOYED | [#103](https://github.com/Musicutd/ruvanas-platform/pull/103) | `98c656b` | Paid auto-deploy | Reusable exact-hour templates reuse schedule, rights and Show Builder primitives; paid service verified. |
 | 19.5 | Advanced Scheduler | DEPLOYED | [#104](https://github.com/Musicutd/ruvanas-platform/pull/104) | `962d38c` | `dep-dadfi04s728c73a96evg` | Versioned channel schedules, typed sources, timezone compilation and conflict governance are live on the paid service. |
-| 19.6 | Unified Playout Engine | IN DEVELOPMENT | — | — | — | Local implementation: deterministic priority resolution, shared insertions, signed source evidence and explicit fallback alerts. |
-| 19.7 | External Live | NOT STARTED | — | — | — | Provider-neutral live input foundation. |
+| 19.6 | Unified Playout Engine | DEPLOYED | [#105](https://github.com/Musicutd/ruvanas-platform/pull/105) | `6d0e674` | `dep-dadgqqvavr4c73at5v5g` | One deterministic priority decision, shared insertions, signed source evidence and explicit fallback alerts are live on the paid service. |
+| 19.7 | External Live | IN DEVELOPMENT | — | — | — | Local provider-neutral live input, encrypted credentials, protected relay, health gating and controlled activation. |
 | 19.8 | DJ Access | NOT STARTED | — | — | — | Scoped, time-bounded presenter grants. |
 | 19.9 | Live Failover | NOT STARTED | — | — | — | Health-driven source switching and evidence. |
 | 19.10 | Browser Live Studio | NOT STARTED | — | — | — | Requires external real-time media infrastructure. |

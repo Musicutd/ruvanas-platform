@@ -6,6 +6,7 @@ import { PLAYER_HEALTH_SCAN_SECONDS } from "../lib/player-health.mjs";
 import { scanPlayerHealth } from "../lib/player-health-service.js";
 import { expirePlayerCommands } from "../lib/player-command-service.js";
 import { scanStationStreamHealth } from "../lib/stream-source-health-service.js";
+import { scanExternalLiveHealth } from "../lib/external-live-service.js";
 import { deploymentIdentity, safeOperationalErrorCode, structuredServiceLog } from "../lib/operational-observability.mjs";
 import { recordServiceHeartbeat } from "../lib/operational-observability-service.js";
 
@@ -31,6 +32,8 @@ while (!stopping) {
     if (commands.expired > 0) writeLog("info", "player_commands_expired", commands);
     const streams = await scanStationStreamHealth(prisma);
     if (streams.scanned > 0) writeLog(streams.failing > 0 ? "warn" : "info", "station_stream_health_scanned", streams);
+    const externalLive = await scanExternalLiveHealth(prisma);
+    if (externalLive.scanned > 0) writeLog(externalLive.failing > 0 ? "warn" : "info", "external_live_health_scanned", externalLive);
   } catch (error) {
     writeLog("error", "operations_scan_failed", { errorCode: safeOperationalErrorCode(error, "OPERATIONS_SCAN_FAILED") });
   }
