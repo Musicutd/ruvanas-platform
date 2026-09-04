@@ -8,17 +8,101 @@ import DigitalSignageEntitlementControl from "./DigitalSignageEntitlementControl
 import PageHeader from "@/app/components/PageHeader";
 import EmptyState from "@/app/components/EmptyState";
 import { interfaceMessages } from "@/lib/interface-guidance.mjs";
+import { resolveEntitlements } from "@/lib/entitlements.mjs";
+import {
+  buildOnlineRadioProductOnboarding,
+  buildRetailProductOnboarding,
+  buildSchoolProductOnboarding
+} from "@/lib/product-onboarding.mjs";
+
+function ProductReadinessSummary({ organisation }) {
+  const entitlements = resolveEntitlements(organisation.subscription);
+  const firstStation = organisation.stations.find((station) => station.status === "ACTIVE") || organisation.stations[0] || null;
+  const common = {
+    serviceEnabled: entitlements.serviceEnabled,
+    membershipRole: "OWNER",
+    activePlayerStreams: organisation.playerListenerLeases.length
+  };
+  const products = [
+    {
+      label: "Retail",
+      enabled: entitlements.serviceEnabled,
+      readiness: buildRetailProductOnboarding({
+        ...common,
+        activeLocationCount: organisation.locations.length,
+        activeMusicModeCount: organisation.musicModes.length,
+        publishedScheduleCount: organisation.musicSchedules.length,
+        configuredPlayerCount: organisation.players.length
+      })
+    },
+    {
+      label: "School",
+      enabled: entitlements.schoolRadioEnabled,
+      readiness: buildSchoolProductOnboarding({
+        ...common,
+        serviceEnabled: entitlements.schoolRadioEnabled,
+        schoolProfileReady: Boolean(organisation.schoolProfile),
+        activeSupervisorCount: organisation.staffSupervisors.length,
+        safeguardingStatus: organisation.schoolSafeguardingReadiness?.status || null,
+        activeProgrammeCount: organisation.schoolProgrammes.length,
+        approvedEpisodeCount: organisation.schoolEpisodes.length
+      })
+    },
+    {
+      label: "Online",
+      enabled: entitlements.serviceEnabled,
+      readiness: buildOnlineRadioProductOnboarding({
+        ...common,
+        firstStationId: firstStation?.id || null,
+        stationActive: firstStation?.status === "ACTIVE",
+        streamConfigured: Boolean(firstStation?.streamConfig?.streamUrl),
+        activeMusicModeCount: organisation.musicModes.length,
+        publishedScheduleCount: organisation.musicSchedules.length
+      })
+    }
+  ];
+
+  return (
+    <div style={styles.readinessList} aria-label={`${organisation.name} product readiness`}>
+      {products.map((product) => (
+        <div key={product.label} style={styles.readinessRow}>
+          <span style={styles.readinessLabel}>{product.label}</span>
+          {product.enabled ? (
+            <>
+              <progress style={styles.readinessProgress} value={product.readiness.completedCount} max={product.readiness.totalCount} aria-label={`${product.label} ${product.readiness.percent}% ready`} />
+              <strong style={product.readiness.complete ? styles.ready : styles.inProgress}>{product.readiness.percent}%</strong>
+              <span style={styles.readinessNext}>{product.readiness.complete ? "Ready for operation" : `Next: ${product.readiness.nextAction.title}`}</span>
+            </>
+          ) : <span style={styles.notIncluded}>Not included</span>}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default async function AdminOrganisationsPage() {
   const adminUser = await getAdminUser();
   const canManageEntitlements = adminUser?.role === "SUPER_ADMIN";
+  const now = new Date();
   const organisations = await prisma.organisation.findMany({
     include: {
       subscription: {
         include: {
-          plan: true
+          plan: true,
+          billingContract: true
         }
       },
+      stations: { select: { id: true, status: true, streamConfig: { select: { streamUrl: true } } }, orderBy: { createdAt: "asc" } },
+      locations: { where: { status: "ACTIVE" }, select: { id: true } },
+      players: { where: { status: { not: "DISABLED" } }, select: { id: true } },
+      musicModes: { where: { status: "ACTIVE" }, select: { id: true } },
+      musicSchedules: { where: { status: "PUBLISHED" }, select: { id: true } },
+      playerListenerLeases: { where: { revokedAt: null, expiresAt: { gt: now } }, select: { id: true } },
+      schoolProfile: { select: { id: true } },
+      schoolSafeguardingReadiness: { select: { status: true } },
+      staffSupervisors: { where: { active: true }, select: { id: true } },
+      schoolProgrammes: { where: { status: "ACTIVE" }, select: { id: true } },
+      schoolEpisodes: { where: { status: "APPROVED" }, select: { id: true } },
       _count: {
         select: {
           members: true,
@@ -64,6 +148,7 @@ export default async function AdminOrganisationsPage() {
                   <th scope="col" style={styles.tableHeader}>Organisation</th>
                   <th scope="col" style={styles.tableHeader}>Plan</th>
                   <th scope="col" style={styles.tableHeader}>Subscription</th>
+                  <th scope="col" style={styles.tableHeader}>Product readiness</th>
                   <th scope="col" style={styles.tableHeader}>School Radio</th>
                   <th scope="col" style={styles.tableHeader}>School Public Publishing</th>
                   <th scope="col" style={styles.tableHeader}>Retail Media</th>
@@ -91,6 +176,10 @@ export default async function AdminOrganisationsPage() {
 
                     <td style={styles.tableCell}>
                       {organisation.subscription?.status || "No subscription"}
+                    </td>
+
+                    <td style={styles.tableCellReadiness}>
+                      <ProductReadinessSummary organisation={organisation} />
                     </td>
 
                     <td style={styles.tableCellFeature}>
@@ -272,7 +361,7 @@ const styles = {
   },
   table: {
     width: "100%",
-    minWidth: 1940,
+    minWidth: 2180,
     borderCollapse: "collapse"
   },
   tableHeader: {
@@ -307,6 +396,51 @@ const styles = {
     minWidth: 230,
     padding: "15px 12px",
     verticalAlign: "middle"
+  },
+  tableCellReadiness: {
+    minWidth: 270,
+    padding: "12px",
+    verticalAlign: "middle"
+  },
+  readinessList: {
+    display: "grid",
+    gap: 8
+  },
+  readinessRow: {
+    display: "grid",
+    gridTemplateColumns: "52px 88px 48px",
+    alignItems: "center",
+    gap: 7
+  },
+  readinessNext: {
+    gridColumn: "1 / 4",
+    color: "#64748b",
+    fontSize: 10,
+    lineHeight: 1.35
+  },
+  readinessLabel: {
+    color: "#334155",
+    fontSize: 11,
+    fontWeight: 850
+  },
+  readinessProgress: {
+    width: 88,
+    height: 7,
+    accentColor: "#16794a"
+  },
+  ready: {
+    color: "#067647",
+    fontSize: 11
+  },
+  inProgress: {
+    color: "#9a6400",
+    fontSize: 11
+  },
+  notIncluded: {
+    gridColumn: "2 / 4",
+    color: "#64748b",
+    fontSize: 11,
+    fontWeight: 700
   },
   muted: {
     color: "#64748b",
