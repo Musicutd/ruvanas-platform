@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getActiveOrganisationContext } from "@/lib/auth";
 import SkipLink from "@/app/components/SkipLink";
 import ProgrammingWorkspace from "./ProgrammingWorkspace";
+import SmartPlaylistsWorkspace from "./SmartPlaylistsWorkspace";
 import styles from "./programming.module.css";
 
 export const dynamic = "force-dynamic";
@@ -33,7 +34,10 @@ export default async function SubscriberProgrammingPage() {
             <span>Music selection and rights controls remain managed by Ruvanas.</span>
           </div>
         </div>
-        <ProgrammingWorkspace organisationName={context.membership.organisation.name} />
+        <div className={styles.workspace}>
+          <SmartPlaylistsWorkspace />
+          <ProgrammingWorkspace organisationName={context.membership.organisation.name} />
+        </div>
       </section>
     </main>
   );

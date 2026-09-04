@@ -566,6 +566,41 @@ enum MusicModeStatus {
   ARCHIVED
 }
 
+enum MusicModeSource {
+  MANUAL
+  SMART_PLAYLIST
+}
+
+enum SmartPlaylistStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum SmartPlaylistSort {
+  ARTIST_TITLE
+  RELEASE_YEAR_DESC
+  RELEASE_YEAR_ASC
+  RECENTLY_ADDED
+}
+
+enum SmartPlaylistRuleField {
+  GENRE
+  ARTIST
+  ALBUM
+  RELEASE_YEAR
+  EXPLICIT
+  LIBRARY_TYPE
+}
+
+enum SmartPlaylistRuleOperator {
+  IS
+  IS_NOT
+  CONTAINS
+  AT_LEAST
+  AT_MOST
+}
+
 enum MusicScheduleStatus {
   DRAFT
   PUBLISHED
@@ -1152,6 +1187,8 @@ model User {
   createdComplimentaryAccessCodes   ComplimentaryAccessCode[]        @relation("ComplimentaryAccessCreatedBy")
   redeemedComplimentaryAccessCodes  ComplimentaryAccessCode[]        @relation("ComplimentaryAccessRedeemedBy")
   revokedComplimentaryAccessCodes   ComplimentaryAccessCode[]        @relation("ComplimentaryAccessRevokedBy")
+  createdSmartPlaylists             SmartPlaylist[]                  @relation("SmartPlaylistCreatedBy")
+  publishedSmartPlaylists           SmartPlaylist[]                  @relation("SmartPlaylistPublishedBy")
 }
 
 model Organisation {
@@ -1174,6 +1211,7 @@ model Organisation {
   auditLogs                        AuditLog[]
   players                          Player[]
   musicModes                       MusicMode[]
+  smartPlaylists                   SmartPlaylist[]
   musicSchedules                   MusicSchedule[]
   proofOfPlayEvents                ProofOfPlayEvent[]
   campaigns                        Campaign[]
@@ -2662,6 +2700,7 @@ model MusicMode {
   slug           String
   description    String?
   status         MusicModeStatus @default(DRAFT)
+  source         MusicModeSource @default(MANUAL)
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
 
@@ -2670,10 +2709,59 @@ model MusicMode {
   scheduleSlots            ScheduleSlot[]
   defaultForAutoDjPolicies AutoDjPolicy[]   @relation("AutoDjDefaultMusicMode")
   backupForAutoDjPolicies  AutoDjPolicy[]   @relation("AutoDjBackupMusicMode")
+  smartPlaylist            SmartPlaylist?   @relation("SmartPlaylistMusicMode")
 
   @@unique([organisationId, slug])
   @@unique([id, organisationId])
   @@index([organisationId, status])
+}
+
+model SmartPlaylist {
+  id                    String              @id @default(cuid())
+  organisationId        String
+  musicModeId           String              @unique
+  status                SmartPlaylistStatus @default(DRAFT)
+  version               Int                 @default(1)
+  materializedVersion   Int                 @default(0)
+  maxTracks             Int                 @default(250)
+  defaultWeight         Int                 @default(100)
+  sort                  SmartPlaylistSort   @default(ARTIST_TITLE)
+  rightsUse             MusicRightsUse      @default(ONLINE_RADIO)
+  territory             String?
+  lastMaterializedAt    DateTime?
+  lastMaterializedCount Int                 @default(0)
+  createdByUserId       String
+  publishedByUserId     String?
+  publishedAt           DateTime?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  organisation Organisation        @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  musicMode    MusicMode           @relation("SmartPlaylistMusicMode", fields: [musicModeId, organisationId], references: [id, organisationId], onDelete: Cascade)
+  createdBy    User                @relation("SmartPlaylistCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  publishedBy  User?               @relation("SmartPlaylistPublishedBy", fields: [publishedByUserId], references: [id], onDelete: SetNull)
+  rules        SmartPlaylistRule[]
+
+  @@unique([id, organisationId])
+  @@unique([musicModeId, organisationId])
+  @@index([organisationId, status, updatedAt])
+  @@index([createdByUserId, createdAt])
+  @@index([publishedByUserId, publishedAt])
+}
+
+model SmartPlaylistRule {
+  id              String                    @id @default(cuid())
+  smartPlaylistId String
+  position        Int
+  field           SmartPlaylistRuleField
+  operator        SmartPlaylistRuleOperator
+  value           String
+  createdAt       DateTime                  @default(now())
+
+  smartPlaylist SmartPlaylist @relation(fields: [smartPlaylistId], references: [id], onDelete: Cascade)
+
+  @@unique([smartPlaylistId, position])
+  @@index([smartPlaylistId, field])
 }
 
 model MusicModeTrack {
