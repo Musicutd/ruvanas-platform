@@ -7,6 +7,7 @@ import ContextHelp from "@/app/components/ContextHelp";
 import SkipLink from "@/app/components/SkipLink";
 import { safeWorkflowMessage } from "@/lib/guided-workflows.mjs";
 import styles from "./media-library.module.css";
+import MusicLibraryPro from "./MusicLibraryPro";
 
 const TYPE_LABELS = { COMMERCIAL: "Commercial", JINGLE: "Jingle", ANNOUNCEMENT: "Announcement", VOICEOVER: "Voiceover" };
 
@@ -125,7 +126,7 @@ export default function MediaLibraryPage() {
       </header>
       <section className={styles.content} id="main-content">
         <div className={styles.hero}>
-          <div><p className={styles.eyebrow}>SUBSCRIBER AUDIO</p><h1>Your audio library</h1><p className={styles.subtitle}>Upload, listen, submit and follow every version for {library.organisation.name}. Nothing can be scheduled until Ruvanas approves it.</p></div>
+          <div><p className={styles.eyebrow}>PROTECTED MEDIA</p><h1>Media Library Pro</h1><p className={styles.subtitle}>Manage organisation music and promotional audio for {library.organisation.name}. Rights, quality and approval controls decide what can enter programming.</p></div>
           <span className={styles.role}>{library.permissions.role.replaceAll("_", " ")}</span>
         </div>
         <div className={styles.metrics} aria-label="Audio library summary">
@@ -133,6 +134,8 @@ export default function MediaLibraryPage() {
         </div>
         {error ? <div className={styles.error} role="alert">{error}</div> : null}
         {notice ? <div className={styles.notice} role="status">{notice}</div> : null}
+
+        <MusicLibraryPro />
 
         {library.permissions.canUpload ? (
           <section className={styles.uploadPanel} ref={uploadRef} aria-labelledby="upload-title">

@@ -118,7 +118,7 @@ export default function AdminPromoLibraryPage() {
             Promotional audio now keeps immutable versions, review status, QC evidence, language metadata, and processing work without changing protected playback URLs.
           </p>
         </div>
-        <Link href="/admin/media/upload" style={styles.primaryButton}>Upload a promo</Link>
+        <div style={styles.actions}><Link href="/admin/media/music" style={styles.secondaryButton}>Review organisation music</Link><Link href="/admin/media/upload" style={styles.primaryButton}>Upload a promo</Link></div>
       </div>
 
       {error ? <div style={styles.error}>{error}</div> : null}

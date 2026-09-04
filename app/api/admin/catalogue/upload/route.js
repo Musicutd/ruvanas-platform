@@ -242,10 +242,15 @@ export async function POST(request) {
           status: metadata.data.status,
           rightsHolder: metadata.data.rightsHolder,
           rightsReference: metadata.data.rightsReference,
+          rightsBasis: "OTHER",
           permittedTerritories: metadata.data.permittedTerritories,
+          permittedUses: ["RETAIL_RADIO", "SCHOOL_RADIO", "ONLINE_RADIO"],
           licenceExpiresAt: metadata.data.licenceExpiresAt,
           rightsConfirmedAt: new Date(),
-          rightsConfirmedById: access.user.id
+          rightsConfirmedById: access.user.id,
+          rightsReviewStatus: "APPROVED",
+          rightsReviewedAt: new Date(),
+          rightsReviewedById: access.user.id
         }
       });
 

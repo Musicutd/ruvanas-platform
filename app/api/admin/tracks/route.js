@@ -111,8 +111,13 @@ export async function POST(request) {
         data: {
           ...trackData,
           album: parsed.data.album || null,
+          rightsBasis: "OTHER",
+          permittedUses: ["RETAIL_RADIO", "SCHOOL_RADIO", "ONLINE_RADIO"],
           rightsConfirmedAt: new Date(),
-          rightsConfirmedById: access.user.id
+          rightsConfirmedById: access.user.id,
+          rightsReviewStatus: "APPROVED",
+          rightsReviewedAt: new Date(),
+          rightsReviewedById: access.user.id
         }
       });
 

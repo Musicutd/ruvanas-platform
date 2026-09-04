@@ -14,8 +14,8 @@
 | Stage | Scope | Status | PR | Main commit | Paid deployment | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
 | 19.0 | Online Radio architecture and reuse audit | MERGED | [#100](https://github.com/Musicutd/ruvanas-platform/pull/100) | `49ff8cd` | Not required | Documentation-only safety gate accepted. |
-| 19.1 | 24/7 AutoDJ | IN DEVELOPMENT | [#99](https://github.com/Musicutd/ruvanas-platform/pull/99) | — | — | Rebased after 19.0; tenant-safe database relationships, catalogue-only scope, migration and regression gates are validated locally. Awaiting publication of the reconciled branch. |
-| 19.2 | Media Library Pro + rights metadata foundation | NOT STARTED | — | — | — | Generalise media eligibility before advanced programming. |
+| 19.1 | 24/7 AutoDJ | DEPLOYED | [#99](https://github.com/Musicutd/ruvanas-platform/pull/99) | `cf848f0` | `dep-dadcptijnfac73eeqj8g` | Paid Ruvanas service live; continuous default/backup AutoDJ and no-gap evidence active. |
+| 19.2 | Media Library Pro + rights metadata foundation | IN DEVELOPMENT | — | — | — | Organisation-owned music, rights declaration/review and shared fail-closed eligibility validated locally; awaiting publication. |
 | 19.3 | Smart Playlists | NOT STARTED | — | — | — | Saved, explainable rules feeding rotations. |
 | 19.4 | Radio Clocks | NOT STARTED | — | — | — | Reuse schedule and Show Builder primitives. |
 | 19.5 | Advanced Scheduler | NOT STARTED | — | — | — | Channel targets and typed programme sources. |

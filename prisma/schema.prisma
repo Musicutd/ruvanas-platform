@@ -309,6 +309,27 @@ enum MediaStatus {
 enum MediaLibraryType {
   RUVANAS_CATALOGUE
   ORGANISATION_PROMO
+  ORGANISATION_MUSIC
+}
+
+enum MusicRightsBasis {
+  OWNED_MASTER
+  DIRECT_LICENCE
+  DISTRIBUTOR_LICENCE
+  OTHER
+}
+
+enum MusicRightsReviewStatus {
+  DRAFT
+  IN_REVIEW
+  APPROVED
+  REJECTED
+}
+
+enum MusicRightsUse {
+  RETAIL_RADIO
+  SCHOOL_RADIO
+  ONLINE_RADIO
 }
 
 enum PromoAssetStatus {
@@ -1033,6 +1054,7 @@ model User {
   publishedCampaigns                Campaign[]                       @relation("CampaignPublishedBy")
   reportExports                     ReportExportJob[]                @relation("ReportExportRequestedBy")
   confirmedTrackRights              Track[]                          @relation("TrackRightsConfirmedBy")
+  reviewedTrackRights               Track[]                          @relation("TrackRightsReviewedBy")
   createdSchoolAnnouncements        SchoolAnnouncement[]             @relation("SchoolAnnouncementCreatedBy")
   reviewedSchoolAnnouncements       SchoolAnnouncement[]             @relation("SchoolAnnouncementReviewedBy")
   createdSchoolNoticeboardPosts     SchoolNoticeboardPost[]          @relation("SchoolNoticeboardCreatedBy")
@@ -2593,25 +2615,33 @@ model DigitalSignageDeliveryProof {
 }
 
 model Track {
-  id                   String      @id @default(cuid())
-  mediaAssetId         String      @unique
+  id                   String                  @id @default(cuid())
+  mediaAssetId         String                  @unique
   title                String
   artist               String
   album                String?
   releaseYear          Int?
-  isExplicit           Boolean     @default(false)
-  status               TrackStatus @default(DRAFT)
+  isExplicit           Boolean                 @default(false)
+  status               TrackStatus             @default(DRAFT)
   rightsHolder         String?
   rightsReference      String?
+  rightsBasis          MusicRightsBasis?
   permittedTerritories String?
-  licenceExpiresAt     DateTime?   @db.Date
+  permittedUses        MusicRightsUse[]        @default([])
+  licenceStartsAt      DateTime?               @db.Date
+  licenceExpiresAt     DateTime?               @db.Date
   rightsConfirmedAt    DateTime?
   rightsConfirmedById  String?
-  createdAt            DateTime    @default(now())
-  updatedAt            DateTime    @updatedAt
+  rightsReviewStatus   MusicRightsReviewStatus @default(DRAFT)
+  rightsReviewNotes    String?
+  rightsReviewedAt     DateTime?
+  rightsReviewedById   String?
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
 
   mediaAsset         MediaAsset          @relation(fields: [mediaAssetId], references: [id], onDelete: Cascade)
   rightsConfirmedBy  User?               @relation("TrackRightsConfirmedBy", fields: [rightsConfirmedById], references: [id], onDelete: SetNull)
+  rightsReviewedBy   User?               @relation("TrackRightsReviewedBy", fields: [rightsReviewedById], references: [id], onDelete: SetNull)
   musicModes         MusicModeTrack[]
   proofOfPlayEvents  ProofOfPlayEvent[]
   schoolRundownItems SchoolRundownItem[]
@@ -2619,6 +2649,9 @@ model Track {
   @@index([status])
   @@index([artist, title])
   @@index([rightsConfirmedById])
+  @@index([rightsReviewStatus])
+  @@index([rightsReviewedById])
+  @@index([licenceStartsAt])
   @@index([licenceExpiresAt])
 }
 

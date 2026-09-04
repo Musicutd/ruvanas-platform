@@ -59,5 +59,32 @@
 .secondaryButton { min-height: 44px; border: 1px solid #63738d; border-radius: 9px; background: transparent; color: #eef4fc; cursor: pointer; font: inherit; font-weight: 900; padding: 9px 14px; }
 .empty { display: grid; gap: 7px; margin-top: 20px; border: 1px dashed #52627c; border-radius: 12px; color: #aebcd0; padding: 28px; text-align: center; }
 .empty strong { color: #fff; font-size: 19px; }
+.musicPro { margin-top: 30px; border: 1px solid #3a4e6d; border-radius: 18px; background: linear-gradient(145deg, #172740, #111d31); padding: 25px; }
+.musicMetrics { display: flex; gap: 10px; flex-wrap: wrap; margin: 18px 0; }
+.musicMetrics span { border: 1px solid #364967; border-radius: 999px; background: #101a2c; color: #aebdd1; padding: 8px 12px; }
+.musicMetrics strong { color: #fff; }
+.musicUpload { margin-top: 18px; border: 1px solid #455a7a; border-radius: 12px; background: #101a2c; padding: 16px; }
+.musicUpload summary { color: #f5b941; cursor: pointer; font-weight: 950; }
+.rightsBox { display: grid; gap: 14px; border: 1px solid #455a7a; border-radius: 12px; background: #16243a; padding: 18px; }
+.rightsBox h3, .rightsBox p { margin: 0; }
+.rightsBox p { color: #aebdd1; line-height: 1.5; }
+.checkLine { display: flex !important; align-items: center; align-self: end; min-height: 45px; grid-template-columns: auto 1fr !important; }
+.checkLine input, .declaration input, .useCases input { width: auto !important; min-height: auto !important; }
+.useCases { display: flex; gap: 12px 20px; flex-wrap: wrap; border: 1px solid #526783; border-radius: 9px; padding: 14px; }
+.useCases legend { color: #e8eef8; font-weight: 900; padding: 0 6px; }
+.useCases label, .declaration { display: flex !important; grid-template-columns: auto 1fr !important; align-items: flex-start; gap: 9px !important; }
+.declaration { border-left: 4px solid #f5b941; border-radius: 7px; background: #202c40; padding: 13px; line-height: 1.5; }
+.musicList { display: grid; gap: 16px; margin-top: 20px; }
+.musicCard { display: grid; gap: 15px; overflow: hidden; border: 1px solid #32445f; border-radius: 14px; background: #101a2c; padding-bottom: 20px; }
+.musicCard .assetHeading { padding-bottom: 16px; }
+.musicCard audio { width: min(100% - 40px, 640px); height: 42px; margin: 0 20px; }
+.musicCard > button { justify-self: start; margin: 0 20px; }
+.musicDetails { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; padding: 0 20px; }
+.musicDetails span { display: grid; gap: 4px; color: #bdc9da; font-size: 13px; overflow-wrap: anywhere; }
+.musicDetails strong { color: #8597b2; font-size: 10px; letter-spacing: .7px; text-transform: uppercase; }
+.usePills { display: flex; gap: 7px; flex-wrap: wrap; padding: 0 20px; }
+.usePills span { border-radius: 999px; background: #243652; color: #dbe7f7; font-size: 11px; font-weight: 850; padding: 6px 9px; }
+.musicCard .reviewNote { margin: 0 20px; }
 @media (max-width: 780px) { .metrics { grid-template-columns: repeat(2, 1fr); } .hero, .assetHeading { align-items: stretch; flex-direction: column; } .role, .status { align-self: flex-start; } }
-@media (max-width: 620px) { .columns { grid-template-columns: 1fr; } .content { width: min(100% - 28px, 1120px); padding-top: 34px; } .header { padding: 12px 14px; } .header nav { gap: 11px; font-size: 13px; } .metrics { grid-template-columns: 1fr 1fr; } .uploadPanel, .libraryPanel { padding: 18px; } }
+@media (max-width: 780px) { .musicDetails { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 620px) { .columns, .musicDetails { grid-template-columns: 1fr; } .content { width: min(100% - 28px, 1120px); padding-top: 34px; } .header { padding: 12px 14px; } .header nav { gap: 11px; font-size: 13px; } .metrics { grid-template-columns: 1fr 1fr; } .uploadPanel, .libraryPanel, .musicPro { padding: 18px; } }

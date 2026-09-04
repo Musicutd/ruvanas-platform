@@ -72,6 +72,7 @@ async function loadProgramming(organisationId, role) {
       where: { organisationId, status: "ACTIVE" },
       select: {
         id: true,
+        organisationId: true,
         name: true,
         status: true,
         timezone: true,

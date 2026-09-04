@@ -290,7 +290,7 @@ export default function ProgrammingWorkspace({ organisationName }) {
               <label><span>Playback hours</span><select value={autoDjForm.playbackPolicy} disabled={!data.canManage} onChange={(event) => setAutoDjForm({ ...autoDjForm, playbackPolicy: event.target.value })}><option value="FOLLOW_LOCATION_HOURS">Follow location / school hours</option><option value="RUN_24_7">Run continuously, 24/7</option></select></label>
               <div className={styles.policySummary}><strong>{selectedChannel?.name || "Channel"}</strong><span>{selectedChannel?.assignments.length ? selectedChannel.assignments.join(" · ") : "Online or unassigned channel"}</span><small>{autoDjForm.playbackPolicy === "RUN_24_7" ? "Designed for always-on and online radio channels." : "Silence outside configured opening or school hours is intentional."}</small></div>
             </div>
-            {!playableModes.length ? <div className={styles.error}>AutoDJ needs at least one active music mode with a playable, licensed catalogue track.</div> : null}
+            {!playableModes.length ? <div className={styles.error}>AutoDJ needs at least one active music mode with a playable, rights-approved track.</div> : null}
             <div className={styles.actionBar}><span className={styles.safeClaim}>No scheduling-induced dead air while a valid fallback is available.</span>{data.canManage ? <button type="button" className={styles.primaryButton} disabled={autoDjSaving || (autoDjForm.enabled && !autoDjForm.defaultMusicModeId)} onClick={saveAutoDj}>{autoDjSaving ? "Saving…" : "Save AutoDJ settings"}</button> : null}</div>
           </>
         )}
