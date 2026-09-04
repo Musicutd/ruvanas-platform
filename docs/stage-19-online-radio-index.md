@@ -13,7 +13,7 @@
 
 | Stage | Scope | Status | PR | Main commit | Paid deployment | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| 19.0 | Online Radio architecture and reuse audit | IN DEVELOPMENT | — | — | — | Documentation-only safety gate. |
+| 19.0 | Online Radio architecture and reuse audit | PR OPEN | [#100](https://github.com/Musicutd/ruvanas-platform/pull/100) | — | — | Documentation-only safety gate. |
 | 19.1 | 24/7 AutoDJ | PR OPEN | [#99](https://github.com/Musicutd/ruvanas-platform/pull/99) | — | — | Candidate commit `8ee8647`; must be reconciled with the 19.0 audit before merge. |
 | 19.2 | Media Library Pro + rights metadata foundation | NOT STARTED | — | — | — | Generalise media eligibility before advanced programming. |
 | 19.3 | Smart Playlists | NOT STARTED | — | — | — | Saved, explainable rules feeding rotations. |
