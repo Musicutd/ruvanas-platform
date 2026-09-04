@@ -16,8 +16,8 @@
 | 19.0 | Online Radio architecture and reuse audit | MERGED | [#100](https://github.com/Musicutd/ruvanas-platform/pull/100) | `49ff8cd` | Not required | Documentation-only safety gate accepted. |
 | 19.1 | 24/7 AutoDJ | DEPLOYED | [#99](https://github.com/Musicutd/ruvanas-platform/pull/99) | `cf848f0` | `dep-dadcptijnfac73eeqj8g` | Paid Ruvanas service live; continuous default/backup AutoDJ and no-gap evidence active. |
 | 19.2 | Media Library Pro + rights metadata foundation | DEPLOYED | [#101](https://github.com/Musicutd/ruvanas-platform/pull/101) | `6d1ee67` | Paid auto-deploy | Organisation-owned music, rights declaration/review and shared fail-closed eligibility are live. |
-| 19.3 | Smart Playlists | IN DEVELOPMENT | — | — | — | Saved, explainable rules materialise into the existing Music Mode rotation pipeline; local validation pending. |
-| 19.4 | Radio Clocks | NOT STARTED | — | — | — | Reuse schedule and Show Builder primitives. |
+| 19.3 | Smart Playlists | DEPLOYED | [#102](https://github.com/Musicutd/ruvanas-platform/pull/102) | `4ca7812` | Paid auto-deploy | Saved, explainable rules materialise into the existing Music Mode rotation pipeline; paid service verified. |
+| 19.4 | Radio Clocks | IN DEVELOPMENT | — | — | — | Reusable exact-hour templates reuse schedule, rights and Show Builder primitives; local build, regression, migration and API lifecycle validation complete. |
 | 19.5 | Advanced Scheduler | NOT STARTED | — | — | — | Channel targets and typed programme sources. |
 | 19.6 | Unified Playout Engine | NOT STARTED | — | — | — | Single authoritative source-priority resolver. |
 | 19.7 | External Live | NOT STARTED | — | — | — | Provider-neutral live input foundation. |

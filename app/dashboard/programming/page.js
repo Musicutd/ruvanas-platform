@@ -3,6 +3,7 @@ import { getActiveOrganisationContext } from "@/lib/auth";
 import SkipLink from "@/app/components/SkipLink";
 import ProgrammingWorkspace from "./ProgrammingWorkspace";
 import SmartPlaylistsWorkspace from "./SmartPlaylistsWorkspace";
+import RadioClocksWorkspace from "./RadioClocksWorkspace";
 import styles from "./programming.module.css";
 
 export const dynamic = "force-dynamic";
@@ -36,6 +37,7 @@ export default async function SubscriberProgrammingPage() {
         </div>
         <div className={styles.workspace}>
           <SmartPlaylistsWorkspace />
+          <RadioClocksWorkspace />
           <ProgrammingWorkspace organisationName={context.membership.organisation.name} />
         </div>
       </section>

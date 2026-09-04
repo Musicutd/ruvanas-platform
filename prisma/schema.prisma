@@ -601,6 +601,27 @@ enum SmartPlaylistRuleOperator {
   AT_MOST
 }
 
+enum RadioClockStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum RadioClockItemType {
+  MUSIC_MODE
+  MUSIC_TRACK
+  PROMO
+  SHOW_RUNDOWN
+  MARKER
+}
+
+enum RadioClockTransition {
+  CLEAN
+  CROSSFADE
+  DUCK_VOICE
+  HARD_START
+}
+
 enum MusicScheduleStatus {
   DRAFT
   PUBLISHED
@@ -1189,6 +1210,8 @@ model User {
   revokedComplimentaryAccessCodes   ComplimentaryAccessCode[]        @relation("ComplimentaryAccessRevokedBy")
   createdSmartPlaylists             SmartPlaylist[]                  @relation("SmartPlaylistCreatedBy")
   publishedSmartPlaylists           SmartPlaylist[]                  @relation("SmartPlaylistPublishedBy")
+  createdRadioClocks                RadioClock[]                     @relation("RadioClockCreatedBy")
+  publishedRadioClocks              RadioClock[]                     @relation("RadioClockPublishedBy")
 }
 
 model Organisation {
@@ -1212,6 +1235,7 @@ model Organisation {
   players                          Player[]
   musicModes                       MusicMode[]
   smartPlaylists                   SmartPlaylist[]
+  radioClocks                      RadioClock[]
   musicSchedules                   MusicSchedule[]
   proofOfPlayEvents                ProofOfPlayEvent[]
   campaigns                        Campaign[]
@@ -2099,6 +2123,7 @@ model PromoVersion {
   playoutIntents              PlayoutIntent[]
   proofOfPlayEvents           ProofOfPlayEvent[]
   schoolRundownItems          SchoolRundownItem[]
+  radioClockItems             RadioClockItem[]
   retailMediaCreatives        RetailMediaOrderCreative[]
   schoolEpisodeExchangeOffers SchoolEpisodeExchangeOffer[]
 
@@ -2683,6 +2708,7 @@ model Track {
   musicModes         MusicModeTrack[]
   proofOfPlayEvents  ProofOfPlayEvent[]
   schoolRundownItems SchoolRundownItem[]
+  radioClockItems    RadioClockItem[]
 
   @@index([status])
   @@index([artist, title])
@@ -2710,6 +2736,7 @@ model MusicMode {
   defaultForAutoDjPolicies AutoDjPolicy[]   @relation("AutoDjDefaultMusicMode")
   backupForAutoDjPolicies  AutoDjPolicy[]   @relation("AutoDjBackupMusicMode")
   smartPlaylist            SmartPlaylist?   @relation("SmartPlaylistMusicMode")
+  radioClockItems          RadioClockItem[]
 
   @@unique([organisationId, slug])
   @@unique([id, organisationId])
@@ -2762,6 +2789,65 @@ model SmartPlaylistRule {
 
   @@unique([smartPlaylistId, position])
   @@index([smartPlaylistId, field])
+}
+
+model RadioClock {
+  id                String           @id @default(cuid())
+  organisationId    String
+  name              String
+  slug              String
+  description       String?
+  status            RadioClockStatus @default(DRAFT)
+  version           Int              @default(1)
+  publishedVersion  Int              @default(0)
+  durationSeconds   Int              @default(3600)
+  createdByUserId   String
+  publishedByUserId String?
+  publishedAt       DateTime?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  organisation Organisation     @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  createdBy    User             @relation("RadioClockCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  publishedBy  User?            @relation("RadioClockPublishedBy", fields: [publishedByUserId], references: [id], onDelete: SetNull)
+  items        RadioClockItem[]
+
+  @@unique([organisationId, slug])
+  @@unique([id, organisationId])
+  @@index([organisationId, status, updatedAt])
+  @@index([createdByUserId, createdAt])
+  @@index([publishedByUserId, publishedAt])
+}
+
+model RadioClockItem {
+  id                String               @id @default(cuid())
+  radioClockId      String
+  position          Int
+  type              RadioClockItemType
+  label             String
+  offsetSeconds     Int
+  durationSeconds   Int
+  transition        RadioClockTransition @default(CLEAN)
+  transitionSeconds Int                  @default(0)
+  musicModeId       String?
+  trackId           String?
+  promoVersionId    String?
+  schoolRundownId   String?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  radioClock    RadioClock     @relation(fields: [radioClockId], references: [id], onDelete: Cascade)
+  musicMode     MusicMode?     @relation(fields: [musicModeId], references: [id], onDelete: Restrict)
+  track         Track?         @relation(fields: [trackId], references: [id], onDelete: Restrict)
+  promoVersion  PromoVersion?  @relation(fields: [promoVersionId], references: [id], onDelete: Restrict)
+  schoolRundown SchoolRundown? @relation(fields: [schoolRundownId], references: [id], onDelete: Restrict)
+
+  @@unique([radioClockId, position])
+  @@index([radioClockId, offsetSeconds])
+  @@index([musicModeId])
+  @@index([trackId])
+  @@index([promoVersionId])
+  @@index([schoolRundownId])
 }
 
 model MusicModeTrack {
@@ -3214,11 +3300,12 @@ model SchoolRundown {
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt
 
-  organisation Organisation        @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  episode      SchoolEpisode       @relation(fields: [episodeId], references: [id], onDelete: Cascade)
-  createdBy    User                @relation("SchoolRundownCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  reviewedBy   User?               @relation("SchoolRundownReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
-  items        SchoolRundownItem[]
+  organisation    Organisation        @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  episode         SchoolEpisode       @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  createdBy       User                @relation("SchoolRundownCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  reviewedBy      User?               @relation("SchoolRundownReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+  items           SchoolRundownItem[]
+  radioClockItems RadioClockItem[]
 
   @@index([organisationId, status, updatedAt])
   @@index([reviewedByUserId])
