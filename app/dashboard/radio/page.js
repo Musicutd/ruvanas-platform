@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getActiveOrganisationContext } from "@/lib/auth";
 import { resolveEntitlements } from "@/lib/entitlements.mjs";
+import { buildOnlineRadioProductOnboarding } from "@/lib/product-onboarding.mjs";
 import { prisma } from "@/lib/prisma";
 import ProductDashboard from "../ProductDashboard";
 
@@ -10,7 +11,7 @@ export const metadata = { title: "Online Radio dashboard | Ruvanas" };
 export default async function OnlineRadioDashboard() {
   const context = await getActiveOrganisationContext({
     subscription: { include: { plan: true, billingContract: true } },
-    stations: { select: { id: true, status: true, storageUsedMb: true }, orderBy: { createdAt: "asc" } }
+    stations: { select: { id: true, status: true, storageUsedMb: true, streamConfig: { select: { streamUrl: true } } }, orderBy: { createdAt: "asc" } }
   });
   if (!context?.membership) redirect("/dashboard");
   const organisation = context.membership.organisation;
@@ -18,11 +19,23 @@ export default async function OnlineRadioDashboard() {
   if (!entitlements.serviceEnabled) redirect("/dashboard/account");
   const firstStation = organisation.stations.find((station) => station.status === "ACTIVE") || organisation.stations[0] || null;
   const now = new Date();
-  const [players, liveStreams] = await Promise.all([
+  const [players, liveStreams, activeMusicModes, publishedSchedules] = await Promise.all([
     prisma.player.count({ where: { organisationId: organisation.id, status: { not: "DISABLED" } } }),
-    prisma.playerListenerLease.count({ where: { organisationId: organisation.id, revokedAt: null, expiresAt: { gt: now } } })
+    prisma.playerListenerLease.count({ where: { organisationId: organisation.id, revokedAt: null, expiresAt: { gt: now } } }),
+    prisma.musicMode.count({ where: { organisationId: organisation.id, status: "ACTIVE" } }),
+    prisma.musicSchedule.count({ where: { organisationId: organisation.id, status: "PUBLISHED" } })
   ]);
   const storageGb = organisation.stations.reduce((total, station) => total + station.storageUsedMb, 0) / 1024;
+  const onboarding = buildOnlineRadioProductOnboarding({
+    serviceEnabled: entitlements.serviceEnabled,
+    membershipRole: context.membership.role,
+    firstStationId: firstStation?.id || null,
+    stationActive: firstStation?.status === "ACTIVE",
+    streamConfigured: Boolean(firstStation?.streamConfig?.streamUrl),
+    activeMusicModeCount: activeMusicModes,
+    publishedScheduleCount: publishedSchedules,
+    activePlayerStreams: liveStreams
+  });
 
   return <ProductDashboard
     eyebrow="Online Radio dashboard"
@@ -31,6 +44,7 @@ export default async function OnlineRadioDashboard() {
     status={organisation.stations.some((station) => station.status === "ACTIVE") ? "Station available" : "Station setup needed"}
     statusTone={organisation.stations.some((station) => station.status === "ACTIVE") ? "healthy" : "attention"}
     complimentary={entitlements.complimentaryAccess}
+    onboarding={onboarding}
     primaryAction={{ href: firstStation ? `/stations/${firstStation.id}` : "/stations/new", label: firstStation ? "Open station" : "Create station" }}
     metrics={[
       { label: "Stations", value: `${organisation.stations.length} / ${entitlements.stationLimit}`, detail: "Online services configured" },

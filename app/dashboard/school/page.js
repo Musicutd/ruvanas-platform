@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getActiveOrganisationContext } from "@/lib/auth";
 import { resolveEntitlements } from "@/lib/entitlements.mjs";
+import { buildSchoolProductOnboarding } from "@/lib/product-onboarding.mjs";
 import { prisma } from "@/lib/prisma";
 import ProductDashboard from "../ProductDashboard";
 
@@ -17,13 +18,27 @@ export default async function SchoolProductDashboard() {
   const entitlements = resolveEntitlements(organisation.subscription);
   if (!entitlements.schoolRadioEnabled) redirect("/dashboard/account");
   const now = new Date();
-  const [episodes, reviewQueue, liveStreams, readiness] = await Promise.all([
+  const [episodes, reviewQueue, liveStreams, readiness, schoolProfile, activeSupervisors, activeProgrammes, approvedEpisodes] = await Promise.all([
     prisma.schoolEpisode.count({ where: { organisationId: organisation.id } }),
     prisma.schoolEpisode.count({ where: { organisationId: organisation.id, status: "IN_REVIEW" } }),
     prisma.playerListenerLease.count({ where: { organisationId: organisation.id, revokedAt: null, expiresAt: { gt: now } } }),
-    prisma.schoolSafeguardingReadiness.findUnique({ where: { organisationId: organisation.id }, select: { status: true } })
+    prisma.schoolSafeguardingReadiness.findUnique({ where: { organisationId: organisation.id }, select: { status: true } }),
+    prisma.schoolProfile.findUnique({ where: { organisationId: organisation.id }, select: { id: true } }),
+    prisma.staffSupervisor.count({ where: { organisationId: organisation.id, active: true } }),
+    prisma.schoolProgramme.count({ where: { organisationId: organisation.id, status: "ACTIVE" } }),
+    prisma.schoolEpisode.count({ where: { organisationId: organisation.id, status: "APPROVED" } })
   ]);
   const readinessLabel = readiness?.status ? readiness.status.replaceAll("_", " ").toLowerCase() : "not started";
+  const onboarding = buildSchoolProductOnboarding({
+    serviceEnabled: entitlements.serviceEnabled,
+    membershipRole: context.membership.role,
+    schoolProfileReady: Boolean(schoolProfile),
+    activeSupervisorCount: activeSupervisors,
+    safeguardingStatus: readiness?.status || null,
+    activeProgrammeCount: activeProgrammes,
+    approvedEpisodeCount: approvedEpisodes,
+    activePlayerStreams: liveStreams
+  });
 
   return <ProductDashboard
     eyebrow="School Radio dashboard"
@@ -32,6 +47,7 @@ export default async function SchoolProductDashboard() {
     status={readiness?.status === "APPROVED" ? "Safeguarding ready" : "Safeguarding review needed"}
     statusTone={readiness?.status === "APPROVED" ? "healthy" : "attention"}
     complimentary={entitlements.complimentaryAccess}
+    onboarding={onboarding}
     primaryAction={{ href: "/dashboard/school-radio", label: "Open School Radio" }}
     metrics={[
       { label: "Episodes", value: episodes, detail: "School productions created" },

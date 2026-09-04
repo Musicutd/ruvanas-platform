@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getActiveOrganisationContext } from "@/lib/auth";
 import { resolveEntitlements } from "@/lib/entitlements.mjs";
+import { buildRetailProductOnboarding } from "@/lib/product-onboarding.mjs";
 import { prisma } from "@/lib/prisma";
 import ProductDashboard from "../ProductDashboard";
 
@@ -14,16 +15,26 @@ export default async function RetailRadioDashboard() {
   const entitlements = resolveEntitlements(context.membership.organisation.subscription);
   if (!entitlements.serviceEnabled) redirect("/dashboard/account");
   const now = new Date();
-  const [locations, players, liveStreams, schedules] = await Promise.all([
+  const [locations, players, liveStreams, activeMusicModes, schedules] = await Promise.all([
     prisma.location.count({ where: { organisationId, status: "ACTIVE" } }),
     prisma.player.count({ where: { organisationId, status: { not: "DISABLED" } } }),
     prisma.playerListenerLease.count({ where: { organisationId, revokedAt: null, expiresAt: { gt: now } } }),
+    prisma.musicMode.count({ where: { organisationId, status: "ACTIVE" } }),
     prisma.musicSchedule.count({ where: { organisationId, status: "PUBLISHED" } })
   ]);
   const optionalActions = [
     entitlements.retailMediaEnabled ? { href: "/dashboard/retail-media", label: "Retail Media", description: "Coordinate approved commercial media campaigns." } : null,
     entitlements.digitalSignageEnabled ? { href: "/dashboard/digital-signage", label: "Digital Signage", description: "Connect approved visual content with your customer spaces." } : null
   ].filter(Boolean);
+  const onboarding = buildRetailProductOnboarding({
+    serviceEnabled: entitlements.serviceEnabled,
+    membershipRole: context.membership.role,
+    activeLocationCount: locations,
+    activeMusicModeCount: activeMusicModes,
+    publishedScheduleCount: schedules,
+    configuredPlayerCount: players,
+    activePlayerStreams: liveStreams
+  });
 
   return <ProductDashboard
     eyebrow="Retail Radio dashboard"
@@ -32,6 +43,7 @@ export default async function RetailRadioDashboard() {
     status={liveStreams > 0 ? "Playing in your locations" : "Ready for a player"}
     statusTone={liveStreams > 0 ? "healthy" : "attention"}
     complimentary={entitlements.complimentaryAccess}
+    onboarding={onboarding}
     primaryAction={{ href: "/dashboard/programming", label: "Open programming" }}
     metrics={[
       { label: "Active locations", value: locations, detail: "Retail spaces ready for service" },
