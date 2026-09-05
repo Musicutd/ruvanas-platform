@@ -44,6 +44,16 @@ test("clock input binds one source per item and reuses studio transition rules",
   assert.match(parseRadioClockInput({ ...exactHour, items: [{ ...exactHour.items[0], transition: "CROSSFADE", transitionSeconds: 0 }] }).error, /transition length/i);
 });
 
+test("approved voice-track segues bind as first-class clock sources", () => {
+  const parsed = parseRadioClockInput({ name: "Voice tracked hour", items: [
+    { type: "VOICE_TRACK", label: "Presenter link", durationSeconds: 20, transition: "DUCK_VOICE", transitionSeconds: 2, sourceId: "segue-1" },
+    { type: "MUSIC_MODE", label: "Music sweep", durationSeconds: 3580, transition: "CLEAN", transitionSeconds: 0, sourceId: "mode-1" }
+  ] });
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.data.items[0].voiceTrackSegueId, "segue-1");
+  assert.equal(parsed.timeline.readyToPublish, true);
+});
+
 test("timeline offsets account for overlap and require an exact hour", () => {
   const parsed = parseRadioClockInput(exactHour);
   const timeline = radioClockTimeline(parsed.data.items);

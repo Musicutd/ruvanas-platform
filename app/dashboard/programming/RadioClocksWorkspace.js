@@ -3,14 +3,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import styles from "./programming.module.css";
 
-const TYPE_OPTIONS = [["MUSIC_MODE", "Music mode"], ["MUSIC_TRACK", "Specific music track"], ["PROMO", "Jingle or promo"], ["SHOW_RUNDOWN", "Approved show rundown"], ["MARKER", "Timing marker"]];
+const TYPE_OPTIONS = [["MUSIC_MODE", "Music mode"], ["MUSIC_TRACK", "Specific music track"], ["PROMO", "Jingle or promo"], ["VOICE_TRACK", "Approved voice-track segue"], ["SHOW_RUNDOWN", "Approved show rundown"], ["MARKER", "Timing marker"]];
 const TRANSITIONS = [["CLEAN", "Clean"], ["CROSSFADE", "Crossfade"], ["DUCK_VOICE", "Duck voice"], ["HARD_START", "Hard start"]];
-const DEFAULT_DURATION = { MUSIC_MODE: 3600, MUSIC_TRACK: 180, PROMO: 30, SHOW_RUNDOWN: 1800, MARKER: 0 };
+const DEFAULT_DURATION = { MUSIC_MODE: 3600, MUSIC_TRACK: 180, PROMO: 30, VOICE_TRACK: 20, SHOW_RUNDOWN: 1800, MARKER: 0 };
 const EMPTY_ITEM = { type: "MUSIC_MODE", label: "Music sweep", durationSeconds: 3600, transition: "CLEAN", transitionSeconds: 0, sourceId: "" };
 const EMPTY_FORM = { name: "", description: "", items: [{ ...EMPTY_ITEM }] };
 
 function sourceCollection(sources, type) {
-  return { MUSIC_MODE: sources?.musicModes, MUSIC_TRACK: sources?.tracks, PROMO: sources?.promos, SHOW_RUNDOWN: sources?.rundowns }[type] || [];
+  return { MUSIC_MODE: sources?.musicModes, MUSIC_TRACK: sources?.tracks, PROMO: sources?.promos, VOICE_TRACK: sources?.voiceTracks, SHOW_RUNDOWN: sources?.rundowns }[type] || [];
 }
 
 function plannedSeconds(items) {
@@ -67,6 +67,10 @@ export default function RadioClocksWorkspace() {
       if (itemIndex !== index) return item;
       if (field === "type") return { ...item, type: value, durationSeconds: DEFAULT_DURATION[value], sourceId: "", transition: "CLEAN", transitionSeconds: 0 };
       if (field === "transition") return { ...item, transition: value, transitionSeconds: ["CROSSFADE", "DUCK_VOICE"].includes(value) ? 2 : 0 };
+      if (field === "sourceId") {
+        const source = sourceCollection(data?.sources, item.type).find((candidate) => candidate.id === value);
+        return { ...item, sourceId: value, ...(source?.durationSeconds ? { durationSeconds: source.durationSeconds } : {}) };
+      }
       return { ...item, [field]: value };
     }) }));
   }
