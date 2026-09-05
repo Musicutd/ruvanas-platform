@@ -39,3 +39,14 @@ test("audio worker builds overlapping multitrack buses with deterministic music 
   assert.match(graph.filterComplex, /enable='between\(t,3\.000,86400\)'/);
   assert.match(graph.filterComplex, /loudnorm=I=-16/);
 });
+
+test("audio worker applies one broadcast master profile instead of the editor master", () => {
+  const graph = buildMultitrackRenderGraph({
+    mode: "ADVANCED",
+    tracks: [{ clientId: "voice", name: "Voice", kind: "VOICE", clips: [{ clientId: "v1", mediaAssetId: "voice-asset", sourceStartMs: 0, sourceEndMs: 8_000, timelineStartMs: 0 }] }],
+    master: { normalize: true, targetLufs: -14, limiter: true }
+  }, { processingProfile: { name: "Web Radio", codec: "MP3", bitrateKbps: 192, sampleRateHz: 48000, targetLufs: -16, truePeakDbfs: -1.5, maxLoudnessRangeLu: 12, highpassHz: 30, lowpassHz: 18000, compressionThresholdDb: -18, compressionRatio: 2.5, compressionAttackMs: 20, compressionReleaseMs: 250, limiterEnabled: true } });
+  assert.match(graph.filterComplex, /highpass=f=30/);
+  assert.match(graph.filterComplex, /loudnorm=I=-16:TP=-1\.5:LRA=12/);
+  assert.doesNotMatch(graph.filterComplex, /loudnorm=I=-14/);
+});

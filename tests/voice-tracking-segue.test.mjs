@@ -82,6 +82,6 @@ test("Stage 19.11 reuses AudioLab, Radio Clocks and protected media routes", asy
   assert.match(page, /VoiceTrackingWorkspace/);
   assert.match(ui, /AudioContext/);
   assert.match(ui, /Play complete segue/);
-  assert.match(roadmap, /19\.11 \| Voice Tracking \/ Segue \| IN DEVELOPMENT/);
+  assert.match(roadmap, /19\.11 \| Voice Tracking \/ Segue \| DEPLOYED \| \[#110\]/);
   assert.match(documentation, /does not create another recorder, media library, scheduler or playout engine/);
 });
