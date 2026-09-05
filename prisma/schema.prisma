@@ -302,6 +302,26 @@ enum DjAccessCapability {
   RECORD_LIVE_SESSION
 }
 
+enum LiveFailoverState {
+  PRIMARY
+  BACKUP
+  SCHEDULED_FALLBACK
+  RECOVERY_PENDING
+  MANUAL_OVERRIDE
+}
+
+enum LiveFailoverTransitionKind {
+  POLICY_ENABLED
+  POLICY_DISABLED
+  PRIMARY_FAILED
+  BACKUP_SELECTED
+  PROGRAMMING_FALLBACK_SELECTED
+  PRIMARY_RECOVERY_PENDING
+  PRIMARY_RECOVERED
+  MANUAL_SOURCE_SELECTED
+  MANUAL_OVERRIDE_CLEARED
+}
+
 enum PlayoutEventType {
   WORKER_STARTED
   WORKER_STOPPED
@@ -1262,6 +1282,8 @@ model User {
   activatedExternalLiveSources       ExternalLiveSource[]             @relation("ExternalLiveSourceActivatedBy")
   createdDjAccessGrants              DjAccessGrant[]                   @relation("DjAccessGrantCreatedBy")
   revokedDjAccessGrants              DjAccessGrant[]                   @relation("DjAccessGrantRevokedBy")
+  createdLiveFailoverPolicies        LiveFailoverPolicy[]              @relation("LiveFailoverPolicyCreatedBy")
+  updatedLiveFailoverPolicies        LiveFailoverPolicy[]              @relation("LiveFailoverPolicyUpdatedBy")
 }
 
 model Organisation {
@@ -1381,6 +1403,8 @@ model Organisation {
   autoDjPolicies                   AutoDjPolicy[]
   externalLiveSources              ExternalLiveSource[]
   djAccessGrants                   DjAccessGrant[]
+  liveFailoverPolicies             LiveFailoverPolicy[]
+  liveFailoverEvents               LiveFailoverEvent[]
 }
 
 model OrganisationMember {
@@ -1900,6 +1924,8 @@ model Channel {
   programmeSchedule   ProgrammeSchedule?
   externalLiveSources ExternalLiveSource[]
   djAccessGrants      DjAccessGrant[]
+  liveFailoverPolicy  LiveFailoverPolicy?
+  liveFailoverEvents  LiveFailoverEvent[]
 
   @@unique([organisationId, slug])
   @@unique([id, organisationId])
@@ -2103,11 +2129,81 @@ model ExternalLiveSource {
   channel      Channel      @relation(fields: [channelId, organisationId], references: [id, organisationId], onDelete: Cascade)
   createdBy    User         @relation("ExternalLiveSourceCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
   activatedBy  User?        @relation("ExternalLiveSourceActivatedBy", fields: [activatedByUserId], references: [id], onDelete: SetNull)
+  primaryForFailover   LiveFailoverPolicy[] @relation("LiveFailoverPrimarySource")
+  backupForFailover    LiveFailoverPolicy[] @relation("LiveFailoverBackupSource")
+  effectiveForFailover LiveFailoverPolicy[] @relation("LiveFailoverEffectiveSource")
+  manualForFailover    LiveFailoverPolicy[] @relation("LiveFailoverManualSource")
 
   @@unique([organisationId, channelId, name])
+  @@unique([id, organisationId, channelId])
   @@index([organisationId, status])
   @@index([channelId, status, startsAt, endsAt])
   @@index([healthStatus, lastHealthCheckedAt])
+}
+
+model LiveFailoverPolicy {
+  id                          String            @id @default(cuid())
+  organisationId              String
+  channelId                   String
+  primarySourceId             String
+  backupSourceId              String?
+  effectiveSourceId           String?
+  manualSourceId              String?
+  enabled                     Boolean           @default(false)
+  state                       LiveFailoverState  @default(PRIMARY)
+  failureThreshold            Int               @default(3)
+  recoveryThreshold           Int               @default(3)
+  recoveryHoldSeconds         Int               @default(60)
+  recoveryHealthyProbes       Int               @default(0)
+  transitionVersion           Int               @default(0)
+  primaryHealthySince         DateTime?
+  manualOverrideUntil         DateTime?
+  lastTransitionAt            DateTime?
+  lastTransitionReason        String?
+  createdByUserId             String
+  updatedByUserId             String
+  createdAt                   DateTime           @default(now())
+  updatedAt                   DateTime           @updatedAt
+
+  organisation  Organisation       @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  channel       Channel            @relation(fields: [channelId, organisationId], references: [id, organisationId], onDelete: Cascade)
+  primarySource ExternalLiveSource @relation("LiveFailoverPrimarySource", fields: [primarySourceId, organisationId, channelId], references: [id, organisationId, channelId], onDelete: Restrict)
+  backupSource  ExternalLiveSource? @relation("LiveFailoverBackupSource", fields: [backupSourceId, organisationId, channelId], references: [id, organisationId, channelId], onDelete: Restrict)
+  effectiveSource ExternalLiveSource? @relation("LiveFailoverEffectiveSource", fields: [effectiveSourceId, organisationId, channelId], references: [id, organisationId, channelId], onDelete: Restrict)
+  manualSource  ExternalLiveSource? @relation("LiveFailoverManualSource", fields: [manualSourceId, organisationId, channelId], references: [id, organisationId, channelId], onDelete: Restrict)
+  createdBy     User               @relation("LiveFailoverPolicyCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  updatedBy     User               @relation("LiveFailoverPolicyUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: Restrict)
+  events        LiveFailoverEvent[]
+
+  @@unique([organisationId, channelId])
+  @@unique([channelId, organisationId])
+  @@index([enabled, updatedAt])
+  @@index([primarySourceId])
+  @@index([backupSourceId])
+  @@index([effectiveSourceId])
+}
+
+model LiveFailoverEvent {
+  id             String                     @id @default(cuid())
+  policyId       String
+  organisationId String
+  channelId      String
+  kind           LiveFailoverTransitionKind
+  fromSourceId   String?
+  toSourceId     String?
+  reason         String
+  evidence       Json?
+  actorUserId    String?
+  observedAt     DateTime                   @default(now())
+  createdAt      DateTime                   @default(now())
+
+  policy      LiveFailoverPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  organisation Organisation       @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  channel     Channel             @relation(fields: [channelId, organisationId], references: [id, organisationId], onDelete: Cascade)
+
+  @@index([policyId, observedAt])
+  @@index([organisationId, observedAt])
+  @@index([channelId, observedAt])
 }
 
 model DjAccessGrant {

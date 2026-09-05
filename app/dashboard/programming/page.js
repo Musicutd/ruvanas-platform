@@ -7,6 +7,7 @@ import RadioClocksWorkspace from "./RadioClocksWorkspace";
 import AdvancedSchedulerWorkspace from "./AdvancedSchedulerWorkspace";
 import ExternalLiveWorkspace from "./ExternalLiveWorkspace";
 import DjAccessWorkspace from "./DjAccessWorkspace";
+import LiveFailoverWorkspace from "./LiveFailoverWorkspace";
 import styles from "./programming.module.css";
 
 export const dynamic = "force-dynamic";
@@ -41,6 +42,7 @@ export default async function SubscriberProgrammingPage() {
         <div className={styles.workspace}>
           {["OWNER", "MANAGER"].includes(context.membership.role) ? <DjAccessWorkspace /> : null}
           <ExternalLiveWorkspace />
+          <LiveFailoverWorkspace />
           <SmartPlaylistsWorkspace />
           <RadioClocksWorkspace />
           <AdvancedSchedulerWorkspace />

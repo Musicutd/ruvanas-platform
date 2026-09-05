@@ -84,5 +84,5 @@ test("DJ routes enforce existing identity, tenant/channel scope and manager-only
   assert.match(migration, /grantee_membership_fkey/);
   assert.doesNotMatch(page, /tokenHash/);
   assert.match(page, /replaceState/);
-  assert.match(roadmap, /19\.8 \| DJ Access \| IN DEVELOPMENT/);
+  assert.match(roadmap, /19\.8 \| DJ Access \| DEPLOYED/);
 });
