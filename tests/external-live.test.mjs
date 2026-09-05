@@ -94,5 +94,5 @@ test("External Live routes remain tenant-bound, quota-bound and relay-only", asy
   assert.match(manifest, /\/api\/player\/live\//);
   assert.doesNotMatch(manifest, /credentialEncrypted|streamUrl/);
   assert.match(worker, /scanExternalLiveHealth/);
-  assert.match(roadmap, /19\.7 \| External Live \| IN DEVELOPMENT/);
+  assert.match(roadmap, /19\.7 \| External Live \| DEPLOYED/);
 });
