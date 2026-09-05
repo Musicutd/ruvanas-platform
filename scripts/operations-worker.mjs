@@ -9,10 +9,12 @@ import { scanStationStreamHealth } from "../lib/stream-source-health-service.js"
 import { scanExternalLiveHealth } from "../lib/external-live-service.js";
 import { scanLiveFailoverPolicies } from "../lib/live-failover-service.js";
 import { scanStaleBrowserStudioSessions } from "../lib/browser-live-studio-service.js";
+import { applyListenerAnalyticsRetention, refreshPendingListenerAnalytics } from "../lib/listener-analytics-service.js";
 import { deploymentIdentity, safeOperationalErrorCode, structuredServiceLog } from "../lib/operational-observability.mjs";
 import { recordServiceHeartbeat } from "../lib/operational-observability-service.js";
 
 let stopping = false;
+let lastListenerRetentionAt = 0;
 const workerId = String(process.env.RENDER_INSTANCE_ID || `operations-${hostname()}-${process.pid}`).slice(0, 120);
 const processStartedAt = new Date();
 const identity = deploymentIdentity({ service: "OPERATIONS_WORKER", instanceId: workerId, startedAt: processStartedAt });
@@ -40,6 +42,13 @@ while (!stopping) {
     if (failover.scanned > 0) writeLog(failover.onScheduledFallback > 0 ? "warn" : "info", "live_failover_policies_scanned", failover);
     const browserStudios = await scanStaleBrowserStudioSessions(prisma);
     if (browserStudios.scanned > 0) writeLog(browserStudios.fallback > 0 ? "warn" : "info", "browser_live_studios_scanned", browserStudios);
+    const listenerAnalytics = await refreshPendingListenerAnalytics(prisma);
+    if (listenerAnalytics.processed > 0) writeLog("info", "listener_analytics_aggregated", listenerAnalytics);
+    if (Date.now() - lastListenerRetentionAt >= 60 * 60 * 1000) {
+      const listenerRetention = await applyListenerAnalyticsRetention(prisma);
+      lastListenerRetentionAt = Date.now();
+      if (listenerRetention.rawDeleted > 0 || listenerRetention.aggregatesDeleted > 0) writeLog("info", "listener_analytics_retention_applied", listenerRetention);
+    }
   } catch (error) {
     writeLog("error", "operations_scan_failed", { errorCode: safeOperationalErrorCode(error, "OPERATIONS_SCAN_FAILED") });
   }
