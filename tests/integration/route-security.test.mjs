@@ -149,6 +149,18 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   });
   assert.equal(unauthenticatedLiveFailoverUpdate.status, 401);
 
+  const unauthenticatedBrowserStudio = await api("/api/programming/browser-live-studio");
+  assert.equal(unauthenticatedBrowserStudio.status, 401);
+
+  const unauthenticatedBrowserStudioCreate = await api("/api/programming/browser-live-studio", {
+    method: "POST",
+    body: { action: "CREATE" }
+  });
+  assert.equal(unauthenticatedBrowserStudioCreate.status, 401);
+
+  const unauthenticatedPresenterStudio = await api("/api/dj-access/studio");
+  assert.equal(unauthenticatedPresenterStudio.status, 401);
+
   const unauthenticatedPlayerMedia = await api("/api/player/media/not-an-asset");
   assert.equal(unauthenticatedPlayerMedia.status, 401);
 

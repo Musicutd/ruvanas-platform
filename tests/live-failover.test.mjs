@@ -128,5 +128,5 @@ test("Stage 19.9 is wired through the shared worker, resolver, protected relay a
   assert.match(schema, /model LiveFailoverPolicy/);
   assert.match(schema, /model LiveFailoverEvent/);
   assert.match(migration, /LiveFailoverPolicy_distinct_sources_check/);
-  assert.match(roadmap, /19\.9 \| Live Failover \| IN DEVELOPMENT/);
+  assert.match(roadmap, /19\.9 \| Live Failover \| DEPLOYED/);
 });
