@@ -335,6 +335,13 @@ enum PlayoutEventType {
   TRACK_FAILED
 }
 
+enum ListenerAnalyticsEventType {
+  SESSION_STARTED
+  HEARTBEAT
+  SESSION_ENDED
+  PLAYBACK_ERROR
+}
+
 enum MediaType {
   MUSIC
   COMMERCIAL
@@ -1440,6 +1447,9 @@ model Organisation {
   liveFailoverPolicies             LiveFailoverPolicy[]
   liveFailoverEvents               LiveFailoverEvent[]
   voiceTrackSegues                 VoiceTrackSegue[]
+  listenerAnalyticsEvents          ListenerAnalyticsEvent[]
+  listenerAnalyticsHourlyAggregates ListenerAnalyticsHourlyAggregate[]
+  listenerAnalyticsAggregationCursor ListenerAnalyticsAggregationCursor?
 }
 
 model OrganisationMember {
@@ -1962,6 +1972,8 @@ model Channel {
   liveFailoverPolicy  LiveFailoverPolicy?
   liveFailoverEvents  LiveFailoverEvent[]
   voiceTrackSegues    VoiceTrackSegue[]
+  listenerAnalyticsEvents ListenerAnalyticsEvent[]
+  listenerAnalyticsHourlyAggregates ListenerAnalyticsHourlyAggregate[]
 
   @@unique([organisationId, slug])
   @@unique([id, organisationId])
@@ -5686,6 +5698,59 @@ model AnalyticsAggregationCursor {
   lastProofReceivedAt DateTime?
   lastProofEventId    String?
   updatedAt           DateTime  @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+}
+
+model ListenerAnalyticsEvent {
+  id               String                     @id @default(cuid())
+  clientEventId    String
+  organisationId   String
+  channelId        String
+  sessionHash      String                     @db.Char(64)
+  eventType        ListenerAnalyticsEventType
+  occurredAt       DateTime
+  receivedAt       DateTime                   @default(now())
+  listeningSeconds Int                        @default(0)
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  channel      Channel      @relation(fields: [channelId, organisationId], references: [id, organisationId], onDelete: Cascade)
+
+  @@unique([channelId, clientEventId])
+  @@index([organisationId, receivedAt, id])
+  @@index([organisationId, channelId, occurredAt])
+  @@index([channelId, sessionHash, occurredAt])
+}
+
+model ListenerAnalyticsHourlyAggregate {
+  id                  String   @id @default(cuid())
+  organisationId      String
+  channelId           String
+  channelName         String
+  bucketStart         DateTime
+  sessionCount        Int      @default(0)
+  sessionStartedCount Int      @default(0)
+  sessionEndedCount   Int      @default(0)
+  heartbeatCount      Int      @default(0)
+  playbackErrorCount  Int      @default(0)
+  listeningSeconds    Int      @default(0)
+  lastEventReceivedAt DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  channel      Channel      @relation(fields: [channelId, organisationId], references: [id, organisationId], onDelete: Cascade)
+
+  @@unique([organisationId, channelId, bucketStart])
+  @@index([organisationId, bucketStart])
+  @@index([channelId, bucketStart])
+}
+
+model ListenerAnalyticsAggregationCursor {
+  organisationId     String   @id
+  lastEventReceivedAt DateTime?
+  lastEventId         String?
+  updatedAt           DateTime @updatedAt
 
   organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
 }

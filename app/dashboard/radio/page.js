@@ -64,7 +64,8 @@ export default async function OnlineRadioDashboard() {
         { href: "/dashboard/studio", label: "Ruvanas Studio", description: "Request voiceovers and professional production." }
       ] },
       { eyebrow: "Audience", title: "Monitor and improve", description: "Use clear evidence to keep the service reliable.", actions: [
-        { href: "/dashboard/analytics", label: "Service insights", description: "Review operational and audience trends." },
+        { href: "/dashboard/listener-analytics", label: "Listener analytics", description: "Review privacy-safe audience sessions and listening trends." },
+        { href: "/dashboard/analytics", label: "Service insights", description: "Review operational delivery and player health trends." },
         { href: "/dashboard/reports", label: "Delivery reports", description: "Review broadcast and campaign evidence." },
         { href: "/dashboard/support", label: "Ruvanas support", description: "Ask for help and follow your request." }
       ] }
