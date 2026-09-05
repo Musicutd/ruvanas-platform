@@ -140,6 +140,15 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   });
   assert.equal(unauthenticatedAutoDjUpdate.status, 401);
 
+  const unauthenticatedLiveFailover = await api("/api/programming/live-failover");
+  assert.equal(unauthenticatedLiveFailover.status, 401);
+
+  const unauthenticatedLiveFailoverUpdate = await api("/api/programming/live-failover", {
+    method: "POST",
+    body: { channelId: "not-a-channel", primarySourceId: "not-a-source", enabled: true }
+  });
+  assert.equal(unauthenticatedLiveFailoverUpdate.status, 401);
+
   const unauthenticatedPlayerMedia = await api("/api/player/media/not-an-asset");
   assert.equal(unauthenticatedPlayerMedia.status, 401);
 

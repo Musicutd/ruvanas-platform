@@ -22,7 +22,7 @@ export async function GET(request, { params }) {
     if (playoutDecision.sourceType !== "LIVE_SESSION" || playoutDecision.sourceId !== sourceId || resolution.liveSource?.id !== sourceId) {
       return NextResponse.json({ error: "This live source is not in the player's current playout decision." }, { status: 404 });
     }
-    const source = await prisma.externalLiveSource.findFirst({ where: { id: sourceId, organisationId: player.organisationId, channelId: playoutDecision.channelId, status: "ACTIVE", healthStatus: "HEALTHY" } });
+    const source = await prisma.externalLiveSource.findFirst({ where: { id: sourceId, organisationId: player.organisationId, channelId: playoutDecision.channelId, status: { in: ["ACTIVE", "READY"] }, healthStatus: "HEALTHY" } });
     if (!source) return NextResponse.json({ error: "The live source is no longer available." }, { status: 409 });
     const url = await validatePublicStreamEndpoint(source.streamUrl);
     const upstream = await fetch(url, {
