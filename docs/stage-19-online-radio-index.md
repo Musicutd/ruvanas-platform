@@ -2,7 +2,7 @@
 
 ## Baseline
 
-- Architecture baseline: `origin/main` through Stage 19.8 at `3d9bbeb`
+- Architecture baseline: `origin/main` through Stage 19.9 at `e2b0e55`
 - Architecture gate: Stage 19.0
 - Detailed audit: [`stage-19-0-online-radio-architecture-audit.md`](./stage-19-0-online-radio-architecture-audit.md)
 - Status values: `NOT STARTED`, `IN DESIGN`, `IN DEVELOPMENT`, `PR OPEN`, `MERGED`, `DEPLOYED`, `BLOCKED`
@@ -22,8 +22,8 @@
 | 19.6 | Unified Playout Engine | DEPLOYED | [#105](https://github.com/Musicutd/ruvanas-platform/pull/105) | `6d0e674` | `dep-dadgqqvavr4c73at5v5g` | One deterministic priority decision, shared insertions, signed source evidence and explicit fallback alerts are live on the paid service. |
 | 19.7 | External Live | DEPLOYED | [#106](https://github.com/Musicutd/ruvanas-platform/pull/106) | `6d9289c` | `dep-dadhls7lk1mc73bh086g` | Provider-neutral live input, encrypted credentials, protected relay, health gating and controlled activation are live on the paid service. |
 | 19.8 | DJ Access | DEPLOYED | [#107](https://github.com/Musicutd/ruvanas-platform/pull/107) | `3d9bbeb` | `dep-dadrg8navr4c73alpl0g` | Existing-identity, channel-scoped and time-bounded presenter grants with private-link rotation and immediate revocation are live on the paid service. |
-| 19.9 | Live Failover | IN DEVELOPMENT | — | — | — | Health-driven primary/backup switching, scheduled-programming fallback, recovery hysteresis, manual override and transition evidence. |
-| 19.10 | Browser Live Studio | NOT STARTED | — | — | — | Requires external real-time media infrastructure. |
+| 19.9 | Live Failover | DEPLOYED | [#108](https://github.com/Musicutd/ruvanas-platform/pull/108) | `e2b0e55` | `dep-dads6817lnhs73ea4m3g` | Health-driven switching, recovery hysteresis, manual override and unified schedule/AutoDJ fallback are live. |
+| 19.10 | Browser Live Studio | IN DEVELOPMENT | — | — | — | Provider-neutral WHIP/WebRTC studio, DJ-grant boundary, local mixer, governed recording and heartbeat fallback; live publishing remains locked until compatible real-time infrastructure is configured. |
 | 19.11 | Voice Tracking / Segue | NOT STARTED | — | — | — | Reuse AudioLab, waveform and multitrack. |
 | 19.12 | Audio Processing | NOT STARTED | — | — | — | Broadcast profiles on the existing audio worker. |
 | 19.13 | Listener Analytics | NOT STARTED | — | — | — | Public audience events, privacy and aggregation. |

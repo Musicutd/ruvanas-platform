@@ -8,6 +8,7 @@ import { expirePlayerCommands } from "../lib/player-command-service.js";
 import { scanStationStreamHealth } from "../lib/stream-source-health-service.js";
 import { scanExternalLiveHealth } from "../lib/external-live-service.js";
 import { scanLiveFailoverPolicies } from "../lib/live-failover-service.js";
+import { scanStaleBrowserStudioSessions } from "../lib/browser-live-studio-service.js";
 import { deploymentIdentity, safeOperationalErrorCode, structuredServiceLog } from "../lib/operational-observability.mjs";
 import { recordServiceHeartbeat } from "../lib/operational-observability-service.js";
 
@@ -37,6 +38,8 @@ while (!stopping) {
     if (externalLive.scanned > 0) writeLog(externalLive.failing > 0 ? "warn" : "info", "external_live_health_scanned", externalLive);
     const failover = await scanLiveFailoverPolicies(prisma);
     if (failover.scanned > 0) writeLog(failover.onScheduledFallback > 0 ? "warn" : "info", "live_failover_policies_scanned", failover);
+    const browserStudios = await scanStaleBrowserStudioSessions(prisma);
+    if (browserStudios.scanned > 0) writeLog(browserStudios.fallback > 0 ? "warn" : "info", "browser_live_studios_scanned", browserStudios);
   } catch (error) {
     writeLog("error", "operations_scan_failed", { errorCode: safeOperationalErrorCode(error, "OPERATIONS_SCAN_FAILED") });
   }

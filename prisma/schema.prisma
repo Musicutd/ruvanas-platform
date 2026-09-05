@@ -1042,6 +1042,11 @@ enum LiveConnectionQuality {
   FAILED
 }
 
+enum LiveStudioProduct {
+  SCHOOL_RADIO
+  ONLINE_RADIO
+}
+
 enum ReportExportStatus {
   QUEUED
   PROCESSING
@@ -2133,6 +2138,7 @@ model ExternalLiveSource {
   backupForFailover    LiveFailoverPolicy[] @relation("LiveFailoverBackupSource")
   effectiveForFailover LiveFailoverPolicy[] @relation("LiveFailoverEffectiveSource")
   manualForFailover    LiveFailoverPolicy[] @relation("LiveFailoverManualSource")
+  browserStudioSession LiveStudioSession?    @relation("BrowserLiveStudioSource")
 
   @@unique([organisationId, channelId, name])
   @@unique([id, organisationId, channelId])
@@ -2229,7 +2235,9 @@ model DjAccessGrant {
   createdBy    User            @relation("DjAccessGrantCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
   revokedBy    User?           @relation("DjAccessGrantRevokedBy", fields: [revokedByUserId], references: [id], onDelete: SetNull)
   tokens       DjAccessToken[]
+  liveStudioSessions LiveStudioSession[]
 
+  @@unique([id, organisationId, channelId])
   @@index([organisationId, status, startsAt, endsAt])
   @@index([channelId, status, startsAt, endsAt])
   @@index([granteeUserId, status, startsAt, endsAt])
@@ -4261,10 +4269,13 @@ model SchoolNewsStory {
 model LiveStudioSession {
   id                     String                @id @default(cuid())
   organisationId         String
-  programmeId            String
+  product                LiveStudioProduct     @default(SCHOOL_RADIO)
+  programmeId            String?
   episodeId              String?
   channelId              String
-  fallbackPromoVersionId String
+  fallbackPromoVersionId String?
+  djAccessGrantId        String?
+  externalLiveSourceId   String?
   supervisorUserId       String
   title                  String
   status                 LiveStudioStatus      @default(CREATED)
@@ -4281,24 +4292,39 @@ model LiveStudioSession {
   recordEnabled          Boolean               @default(false)
   retentionApproved      Boolean               @default(false)
   recordingMediaAssetId  String?
+  mixerStateJson         Json?
+  providerKey            String?
+  providerSessionRef     String?
+  providerPublishEncrypted String?
+  providerPlaybackUrl    String?
+  providerExpiresAt      DateTime?
+  presenterJoinedAt      DateTime?
+  lastHeartbeatAt        DateTime?
+  sessionVersion         Int                   @default(0)
   endReason              String?
   createdAt              DateTime              @default(now())
   updatedAt              DateTime              @updatedAt
 
   organisation         Organisation    @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  programme            SchoolProgramme @relation(fields: [programmeId], references: [id], onDelete: Restrict)
+  programme            SchoolProgramme? @relation(fields: [programmeId], references: [id], onDelete: Restrict)
   episode              SchoolEpisode?  @relation(fields: [episodeId], references: [id], onDelete: SetNull)
-  channel              Channel         @relation(fields: [channelId], references: [id], onDelete: Restrict)
-  fallbackPromoVersion PromoVersion    @relation(fields: [fallbackPromoVersionId], references: [id], onDelete: Restrict)
+  channel              Channel         @relation(fields: [channelId, organisationId], references: [id, organisationId], onDelete: Restrict)
+  fallbackPromoVersion PromoVersion?   @relation(fields: [fallbackPromoVersionId], references: [id], onDelete: Restrict)
+  djAccessGrant        DjAccessGrant?   @relation(fields: [djAccessGrantId, organisationId, channelId], references: [id, organisationId, channelId], onDelete: Restrict)
+  externalLiveSource   ExternalLiveSource? @relation("BrowserLiveStudioSource", fields: [externalLiveSourceId, organisationId, channelId], references: [id, organisationId, channelId], onDelete: Restrict)
   supervisor           User            @relation("LiveStudioSupervisor", fields: [supervisorUserId], references: [id], onDelete: Restrict)
   recordingMediaAsset  MediaAsset?     @relation("LiveStudioRecordingAsset", fields: [recordingMediaAssetId], references: [id], onDelete: SetNull)
 
   @@index([organisationId, status, scheduledStart])
+  @@index([organisationId, product, status, scheduledStart])
+  @@index([djAccessGrantId, status])
+  @@index([lastHeartbeatAt, status])
   @@index([programmeId])
   @@index([episodeId])
   @@index([channelId])
   @@index([fallbackPromoVersionId])
   @@index([supervisorUserId])
+  @@unique([externalLiveSourceId, organisationId, channelId])
 }
 
 model SchoolAudioUploadSession {

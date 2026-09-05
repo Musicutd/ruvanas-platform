@@ -33,8 +33,8 @@ export default function DjAccessClient() {
       <div className={styles.live}><span>ACCESS READY</span><strong>{state.session.channel?.station?.name ? `${state.session.channel.station.name} / ` : ""}{state.session.channel?.name}</strong></div>
       <dl className={styles.details}><div><dt>Starts</dt><dd>{new Date(state.session.startsAt).toLocaleString()}</dd></div><div><dt>Ends</dt><dd>{new Date(state.session.endsAt).toLocaleString()}</dd></div></dl>
       <div className={styles.permissions}><strong>Approved permissions</strong>{state.session.capabilities.map((capability) => <span key={capability}>✓ {capability.replaceAll("_", " ").toLowerCase()}</span>)}</div>
-      <p className={styles.body}>Your identity and access window are ready. External Live controls are available in Programming when included in this grant. Browser Live Studio will use this same secure boundary in Stage 19.10.</p>
-      <div className={styles.actions}><a className={styles.primary} href="/dashboard/programming">Open programming</a><button type="button" onClick={leave}>Remove access from browser</button></div>
+      <p className={styles.body}>Your identity and access window are ready. Every live control remains limited to this presenter, channel and approved time window.</p>
+      <div className={styles.actions}>{state.session.capabilities.includes("START_BROWSER_STUDIO") ? <a className={styles.primary} href="/dj/studio">Open Browser Live Studio</a> : null}<a className={styles.primary} href="/dashboard/programming">Open programming</a><button type="button" onClick={leave}>Remove access from browser</button></div>
     </>}
   </article>;
 }
