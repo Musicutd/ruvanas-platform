@@ -290,6 +290,18 @@ enum ExternalLiveCredentialType {
   BEARER
 }
 
+enum DjAccessGrantStatus {
+  ACTIVE
+  REVOKED
+}
+
+enum DjAccessCapability {
+  VIEW_CHANNEL
+  CONTROL_EXTERNAL_LIVE
+  START_BROWSER_STUDIO
+  RECORD_LIVE_SESSION
+}
+
 enum PlayoutEventType {
   WORKER_STARTED
   WORKER_STOPPED
@@ -1248,6 +1260,8 @@ model User {
   publishedProgrammeScheduleVersions ProgrammeScheduleVersion[]       @relation("ProgrammeScheduleVersionPublishedBy")
   createdExternalLiveSources         ExternalLiveSource[]             @relation("ExternalLiveSourceCreatedBy")
   activatedExternalLiveSources       ExternalLiveSource[]             @relation("ExternalLiveSourceActivatedBy")
+  createdDjAccessGrants              DjAccessGrant[]                   @relation("DjAccessGrantCreatedBy")
+  revokedDjAccessGrants              DjAccessGrant[]                   @relation("DjAccessGrantRevokedBy")
 }
 
 model Organisation {
@@ -1366,6 +1380,7 @@ model Organisation {
   complimentaryAccessCodes         ComplimentaryAccessCode[]
   autoDjPolicies                   AutoDjPolicy[]
   externalLiveSources              ExternalLiveSource[]
+  djAccessGrants                   DjAccessGrant[]
 }
 
 model OrganisationMember {
@@ -1377,6 +1392,7 @@ model OrganisationMember {
 
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  djAccessGrants DjAccessGrant[]
 
   @@unique([userId, organisationId])
   @@index([organisationId])
@@ -1883,6 +1899,7 @@ model Channel {
   autoDjPolicy        AutoDjPolicy?
   programmeSchedule   ProgrammeSchedule?
   externalLiveSources ExternalLiveSource[]
+  djAccessGrants      DjAccessGrant[]
 
   @@unique([organisationId, slug])
   @@unique([id, organisationId])
@@ -2091,6 +2108,50 @@ model ExternalLiveSource {
   @@index([organisationId, status])
   @@index([channelId, status, startsAt, endsAt])
   @@index([healthStatus, lastHealthCheckedAt])
+}
+
+model DjAccessGrant {
+  id              String                @id @default(cuid())
+  organisationId  String
+  channelId       String
+  granteeUserId   String
+  label           String
+  capabilities    DjAccessCapability[]  @default([VIEW_CHANNEL])
+  status          DjAccessGrantStatus   @default(ACTIVE)
+  startsAt        DateTime
+  endsAt          DateTime
+  createdByUserId String
+  revokedByUserId String?
+  revokedAt       DateTime?
+  revokeReason    String?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  organisation Organisation    @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  channel      Channel         @relation(fields: [channelId, organisationId], references: [id, organisationId], onDelete: Cascade)
+  granteeMembership OrganisationMember @relation(fields: [granteeUserId, organisationId], references: [userId, organisationId], onDelete: Cascade)
+  createdBy    User            @relation("DjAccessGrantCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  revokedBy    User?           @relation("DjAccessGrantRevokedBy", fields: [revokedByUserId], references: [id], onDelete: SetNull)
+  tokens       DjAccessToken[]
+
+  @@index([organisationId, status, startsAt, endsAt])
+  @@index([channelId, status, startsAt, endsAt])
+  @@index([granteeUserId, status, startsAt, endsAt])
+}
+
+model DjAccessToken {
+  id         String    @id @default(cuid())
+  grantId    String
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  grant DjAccessGrant @relation(fields: [grantId], references: [id], onDelete: Cascade)
+
+  @@index([grantId, revokedAt, expiresAt])
+  @@index([expiresAt])
 }
 
 model PlayoutEvent {
