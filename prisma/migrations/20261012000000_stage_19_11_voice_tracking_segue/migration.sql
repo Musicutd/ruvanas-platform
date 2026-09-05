@@ -1,7 +1,5 @@
 CREATE TYPE "VoiceTrackSegueStatus" AS ENUM ('DRAFT', 'APPROVED', 'ARCHIVED');
 
-ALTER TYPE "RadioClockItemType" ADD VALUE IF NOT EXISTS 'VOICE_TRACK';
-
 CREATE TABLE "VoiceTrackSegue" (
   "id" TEXT NOT NULL,
   "organisationId" TEXT NOT NULL,
