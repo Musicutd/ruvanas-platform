@@ -995,6 +995,24 @@ enum AudioRenderStatus {
   CANCELLED
 }
 
+enum BroadcastProcessingProfileStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum BroadcastProcessingCodec {
+  MP3
+  AAC
+  WAV
+}
+
+enum AudioProcessingQcStatus {
+  PENDING
+  PASSED
+  FAILED
+}
+
 enum SchoolPodcastStatus {
   DRAFT
   PUBLISHED
@@ -1212,6 +1230,7 @@ model User {
   schoolAudioUploads                 SchoolAudioUploadSession[]       @relation("SchoolAudioUploadCreatedBy")
   createdAudioMarkers                AudioMarker[]                    @relation("AudioMarkerCreatedBy")
   requestedAudioRenders              AudioRender[]                    @relation("AudioRenderRequestedBy")
+  createdBroadcastProcessingProfiles BroadcastProcessingProfile[]     @relation("BroadcastProcessingProfileCreatedBy")
   createdSchoolRundowns              SchoolRundown[]                  @relation("SchoolRundownCreatedBy")
   reviewedSchoolRundowns             SchoolRundown[]                  @relation("SchoolRundownReviewedBy")
   createdPodcastSeries               SchoolPodcastSeries[]            @relation("SchoolPodcastSeriesCreatedBy")
@@ -1292,12 +1311,12 @@ model User {
   publishedProgrammeScheduleVersions ProgrammeScheduleVersion[]       @relation("ProgrammeScheduleVersionPublishedBy")
   createdExternalLiveSources         ExternalLiveSource[]             @relation("ExternalLiveSourceCreatedBy")
   activatedExternalLiveSources       ExternalLiveSource[]             @relation("ExternalLiveSourceActivatedBy")
-  createdDjAccessGrants              DjAccessGrant[]                   @relation("DjAccessGrantCreatedBy")
-  revokedDjAccessGrants              DjAccessGrant[]                   @relation("DjAccessGrantRevokedBy")
-  createdLiveFailoverPolicies        LiveFailoverPolicy[]              @relation("LiveFailoverPolicyCreatedBy")
-  updatedLiveFailoverPolicies        LiveFailoverPolicy[]              @relation("LiveFailoverPolicyUpdatedBy")
-  createdVoiceTrackSegues            VoiceTrackSegue[]                 @relation("VoiceTrackSegueCreatedBy")
-  approvedVoiceTrackSegues           VoiceTrackSegue[]                 @relation("VoiceTrackSegueApprovedBy")
+  createdDjAccessGrants              DjAccessGrant[]                  @relation("DjAccessGrantCreatedBy")
+  revokedDjAccessGrants              DjAccessGrant[]                  @relation("DjAccessGrantRevokedBy")
+  createdLiveFailoverPolicies        LiveFailoverPolicy[]             @relation("LiveFailoverPolicyCreatedBy")
+  updatedLiveFailoverPolicies        LiveFailoverPolicy[]             @relation("LiveFailoverPolicyUpdatedBy")
+  createdVoiceTrackSegues            VoiceTrackSegue[]                @relation("VoiceTrackSegueCreatedBy")
+  approvedVoiceTrackSegues           VoiceTrackSegue[]                @relation("VoiceTrackSegueApprovedBy")
 }
 
 model Organisation {
@@ -1362,6 +1381,7 @@ model Organisation {
   audioTakes                       AudioTake[]
   schoolAudioUploads               SchoolAudioUploadSession[]
   audioRenders                     AudioRender[]
+  broadcastProcessingProfiles      BroadcastProcessingProfile[]
   schoolRundowns                   SchoolRundown[]
   schoolPodcastSeries              SchoolPodcastSeries[]
   schoolPodcastEpisodes            SchoolPodcastEpisode[]
@@ -1429,8 +1449,8 @@ model OrganisationMember {
   role           UserRole @default(OWNER)
   createdAt      DateTime @default(now())
 
-  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organisation   Organisation    @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   djAccessGrants DjAccessGrant[]
 
   @@unique([userId, organisationId])
@@ -2141,15 +2161,15 @@ model ExternalLiveSource {
   createdAt           DateTime                   @default(now())
   updatedAt           DateTime                   @updatedAt
 
-  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  channel      Channel      @relation(fields: [channelId, organisationId], references: [id, organisationId], onDelete: Cascade)
-  createdBy    User         @relation("ExternalLiveSourceCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  activatedBy  User?        @relation("ExternalLiveSourceActivatedBy", fields: [activatedByUserId], references: [id], onDelete: SetNull)
+  organisation         Organisation         @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  channel              Channel              @relation(fields: [channelId, organisationId], references: [id, organisationId], onDelete: Cascade)
+  createdBy            User                 @relation("ExternalLiveSourceCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  activatedBy          User?                @relation("ExternalLiveSourceActivatedBy", fields: [activatedByUserId], references: [id], onDelete: SetNull)
   primaryForFailover   LiveFailoverPolicy[] @relation("LiveFailoverPrimarySource")
   backupForFailover    LiveFailoverPolicy[] @relation("LiveFailoverBackupSource")
   effectiveForFailover LiveFailoverPolicy[] @relation("LiveFailoverEffectiveSource")
   manualForFailover    LiveFailoverPolicy[] @relation("LiveFailoverManualSource")
-  browserStudioSession LiveStudioSession?    @relation("BrowserLiveStudioSource")
+  browserStudioSession LiveStudioSession?   @relation("BrowserLiveStudioSource")
 
   @@unique([organisationId, channelId, name])
   @@unique([id, organisationId, channelId])
@@ -2159,38 +2179,38 @@ model ExternalLiveSource {
 }
 
 model LiveFailoverPolicy {
-  id                          String            @id @default(cuid())
-  organisationId              String
-  channelId                   String
-  primarySourceId             String
-  backupSourceId              String?
-  effectiveSourceId           String?
-  manualSourceId              String?
-  enabled                     Boolean           @default(false)
-  state                       LiveFailoverState  @default(PRIMARY)
-  failureThreshold            Int               @default(3)
-  recoveryThreshold           Int               @default(3)
-  recoveryHoldSeconds         Int               @default(60)
-  recoveryHealthyProbes       Int               @default(0)
-  transitionVersion           Int               @default(0)
-  primaryHealthySince         DateTime?
-  manualOverrideUntil         DateTime?
-  lastTransitionAt            DateTime?
-  lastTransitionReason        String?
-  createdByUserId             String
-  updatedByUserId             String
-  createdAt                   DateTime           @default(now())
-  updatedAt                   DateTime           @updatedAt
+  id                    String            @id @default(cuid())
+  organisationId        String
+  channelId             String
+  primarySourceId       String
+  backupSourceId        String?
+  effectiveSourceId     String?
+  manualSourceId        String?
+  enabled               Boolean           @default(false)
+  state                 LiveFailoverState @default(PRIMARY)
+  failureThreshold      Int               @default(3)
+  recoveryThreshold     Int               @default(3)
+  recoveryHoldSeconds   Int               @default(60)
+  recoveryHealthyProbes Int               @default(0)
+  transitionVersion     Int               @default(0)
+  primaryHealthySince   DateTime?
+  manualOverrideUntil   DateTime?
+  lastTransitionAt      DateTime?
+  lastTransitionReason  String?
+  createdByUserId       String
+  updatedByUserId       String
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
 
-  organisation  Organisation       @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  channel       Channel            @relation(fields: [channelId, organisationId], references: [id, organisationId], onDelete: Cascade)
-  primarySource ExternalLiveSource @relation("LiveFailoverPrimarySource", fields: [primarySourceId, organisationId, channelId], references: [id, organisationId, channelId], onDelete: Restrict)
-  backupSource  ExternalLiveSource? @relation("LiveFailoverBackupSource", fields: [backupSourceId, organisationId, channelId], references: [id, organisationId, channelId], onDelete: Restrict)
+  organisation    Organisation        @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  channel         Channel             @relation(fields: [channelId, organisationId], references: [id, organisationId], onDelete: Cascade)
+  primarySource   ExternalLiveSource  @relation("LiveFailoverPrimarySource", fields: [primarySourceId, organisationId, channelId], references: [id, organisationId, channelId], onDelete: Restrict)
+  backupSource    ExternalLiveSource? @relation("LiveFailoverBackupSource", fields: [backupSourceId, organisationId, channelId], references: [id, organisationId, channelId], onDelete: Restrict)
   effectiveSource ExternalLiveSource? @relation("LiveFailoverEffectiveSource", fields: [effectiveSourceId, organisationId, channelId], references: [id, organisationId, channelId], onDelete: Restrict)
-  manualSource  ExternalLiveSource? @relation("LiveFailoverManualSource", fields: [manualSourceId, organisationId, channelId], references: [id, organisationId, channelId], onDelete: Restrict)
-  createdBy     User               @relation("LiveFailoverPolicyCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  updatedBy     User               @relation("LiveFailoverPolicyUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: Restrict)
-  events        LiveFailoverEvent[]
+  manualSource    ExternalLiveSource? @relation("LiveFailoverManualSource", fields: [manualSourceId, organisationId, channelId], references: [id, organisationId, channelId], onDelete: Restrict)
+  createdBy       User                @relation("LiveFailoverPolicyCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  updatedBy       User                @relation("LiveFailoverPolicyUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: Restrict)
+  events          LiveFailoverEvent[]
 
   @@unique([organisationId, channelId])
   @@unique([channelId, organisationId])
@@ -2214,9 +2234,9 @@ model LiveFailoverEvent {
   observedAt     DateTime                   @default(now())
   createdAt      DateTime                   @default(now())
 
-  policy      LiveFailoverPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  policy       LiveFailoverPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
   organisation Organisation       @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  channel     Channel             @relation(fields: [channelId, organisationId], references: [id, organisationId], onDelete: Cascade)
+  channel      Channel            @relation(fields: [channelId, organisationId], references: [id, organisationId], onDelete: Cascade)
 
   @@index([policyId, observedAt])
   @@index([organisationId, observedAt])
@@ -2224,28 +2244,28 @@ model LiveFailoverEvent {
 }
 
 model DjAccessGrant {
-  id              String                @id @default(cuid())
+  id              String               @id @default(cuid())
   organisationId  String
   channelId       String
   granteeUserId   String
   label           String
-  capabilities    DjAccessCapability[]  @default([VIEW_CHANNEL])
-  status          DjAccessGrantStatus   @default(ACTIVE)
+  capabilities    DjAccessCapability[] @default([VIEW_CHANNEL])
+  status          DjAccessGrantStatus  @default(ACTIVE)
   startsAt        DateTime
   endsAt          DateTime
   createdByUserId String
   revokedByUserId String?
   revokedAt       DateTime?
   revokeReason    String?
-  createdAt       DateTime              @default(now())
-  updatedAt       DateTime              @updatedAt
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
 
-  organisation Organisation    @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  channel      Channel         @relation(fields: [channelId, organisationId], references: [id, organisationId], onDelete: Cascade)
-  granteeMembership OrganisationMember @relation(fields: [granteeUserId, organisationId], references: [userId, organisationId], onDelete: Cascade)
-  createdBy    User            @relation("DjAccessGrantCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  revokedBy    User?           @relation("DjAccessGrantRevokedBy", fields: [revokedByUserId], references: [id], onDelete: SetNull)
-  tokens       DjAccessToken[]
+  organisation       Organisation        @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  channel            Channel             @relation(fields: [channelId, organisationId], references: [id, organisationId], onDelete: Cascade)
+  granteeMembership  OrganisationMember  @relation(fields: [granteeUserId, organisationId], references: [userId, organisationId], onDelete: Cascade)
+  createdBy          User                @relation("DjAccessGrantCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  revokedBy          User?               @relation("DjAccessGrantRevokedBy", fields: [revokedByUserId], references: [id], onDelete: SetNull)
+  tokens             DjAccessToken[]
   liveStudioSessions LiveStudioSession[]
 
   @@unique([id, organisationId, channelId])
@@ -2381,7 +2401,7 @@ model PromoVersion {
   proofOfPlayEvents           ProofOfPlayEvent[]
   schoolRundownItems          SchoolRundownItem[]
   radioClockItems             RadioClockItem[]
-  voiceTrackSegues             VoiceTrackSegue[]
+  voiceTrackSegues            VoiceTrackSegue[]
   retailMediaCreatives        RetailMediaOrderCreative[]
   schoolEpisodeExchangeOffers SchoolEpisodeExchangeOffer[]
 
@@ -2960,15 +2980,15 @@ model Track {
   createdAt            DateTime                @default(now())
   updatedAt            DateTime                @updatedAt
 
-  mediaAsset         MediaAsset          @relation(fields: [mediaAssetId], references: [id], onDelete: Cascade)
-  rightsConfirmedBy  User?               @relation("TrackRightsConfirmedBy", fields: [rightsConfirmedById], references: [id], onDelete: SetNull)
-  rightsReviewedBy   User?               @relation("TrackRightsReviewedBy", fields: [rightsReviewedById], references: [id], onDelete: SetNull)
-  musicModes         MusicModeTrack[]
-  proofOfPlayEvents  ProofOfPlayEvent[]
-  schoolRundownItems SchoolRundownItem[]
-  radioClockItems    RadioClockItem[]
-  outgoingVoiceTrackSegues VoiceTrackSegue[] @relation("VoiceTrackSegueOutgoingTrack")
-  incomingVoiceTrackSegues VoiceTrackSegue[] @relation("VoiceTrackSegueIncomingTrack")
+  mediaAsset               MediaAsset          @relation(fields: [mediaAssetId], references: [id], onDelete: Cascade)
+  rightsConfirmedBy        User?               @relation("TrackRightsConfirmedBy", fields: [rightsConfirmedById], references: [id], onDelete: SetNull)
+  rightsReviewedBy         User?               @relation("TrackRightsReviewedBy", fields: [rightsReviewedById], references: [id], onDelete: SetNull)
+  musicModes               MusicModeTrack[]
+  proofOfPlayEvents        ProofOfPlayEvent[]
+  schoolRundownItems       SchoolRundownItem[]
+  radioClockItems          RadioClockItem[]
+  outgoingVoiceTrackSegues VoiceTrackSegue[]   @relation("VoiceTrackSegueOutgoingTrack")
+  incomingVoiceTrackSegues VoiceTrackSegue[]   @relation("VoiceTrackSegueIncomingTrack")
 
   @@index([status])
   @@index([artist, title])
@@ -3099,12 +3119,12 @@ model RadioClockItem {
   createdAt         DateTime             @default(now())
   updatedAt         DateTime             @updatedAt
 
-  radioClock    RadioClock     @relation(fields: [radioClockId], references: [id], onDelete: Cascade)
-  musicMode     MusicMode?     @relation(fields: [musicModeId], references: [id], onDelete: Restrict)
-  track         Track?         @relation(fields: [trackId], references: [id], onDelete: Restrict)
-  promoVersion  PromoVersion?  @relation(fields: [promoVersionId], references: [id], onDelete: Restrict)
+  radioClock      RadioClock       @relation(fields: [radioClockId], references: [id], onDelete: Cascade)
+  musicMode       MusicMode?       @relation(fields: [musicModeId], references: [id], onDelete: Restrict)
+  track           Track?           @relation(fields: [trackId], references: [id], onDelete: Restrict)
+  promoVersion    PromoVersion?    @relation(fields: [promoVersionId], references: [id], onDelete: Restrict)
   voiceTrackSegue VoiceTrackSegue? @relation(fields: [voiceTrackSegueId], references: [id], onDelete: Restrict)
-  schoolRundown SchoolRundown? @relation(fields: [schoolRundownId], references: [id], onDelete: Restrict)
+  schoolRundown   SchoolRundown?   @relation(fields: [schoolRundownId], references: [id], onDelete: Restrict)
 
   @@unique([radioClockId, position])
   @@index([radioClockId, offsetSeconds])
@@ -3116,39 +3136,39 @@ model RadioClockItem {
 }
 
 model VoiceTrackSegue {
-  id                    String                @id @default(cuid())
-  organisationId        String
-  channelId             String
-  title                 String
-  status                VoiceTrackSegueStatus @default(DRAFT)
-  audioProjectId        String
-  audioRenderId         String
-  voicePromoVersionId   String
-  outgoingTrackId       String
-  incomingTrackId       String
-  outgoingCueOutMs      Int
-  voiceTrimStartMs      Int                   @default(0)
-  voiceTrimEndMs        Int
-  incomingIntroEndMs    Int
-  outgoingOverlapMs     Int                   @default(2000)
-  incomingOverlapMs     Int                   @default(2000)
-  duckingDb             Float                 @default(-12)
-  version               Int                   @default(1)
-  createdByUserId       String
-  approvedByUserId      String?
-  approvedAt            DateTime?
-  createdAt             DateTime              @default(now())
-  updatedAt             DateTime              @updatedAt
+  id                  String                @id @default(cuid())
+  organisationId      String
+  channelId           String
+  title               String
+  status              VoiceTrackSegueStatus @default(DRAFT)
+  audioProjectId      String
+  audioRenderId       String
+  voicePromoVersionId String
+  outgoingTrackId     String
+  incomingTrackId     String
+  outgoingCueOutMs    Int
+  voiceTrimStartMs    Int                   @default(0)
+  voiceTrimEndMs      Int
+  incomingIntroEndMs  Int
+  outgoingOverlapMs   Int                   @default(2000)
+  incomingOverlapMs   Int                   @default(2000)
+  duckingDb           Float                 @default(-12)
+  version             Int                   @default(1)
+  createdByUserId     String
+  approvedByUserId    String?
+  approvedAt          DateTime?
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
 
-  organisation      Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  channel           Channel      @relation(fields: [channelId, organisationId], references: [id, organisationId], onDelete: Cascade)
-  audioProject      AudioProject @relation(fields: [audioProjectId], references: [id], onDelete: Restrict)
-  audioRender       AudioRender  @relation(fields: [audioRenderId], references: [id], onDelete: Restrict)
-  voicePromoVersion PromoVersion @relation(fields: [voicePromoVersionId], references: [id], onDelete: Restrict)
-  outgoingTrack     Track        @relation("VoiceTrackSegueOutgoingTrack", fields: [outgoingTrackId], references: [id], onDelete: Restrict)
-  incomingTrack     Track        @relation("VoiceTrackSegueIncomingTrack", fields: [incomingTrackId], references: [id], onDelete: Restrict)
-  createdBy         User         @relation("VoiceTrackSegueCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  approvedBy        User?        @relation("VoiceTrackSegueApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
+  organisation      Organisation     @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  channel           Channel          @relation(fields: [channelId, organisationId], references: [id, organisationId], onDelete: Cascade)
+  audioProject      AudioProject     @relation(fields: [audioProjectId], references: [id], onDelete: Restrict)
+  audioRender       AudioRender      @relation(fields: [audioRenderId], references: [id], onDelete: Restrict)
+  voicePromoVersion PromoVersion     @relation(fields: [voicePromoVersionId], references: [id], onDelete: Restrict)
+  outgoingTrack     Track            @relation("VoiceTrackSegueOutgoingTrack", fields: [outgoingTrackId], references: [id], onDelete: Restrict)
+  incomingTrack     Track            @relation("VoiceTrackSegueIncomingTrack", fields: [incomingTrackId], references: [id], onDelete: Restrict)
+  createdBy         User             @relation("VoiceTrackSegueCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  approvedBy        User?            @relation("VoiceTrackSegueApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
   radioClockItems   RadioClockItem[]
 
   @@unique([id, organisationId])
@@ -4143,35 +4163,78 @@ model AudioMarker {
 }
 
 model AudioRender {
-  id                   String            @id @default(cuid())
-  organisationId       String
-  projectId            String
-  versionId            String
-  outputMediaAssetId   String?
-  outputPromoVersionId String?
-  requestedByUserId    String
-  preset               AudioRenderPreset
-  status               AudioRenderStatus @default(QUEUED)
-  loudnessLufs         Float?
-  resultJson           Json?
-  errorMessage         String?
-  startedAt            DateTime?
-  completedAt          DateTime?
-  createdAt            DateTime          @default(now())
-  updatedAt            DateTime          @updatedAt
+  id                                 String                   @id @default(cuid())
+  organisationId                     String
+  projectId                          String
+  versionId                          String
+  outputMediaAssetId                 String?
+  outputPromoVersionId               String?
+  requestedByUserId                  String
+  preset                             AudioRenderPreset
+  status                             AudioRenderStatus        @default(QUEUED)
+  broadcastProcessingProfileId       String?
+  broadcastProcessingProfileRevision Int?
+  processingProfileJson              Json?
+  processingKey                      String?                  @unique
+  processingQcStatus                 AudioProcessingQcStatus?
+  processingQcNotes                  String?
+  processingAttempts                 Int                      @default(0)
+  loudnessLufs                       Float?
+  resultJson                         Json?
+  errorMessage                       String?
+  startedAt                          DateTime?
+  completedAt                        DateTime?
+  createdAt                          DateTime                 @default(now())
+  updatedAt                          DateTime                 @updatedAt
 
-  organisation       Organisation        @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  project            AudioProject        @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  version            AudioProjectVersion @relation(fields: [versionId], references: [id], onDelete: Restrict)
-  outputMediaAsset   MediaAsset?         @relation("AudioRenderOutput", fields: [outputMediaAssetId], references: [id], onDelete: SetNull)
-  outputPromoVersion PromoVersion?       @relation("AudioRenderPromoVersion", fields: [outputPromoVersionId], references: [id], onDelete: SetNull)
-  requestedBy        User                @relation("AudioRenderRequestedBy", fields: [requestedByUserId], references: [id], onDelete: Restrict)
-  voiceTrackSegues    VoiceTrackSegue[]
+  organisation               Organisation                @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  project                    AudioProject                @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  version                    AudioProjectVersion         @relation(fields: [versionId], references: [id], onDelete: Restrict)
+  outputMediaAsset           MediaAsset?                 @relation("AudioRenderOutput", fields: [outputMediaAssetId], references: [id], onDelete: SetNull)
+  outputPromoVersion         PromoVersion?               @relation("AudioRenderPromoVersion", fields: [outputPromoVersionId], references: [id], onDelete: SetNull)
+  requestedBy                User                        @relation("AudioRenderRequestedBy", fields: [requestedByUserId], references: [id], onDelete: Restrict)
+  broadcastProcessingProfile BroadcastProcessingProfile? @relation(fields: [broadcastProcessingProfileId], references: [id], onDelete: SetNull)
+  voiceTrackSegues           VoiceTrackSegue[]
 
   @@index([organisationId, createdAt])
   @@index([projectId, createdAt])
   @@index([status, createdAt])
   @@index([versionId])
+  @@index([broadcastProcessingProfileId, processingQcStatus, createdAt])
+}
+
+model BroadcastProcessingProfile {
+  id                     String                           @id @default(cuid())
+  organisationId         String
+  name                   String
+  purpose                String?
+  status                 BroadcastProcessingProfileStatus @default(DRAFT)
+  codec                  BroadcastProcessingCodec         @default(MP3)
+  bitrateKbps            Int                              @default(192)
+  sampleRateHz           Int                              @default(48000)
+  targetLufs             Float                            @default(-16)
+  truePeakDbfs           Float                            @default(-1.5)
+  maxLoudnessRangeLu     Float                            @default(12)
+  highpassHz             Int                              @default(30)
+  lowpassHz              Int                              @default(18000)
+  compressionThresholdDb Float                            @default(-18)
+  compressionRatio       Float                            @default(2.5)
+  compressionAttackMs    Int                              @default(20)
+  compressionReleaseMs   Int                              @default(250)
+  limiterEnabled         Boolean                          @default(true)
+  version                Int                              @default(1)
+  createdByUserId        String
+  createdAt              DateTime                         @default(now())
+  updatedAt              DateTime                         @updatedAt
+
+  organisation Organisation  @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  createdBy    User          @relation("BroadcastProcessingProfileCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  renders      AudioRender[]
+
+  @@unique([id, organisationId])
+  @@unique([organisationId, name])
+  @@index([organisationId, status, updatedAt])
+  @@index([createdByUserId])
 }
 
 model SchoolPodcastSeries {
@@ -4334,54 +4397,55 @@ model SchoolNewsStory {
 }
 
 model LiveStudioSession {
-  id                     String                @id @default(cuid())
-  organisationId         String
-  product                LiveStudioProduct     @default(SCHOOL_RADIO)
-  programmeId            String?
-  episodeId              String?
-  channelId              String
-  fallbackPromoVersionId String?
-  djAccessGrantId        String?
-  externalLiveSourceId   String?
-  supervisorUserId       String
-  title                  String
-  status                 LiveStudioStatus      @default(CREATED)
-  connectionQuality      LiveConnectionQuality @default(UNKNOWN)
-  soundcheckJson         Json?
-  scheduledStart         DateTime
-  scheduledEnd           DateTime
-  connectionApprovedAt   DateTime?
-  goLiveTokenHash        String?
-  goLiveTokenExpiresAt   DateTime?
-  liveStartedAt          DateTime?
-  fallbackActivatedAt    DateTime?
-  endedAt                DateTime?
-  recordEnabled          Boolean               @default(false)
-  retentionApproved      Boolean               @default(false)
-  recordingMediaAssetId  String?
-  mixerStateJson         Json?
-  providerKey            String?
-  providerSessionRef     String?
+  id                       String                @id @default(cuid())
+  organisationId           String
+  product                  LiveStudioProduct     @default(SCHOOL_RADIO)
+  programmeId              String?
+  episodeId                String?
+  channelId                String
+  fallbackPromoVersionId   String?
+  djAccessGrantId          String?
+  externalLiveSourceId     String?
+  supervisorUserId         String
+  title                    String
+  status                   LiveStudioStatus      @default(CREATED)
+  connectionQuality        LiveConnectionQuality @default(UNKNOWN)
+  soundcheckJson           Json?
+  scheduledStart           DateTime
+  scheduledEnd             DateTime
+  connectionApprovedAt     DateTime?
+  goLiveTokenHash          String?
+  goLiveTokenExpiresAt     DateTime?
+  liveStartedAt            DateTime?
+  fallbackActivatedAt      DateTime?
+  endedAt                  DateTime?
+  recordEnabled            Boolean               @default(false)
+  retentionApproved        Boolean               @default(false)
+  recordingMediaAssetId    String?
+  mixerStateJson           Json?
+  providerKey              String?
+  providerSessionRef       String?
   providerPublishEncrypted String?
-  providerPlaybackUrl    String?
-  providerExpiresAt      DateTime?
-  presenterJoinedAt      DateTime?
-  lastHeartbeatAt        DateTime?
-  sessionVersion         Int                   @default(0)
-  endReason              String?
-  createdAt              DateTime              @default(now())
-  updatedAt              DateTime              @updatedAt
+  providerPlaybackUrl      String?
+  providerExpiresAt        DateTime?
+  presenterJoinedAt        DateTime?
+  lastHeartbeatAt          DateTime?
+  sessionVersion           Int                   @default(0)
+  endReason                String?
+  createdAt                DateTime              @default(now())
+  updatedAt                DateTime              @updatedAt
 
-  organisation         Organisation    @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  programme            SchoolProgramme? @relation(fields: [programmeId], references: [id], onDelete: Restrict)
-  episode              SchoolEpisode?  @relation(fields: [episodeId], references: [id], onDelete: SetNull)
-  channel              Channel         @relation(fields: [channelId, organisationId], references: [id, organisationId], onDelete: Restrict)
-  fallbackPromoVersion PromoVersion?   @relation(fields: [fallbackPromoVersionId], references: [id], onDelete: Restrict)
-  djAccessGrant        DjAccessGrant?   @relation(fields: [djAccessGrantId, organisationId, channelId], references: [id, organisationId, channelId], onDelete: Restrict)
+  organisation         Organisation        @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  programme            SchoolProgramme?    @relation(fields: [programmeId], references: [id], onDelete: Restrict)
+  episode              SchoolEpisode?      @relation(fields: [episodeId], references: [id], onDelete: SetNull)
+  channel              Channel             @relation(fields: [channelId, organisationId], references: [id, organisationId], onDelete: Restrict)
+  fallbackPromoVersion PromoVersion?       @relation(fields: [fallbackPromoVersionId], references: [id], onDelete: Restrict)
+  djAccessGrant        DjAccessGrant?      @relation(fields: [djAccessGrantId, organisationId, channelId], references: [id, organisationId, channelId], onDelete: Restrict)
   externalLiveSource   ExternalLiveSource? @relation("BrowserLiveStudioSource", fields: [externalLiveSourceId, organisationId, channelId], references: [id, organisationId, channelId], onDelete: Restrict)
-  supervisor           User            @relation("LiveStudioSupervisor", fields: [supervisorUserId], references: [id], onDelete: Restrict)
-  recordingMediaAsset  MediaAsset?     @relation("LiveStudioRecordingAsset", fields: [recordingMediaAssetId], references: [id], onDelete: SetNull)
+  supervisor           User                @relation("LiveStudioSupervisor", fields: [supervisorUserId], references: [id], onDelete: Restrict)
+  recordingMediaAsset  MediaAsset?         @relation("LiveStudioRecordingAsset", fields: [recordingMediaAssetId], references: [id], onDelete: SetNull)
 
+  @@unique([externalLiveSourceId, organisationId, channelId])
   @@index([organisationId, status, scheduledStart])
   @@index([organisationId, product, status, scheduledStart])
   @@index([djAccessGrantId, status])
@@ -4391,7 +4455,6 @@ model LiveStudioSession {
   @@index([channelId])
   @@index([fallbackPromoVersionId])
   @@index([supervisorUserId])
-  @@unique([externalLiveSourceId, organisationId, channelId])
 }
 
 model SchoolAudioUploadSession {

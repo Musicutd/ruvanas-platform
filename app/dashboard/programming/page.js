@@ -10,6 +10,7 @@ import DjAccessWorkspace from "./DjAccessWorkspace";
 import LiveFailoverWorkspace from "./LiveFailoverWorkspace";
 import BrowserLiveStudioWorkspace from "./BrowserLiveStudioWorkspace";
 import VoiceTrackingWorkspace from "./VoiceTrackingWorkspace";
+import AudioProcessingWorkspace from "./AudioProcessingWorkspace";
 import styles from "./programming.module.css";
 
 export const dynamic = "force-dynamic";
@@ -47,6 +48,7 @@ export default async function SubscriberProgrammingPage() {
           <LiveFailoverWorkspace />
           <BrowserLiveStudioWorkspace />
           <VoiceTrackingWorkspace />
+          <AudioProcessingWorkspace />
           <SmartPlaylistsWorkspace />
           <RadioClocksWorkspace />
           <AdvancedSchedulerWorkspace />

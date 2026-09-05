@@ -11,6 +11,7 @@ import ffmpegPath from "ffmpeg-static";
 import ffprobeStatic from "ffprobe-static";
 import { S3Client } from "@aws-sdk/client-s3";
 import { buildMultitrackRenderGraph, buildRenderGraph, parseLoudnessReport, reducePcmPeaks } from "../lib/audio-worker.mjs";
+import { broadcastEncoding, evaluateBroadcastProcessingQc, normalizeBroadcastProcessingProfile } from "../lib/broadcast-audio-processing.mjs";
 import { deploymentIdentity, safeOperationalErrorCode, structuredServiceLog } from "../lib/operational-observability.mjs";
 import { recordServiceHeartbeat } from "../lib/operational-observability-service.js";
 
@@ -81,15 +82,23 @@ async function processWaveform() {
 }
 
 async function processRender() {
-  const render = await prisma.audioRender.findFirst({ where: { status: "QUEUED" }, orderBy: { createdAt: "asc" }, include: { project: true, version: true } });
+  const retryBefore = new Date(Date.now() - 15 * 60 * 1000);
+  const render = await prisma.audioRender.findFirst({ where: { OR: [{ status: "QUEUED" }, { status: "RUNNING", broadcastProcessingProfileId: { not: null }, startedAt: { lt: retryBefore } }] }, orderBy: { createdAt: "asc" }, include: { project: true, version: true } });
   if (!render) return false;
-  const claimed = await prisma.audioRender.updateMany({ where: { id: render.id, status: "QUEUED" }, data: { status: "RUNNING", startedAt: new Date(), errorMessage: null } });
+  if (render.status === "RUNNING" && render.processingAttempts >= 3) {
+    await prisma.audioRender.update({ where: { id: render.id }, data: { status: "FAILED", completedAt: new Date(), processingQcStatus: "FAILED", processingQcNotes: "The protected worker stopped before this output could be verified.", errorMessage: "Broadcast processing did not complete after three protected attempts." } });
+    return true;
+  }
+  const claimed = await prisma.audioRender.updateMany({ where: { id: render.id, status: render.status, updatedAt: render.updatedAt }, data: { status: "RUNNING", startedAt: new Date(), processingAttempts: { increment: 1 }, errorMessage: null } });
   if (!claimed.count) return true;
   const directory = await mkdtemp(path.join(tmpdir(), "ruvanas-render-"));
   try {
     const multitrack = render.version.state?.multitrack;
     const state = multitrack || render.version.state?.editor;
-    const graph = multitrack ? buildMultitrackRenderGraph(multitrack) : buildRenderGraph(state?.clips, state || {});
+    const processingProfile = render.processingProfileJson ? normalizeBroadcastProcessingProfile(render.processingProfileJson) : null;
+    const graph = multitrack
+      ? buildMultitrackRenderGraph(multitrack, { processingProfile })
+      : buildRenderGraph(state?.clips, { ...(state || {}), processingProfile });
     const sourceIds = graph.inputs.map((input) => input.mediaAssetId);
     const assets = await prisma.mediaAsset.findMany({ where: { id: { in: [...new Set(sourceIds)] }, organisationId: render.organisationId } });
     const byId = new Map(assets.map((asset) => [asset.id, asset]));
@@ -102,10 +111,11 @@ async function processRender() {
       inputArgs.push("-i", inputPath);
     }
     const wav = render.preset === "WAV_MASTER";
-    const extension = wav ? "wav" : "mp3";
-    const mimeType = wav ? "audio/wav" : "audio/mpeg";
+    const processingEncoding = processingProfile ? broadcastEncoding(processingProfile) : null;
+    const extension = processingEncoding?.extension || (wav ? "wav" : "mp3");
+    const mimeType = processingEncoding?.mimeType || (wav ? "audio/wav" : "audio/mpeg");
     const output = path.join(directory, `render.${extension}`);
-    const codecArgs = wav ? ["-c:a", "pcm_s24le"] : ["-c:a", "libmp3lame", "-b:a", render.preset === "SPEECH_MP3" ? "128k" : "192k"];
+    const codecArgs = processingEncoding?.codecArgs || (wav ? ["-c:a", "pcm_s24le"] : ["-c:a", "libmp3lame", "-b:a", render.preset === "SPEECH_MP3" ? "128k" : "192k"]);
     await run(ffmpegPath, ["-y", ...inputArgs, "-filter_complex", graph.filterComplex, "-map", graph.outputLabel, ...codecArgs, output]);
     const [probe, loudness, fileInfo] = await Promise.all([
       run(ffprobeStatic.path, ["-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", output]),
@@ -113,29 +123,32 @@ async function processRender() {
       stat(output)
     ]);
     const report = parseLoudnessReport(loudness.stderr);
+    const processingQc = processingProfile ? evaluateBroadcastProcessingQc(report, processingProfile) : null;
     const durationSeconds = Math.max(1, Math.round(Number(probe.stdout.toString("utf8").trim()) || 1));
-    const key = `organisations/${render.organisationId}/school-audio/renders/${render.projectId}/${crypto.randomUUID()}.${extension}`;
-    await storage.client.send(new PutObjectCommand({ Bucket: storage.bucketName, Key: key, Body: createReadStream(output), ContentLength: fileInfo.size, ContentType: mimeType, Metadata: { source: multitrack ? "multitrack-studio" : "waveform-editor", project: render.projectId, version: String(render.version.version) } }));
+    const key = processingProfile
+      ? `organisations/${render.organisationId}/broadcast-audio/renders/${render.projectId}/${render.id}.${extension}`
+      : `organisations/${render.organisationId}/school-audio/renders/${render.projectId}/${crypto.randomUUID()}.${extension}`;
+    await storage.client.send(new PutObjectCommand({ Bucket: storage.bucketName, Key: key, Body: createReadStream(output), ContentLength: fileInfo.size, ContentType: mimeType, Metadata: { source: processingProfile ? "broadcast-processing" : multitrack ? "multitrack-studio" : "waveform-editor", project: render.projectId, version: String(render.version.version), ...(processingProfile ? { profile: String(render.broadcastProcessingProfileId), revision: String(render.broadcastProcessingProfileRevision) } : {}) } }));
 
     const sourceTake = await prisma.audioTake.findFirst({ where: { projectId: render.projectId, mediaAssetId: { in: sourceIds }, promoVersionId: { not: null } }, include: { promoVersion: { include: { promoAsset: { include: { versions: { select: { version: true } } } } } } } });
     const priorOutput = multitrack ? await prisma.audioRender.findFirst({ where: { projectId: render.projectId, id: { not: render.id }, outputPromoVersionId: { not: null } }, orderBy: { completedAt: "desc" }, include: { outputPromoVersion: { include: { promoAsset: { include: { versions: { select: { version: true } } } } } } } }) : null;
     const result = await prisma.$transaction(async (tx) => {
-      const mediaAsset = await tx.mediaAsset.create({ data: { organisationId: render.organisationId, libraryType: "ORGANISATION_PROMO", name: `${render.project.title} final`, originalName: `${render.project.title}.${extension}`, storageKey: key, mimeType, sizeBytes: BigInt(fileInfo.size), durationSeconds, mediaType: "ANNOUNCEMENT", status: "READY" } });
+      const mediaAsset = await tx.mediaAsset.create({ data: { organisationId: render.organisationId, libraryType: "ORGANISATION_PROMO", name: `${render.project.title}${processingProfile ? ` · ${processingProfile.name}` : " final"}`, originalName: `${render.project.title}.${extension}`, storageKey: key, mimeType, sizeBytes: BigInt(fileInfo.size), durationSeconds, mediaType: "ANNOUNCEMENT", status: "READY" } });
       let promoVersion = null;
       const existingPromo = priorOutput?.outputPromoVersion?.promoAsset || sourceTake?.promoVersion?.promoAsset || null;
       if (existingPromo || multitrack) {
         const promoAsset = existingPromo || await tx.promoAsset.create({ data: { organisationId: render.organisationId, name: render.project.title, mediaType: "ANNOUNCEMENT", languageCode: "und" } });
         const nextVersion = Math.max(0, ...(promoAsset.versions || []).map((item) => item.version)) + 1;
-        const processingJobs = multitrack ? undefined : { create: ["PREVIEW", "TRANSCODE", "LOUDNESS_ANALYSIS"].map((jobType) => ({ jobType, status: "QUEUED" })) };
-        promoVersion = await tx.promoVersion.create({ data: { promoAssetId: promoAsset.id, mediaAssetId: mediaAsset.id, version: nextVersion, status: "IN_REVIEW", qcStatus: multitrack ? "PASSED" : "PENDING", sourceType: "STUDIO", sourceReference: `audio-render:${render.id}`, languageCode: sourceTake?.promoVersion?.languageCode || "und", durationSeconds, loudnessLufs: report.integratedLufs, submittedById: render.requestedByUserId, submittedAt: new Date(), ...(processingJobs ? { processingJobs } : {}) } });
+        const processingJobs = multitrack || processingProfile ? undefined : { create: ["PREVIEW", "TRANSCODE", "LOUDNESS_ANALYSIS"].map((jobType) => ({ jobType, status: "QUEUED" })) };
+        promoVersion = await tx.promoVersion.create({ data: { promoAssetId: promoAsset.id, mediaAssetId: mediaAsset.id, version: nextVersion, status: "IN_REVIEW", qcStatus: processingProfile ? processingQc.status : multitrack ? "PASSED" : "PENDING", qcNotes: processingProfile ? (processingQc.findings.join(" ") || `Passed ${processingProfile.name} broadcast profile.`) : undefined, sourceType: "STUDIO", sourceReference: `audio-render:${render.id}`, languageCode: sourceTake?.promoVersion?.languageCode || "und", durationSeconds, loudnessLufs: report.integratedLufs, submittedById: render.requestedByUserId, submittedAt: new Date(), ...(processingJobs ? { processingJobs } : {}) } });
       }
-      await tx.audioRender.update({ where: { id: render.id }, data: { status: "SUCCEEDED", completedAt: new Date(), outputMediaAssetId: mediaAsset.id, outputPromoVersionId: promoVersion?.id || null, loudnessLufs: report.integratedLufs, resultJson: { ...report, durationSeconds, immutableSource: true, version: render.version.version } } });
+      await tx.audioRender.update({ where: { id: render.id }, data: { status: "SUCCEEDED", completedAt: new Date(), outputMediaAssetId: mediaAsset.id, outputPromoVersionId: promoVersion?.id || null, loudnessLufs: report.integratedLufs, processingQcStatus: processingQc?.status, processingQcNotes: processingQc ? (processingQc.findings.join(" ") || "Broadcast profile targets passed.") : undefined, resultJson: { ...report, durationSeconds, immutableSource: true, version: render.version.version, ...(processingProfile ? { broadcastProfile: { id: render.broadcastProcessingProfileId, revision: render.broadcastProcessingProfileRevision, name: processingProfile.name, codec: processingProfile.codec }, qc: processingQc } : {}) } } });
       return { mediaAsset, promoVersion };
     });
     writeLog("info", "audio_render_completed", { entityId: render.id, outputEntityId: result.mediaAsset.id });
   } catch (error) {
     writeLog("error", "audio_render_failed", { entityId: render.id, errorCode: safeOperationalErrorCode(error, "AUDIO_RENDER_FAILED") });
-    await prisma.audioRender.update({ where: { id: render.id }, data: { status: "FAILED", completedAt: new Date(), errorMessage: String(error?.message || "Render failed").slice(0, 2000) } }).catch(() => {});
+    await prisma.audioRender.update({ where: { id: render.id }, data: { status: "FAILED", completedAt: new Date(), processingQcStatus: render.processingProfileJson ? "FAILED" : undefined, processingQcNotes: render.processingProfileJson ? "The protected worker could not complete this broadcast output." : undefined, errorMessage: String(error?.message || "Render failed").slice(0, 2000) } }).catch(() => {});
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

@@ -2,7 +2,7 @@
 
 ## Baseline
 
-- Architecture baseline: `origin/main` through Stage 19.10 at `b583e41`
+- Architecture baseline: `origin/main` through Stage 19.11 at `1b80f8d`
 - Architecture gate: Stage 19.0
 - Detailed audit: [`stage-19-0-online-radio-architecture-audit.md`](./stage-19-0-online-radio-architecture-audit.md)
 - Status values: `NOT STARTED`, `IN DESIGN`, `IN DEVELOPMENT`, `PR OPEN`, `MERGED`, `DEPLOYED`, `BLOCKED`
@@ -24,8 +24,8 @@
 | 19.8 | DJ Access | DEPLOYED | [#107](https://github.com/Musicutd/ruvanas-platform/pull/107) | `3d9bbeb` | `dep-dadrg8navr4c73alpl0g` | Existing-identity, channel-scoped and time-bounded presenter grants with private-link rotation and immediate revocation are live on the paid service. |
 | 19.9 | Live Failover | DEPLOYED | [#108](https://github.com/Musicutd/ruvanas-platform/pull/108) | `e2b0e55` | `dep-dads6817lnhs73ea4m3g` | Health-driven switching, recovery hysteresis, manual override and unified schedule/AutoDJ fallback are live. |
 | 19.10 | Browser Live Studio | DEPLOYED | [#109](https://github.com/Musicutd/ruvanas-platform/pull/109) | `b583e41` | `dep-dadsvjks728c73fh0gt0` | Provider-neutral WHIP/WebRTC studio, DJ-grant boundary, local mixer, governed recording and heartbeat fallback are live; publishing remains locked until compatible real-time infrastructure is configured. |
-| 19.11 | Voice Tracking / Segue | IN DEVELOPMENT | — | — | — | Governed AudioLab render placement, bounded cue/overlap editing, audible three-source preview, approval and Radio Clock binding. |
-| 19.12 | Audio Processing | NOT STARTED | — | — | — | Broadcast profiles on the existing audio worker. |
+| 19.11 | Voice Tracking / Segue | DEPLOYED | [#110](https://github.com/Musicutd/ruvanas-platform/pull/110) | `1b80f8d` | `dep-dadtnac9v7es73am22rg` | Governed AudioLab render placement, bounded cue/overlap editing, audible three-source preview, approval and Radio Clock binding are live. |
+| 19.12 | Audio Processing | IN DEVELOPMENT | — | — | — | Versioned broadcast profiles, duplicate-safe worker jobs and measured QC on the existing protected audio worker. |
 | 19.13 | Listener Analytics | NOT STARTED | — | — | — | Public audience events, privacy and aggregation. |
 | 19.14 | Public Player | NOT STARTED | — | — | — | Anonymous, embeddable station listening. |
 | 19.15 | Listener Interaction | NOT STARTED | — | — | — | Requests with moderation and abuse controls. |
