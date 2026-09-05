@@ -124,6 +124,6 @@ test("Stage 19.10 reuses the shared studio, DJ access, External Live and operati
   assert.match(managerUi, /WHIP\/WebRTC/);
   assert.match(presenterUi, /RTCPeerConnection/);
   assert.match(presenterUi, /MediaStreamDestination/);
-  assert.match(roadmap, /19\.10 \| Browser Live Studio \| IN DEVELOPMENT/);
+  assert.match(roadmap, /19\.10 \| Browser Live Studio \| DEPLOYED/);
   assert.match(documentation, /does not add a second identity, scheduler, stream or recording system/);
 });

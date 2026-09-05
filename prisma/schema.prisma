@@ -657,6 +657,7 @@ enum RadioClockItemType {
   MUSIC_MODE
   MUSIC_TRACK
   PROMO
+  VOICE_TRACK
   SHOW_RUNDOWN
   MARKER
 }
@@ -1042,6 +1043,12 @@ enum LiveConnectionQuality {
   FAILED
 }
 
+enum VoiceTrackSegueStatus {
+  DRAFT
+  APPROVED
+  ARCHIVED
+}
+
 enum LiveStudioProduct {
   SCHOOL_RADIO
   ONLINE_RADIO
@@ -1289,6 +1296,8 @@ model User {
   revokedDjAccessGrants              DjAccessGrant[]                   @relation("DjAccessGrantRevokedBy")
   createdLiveFailoverPolicies        LiveFailoverPolicy[]              @relation("LiveFailoverPolicyCreatedBy")
   updatedLiveFailoverPolicies        LiveFailoverPolicy[]              @relation("LiveFailoverPolicyUpdatedBy")
+  createdVoiceTrackSegues            VoiceTrackSegue[]                 @relation("VoiceTrackSegueCreatedBy")
+  approvedVoiceTrackSegues           VoiceTrackSegue[]                 @relation("VoiceTrackSegueApprovedBy")
 }
 
 model Organisation {
@@ -1410,6 +1419,7 @@ model Organisation {
   djAccessGrants                   DjAccessGrant[]
   liveFailoverPolicies             LiveFailoverPolicy[]
   liveFailoverEvents               LiveFailoverEvent[]
+  voiceTrackSegues                 VoiceTrackSegue[]
 }
 
 model OrganisationMember {
@@ -1931,6 +1941,7 @@ model Channel {
   djAccessGrants      DjAccessGrant[]
   liveFailoverPolicy  LiveFailoverPolicy?
   liveFailoverEvents  LiveFailoverEvent[]
+  voiceTrackSegues    VoiceTrackSegue[]
 
   @@unique([organisationId, slug])
   @@unique([id, organisationId])
@@ -2370,6 +2381,7 @@ model PromoVersion {
   proofOfPlayEvents           ProofOfPlayEvent[]
   schoolRundownItems          SchoolRundownItem[]
   radioClockItems             RadioClockItem[]
+  voiceTrackSegues             VoiceTrackSegue[]
   retailMediaCreatives        RetailMediaOrderCreative[]
   schoolEpisodeExchangeOffers SchoolEpisodeExchangeOffer[]
 
@@ -2955,6 +2967,8 @@ model Track {
   proofOfPlayEvents  ProofOfPlayEvent[]
   schoolRundownItems SchoolRundownItem[]
   radioClockItems    RadioClockItem[]
+  outgoingVoiceTrackSegues VoiceTrackSegue[] @relation("VoiceTrackSegueOutgoingTrack")
+  incomingVoiceTrackSegues VoiceTrackSegue[] @relation("VoiceTrackSegueIncomingTrack")
 
   @@index([status])
   @@index([artist, title])
@@ -3080,6 +3094,7 @@ model RadioClockItem {
   musicModeId       String?
   trackId           String?
   promoVersionId    String?
+  voiceTrackSegueId String?
   schoolRundownId   String?
   createdAt         DateTime             @default(now())
   updatedAt         DateTime             @updatedAt
@@ -3088,6 +3103,7 @@ model RadioClockItem {
   musicMode     MusicMode?     @relation(fields: [musicModeId], references: [id], onDelete: Restrict)
   track         Track?         @relation(fields: [trackId], references: [id], onDelete: Restrict)
   promoVersion  PromoVersion?  @relation(fields: [promoVersionId], references: [id], onDelete: Restrict)
+  voiceTrackSegue VoiceTrackSegue? @relation(fields: [voiceTrackSegueId], references: [id], onDelete: Restrict)
   schoolRundown SchoolRundown? @relation(fields: [schoolRundownId], references: [id], onDelete: Restrict)
 
   @@unique([radioClockId, position])
@@ -3095,7 +3111,56 @@ model RadioClockItem {
   @@index([musicModeId])
   @@index([trackId])
   @@index([promoVersionId])
+  @@index([voiceTrackSegueId])
   @@index([schoolRundownId])
+}
+
+model VoiceTrackSegue {
+  id                    String                @id @default(cuid())
+  organisationId        String
+  channelId             String
+  title                 String
+  status                VoiceTrackSegueStatus @default(DRAFT)
+  audioProjectId        String
+  audioRenderId         String
+  voicePromoVersionId   String
+  outgoingTrackId       String
+  incomingTrackId       String
+  outgoingCueOutMs      Int
+  voiceTrimStartMs      Int                   @default(0)
+  voiceTrimEndMs        Int
+  incomingIntroEndMs    Int
+  outgoingOverlapMs     Int                   @default(2000)
+  incomingOverlapMs     Int                   @default(2000)
+  duckingDb             Float                 @default(-12)
+  version               Int                   @default(1)
+  createdByUserId       String
+  approvedByUserId      String?
+  approvedAt            DateTime?
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+
+  organisation      Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  channel           Channel      @relation(fields: [channelId, organisationId], references: [id, organisationId], onDelete: Cascade)
+  audioProject      AudioProject @relation(fields: [audioProjectId], references: [id], onDelete: Restrict)
+  audioRender       AudioRender  @relation(fields: [audioRenderId], references: [id], onDelete: Restrict)
+  voicePromoVersion PromoVersion @relation(fields: [voicePromoVersionId], references: [id], onDelete: Restrict)
+  outgoingTrack     Track        @relation("VoiceTrackSegueOutgoingTrack", fields: [outgoingTrackId], references: [id], onDelete: Restrict)
+  incomingTrack     Track        @relation("VoiceTrackSegueIncomingTrack", fields: [incomingTrackId], references: [id], onDelete: Restrict)
+  createdBy         User         @relation("VoiceTrackSegueCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  approvedBy        User?        @relation("VoiceTrackSegueApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
+  radioClockItems   RadioClockItem[]
+
+  @@unique([id, organisationId])
+  @@index([organisationId, status, updatedAt])
+  @@index([channelId, status])
+  @@index([audioProjectId])
+  @@index([audioRenderId])
+  @@index([voicePromoVersionId])
+  @@index([outgoingTrackId])
+  @@index([incomingTrackId])
+  @@index([createdByUserId])
+  @@index([approvedByUserId])
 }
 
 model ProgrammeSchedule {
@@ -3785,6 +3850,7 @@ model AudioProject {
   renders               AudioRender[]
   transcripts           Transcript[]
   assignmentSubmissions AssignmentSubmission[]
+  voiceTrackSegues      VoiceTrackSegue[]
 
   @@index([organisationId, status])
   @@index([episodeId])
@@ -4100,6 +4166,7 @@ model AudioRender {
   outputMediaAsset   MediaAsset?         @relation("AudioRenderOutput", fields: [outputMediaAssetId], references: [id], onDelete: SetNull)
   outputPromoVersion PromoVersion?       @relation("AudioRenderPromoVersion", fields: [outputPromoVersionId], references: [id], onDelete: SetNull)
   requestedBy        User                @relation("AudioRenderRequestedBy", fields: [requestedByUserId], references: [id], onDelete: Restrict)
+  voiceTrackSegues    VoiceTrackSegue[]
 
   @@index([organisationId, createdAt])
   @@index([projectId, createdAt])
