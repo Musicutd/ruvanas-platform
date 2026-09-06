@@ -11,7 +11,7 @@ export const metadata = { title: "Online Radio dashboard | Ruvanas" };
 export default async function OnlineRadioDashboard() {
   const context = await getActiveOrganisationContext({
     subscription: { include: { plan: true, billingContract: true } },
-    stations: { select: { id: true, slug: true, status: true, storageUsedMb: true, publicPlayerEnabled: true, streamConfig: { select: { streamUrl: true } } }, orderBy: { createdAt: "asc" } }
+    stations: { select: { id: true, slug: true, status: true, storageUsedMb: true, publicPlayerEnabled: true, stationWebsiteEnabled: true, streamConfig: { select: { streamUrl: true } } }, orderBy: { createdAt: "asc" } }
   });
   if (!context?.membership) redirect("/dashboard");
   const organisation = context.membership.organisation;
@@ -59,6 +59,7 @@ export default async function OnlineRadioDashboard() {
       { eyebrow: "Broadcast", title: "Operate your station", description: "Manage the essentials of a continuous online radio service.", actions: [
         { href: firstStation ? `/stations/${firstStation.id}` : "/stations/new", label: firstStation ? "Station control" : "Create your first station", description: "Review your station and streaming configuration." },
         { href: firstStation ? `/stations/${firstStation.id}/public-player` : "/stations/new", label: "Public player", description: "Publish and preview your branded listener page and website embed." },
+        { href: firstStation ? `/stations/${firstStation.id}/website` : "/stations/new", label: "Station website", description: firstStation?.stationWebsiteEnabled ? "Manage the public station home, branding and domain." : "Publish a professional public home for the station." },
         { href: firstStation ? `/stations/${firstStation.id}/listener-requests` : "/stations/new", label: "Listener requests", description: "Moderate audience song requests without changing the live schedule automatically." },
         { href: "/dashboard/podcasts", label: "Podcasts", description: "Publish on-demand programmes with protected audio and an RSS feed." },
         { href: "/dashboard/programming", label: "Programme schedule", description: "Plan music and dayparts." },

@@ -9,7 +9,7 @@ export async function GET(request, { params }) {
         status: "ACTIVE",
         publicPlayerEnabled: true
       },
-      select: { id: true, name: true, slug: true, description: true, logoUrl: true, publicPlayerTagline: true, publicPlayerAccent: true }
+      select: { id: true, name: true, slug: true, description: true, logoUrl: true, publicPlayerTagline: true, publicPlayerAccent: true, stationWebsiteEnabled: true }
     });
 
     if (!station) {
@@ -28,7 +28,8 @@ export async function GET(request, { params }) {
       tagline: station.publicPlayerTagline,
       accent: station.publicPlayerAccent,
       listenUrl: `/listen/${station.slug}`,
-      embedUrl: `/embed/${station.slug}`
+      embedUrl: `/embed/${station.slug}`,
+      websiteUrl: station.stationWebsiteEnabled ? `/radio/${station.slug}` : null
     }, { headers: { "Cache-Control": "public, max-age=60, stale-while-revalidate=300" } });
   } catch (error) {
     console.error("Public station API error:", error);

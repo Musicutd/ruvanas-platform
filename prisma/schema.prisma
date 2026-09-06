@@ -1035,6 +1035,19 @@ enum SchoolPodcastStatus {
   UNPUBLISHED
 }
 
+enum StationWebsiteTheme {
+  MIDNIGHT
+  LIGHT
+  VIBRANT
+}
+
+enum StationDomainStatus {
+  PENDING
+  VERIFIED
+  ACTIVE
+  DISABLED
+}
+
 enum PodcastProduct {
   ONLINE_RADIO
   SCHOOL_RADIO
@@ -1354,6 +1367,7 @@ model Organisation {
   invitations                        OrganisationInvitation[]
   subscription                       Subscription?
   stations                           Station[]
+  stationDomains                     StationDomain[]
   brands                             Brand[]
   locations                          Location[]
   locationGroups                     LocationGroup[]
@@ -2044,26 +2058,35 @@ model AutoDjPolicy {
 }
 
 model Station {
-  id                          String        @id @default(cuid())
-  organisationId              String
-  name                        String
-  slug                        String        @unique
-  description                 String?
-  logoUrl                     String?
-  status                      StationStatus @default(DRAFT)
-  storageUsedMb               Int           @default(0)
-  listenerLimit               Int
-  storageLimitGb              Int
-  maxBitrateKbps              Int
-  providerName                String?
-  providerAccountId           String?
-  publicPlayerEnabled         Boolean       @default(false)
-  publicPlayerTagline         String?
-  publicPlayerAccent          String        @default("#f4b942")
-  listenerRequestsEnabled     Boolean       @default(false)
-  listenerRequestInstructions String?
-  createdAt                   DateTime      @default(now())
-  updatedAt                   DateTime      @updatedAt
+  id                           String              @id @default(cuid())
+  organisationId               String
+  name                         String
+  slug                         String              @unique
+  description                  String?
+  logoUrl                      String?
+  status                       StationStatus       @default(DRAFT)
+  storageUsedMb                Int                 @default(0)
+  listenerLimit                Int
+  storageLimitGb               Int
+  maxBitrateKbps               Int
+  providerName                 String?
+  providerAccountId            String?
+  publicPlayerEnabled          Boolean             @default(false)
+  publicPlayerTagline          String?
+  publicPlayerAccent           String              @default("#f4b942")
+  listenerRequestsEnabled      Boolean             @default(false)
+  listenerRequestInstructions  String?
+  stationWebsiteEnabled        Boolean             @default(false)
+  stationWebsiteHeadline       String?
+  stationWebsiteAbout          String?
+  stationWebsiteHeroImageUrl   String?
+  stationWebsiteContactEmail   String?
+  stationWebsiteTheme          StationWebsiteTheme @default(MIDNIGHT)
+  stationWebsiteLinks          Json?
+  stationWebsiteShowNowPlaying Boolean             @default(true)
+  stationWebsiteShowPodcasts   Boolean             @default(true)
+  createdAt                    DateTime            @default(now())
+  updatedAt                    DateTime            @updatedAt
 
   organisation          Organisation                  @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   streamConfig          StationStreamConfig?
@@ -2075,9 +2098,31 @@ model Station {
   listenerRequests      ListenerRequest[]
   listenerRequestBlocks ListenerRequestBlock[]
   podcastSeries         SchoolPodcastSeries[]
+  websiteDomains        StationDomain[]
 
   @@unique([id, organisationId])
   @@index([organisationId])
+}
+
+model StationDomain {
+  id                String              @id @default(cuid())
+  organisationId    String
+  stationId         String
+  hostname          String              @unique
+  status            StationDomainStatus @default(PENDING)
+  verificationToken String
+  lastCheckedAt     DateTime?
+  verifiedAt        DateTime?
+  activatedAt       DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  station      Station      @relation(fields: [stationId, organisationId], references: [id, organisationId], onDelete: Cascade)
+
+  @@unique([id, organisationId])
+  @@index([organisationId, status])
+  @@index([stationId, status])
 }
 
 model StationStreamConfig {

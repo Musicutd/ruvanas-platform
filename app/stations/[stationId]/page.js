@@ -89,8 +89,10 @@ export default async function StationDetailsPage({ params }) {
           <p style={styles.cardText}>Create a branded listener page and website embed with protected audio delivery, live now-playing information and privacy-safe audience analytics.</p>
           <div style={styles.actions}>
             <a href={`/stations/${station.id}/public-player`} style={styles.setupButton}>Manage public player</a>
+            <a href={`/stations/${station.id}/website`} style={styles.secondaryButton}>Station website</a>
             <a href={`/stations/${station.id}/listener-requests`} style={styles.secondaryButton}>Listener requests</a>
             {station.publicPlayerEnabled ? <a href={`/listen/${station.slug}`} target="_blank" rel="noreferrer" style={styles.secondaryButton}>Open public player</a> : null}
+            {station.stationWebsiteEnabled ? <a href={`/radio/${station.slug}`} target="_blank" rel="noreferrer" style={styles.secondaryButton}>Open station website</a> : null}
           </div>
         </section>
 

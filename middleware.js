@@ -26,7 +26,16 @@ function allowedOrigins(request) {
   );
 }
 
-export function middleware(request) {
+function requestHostname(request) {
+  const value = request.headers.get("x-forwarded-host") || request.headers.get("host") || "";
+  return value.trim().toLowerCase().replace(/:\d+$/, "").replace(/\.$/, "");
+}
+
+function mayBeStationDomain(hostname) {
+  return hostname && hostname !== "localhost" && hostname !== "127.0.0.1" && !hostname.endsWith(".onrender.com") && !hostname.endsWith(".ruvanas.com");
+}
+
+export async function middleware(request) {
   const requestId = request.headers.get("x-request-id") || crypto.randomUUID();
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-request-id", requestId);
@@ -52,6 +61,28 @@ export function middleware(request) {
     }
   }
 
+  if (request.method === "GET" && request.nextUrl.pathname === "/") {
+    const hostname = requestHostname(request);
+    if (mayBeStationDomain(hostname)) {
+      try {
+        const lookup = new URL(`/api/public/station-websites/domains/${encodeURIComponent(hostname)}`, request.nextUrl.origin);
+        const result = await fetch(lookup, { headers: { "x-ruvanas-domain-resolution": "1" } });
+        if (result.ok) {
+          const body = await result.json();
+          if (/^[a-z0-9-]{1,120}$/i.test(body.slug || "")) {
+            const destination = request.nextUrl.clone();
+            destination.pathname = `/radio/${body.slug}`;
+            const rewritten = NextResponse.rewrite(destination, { request: { headers: requestHeaders } });
+            rewritten.headers.set("x-request-id", requestId);
+            return rewritten;
+          }
+        }
+      } catch {
+        // Unknown and temporarily unavailable domains safely receive the Ruvanas homepage.
+      }
+    }
+  }
+
   const response = NextResponse.next({
     request: { headers: requestHeaders }
   });
@@ -60,6 +91,6 @@ export function middleware(request) {
 }
 
 export const config = {
-  matcher: "/api/:path*"
+  matcher: ["/", "/api/:path*"]
 };
 
