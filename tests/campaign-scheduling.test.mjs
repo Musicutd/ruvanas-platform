@@ -137,6 +137,26 @@ test("configuration hashes are stable and target persistence keeps one typed rel
     brandId: null,
     locationGroupId: null,
     locationId: "location-1",
-    zoneId: null
+    zoneId: null,
+    stationId: null,
+    channelId: null
   });
+});
+
+test("expands station and channel targets through existing channel-zone assignments", () => {
+  const zones = expandCampaignTargets({
+    targets: [{ targetType: "STATION", targetId: "station-1" }, { targetType: "CHANNEL", targetId: "channel-2" }],
+    stations: [{ id: "station-1", channelIds: ["channel-1"] }],
+    channels: [
+      { id: "channel-1", zoneIds: ["zone-1"] },
+      { id: "channel-2", zoneIds: ["zone-2"] }
+    ],
+    locations: [{ id: "location-1", name: "Online", timezone: "Europe/Malta", openingHoursConfigured: true }],
+    zones: [
+      { id: "zone-1", name: "Primary", locationId: "location-1" },
+      { id: "zone-2", name: "Secondary", locationId: "location-1" }
+    ]
+  });
+  assert.deepEqual(zones.map((zone) => zone.id), ["zone-1", "zone-2"]);
+  assert.equal(campaignTargetCreateData({ targetType: "CHANNEL", targetId: "channel-2" }).channelId, "channel-2");
 });

@@ -30,6 +30,7 @@ test("subscriber navigation is organised by tasks and hides unavailable products
   assert.equal(items.find((item) => item.id === "account").href, "/dashboard/account");
   assert.equal(items.find((item) => item.id === "team").href, "/dashboard/team");
   assert.ok(items.some((item) => item.id === "retail"));
+  assert.equal(items.find((item) => item.id === "radioAdvertising").href, "/dashboard/radio/advertising");
   assert.ok(!items.some((item) => item.id === "school"));
   assert.ok(!items.some((item) => item.id === "signage"));
   assert.equal(items.find((item) => item.id === "schoolHome").available, false);

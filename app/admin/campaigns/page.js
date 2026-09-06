@@ -40,7 +40,9 @@ export default async function CampaignsPage({ searchParams }) {
           }
         },
         orderBy: { name: "asc" }
-      }
+      },
+      stations: { where: { status: "ACTIVE" }, select: { id: true, name: true }, orderBy: { name: "asc" } },
+      channels: { where: { status: "ACTIVE" }, select: { id: true, name: true, station: { select: { name: true } } }, orderBy: { name: "asc" } }
     },
     orderBy: { name: "asc" }
   });

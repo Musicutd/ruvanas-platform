@@ -68,6 +68,8 @@ export default function CampaignBuilder({ organisations, initialSelection = {} }
     if (targetType === "LOCATION_GROUP") return organisation?.locationGroups || [];
     if (targetType === "LOCATION") return organisation?.locations || [];
     if (targetType === "ZONE") return (organisation?.locations || []).flatMap((location) => location.zones.map((zone) => ({ id: zone.id, name: `${location.name} / ${zone.name}` })));
+    if (targetType === "STATION") return organisation?.stations || [];
+    if (targetType === "CHANNEL") return (organisation?.channels || []).map((channel) => ({ id: channel.id, name: `${channel.station?.name || "Station"} / ${channel.name}` }));
     return [];
   }
 
@@ -131,7 +133,7 @@ export default function CampaignBuilder({ organisations, initialSelection = {} }
   const advanced = form.schedulingMode === "ADVANCED_DAYPART";
 
   return <main style={styles.page}>
-    <div style={styles.header}><div><p style={styles.eyebrow}>Milestone 3B</p><h1 style={styles.title}>Campaign builder</h1><p style={styles.copy}>Target approved promo versions to brands, groups, locations, or zones. Preview estimated plays and conflicts before an audited publication.</p></div></div>
+    <div style={styles.header}><div><p style={styles.eyebrow}>Stage 19.21</p><h1 style={styles.title}>Campaign builder</h1><p style={styles.copy}>Target approved promo versions to retail spaces, Online Radio stations, or channels. Preview placement volume and conflicts before an audited publication.</p></div></div>
     {message ? <div role="status" style={styles.message}>{message}</div> : null}
     <section style={styles.panel}><h2 style={styles.sectionTitle}>1. Campaign details</h2>
       <div style={styles.grid}>
@@ -146,7 +148,7 @@ export default function CampaignBuilder({ organisations, initialSelection = {} }
     </section>
 
     <section style={styles.panel}><h2 style={styles.sectionTitle}>2. Targets</h2>{targets.map((target, index) => <div key={index} style={styles.row}>
-      <select aria-label={`Target type ${index + 1}`} name="targetType" value={target.targetType} onChange={(event) => targetField(index, event)} style={styles.input}><option value="ALL_LOCATIONS">All locations</option><option value="BRAND">Brand</option><option value="LOCATION_GROUP">Location group</option><option value="LOCATION">Location</option><option value="ZONE">Zone</option></select>
+      <select aria-label={`Target type ${index + 1}`} name="targetType" value={target.targetType} onChange={(event) => targetField(index, event)} style={styles.input}><option value="ALL_LOCATIONS">All retail locations</option><option value="BRAND">Brand</option><option value="LOCATION_GROUP">Location group</option><option value="LOCATION">Location</option><option value="ZONE">Zone</option><option value="STATION">Online Radio station</option><option value="CHANNEL">Online Radio channel</option></select>
       {target.targetType !== "ALL_LOCATIONS" ? <select aria-label={`Target ${index + 1}`} required name="targetId" value={target.targetId} onChange={(event) => targetField(index, event)} style={styles.input}><option value="">Choose target</option>{targetOptions(target.targetType).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select> : <div style={styles.coverage}>Every active zone in the organisation</div>}
       <button type="button" disabled={targets.length === 1} onClick={() => setTargets((current) => current.filter((_, currentIndex) => currentIndex !== index))}>Remove</button>
     </div>)}<button type="button" style={styles.secondary} onClick={() => setTargets((current) => [...current, { targetType: "LOCATION", targetId: "" }])}>Add target</button></section>
@@ -174,7 +176,7 @@ export default function CampaignBuilder({ organisations, initialSelection = {} }
     </div></section>
 
     <div style={styles.actions}><button type="button" onClick={requestPreview} disabled={working} style={styles.secondary}>Preview and check conflicts</button><button type="button" onClick={saveDraft} disabled={working || !preview?.canPublish} style={styles.primary}>Save checked draft</button></div>
-    {preview ? <section style={preview.canPublish ? styles.previewGood : styles.previewBad}><h2 style={styles.sectionTitle}>{preview.canPublish ? "Ready to save" : "Publication blocked"}</h2><div style={styles.summary}><strong>{preview.targetZoneCount}</strong> zones · <strong>{preview.estimatedPlaysPerZone}</strong> estimated plays per zone · <strong>{preview.estimatedTotalPlays}</strong> total over {preview.activeDays} days</div>{preview.errors.map((item) => <p key={item} style={styles.error}>Blocked: {item}</p>)}{preview.warnings.map((item) => <p key={item} style={styles.warning}>Warning: {item}</p>)}</section> : null}
+    {preview ? <section style={preview.canPublish ? styles.previewGood : styles.previewBad}><h2 style={styles.sectionTitle}>{preview.canPublish ? "Ready to save" : "Publication blocked"}</h2><div style={styles.summary}><strong>{preview.targetZoneCount}</strong> playback endpoints · <strong>{preview.estimatedPlaysPerZone}</strong> estimated plays per endpoint · <strong>{preview.estimatedTotalPlays}</strong> total over {preview.activeDays} days</div>{preview.errors.map((item) => <p key={item} style={styles.error}>Blocked: {item}</p>)}{preview.warnings.map((item) => <p key={item} style={styles.warning}>Warning: {item}</p>)}</section> : null}
 
     <section style={{ marginTop: 40 }}><h2 style={styles.title}>Campaigns</h2>{campaigns.length === 0 ? <div style={styles.empty}>No campaign drafts yet.</div> : <div style={styles.cards}>{campaigns.map((campaign) => <article key={campaign.id} style={styles.card}><div><h3 style={{ margin: 0 }}>{campaign.name}</h3><p style={styles.muted}>{campaign.organisation.name} · {campaign.promoVersion.promoAsset.name} v{campaign.promoVersion.version}</p></div><Badge value={campaign.status} /><div style={styles.muted}>{campaign.schedulingMode.replaceAll("_", " ")} · {campaign.priority} · {campaign.targets.length} target rule(s)</div><div style={styles.cardActions}>{campaign.status === "DRAFT" ? <button disabled={working} onClick={() => changeCampaign(campaign.id, "publish")} style={styles.primary}>Publish</button> : null}{campaign.status === "PUBLISHED" ? <button disabled={working} onClick={() => changeCampaign(campaign.id, "status", "PAUSED")} style={styles.secondary}>Pause</button> : null}{["DRAFT", "PAUSED", "ENDED"].includes(campaign.status) ? <button disabled={working} onClick={() => changeCampaign(campaign.id, "status", "ARCHIVED")}>Archive</button> : null}</div></article>)}</div>}</section>
   </main>;

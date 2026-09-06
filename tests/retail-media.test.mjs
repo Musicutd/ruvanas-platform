@@ -54,6 +54,14 @@ test("inventory requires unique tenant targets, valid dayparts, dates, and comme
   assert.equal(inventory.priceModel, "FIXED_FEE");
   assert.equal(inventory.currencyCode, "EUR");
   assert.equal(inventory.targets[0].locationGroupId, "group_1");
+  const radioInventory = normaliseRetailMediaInventory({
+    organisationId: "org_1", name: "Online Radio breakfast", priceModel: "FIXED_FEE",
+    currencyCode: "EUR", unitPriceMinor: 25000,
+    maxPlays: 120, effectiveFrom: "2026-09-01", effectiveTo: "2026-09-30",
+    targets: [{ targetType: "CHANNEL", targetId: "channel_1" }],
+    dayparts: [{ weekday: 1, startMinute: 420, endMinute: 600 }]
+  });
+  assert.equal(radioInventory.targets[0].channelId, "channel_1");
 });
 
 test("orders require approved-source identifiers and unique creative versions", () => {

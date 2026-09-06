@@ -114,3 +114,24 @@ test("playout intents snapshot location and group attribution", () => {
   assert.deepEqual(data.locationGroups, [{ id: "group-1", name: "Flagships" }]);
 });
 
+test("radio-targeted campaigns enter playout only through an active channel policy", () => {
+  const radioPlayer = { ...player, stationId: "station-1", channelId: "channel-1" };
+  const radioCampaign = campaign("radio", { targets: [{ targetType: "STATION", stationId: "station-1" }] });
+  const blocked = compileCampaignPlayout({
+    campaigns: [radioCampaign], player: radioPlayer, instant: new Date("2026-08-27T08:02:00.000Z")
+  });
+  assert.equal(blocked.insertions.length, 0);
+  assert.equal(blocked.discarded[0].advertisingDecision, "NO_ACTIVE_RADIO_ADVERTISING_POLICY");
+
+  const allowed = compileCampaignPlayout({
+    campaigns: [radioCampaign], player: radioPlayer, instant: new Date("2026-08-27T08:02:00.000Z"),
+    radioAdvertisingPolicy: {
+      id: "policy-1", status: "ACTIVE", revision: 1, configurationHash: "approved",
+      pacingMode: "EVEN", maxSpotsPerBreak: 4, maxBreakSeconds: 180,
+      minBreakGapMinutes: 10, maxAdvertisingSecondsPerHour: 720
+    }
+  });
+  assert.equal(allowed.insertions.length, 1);
+  assert.equal(allowed.insertions[0].advertising.policyId, "policy-1");
+});
+
