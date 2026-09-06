@@ -15,6 +15,10 @@ export default function PublicRadioPlayer({ slug, compact = false }) {
   const [manifest, setManifest] = useState(null);
   const [message, setMessage] = useState("Connecting to the live station…");
   const [activeItem, setActiveItem] = useState(null);
+  const [requestFormOpen, setRequestFormOpen] = useState(false);
+  const [requestFields, setRequestFields] = useState({ artist: "", title: "", message: "" });
+  const [requestStatus, setRequestStatus] = useState("");
+  const [requestBusy, setRequestBusy] = useState(false);
   const sessionId = useRef(null);
   const telemetry = useRef(null);
   const listening = useRef(false);
@@ -74,6 +78,27 @@ export default function PublicRadioPlayer({ slug, compact = false }) {
     return () => window.removeEventListener("pagehide", release);
   }, [sendEvent, slug]);
 
+  async function submitListenerRequest(event) {
+    event.preventDefault();
+    setRequestBusy(true);
+    setRequestStatus("");
+    try {
+      const response = await fetch(manifest.listenerRequests.endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Ruvanas-Listener-Session": sessionId.current },
+        body: JSON.stringify(requestFields)
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || "Your request could not be sent.");
+      setRequestFields({ artist: "", title: "", message: "" });
+      setRequestStatus(body.message || "Your request was sent for review.");
+    } catch (error) {
+      setRequestStatus(error.message);
+    } finally {
+      setRequestBusy(false);
+    }
+  }
+
   if (!manifest) return <section className={`${styles.player} ${compact ? styles.compact : ""}`}><div className={styles.loadingPulse} /><p className={styles.message}>{message}</p><button className={styles.retry} onClick={() => loadManifest().catch((error) => setMessage(error.message))}>Try again</button></section>;
 
   const currentInsertion = manifest.insertions.find((item) => {
@@ -95,6 +120,19 @@ export default function PublicRadioPlayer({ slug, compact = false }) {
               : <p className={styles.message}>The station is online, but no programme is available at this moment.</p>}
     </div>
     {message ? <p className={styles.message} aria-live="polite">{message}</p> : null}
+    {!compact && manifest.listenerRequests?.enabled ? <section className={styles.requestPanel} aria-label="Song requests">
+      <button className={styles.requestToggle} type="button" aria-expanded={requestFormOpen} onClick={() => setRequestFormOpen((value) => !value)}>{requestFormOpen ? "Close song request" : "Request a song"}</button>
+      {requestFormOpen ? <form className={styles.requestForm} onSubmit={submitListenerRequest}>
+        <p className={styles.requestInstructions}>{manifest.listenerRequests.instructions}</p>
+        <div className={styles.requestGrid}>
+          <label>Artist<input required maxLength={100} autoComplete="off" value={requestFields.artist} onChange={(event) => setRequestFields((value) => ({ ...value, artist: event.target.value }))} /></label>
+          <label>Song title<input required maxLength={140} autoComplete="off" value={requestFields.title} onChange={(event) => setRequestFields((value) => ({ ...value, title: event.target.value }))} /></label>
+        </div>
+        <label>Optional message<textarea maxLength={240} value={requestFields.message} onChange={(event) => setRequestFields((value) => ({ ...value, message: event.target.value }))} /></label>
+        <div className={styles.requestActions}><button type="submit" disabled={requestBusy}>{requestBusy ? "Sending…" : "Send for review"}</button><small>Requests are moderated and are not guaranteed to play.</small></div>
+        {requestStatus ? <p className={styles.requestStatus} role="status">{requestStatus}</p> : null}
+      </form> : null}
+    </section> : null}
     <footer className={styles.footer}><span>{manifest.channel.name}</span><span>Anonymous listening · privacy-safe analytics</span><span>Powered by Ruvanas</span></footer>
   </section>;
 }

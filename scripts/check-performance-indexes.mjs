@@ -20,7 +20,10 @@ const requirements = [
   ["Track", "@@index([artist, title])"],
   ["LiveStudioSession", "@@index([organisationId, product, status, scheduledStart])"],
   ["LiveStudioSession", "@@index([djAccessGrantId, status])"],
-  ["LiveStudioSession", "@@index([lastHeartbeatAt, status])"]
+  ["LiveStudioSession", "@@index([lastHeartbeatAt, status])"],
+  ["ListenerRequest", "@@index([stationId, status, createdAt])"],
+  ["ListenerRequest", "@@index([stationId, sessionHash, createdAt])"],
+  ["ListenerRequestBlock", "@@index([stationId, active])"]
 ];
 
 const missing = requirements.filter(([model, directive]) => !modelHasDirective(schema, model, directive));

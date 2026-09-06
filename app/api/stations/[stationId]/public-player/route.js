@@ -21,14 +21,14 @@ export async function PATCH(request, { params }) {
       if (!channel) return NextResponse.json({ error: "Assign an active channel to a listening zone before publishing the player." }, { status: 409 });
     }
     const updated = await prisma.$transaction(async (tx) => {
-      const value = await tx.station.update({ where: { id: station.id }, data: { publicPlayerEnabled: settings.enabled, publicPlayerTagline: settings.tagline, publicPlayerAccent: settings.accent }, select: { id: true, slug: true, publicPlayerEnabled: true, publicPlayerTagline: true, publicPlayerAccent: true } });
-      await tx.auditLog.create({ data: { organisationId: station.organisationId, actorUserId: access.user.id, action: settings.enabled ? "PUBLIC_PLAYER_PUBLISHED" : "PUBLIC_PLAYER_UNPUBLISHED", entityType: "Station", entityId: station.id, details: { taglineConfigured: Boolean(settings.tagline), accent: settings.accent } } });
+      const value = await tx.station.update({ where: { id: station.id }, data: { publicPlayerEnabled: settings.enabled, publicPlayerTagline: settings.tagline, publicPlayerAccent: settings.accent, listenerRequestsEnabled: settings.listenerRequestsEnabled, listenerRequestInstructions: settings.listenerRequestInstructions }, select: { id: true, slug: true, publicPlayerEnabled: true, publicPlayerTagline: true, publicPlayerAccent: true, listenerRequestsEnabled: true, listenerRequestInstructions: true } });
+      await tx.auditLog.create({ data: { organisationId: station.organisationId, actorUserId: access.user.id, action: settings.enabled ? "PUBLIC_PLAYER_PUBLISHED" : "PUBLIC_PLAYER_UNPUBLISHED", entityType: "Station", entityId: station.id, details: { taglineConfigured: Boolean(settings.tagline), accent: settings.accent, listenerRequestsEnabled: settings.listenerRequestsEnabled } } });
       return value;
     });
-    return NextResponse.json({ success: true, player: { enabled: updated.publicPlayerEnabled, tagline: updated.publicPlayerTagline, accent: updated.publicPlayerAccent, listenUrl: `/listen/${updated.slug}`, embedUrl: `/embed/${updated.slug}` } }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ success: true, player: { enabled: updated.publicPlayerEnabled, tagline: updated.publicPlayerTagline, accent: updated.publicPlayerAccent, listenerRequestsEnabled: updated.listenerRequestsEnabled, listenerRequestInstructions: updated.listenerRequestInstructions, listenUrl: `/listen/${updated.slug}`, embedUrl: `/embed/${updated.slug}` } }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to update the public player.";
-    if (/tagline|accent colour/.test(message)) return NextResponse.json({ error: message }, { status: 400 });
+    if (/tagline|accent colour|Request instructions/.test(message)) return NextResponse.json({ error: message }, { status: 400 });
     console.error("Public player settings failed:", error?.code || error?.name || "UNKNOWN");
     return NextResponse.json({ error: "Unable to update the public player." }, { status: 500 });
   }
