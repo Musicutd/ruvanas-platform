@@ -1,0 +1,26 @@
+.page { min-height: 100vh; background: #081421; color: #f7f9fc; font-family: Arial, sans-serif; }
+.header { min-height: 70px; display: flex; align-items: center; justify-content: space-between; padding: 0 6vw; border-bottom: 1px solid #24364b; color: #9fb0c4; font-size: .85rem; }
+.brand { color: #f7b83e; font-weight: 900; letter-spacing: .16em; text-decoration: none; }
+.hero { max-width: 1120px; margin: auto; padding: 90px 6vw 70px; display: grid; grid-template-columns: 230px 1fr; gap: 50px; align-items: center; }
+.artwork,.artworkFallback { width: 230px; height: 230px; border-radius: 28px; object-fit: cover; box-shadow: 0 28px 70px #0008; }
+.artworkFallback { display: grid; place-items: center; background: linear-gradient(145deg,#f7b83e,#d77b14); color: #081421; font: 900 6rem Georgia,serif; }
+.eyebrow { margin: 0 0 14px; color: #f7b83e; font-weight: 900; letter-spacing: .13em; font-size: .78rem; }
+.hero h1 { margin: 0; font: 800 clamp(2.8rem,7vw,5.6rem)/.95 Georgia,serif; letter-spacing: -.04em; }
+.description { max-width: 720px; color: #c6d1dd; font-size: 1.15rem; line-height: 1.65; }
+.byline { color: #8fa2b7; margin: 20px 0; }
+.rss { display: inline-block; color: #081421; background: #f7b83e; padding: 11px 17px; border-radius: 10px; font-weight: 800; text-decoration: none; }
+.episodes { max-width: 1120px; margin: auto; padding: 30px 6vw 90px; }
+.sectionHeading h2 { font: 700 2.3rem Georgia,serif; margin: 0 0 30px; }
+.episode { background: #102033; border: 1px solid #2a3d53; border-radius: 20px; padding: 30px; margin: 18px 0; }
+.episode h3 { font: 700 1.65rem Georgia,serif; margin: 14px 0 8px; }
+.episode p { color: #c4ceda; line-height: 1.6; }
+.episode audio { width: 100%; margin: 18px 0; }
+.meta { display: flex; flex-wrap: wrap; gap: 12px; color: #8fa2b7; font-size: .82rem; text-transform: uppercase; letter-spacing: .08em; }
+.episode details { border-top: 1px solid #2a3d53; padding: 15px 0 0; margin-top: 15px; }
+.episode summary { cursor: pointer; color: #f7b83e; font-weight: 800; }
+.episode li { display: flex; gap: 15px; padding: 7px 0; color: #c4ceda; }
+.episode li span { color: #7f93a9; font-variant-numeric: tabular-nums; }
+.transcript { max-height: 420px; overflow: auto; }
+.empty { padding: 40px; background: #102033; border: 1px solid #2a3d53; border-radius: 20px; color: #aab8c7; }
+.footer { border-top: 1px solid #24364b; padding: 35px 6vw; text-align: center; color: #7f93a9; }
+@media(max-width:700px){.hero{grid-template-columns:1fr;padding-top:55px}.artwork,.artworkFallback{width:150px;height:150px}.hero h1{font-size:3rem}.episode{padding:22px}}

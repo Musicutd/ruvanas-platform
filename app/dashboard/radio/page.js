@@ -60,6 +60,7 @@ export default async function OnlineRadioDashboard() {
         { href: firstStation ? `/stations/${firstStation.id}` : "/stations/new", label: firstStation ? "Station control" : "Create your first station", description: "Review your station and streaming configuration." },
         { href: firstStation ? `/stations/${firstStation.id}/public-player` : "/stations/new", label: "Public player", description: "Publish and preview your branded listener page and website embed." },
         { href: firstStation ? `/stations/${firstStation.id}/listener-requests` : "/stations/new", label: "Listener requests", description: "Moderate audience song requests without changing the live schedule automatically." },
+        { href: "/dashboard/podcasts", label: "Podcasts", description: "Publish on-demand programmes with protected audio and an RSS feed." },
         { href: "/dashboard/programming", label: "Programme schedule", description: "Plan music and dayparts." },
         { href: "/dashboard/player-sessions", label: "Live sessions", description: "Monitor current listening connections." }
       ] },

@@ -161,6 +161,7 @@ export async function POST(request) {
               organisationId,
               status: "PUBLISHED",
               publicationScope: "PUBLIC",
+              series: { product: "SCHOOL_RADIO" },
               episode: {
                 contributors: { some: { contributorId: contributor.id } },
                 ...(data.episodeId ? { id: data.episodeId } : {})

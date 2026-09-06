@@ -33,7 +33,7 @@ export async function PATCH(request, { params }) {
     const result = await prisma.$transaction(async (tx) => {
       const updated = await tx.subscription.update({ where: { id: subscription.id }, data: { schoolPublicPublishingEnabled: nextOverride } });
       const withdrawn = !nextEffective
-        ? await tx.schoolPodcastEpisode.findMany({ where: { organisationId: organisation.id, status: "PUBLISHED", publicationScope: "PUBLIC" }, select: { id: true, publicationRevision: true } })
+        ? await tx.schoolPodcastEpisode.findMany({ where: { organisationId: organisation.id, status: "PUBLISHED", publicationScope: "PUBLIC", series: { product: "SCHOOL_RADIO" } }, select: { id: true, publicationRevision: true } })
         : [];
       if (withdrawn.length) {
         await tx.schoolPodcastEpisode.updateMany({

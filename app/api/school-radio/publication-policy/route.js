@@ -15,7 +15,7 @@ export async function GET() {
   const [profile, readiness, publicCount] = await Promise.all([
     prisma.schoolProfile.findUnique({ where: { organisationId: access.organisation.id } }),
     prisma.schoolSafeguardingReadiness.findUnique({ where: { organisationId: access.organisation.id }, select: { status: true, updatedAt: true } }),
-    prisma.schoolPodcastEpisode.count({ where: { organisationId: access.organisation.id, status: "PUBLISHED", publicationScope: "PUBLIC" } })
+    prisma.schoolPodcastEpisode.count({ where: { organisationId: access.organisation.id, status: "PUBLISHED", publicationScope: "PUBLIC", series: { product: "SCHOOL_RADIO" } } })
   ]);
   return NextResponse.json({
     profile: profile || { displayName: access.organisation.name, publishingPolicy: "PRIVATE", policyVersion: "school-radio-v1" },
@@ -49,7 +49,7 @@ export async function PATCH(request) {
         update: { publishingPolicy: parsed.data.publishingPolicy, policyVersion: SCHOOL_PUBLICATION_POLICY_VERSION }
       });
       const withdrawn = parsed.data.publishingPolicy === "PRIVATE"
-        ? await tx.schoolPodcastEpisode.findMany({ where: { organisationId, status: "PUBLISHED", publicationScope: "PUBLIC" }, select: { id: true, publicationRevision: true } })
+        ? await tx.schoolPodcastEpisode.findMany({ where: { organisationId, status: "PUBLISHED", publicationScope: "PUBLIC", series: { product: "SCHOOL_RADIO" } }, select: { id: true, publicationRevision: true } })
         : [];
       if (withdrawn.length) {
         await tx.schoolPodcastEpisode.updateMany({ where: { id: { in: withdrawn.map((item) => item.id) } }, data: { status: "UNPUBLISHED", unpublishedAt: now, lastPolicyCheckAt: now, unpublishReason: parsed.data.reason } });

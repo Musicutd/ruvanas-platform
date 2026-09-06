@@ -2,7 +2,7 @@
 
 ## Baseline
 
-- Architecture baseline: `origin/main` through Stage 19.14 at `8cb2ba9`
+- Architecture baseline: `origin/main` through Stage 19.15 at `ab827a6`
 - Architecture gate: Stage 19.0
 - Detailed audit: [`stage-19-0-online-radio-architecture-audit.md`](./stage-19-0-online-radio-architecture-audit.md)
 - Status values: `NOT STARTED`, `IN DESIGN`, `IN DEVELOPMENT`, `PR OPEN`, `MERGED`, `DEPLOYED`, `BLOCKED`
@@ -28,8 +28,8 @@
 | 19.12 | Audio Processing | DEPLOYED | [#111](https://github.com/Musicutd/ruvanas-platform/pull/111) | `0a9b627` | `dep-dadu69p7lnhs73eblat0` | Versioned broadcast profiles, duplicate-safe worker jobs and measured QC are live on the paid service. |
 | 19.13 | Listener Analytics | DEPLOYED | [#112](https://github.com/Musicutd/ruvanas-platform/pull/112) | `d77ea00` | Paid auto-deploy | Privacy-minimised public audience events, duplicate-safe hourly aggregation, bounded retention and protected subscriber reporting are live. |
 | 19.14 | Public Player | DEPLOYED | [#113](https://github.com/Musicutd/ruvanas-platform/pull/113) | `8cb2ba9` | Paid auto-deploy | Anonymous, capacity-controlled listening page and embed use the shared playout engine and protected delivery; paid service verified. |
-| 19.15 | Listener Interaction | IN DEVELOPMENT | — | — | — | Opt-in requests with moderation, deduplication, rate limits and anonymous-session abuse controls. |
-| 19.16 | Podcasts | NOT STARTED | — | — | — | Shared podcast core; School policy remains intact. |
+| 19.15 | Listener Interaction | DEPLOYED | [#114](https://github.com/Musicutd/ruvanas-platform/pull/114) | `ab827a6` | Paid auto-deploy | Opt-in requests with moderation, deduplication, rate limits and anonymous-session abuse controls are live. |
+| 19.16 | Podcasts | IN DEVELOPMENT | — | — | — | Shared series, episode, transcript, RSS and protected-audio core; School policy remains intact through its dedicated adapter. |
 | 19.17 | Station Website | NOT STARTED | — | — | — | Public pages, branding, now-playing and domains. |
 | 19.18 | PWA/Mobile | NOT STARTED | — | — | — | Installability/offline; native stores remain external. |
 | 19.19 | Multi-Station Network | NOT STARTED | — | — | — | Explicit station/network agreements. |

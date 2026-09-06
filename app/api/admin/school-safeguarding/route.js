@@ -59,7 +59,7 @@ export async function POST(request) {
       let withdrawnPodcastCount = 0;
       if (reviewInput.decision === "CHANGES_REQUESTED") {
         const now = new Date();
-        const publicPodcasts = await tx.schoolPodcastEpisode.findMany({ where: { organisationId: readiness.organisationId, status: "PUBLISHED", publicationScope: "PUBLIC" }, select: { id: true, publicationRevision: true } });
+        const publicPodcasts = await tx.schoolPodcastEpisode.findMany({ where: { organisationId: readiness.organisationId, status: "PUBLISHED", publicationScope: "PUBLIC", series: { product: "SCHOOL_RADIO" } }, select: { id: true, publicationRevision: true } });
         withdrawnPodcastCount = publicPodcasts.length;
         if (publicPodcasts.length) {
           const reason = "School safeguarding approval was withdrawn for changes.";

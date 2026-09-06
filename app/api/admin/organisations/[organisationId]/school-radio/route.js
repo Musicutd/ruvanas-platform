@@ -58,7 +58,7 @@ export async function PATCH(request, { params }) {
       });
       const withdrawn = !nextEffective
         ? await tx.schoolPodcastEpisode.findMany({
-            where: { organisationId: organisation.id, status: "PUBLISHED", publicationScope: "PUBLIC" },
+            where: { organisationId: organisation.id, status: "PUBLISHED", publicationScope: "PUBLIC", series: { product: "SCHOOL_RADIO" } },
             select: { id: true, publicationRevision: true }
           })
         : [];
