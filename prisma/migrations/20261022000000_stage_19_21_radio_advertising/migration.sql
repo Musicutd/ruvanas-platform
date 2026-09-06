@@ -1,8 +1,3 @@
-ALTER TYPE "CampaignTargetType" ADD VALUE IF NOT EXISTS 'STATION';
-ALTER TYPE "CampaignTargetType" ADD VALUE IF NOT EXISTS 'CHANNEL';
-ALTER TYPE "RetailMediaInventoryTargetType" ADD VALUE IF NOT EXISTS 'STATION';
-ALTER TYPE "RetailMediaInventoryTargetType" ADD VALUE IF NOT EXISTS 'CHANNEL';
-
 CREATE TYPE "RadioAdvertisingPolicyStatus" AS ENUM ('DRAFT', 'ACTIVE', 'PAUSED');
 CREATE TYPE "RadioAdvertisingPacingMode" AS ENUM ('EVEN', 'PRIORITY');
 
