@@ -416,6 +416,7 @@ test("player enrolment, offline recovery, command delivery, proof replay, and di
     assert.equal(disabledProof.status, 401);
   } finally {
     if (organisationId) {
+      await database.$executeRaw`TRUNCATE TABLE "RightsUsageLedgerEvent"`;
       await database.proofOfPlayEvent.deleteMany({ where: { organisationId } });
       await database.auditLog.deleteMany({ where: { organisationId } });
       await database.organisation.deleteMany({ where: { id: organisationId } });

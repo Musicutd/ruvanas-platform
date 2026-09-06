@@ -2,7 +2,7 @@
 
 ## Baseline
 
-- Architecture baseline: `main` through Stage 19.20 at `b6d4cd1`
+- Architecture baseline: `main` through Stage 19.21 at `9608d80`
 - Architecture gate: Stage 19.0
 - Detailed audit: [`stage-19-0-online-radio-architecture-audit.md`](./stage-19-0-online-radio-architecture-audit.md)
 - Status values: `NOT STARTED`, `IN DESIGN`, `IN DEVELOPMENT`, `PR OPEN`, `MERGED`, `DEPLOYED`, `BLOCKED`
@@ -34,8 +34,8 @@
 | 19.18 | PWA/Mobile | DEPLOYED | [#117](https://github.com/Musicutd/ruvanas-platform/pull/117) | `09c6f09` | `dep-daekne3m8hqs73d5vacg` | Station-branded installability, conservative public-page caching, offline/update state and mobile guidance are live; native stores remain external. |
 | 19.19 | Multi-Station Network | DEPLOYED | [#118](https://github.com/Musicutd/ruvanas-platform/pull/118) | `0fd9807` | Paid auto-deploy | Explicit, owner-approved and revocable station/network agreements; no cross-tenant content or operational access. |
 | 19.20 | Syndication | DEPLOYED | [#119](https://github.com/Musicutd/ruvanas-platform/pull/119) | `b6d4cd1` | `dep-daemlarm8hqs73d7hsmg` | Recorded and live sharing with source approval, protected delivery, territory and rights-window enforcement. |
-| 19.21 | Advertising | IN DEVELOPMENT | — | — | — | Station/channel campaigns, Retail Media inventory, bounded break policy, placement readiness and proof-of-play evidence. |
-| 19.22 | Rights/Royalty reporting | NOT STARTED | — | — | — | Authority-specific reports on an immutable usage ledger. |
+| 19.21 | Advertising | DEPLOYED | [#120](https://github.com/Musicutd/ruvanas-platform/pull/120) | `9608d80` | `dep-daenf8h7lnhs73evp1m0` | Station/channel campaigns, Retail Media inventory, bounded break policy, placement readiness and proof-of-play evidence are live. |
+| 19.22 | Rights/Royalty reporting | IN DEVELOPMENT | — | — | — | Authority profiles, work mapping, immutable usage evidence, attestation and bounded CSV exports. |
 | 19.23 | Distribution | NOT STARTED | — | — | — | Provider adapters, directories and platform connectors. |
 | 19.24 | AI Programme Director | NOT STARTED | — | — | — | Existing governance and human approval are mandatory. |
 | 19.25 | Newsroom | NOT STARTED | — | — | — | Generalise School editorial workflow. |

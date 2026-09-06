@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentPlayer } from "@/lib/player-auth";
 import { verifyPlaybackProofToken } from "@/lib/playback-proof.mjs";
 import { queueOutgoingWebhookEvent } from "@/lib/outgoing-webhook-service";
+import { appendRightsUsageLedger } from "@/lib/rights-royalty-service";
 
 export const runtime = "nodejs";
 
@@ -95,7 +96,8 @@ export async function POST(request) {
     ]);
     const tracksById = new Map(tracks.map((track) => [track.id, track]));
     const intentsByScheduleItemId = new Map(intents.map((intent) => [intent.scheduleItemId, intent]));
-    const channelId = player.zone.channelAssignments[0]?.channelId || null;
+    const channel = player.zone.channelAssignments[0]?.channel || null;
+    const channelId = channel?.id || null;
 
     for (const event of events) {
       const occurredAt = new Date(event.occurredAt);
@@ -166,6 +168,7 @@ export async function POST(request) {
         skipDuplicates: true
       });
 
+      const rightsLedgerCount = await appendRightsUsageLedger(tx, { player, channel, events, tracksById, receivedAt: now });
       await tx.player.update({ where: { id: player.id }, data: { status: "ONLINE", lastHeartbeatAt: now } });
       if (inserted.count > 0) {
         await queueOutgoingWebhookEvent(tx, {
@@ -176,13 +179,14 @@ export async function POST(request) {
           payload: { playerId: player.id, acceptedCount: inserted.count, receivedAt: now.toISOString() }
         });
       }
-      return inserted;
+      return { inserted, rightsLedgerCount };
     });
 
     return NextResponse.json({
       ok: true,
-      accepted: result.count,
-      duplicates: events.length - result.count,
+      accepted: result.inserted.count,
+      duplicates: events.length - result.inserted.count,
+      rightsUsageRecorded: result.rightsLedgerCount,
       receivedAt: now.toISOString()
     });
   } catch (error) {
