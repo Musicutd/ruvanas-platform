@@ -89,6 +89,9 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   const tenantOwnerOperationalHealth = await api("/api/admin/operations/health", { cookie: cookieA });
   assert.equal(tenantOwnerOperationalHealth.status, 403);
 
+  const tenantOwnerEnterpriseScale = await api("/api/admin/enterprise-scale", { cookie: cookieA });
+  assert.equal(tenantOwnerEnterpriseScale.status, 403);
+
   const tenantOwnerRecoveryReadiness = await api("/api/admin/recovery", { cookie: cookieA });
   assert.equal(tenantOwnerRecoveryReadiness.status, 403);
 
@@ -222,6 +225,9 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
 
   const unauthenticatedOperationalHealth = await api("/api/admin/operations/health");
   assert.equal(unauthenticatedOperationalHealth.status, 401);
+
+  const unauthenticatedEnterpriseScale = await api("/api/admin/enterprise-scale");
+  assert.equal(unauthenticatedEnterpriseScale.status, 401);
 
   const unauthenticatedRecoveryReadiness = await api("/api/admin/recovery");
   assert.equal(unauthenticatedRecoveryReadiness.status, 401);
@@ -837,6 +843,13 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     assert.ok(Array.isArray(platformOperationalBody.deployment.instances));
     assert.ok(platformOperationalBody.queues.jobs);
     assert.equal(JSON.stringify(platformOperationalBody).includes("instanceId"), false);
+
+    const platformEnterpriseScale = await api("/api/admin/enterprise-scale", { cookie: cookieA });
+    assert.equal(platformEnterpriseScale.status, 200, await platformEnterpriseScale.clone().text());
+    const platformEnterpriseScaleBody = await platformEnterpriseScale.json();
+    assert.ok(["READY_FOR_CONTROLLED_SCALE", "ATTENTION", "BLOCKED"].includes(platformEnterpriseScaleBody.status));
+    assert.equal(platformEnterpriseScaleBody.evidence.length, 4);
+    assert.equal(JSON.stringify(platformEnterpriseScaleBody).includes(accountABody.organisation.name), false);
 
     const platformRecoveryReadiness = await api("/api/admin/recovery", { cookie: cookieA });
     assert.equal(platformRecoveryReadiness.status, 200, await platformRecoveryReadiness.clone().text());

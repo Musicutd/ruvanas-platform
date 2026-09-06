@@ -2,7 +2,7 @@
 
 ## Baseline
 
-- Architecture baseline: `main` through Stage 19.21 at `9608d80`
+- Architecture baseline: `main` through Stage 19.25 at `8ced946`
 - Architecture gate: Stage 19.0
 - Detailed audit: [`stage-19-0-online-radio-architecture-audit.md`](./stage-19-0-online-radio-architecture-audit.md)
 - Status values: `NOT STARTED`, `IN DESIGN`, `IN DEVELOPMENT`, `PR OPEN`, `MERGED`, `DEPLOYED`, `BLOCKED`
@@ -38,8 +38,8 @@
 | 19.22 | Rights/Royalty reporting | DEPLOYED | [#121](https://github.com/Musicutd/ruvanas-platform/pull/121) | `a9e7a91` | Paid auto-deploy | Authority profiles, work mapping, immutable usage evidence, attestation and bounded CSV exports are live. |
 | 19.23 | Distribution | DEPLOYED | [#122](https://github.com/Musicutd/ruvanas-platform/pull/122) | `14b8d49` | Paid auto-deploy | Provider-neutral directory, streaming/CDN, app and voice-assistant adapters are live over the governed integration delivery core. |
 | 19.24 | AI Programme Director | DEPLOYED | [#123](https://github.com/Musicutd/ruvanas-platform/pull/123) | `f7dc686` | `dep-daepprs9v7es73bd7kj0` | Explainable local recommendations, separate owner/manager review, provenance and schedule-draft application are live; live publication remains outside the AI workflow. |
-| 19.25 | Newsroom | READY TO PUBLISH | — | Local branch | Not deployed | Shared School/Online Radio editorial core, source and revision evidence, assignments, Studio production links and manager-controlled release have passed local verification. |
-| 19.26 | Enterprise/Scale | NOT STARTED | — | — | — | Isolation, capacity, SLOs, soak and failover. |
+| 19.25 | Newsroom | DEPLOYED | [#124](https://github.com/Musicutd/ruvanas-platform/pull/124) | `8ced946` | Paid auto-deploy | Shared School/Online Radio editorial core, source and revision evidence, assignments, Studio production links and manager-controlled release are live. |
+| 19.26 | Enterprise/Scale | READY TO PUBLISH | — | Local branch | Not deployed | Aggregate capacity guardrails, internal SLOs, tenant-isolation, soak and failover evidence gates passed local verification. |
 
 ## Dependency rules
 

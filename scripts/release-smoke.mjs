@@ -41,6 +41,7 @@ await expectProtectedPage("/dashboard");
 await expectProtectedPage("/admin/recovery");
 await expectProtectedApi("/api/admin/recovery");
 await expectProtectedApi("/api/admin/operations/health");
+await expectProtectedApi("/api/admin/enterprise-scale");
 await expectProtectedApi("/api/notifications");
 
 process.stdout.write(JSON.stringify({ event: "release_smoke_passed", baseUrl, checks: results }) + "\n");
