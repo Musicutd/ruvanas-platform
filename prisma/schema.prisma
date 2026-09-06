@@ -427,6 +427,11 @@ enum MusicRightsUse {
   ONLINE_RADIO
 }
 
+enum RightsReportFormat {
+  STANDARD_USAGE_V1
+  SUMMARY_USAGE_V1
+}
+
 enum PromoAssetStatus {
   ACTIVE
   ARCHIVED
@@ -1513,6 +1518,10 @@ model Organisation {
   integrationSyncRuns                IntegrationSyncRun[]
   integrationMetricSummaries         IntegrationMetricSummary[]
   outgoingWebhookEvents              OutgoingWebhookEvent[]
+  rightsReportingAuthorities         RightsReportingAuthority[]
+  rightsWorkMappings                 RightsWorkMapping[]
+  rightsUsageLedgerEvents            RightsUsageLedgerEvent[]
+  rightsReportAttestations           RightsReportAttestation[]
   playerHeartbeatSamples             PlayerHeartbeatSample[]
   playerHealthIncidents              PlayerHealthIncident[]
   playerCommands                     PlayerCommand[]
@@ -1549,7 +1558,7 @@ model Organisation {
   stationNetworkAgreements           StationNetworkAgreement[]           @relation("StationNetworkAgreementOrganisation")
   sourceRadioSyndicationOffers       RadioSyndicationOffer[]             @relation("RadioSyndicationSourceOrganisation")
   targetRadioSyndicationAgreements   RadioSyndicationAgreement[]         @relation("RadioSyndicationTargetOrganisation")
-  radioAdvertisingPolicies          RadioAdvertisingPolicy[]
+  radioAdvertisingPolicies           RadioAdvertisingPolicy[]
 }
 
 model OrganisationMember {
@@ -2223,7 +2232,8 @@ model Channel {
   targetSyndicationAgreements       RadioSyndicationAgreement[]        @relation("RadioSyndicationTargetChannel")
   campaignTargets                   CampaignTarget[]
   retailMediaInventoryTargets       RetailMediaInventoryTarget[]
-  radioAdvertisingPolicies         RadioAdvertisingPolicy[]
+  radioAdvertisingPolicies          RadioAdvertisingPolicy[]
+  rightsUsageLedgerEvents           RightsUsageLedgerEvent[]
 
   @@unique([organisationId, slug])
   @@unique([id, organisationId])
@@ -2234,24 +2244,24 @@ model Channel {
 }
 
 model RadioAdvertisingPolicy {
-  id                            String                       @id @default(cuid())
-  organisationId                String
-  stationId                     String
-  channelId                     String
-  status                        RadioAdvertisingPolicyStatus @default(DRAFT)
-  pacingMode                    RadioAdvertisingPacingMode    @default(EVEN)
-  maxSpotsPerBreak              Int                          @default(4)
-  maxBreakSeconds               Int                          @default(180)
-  minBreakGapMinutes            Int                          @default(10)
-  maxAdvertisingSecondsPerHour  Int                          @default(720)
-  revision                      Int                          @default(0)
-  configurationHash             String?
-  policyVersion                 String                       @default("radio-advertising-v1")
-  createdByUserId               String
-  approvedByUserId              String?
-  approvedAt                    DateTime?
-  createdAt                     DateTime                     @default(now())
-  updatedAt                     DateTime                     @updatedAt
+  id                           String                       @id @default(cuid())
+  organisationId               String
+  stationId                    String
+  channelId                    String
+  status                       RadioAdvertisingPolicyStatus @default(DRAFT)
+  pacingMode                   RadioAdvertisingPacingMode   @default(EVEN)
+  maxSpotsPerBreak             Int                          @default(4)
+  maxBreakSeconds              Int                          @default(180)
+  minBreakGapMinutes           Int                          @default(10)
+  maxAdvertisingSecondsPerHour Int                          @default(720)
+  revision                     Int                          @default(0)
+  configurationHash            String?
+  policyVersion                String                       @default("radio-advertising-v1")
+  createdByUserId              String
+  approvedByUserId             String?
+  approvedAt                   DateTime?
+  createdAt                    DateTime                     @default(now())
+  updatedAt                    DateTime                     @updatedAt
 
   organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   station      Station      @relation(fields: [stationId, organisationId], references: [id, organisationId], onDelete: Cascade)
@@ -2352,6 +2362,7 @@ model Station {
   campaignTargets             CampaignTarget[]
   retailMediaInventoryTargets RetailMediaInventoryTarget[]
   radioAdvertisingPolicies    RadioAdvertisingPolicy[]
+  rightsUsageLedgerEvents     RightsUsageLedgerEvent[]
 
   @@unique([id, organisationId])
   @@index([organisationId])
@@ -3337,15 +3348,17 @@ model Track {
   createdAt            DateTime                @default(now())
   updatedAt            DateTime                @updatedAt
 
-  mediaAsset               MediaAsset          @relation(fields: [mediaAssetId], references: [id], onDelete: Cascade)
-  rightsConfirmedBy        User?               @relation("TrackRightsConfirmedBy", fields: [rightsConfirmedById], references: [id], onDelete: SetNull)
-  rightsReviewedBy         User?               @relation("TrackRightsReviewedBy", fields: [rightsReviewedById], references: [id], onDelete: SetNull)
+  mediaAsset               MediaAsset               @relation(fields: [mediaAssetId], references: [id], onDelete: Cascade)
+  rightsConfirmedBy        User?                    @relation("TrackRightsConfirmedBy", fields: [rightsConfirmedById], references: [id], onDelete: SetNull)
+  rightsReviewedBy         User?                    @relation("TrackRightsReviewedBy", fields: [rightsReviewedById], references: [id], onDelete: SetNull)
   musicModes               MusicModeTrack[]
   proofOfPlayEvents        ProofOfPlayEvent[]
   schoolRundownItems       SchoolRundownItem[]
   radioClockItems          RadioClockItem[]
-  outgoingVoiceTrackSegues VoiceTrackSegue[]   @relation("VoiceTrackSegueOutgoingTrack")
-  incomingVoiceTrackSegues VoiceTrackSegue[]   @relation("VoiceTrackSegueIncomingTrack")
+  outgoingVoiceTrackSegues VoiceTrackSegue[]        @relation("VoiceTrackSegueOutgoingTrack")
+  incomingVoiceTrackSegues VoiceTrackSegue[]        @relation("VoiceTrackSegueIncomingTrack")
+  rightsWorkMappings       RightsWorkMapping[]
+  rightsUsageLedgerEvents  RightsUsageLedgerEvent[]
 
   @@index([status])
   @@index([artist, title])
@@ -5632,16 +5645,17 @@ model Player {
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
 
-  organisation      Organisation            @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  zone              Zone                    @relation(fields: [zoneId], references: [id], onDelete: Cascade)
-  proofOfPlayEvents ProofOfPlayEvent[]
-  playoutIntents    PlayoutIntent[]
-  heartbeatSamples  PlayerHeartbeatSample[]
-  healthIncidents   PlayerHealthIncident[]
-  commands          PlayerCommand[]
-  listenerLeases    PlayerListenerLease[]
-  replacesPlayer    Player?                 @relation("PlayerReplacement", fields: [replacesPlayerId], references: [id], onDelete: SetNull)
-  replacementPlayer Player?                 @relation("PlayerReplacement")
+  organisation            Organisation             @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  zone                    Zone                     @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  proofOfPlayEvents       ProofOfPlayEvent[]
+  playoutIntents          PlayoutIntent[]
+  heartbeatSamples        PlayerHeartbeatSample[]
+  healthIncidents         PlayerHealthIncident[]
+  commands                PlayerCommand[]
+  listenerLeases          PlayerListenerLease[]
+  rightsUsageLedgerEvents RightsUsageLedgerEvent[]
+  replacesPlayer          Player?                  @relation("PlayerReplacement", fields: [replacesPlayerId], references: [id], onDelete: SetNull)
+  replacementPlayer       Player?                  @relation("PlayerReplacement")
 
   @@index([organisationId])
   @@index([zoneId])
@@ -5904,16 +5918,17 @@ model ProofOfPlayEvent {
   trackTitle            String
   trackArtist           String
 
-  organisation        Organisation         @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  player              Player               @relation(fields: [playerId], references: [id], onDelete: Cascade)
-  zone                Zone                 @relation(fields: [zoneId], references: [id], onDelete: Cascade)
-  track               Track?               @relation(fields: [trackId], references: [id], onDelete: Restrict)
-  campaign            Campaign?            @relation(fields: [campaignId], references: [id], onDelete: Restrict)
-  promoVersion        PromoVersion?        @relation(fields: [promoVersionId], references: [id], onDelete: Restrict)
-  playoutIntent       PlayoutIntent?       @relation(fields: [playoutIntentId], references: [id], onDelete: Restrict)
-  schoolBroadcastSlot SchoolBroadcastSlot? @relation(fields: [schoolBroadcastSlotId], references: [id], onDelete: Restrict)
-  channel             Channel?             @relation(fields: [channelId], references: [id], onDelete: SetNull)
-  mediaAsset          MediaAsset           @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+  organisation        Organisation            @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  player              Player                  @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  zone                Zone                    @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  track               Track?                  @relation(fields: [trackId], references: [id], onDelete: Restrict)
+  campaign            Campaign?               @relation(fields: [campaignId], references: [id], onDelete: Restrict)
+  promoVersion        PromoVersion?           @relation(fields: [promoVersionId], references: [id], onDelete: Restrict)
+  playoutIntent       PlayoutIntent?          @relation(fields: [playoutIntentId], references: [id], onDelete: Restrict)
+  schoolBroadcastSlot SchoolBroadcastSlot?    @relation(fields: [schoolBroadcastSlotId], references: [id], onDelete: Restrict)
+  channel             Channel?                @relation(fields: [channelId], references: [id], onDelete: SetNull)
+  mediaAsset          MediaAsset              @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+  rightsUsageEvent    RightsUsageLedgerEvent?
 
   @@unique([clientEventId])
   @@index([organisationId, occurredAt])
@@ -5927,6 +5942,113 @@ model ProofOfPlayEvent {
   @@index([channelId, occurredAt])
   @@index([manifestVersion])
   @@index([eventType, occurredAt])
+}
+
+model RightsReportingAuthority {
+  id              String             @id @default(cuid())
+  organisationId  String
+  code            String             @db.VarChar(24)
+  name            String
+  territoryCode   String             @db.VarChar(2)
+  reportFormat    RightsReportFormat @default(STANDARD_USAGE_V1)
+  active          Boolean            @default(true)
+  createdByUserId String
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  organisation Organisation              @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  workMappings RightsWorkMapping[]
+  attestations RightsReportAttestation[]
+
+  @@unique([organisationId, code])
+  @@unique([id, organisationId])
+  @@index([organisationId, active, name])
+}
+
+model RightsWorkMapping {
+  id                 String    @id @default(cuid())
+  organisationId     String
+  authorityId        String
+  trackId            String
+  recordingCode      String?
+  workCode           String?
+  title              String
+  primaryArtist      String
+  composers          Json
+  publishers         Json
+  authorityReference String?
+  revision           Int       @default(1)
+  verifiedAt         DateTime?
+  verifiedByUserId   String?
+  createdByUserId    String
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  organisation Organisation             @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  authority    RightsReportingAuthority @relation(fields: [authorityId, organisationId], references: [id, organisationId], onDelete: Cascade)
+  track        Track                    @relation(fields: [trackId], references: [id], onDelete: Restrict)
+
+  @@unique([authorityId, trackId])
+  @@index([organisationId, trackId])
+  @@index([authorityId, verifiedAt])
+}
+
+model RightsUsageLedgerEvent {
+  id                  String            @id @default(cuid())
+  sourceProofEventId  String            @unique
+  sourceClientEventId String            @unique
+  organisationId      String
+  playerId            String
+  stationId           String?
+  channelId           String?
+  trackId             String
+  mediaAssetId        String
+  occurredAt          DateTime
+  receivedAt          DateTime
+  durationSeconds     Int
+  territoryCode       String            @db.VarChar(2)
+  rightsUse           MusicRightsUse    @default(ONLINE_RADIO)
+  trackTitle          String
+  trackArtist         String
+  rightsHolder        String?
+  rightsReference     String?
+  rightsBasis         MusicRightsBasis?
+  evidenceSha256      String            @unique @db.Char(64)
+  createdAt           DateTime          @default(now())
+
+  sourceProofEvent ProofOfPlayEvent @relation(fields: [sourceProofEventId], references: [id], onDelete: Restrict)
+  organisation     Organisation     @relation(fields: [organisationId], references: [id], onDelete: Restrict)
+  player           Player           @relation(fields: [playerId], references: [id], onDelete: Restrict)
+  station          Station?         @relation(fields: [stationId], references: [id], onDelete: Restrict)
+  channel          Channel?         @relation(fields: [channelId], references: [id], onDelete: Restrict)
+  track            Track            @relation(fields: [trackId], references: [id], onDelete: Restrict)
+
+  @@index([organisationId, occurredAt])
+  @@index([trackId, occurredAt])
+  @@index([stationId, occurredAt])
+  @@index([channelId, occurredAt])
+  @@index([territoryCode, occurredAt])
+}
+
+model RightsReportAttestation {
+  id                String   @id @default(cuid())
+  organisationId    String
+  authorityId       String
+  reportExportJobId String   @unique
+  attestedByUserId  String
+  statement         String
+  periodFrom        DateTime @db.Date
+  periodTo          DateTime @db.Date
+  rowCount          Int
+  contentSha256     String   @db.Char(64)
+  createdAt         DateTime @default(now())
+
+  organisation Organisation             @relation(fields: [organisationId], references: [id], onDelete: Restrict)
+  authority    RightsReportingAuthority @relation(fields: [authorityId, organisationId], references: [id, organisationId], onDelete: Restrict)
+  reportExport ReportExportJob          @relation(fields: [reportExportJobId], references: [id], onDelete: Restrict)
+
+  @@index([organisationId, createdAt])
+  @@index([authorityId, periodFrom, periodTo])
 }
 
 model ReportExportJob {
@@ -5949,9 +6071,10 @@ model ReportExportJob {
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
 
-  organisation Organisation     @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  requestedBy  User             @relation("ReportExportRequestedBy", fields: [requestedByUserId], references: [id], onDelete: Restrict)
-  auditSeal    AuditExportSeal?
+  organisation      Organisation             @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  requestedBy       User                     @relation("ReportExportRequestedBy", fields: [requestedByUserId], references: [id], onDelete: Restrict)
+  auditSeal         AuditExportSeal?
+  rightsAttestation RightsReportAttestation?
 
   @@index([organisationId, createdAt])
   @@index([requestedByUserId, createdAt])
