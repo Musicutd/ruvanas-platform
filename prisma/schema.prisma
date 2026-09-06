@@ -177,6 +177,19 @@ enum SchoolNetworkRole {
   VIEWER
 }
 
+enum StationNetworkStatus {
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+enum StationNetworkAgreementStatus {
+  INVITED
+  ACTIVE
+  DECLINED
+  REVOKED
+}
+
 enum SchoolEpisodeExchangeOfferStatus {
   AVAILABLE
   PAUSED
@@ -1354,6 +1367,10 @@ model User {
   reviewedListenerRequests           ListenerRequest[]                @relation("ListenerRequestReviewedBy")
   createdListenerRequestBlocks       ListenerRequestBlock[]           @relation("ListenerRequestBlockCreatedBy")
   revokedListenerRequestBlocks       ListenerRequestBlock[]           @relation("ListenerRequestBlockRevokedBy")
+  createdStationNetworks             StationNetwork[]                 @relation("StationNetworkCreatedBy")
+  invitedStationNetworkAgreements    StationNetworkAgreement[]        @relation("StationNetworkAgreementInvitedBy")
+  decidedStationNetworkAgreements    StationNetworkAgreement[]        @relation("StationNetworkAgreementDecidedBy")
+  revokedStationNetworkAgreements    StationNetworkAgreement[]        @relation("StationNetworkAgreementRevokedBy")
 }
 
 model Organisation {
@@ -1484,6 +1501,8 @@ model Organisation {
   publicListenerLeases               PublicListenerLease[]
   listenerRequests                   ListenerRequest[]
   listenerRequestBlocks              ListenerRequestBlock[]
+  ownedStationNetworks               StationNetwork[]                    @relation("StationNetworkOwner")
+  stationNetworkAgreements           StationNetworkAgreement[]           @relation("StationNetworkAgreementOrganisation")
 }
 
 model OrganisationMember {
@@ -1570,6 +1589,56 @@ model SchoolNetworkSchool {
 
   @@unique([schoolNetworkId, organisationId])
   @@index([schoolNetworkId, active])
+}
+
+model StationNetwork {
+  id                  String               @id @default(cuid())
+  ownerOrganisationId String
+  name                String
+  slug                String               @unique
+  description         String?
+  status              StationNetworkStatus @default(ACTIVE)
+  createdByUserId     String
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  ownerOrganisation Organisation              @relation("StationNetworkOwner", fields: [ownerOrganisationId], references: [id], onDelete: Restrict)
+  createdBy         User                      @relation("StationNetworkCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  agreements        StationNetworkAgreement[]
+  auditLogs         AuditLog[]
+
+  @@unique([id, ownerOrganisationId])
+  @@index([ownerOrganisationId, status])
+  @@index([createdByUserId])
+}
+
+model StationNetworkAgreement {
+  id                    String                        @id @default(cuid())
+  stationNetworkId      String
+  stationId             String
+  stationOrganisationId String
+  status                StationNetworkAgreementStatus @default(INVITED)
+  termsVersion          String                        @default("station-network-membership-v1")
+  invitedByUserId       String
+  decidedByUserId       String?
+  revokedByUserId       String?
+  invitedAt             DateTime                      @default(now())
+  decidedAt             DateTime?
+  revokedAt             DateTime?
+  createdAt             DateTime                      @default(now())
+  updatedAt             DateTime                      @updatedAt
+
+  network             StationNetwork @relation(fields: [stationNetworkId], references: [id], onDelete: Cascade)
+  station             Station        @relation(fields: [stationId, stationOrganisationId], references: [id, organisationId], onDelete: Restrict)
+  stationOrganisation Organisation   @relation("StationNetworkAgreementOrganisation", fields: [stationOrganisationId], references: [id], onDelete: Restrict)
+  invitedBy           User           @relation("StationNetworkAgreementInvitedBy", fields: [invitedByUserId], references: [id], onDelete: Restrict)
+  decidedBy           User?          @relation("StationNetworkAgreementDecidedBy", fields: [decidedByUserId], references: [id], onDelete: SetNull)
+  revokedBy           User?          @relation("StationNetworkAgreementRevokedBy", fields: [revokedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([stationNetworkId, stationId])
+  @@index([stationOrganisationId, status])
+  @@index([stationNetworkId, status])
+  @@index([stationId, status])
 }
 
 model SchoolEpisodeExchangeOffer {
@@ -2099,6 +2168,7 @@ model Station {
   listenerRequestBlocks ListenerRequestBlock[]
   podcastSeries         SchoolPodcastSeries[]
   websiteDomains        StationDomain[]
+  networkAgreements     StationNetworkAgreement[]
 
   @@unique([id, organisationId])
   @@index([organisationId])
@@ -4843,6 +4913,7 @@ model AuditLog {
   id                    String   @id @default(cuid())
   organisationId        String?
   schoolNetworkId       String?
+  stationNetworkId      String?
   actorUserId           String?
   actorServiceAccountId String?
   action                String
@@ -4853,11 +4924,13 @@ model AuditLog {
 
   organisation        Organisation?   @relation(fields: [organisationId], references: [id], onDelete: SetNull)
   schoolNetwork       SchoolNetwork?  @relation(fields: [schoolNetworkId], references: [id], onDelete: SetNull)
+  stationNetwork      StationNetwork? @relation(fields: [stationNetworkId], references: [id], onDelete: SetNull)
   actor               User?           @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
   actorServiceAccount ServiceAccount? @relation(fields: [actorServiceAccountId], references: [id], onDelete: SetNull)
 
   @@index([organisationId])
   @@index([schoolNetworkId])
+  @@index([stationNetworkId])
   @@index([actorUserId])
   @@index([actorServiceAccountId])
 }
