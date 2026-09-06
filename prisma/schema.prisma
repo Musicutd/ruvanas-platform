@@ -1121,6 +1121,11 @@ enum PodcastProduct {
   SCHOOL_RADIO
 }
 
+enum NewsroomProduct {
+  ONLINE_RADIO
+  SCHOOL_RADIO
+}
+
 enum TranscriptStatus {
   DRAFT
   NEEDS_REVIEW
@@ -1133,6 +1138,11 @@ enum SchoolNewsStoryType {
   SPORTS_RESULT
   SCHOOL_NOTICE
   FEATURE_STORY
+  WEATHER
+  TRAFFIC
+  COMMUNITY
+  BUSINESS
+  PUBLIC_SERVICE
 }
 
 enum SchoolNewsStoryStatus {
@@ -1342,6 +1352,9 @@ model User {
   createdNewsStories                     SchoolNewsStory[]                @relation("SchoolNewsStoryCreatedBy")
   assignedNewsStories                    SchoolNewsStory[]                @relation("SchoolNewsStoryAssignedTo")
   reviewedNewsStories                    SchoolNewsStory[]                @relation("SchoolNewsStoryReviewedBy")
+  publishedNewsStories                   SchoolNewsStory[]                @relation("SchoolNewsStoryPublishedBy")
+  newsStoryRevisions                     NewsStoryRevision[]              @relation("NewsStoryRevisionCreatedBy")
+  newsStoryDecisions                     NewsStoryDecision[]              @relation("NewsStoryDecisionActor")
   supervisedLiveSessions                 LiveStudioSession[]              @relation("LiveStudioSupervisor")
   createdAssignments                     Assignment[]                     @relation("AssignmentCreatedBy")
   recordedAssignmentSubmissions          AssignmentSubmission[]           @relation("AssignmentSubmissionRecordedBy")
@@ -1510,6 +1523,8 @@ model Organisation {
   schoolPublicationDailyAggregates   SchoolPublicationDailyAggregate[]
   transcripts                        Transcript[]
   schoolNewsStories                  SchoolNewsStory[]
+  newsStoryRevisions                 NewsStoryRevision[]
+  newsStoryDecisions                 NewsStoryDecision[]
   liveStudioSessions                 LiveStudioSession[]
   assignments                        Assignment[]
   assignmentSubmissions              AssignmentSubmission[]
@@ -2253,6 +2268,7 @@ model Channel {
   radioAdvertisingPolicies          RadioAdvertisingPolicy[]
   rightsUsageLedgerEvents           RightsUsageLedgerEvent[]
   radioDistributionDestinations     RadioDistributionDestination[]
+  newsStories                       SchoolNewsStory[]
 
   @@unique([organisationId, slug])
   @@unique([id, organisationId])
@@ -2383,6 +2399,7 @@ model Station {
   radioAdvertisingPolicies      RadioAdvertisingPolicy[]
   rightsUsageLedgerEvents       RightsUsageLedgerEvent[]
   radioDistributionDestinations RadioDistributionDestination[]
+  newsStories                   SchoolNewsStory[]
 
   @@unique([id, organisationId])
   @@index([organisationId])
@@ -2708,6 +2725,7 @@ model MediaAsset {
   schoolRundownItems SchoolRundownItem[]
   transcripts        Transcript[]
   interviewStories   SchoolNewsStory[]      @relation("SchoolNewsInterviewAsset")
+  newsStoryRevisions NewsStoryRevision[]    @relation("NewsStoryRevisionInterviewAsset")
   liveRecordings     LiveStudioSession[]    @relation("LiveStudioRecordingAsset")
   podcastEpisodes    SchoolPodcastEpisode[]
 
@@ -4261,7 +4279,10 @@ model AudioProject {
   transcripts           Transcript[]
   assignmentSubmissions AssignmentSubmission[]
   voiceTrackSegues      VoiceTrackSegue[]
+  newsStories           SchoolNewsStory[]
+  newsStoryRevisions    NewsStoryRevision[]
 
+  @@unique([id, organisationId])
   @@index([organisationId, status])
   @@index([episodeId])
   @@index([createdByUserId, updatedAt])
@@ -4774,8 +4795,12 @@ model Transcript {
 model SchoolNewsStory {
   id                        String                @id @default(cuid())
   organisationId            String
+  product                   NewsroomProduct       @default(SCHOOL_RADIO)
+  stationId                 String?
+  channelId                 String?
   programmeId               String?
   episodeId                 String?
+  audioProjectId            String?
   title                     String
   type                      SchoolNewsStoryType
   status                    SchoolNewsStoryStatus @default(PITCH)
@@ -4790,21 +4815,77 @@ model SchoolNewsStory {
   createdByUserId           String
   assignedToUserId          String?
   reviewedByUserId          String?
+  publishedByUserId         String?
+  publishedAt               DateTime?
   createdAt                 DateTime              @default(now())
   updatedAt                 DateTime              @updatedAt
 
   organisation        Organisation     @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  station             Station?         @relation(fields: [stationId, organisationId], references: [id, organisationId], onDelete: Restrict)
+  channel             Channel?         @relation(fields: [channelId, stationId, organisationId], references: [id, stationId, organisationId], onDelete: Restrict)
   programme           SchoolProgramme? @relation(fields: [programmeId], references: [id], onDelete: SetNull)
   episode             SchoolEpisode?   @relation(fields: [episodeId], references: [id], onDelete: SetNull)
+  audioProject        AudioProject?    @relation(fields: [audioProjectId, organisationId], references: [id, organisationId], onDelete: Restrict)
   interviewMediaAsset MediaAsset?      @relation("SchoolNewsInterviewAsset", fields: [interviewMediaAssetId], references: [id], onDelete: SetNull)
   createdBy           User             @relation("SchoolNewsStoryCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
   assignedTo          User?            @relation("SchoolNewsStoryAssignedTo", fields: [assignedToUserId], references: [id], onDelete: SetNull)
   reviewedBy          User?            @relation("SchoolNewsStoryReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+  publishedBy         User?            @relation("SchoolNewsStoryPublishedBy", fields: [publishedByUserId], references: [id], onDelete: SetNull)
+  revisions           NewsStoryRevision[]
+  decisions           NewsStoryDecision[]
 
-  @@index([organisationId, status, deadline])
+  @@unique([id, organisationId])
+  @@index([organisationId, product, status, deadline])
+  @@index([stationId, status])
+  @@index([channelId, status])
   @@index([programmeId])
   @@index([episodeId])
+  @@index([audioProjectId])
   @@index([interviewMediaAssetId])
+}
+
+model NewsStoryRevision {
+  id                    String   @id @default(cuid())
+  organisationId        String
+  storyId               String
+  revision              Int
+  script                String?
+  factCheckNotes        String?
+  sourcesJson           Json?
+  audioProjectId        String?
+  interviewMediaAssetId String?
+  createdByUserId       String
+  createdAt             DateTime @default(now())
+
+  organisation        Organisation    @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  story               SchoolNewsStory @relation(fields: [storyId, organisationId], references: [id, organisationId], onDelete: Cascade)
+  audioProject        AudioProject?   @relation(fields: [audioProjectId, organisationId], references: [id, organisationId], onDelete: Restrict)
+  interviewMediaAsset MediaAsset?     @relation("NewsStoryRevisionInterviewAsset", fields: [interviewMediaAssetId, organisationId], references: [id, organisationId], onDelete: Restrict)
+  createdBy           User            @relation("NewsStoryRevisionCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@unique([storyId, revision])
+  @@index([organisationId, createdAt])
+  @@index([audioProjectId])
+  @@index([interviewMediaAssetId])
+}
+
+model NewsStoryDecision {
+  id              String                @id @default(cuid())
+  organisationId  String
+  storyId         String
+  action          String
+  fromStatus      SchoolNewsStoryStatus
+  toStatus        SchoolNewsStoryStatus
+  note            String?
+  actorUserId     String
+  createdAt       DateTime              @default(now())
+
+  organisation Organisation    @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  story        SchoolNewsStory @relation(fields: [storyId, organisationId], references: [id, organisationId], onDelete: Cascade)
+  actor        User            @relation("NewsStoryDecisionActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([organisationId, createdAt])
+  @@index([storyId, createdAt])
 }
 
 model LiveStudioSession {
