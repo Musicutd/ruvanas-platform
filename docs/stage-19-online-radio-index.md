@@ -35,8 +35,8 @@
 | 19.19 | Multi-Station Network | DEPLOYED | [#118](https://github.com/Musicutd/ruvanas-platform/pull/118) | `0fd9807` | Paid auto-deploy | Explicit, owner-approved and revocable station/network agreements; no cross-tenant content or operational access. |
 | 19.20 | Syndication | DEPLOYED | [#119](https://github.com/Musicutd/ruvanas-platform/pull/119) | `b6d4cd1` | `dep-daemlarm8hqs73d7hsmg` | Recorded and live sharing with source approval, protected delivery, territory and rights-window enforcement. |
 | 19.21 | Advertising | DEPLOYED | [#120](https://github.com/Musicutd/ruvanas-platform/pull/120) | `9608d80` | `dep-daenf8h7lnhs73evp1m0` | Station/channel campaigns, Retail Media inventory, bounded break policy, placement readiness and proof-of-play evidence are live. |
-| 19.22 | Rights/Royalty reporting | IN DEVELOPMENT | — | — | — | Authority profiles, work mapping, immutable usage evidence, attestation and bounded CSV exports. |
-| 19.23 | Distribution | NOT STARTED | — | — | — | Provider adapters, directories and platform connectors. |
+| 19.22 | Rights/Royalty reporting | PR OPEN | [#121](https://github.com/Musicutd/ruvanas-platform/pull/121) | — | — | Authority profiles, work mapping, immutable usage evidence, attestation and bounded CSV exports; CI passed, awaiting merge. |
+| 19.23 | Distribution | IN DEVELOPMENT | — | — | — | Provider-neutral directory, streaming/CDN, app and voice-assistant adapters over the governed integration delivery core. |
 | 19.24 | AI Programme Director | NOT STARTED | — | — | — | Existing governance and human approval are mandatory. |
 | 19.25 | Newsroom | NOT STARTED | — | — | — | Generalise School editorial workflow. |
 | 19.26 | Enterprise/Scale | NOT STARTED | — | — | — | Isolation, capacity, SLOs, soak and failover. |
