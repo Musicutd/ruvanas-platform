@@ -2,7 +2,7 @@
 
 ## Baseline
 
-- Architecture baseline: `origin/main` through Stage 19.13 at `d77ea00`
+- Architecture baseline: `origin/main` through Stage 19.14 at `8cb2ba9`
 - Architecture gate: Stage 19.0
 - Detailed audit: [`stage-19-0-online-radio-architecture-audit.md`](./stage-19-0-online-radio-architecture-audit.md)
 - Status values: `NOT STARTED`, `IN DESIGN`, `IN DEVELOPMENT`, `PR OPEN`, `MERGED`, `DEPLOYED`, `BLOCKED`
@@ -27,8 +27,8 @@
 | 19.11 | Voice Tracking / Segue | DEPLOYED | [#110](https://github.com/Musicutd/ruvanas-platform/pull/110) | `1b80f8d` | `dep-dadtnac9v7es73am22rg` | Governed AudioLab render placement, bounded cue/overlap editing, audible three-source preview, approval and Radio Clock binding are live. |
 | 19.12 | Audio Processing | DEPLOYED | [#111](https://github.com/Musicutd/ruvanas-platform/pull/111) | `0a9b627` | `dep-dadu69p7lnhs73eblat0` | Versioned broadcast profiles, duplicate-safe worker jobs and measured QC are live on the paid service. |
 | 19.13 | Listener Analytics | DEPLOYED | [#112](https://github.com/Musicutd/ruvanas-platform/pull/112) | `d77ea00` | Paid auto-deploy | Privacy-minimised public audience events, duplicate-safe hourly aggregation, bounded retention and protected subscriber reporting are live. |
-| 19.14 | Public Player | IN DEVELOPMENT | — | — | — | Anonymous, capacity-controlled listening page and embed using the shared playout engine and protected delivery. |
-| 19.15 | Listener Interaction | NOT STARTED | — | — | — | Requests with moderation and abuse controls. |
+| 19.14 | Public Player | DEPLOYED | [#113](https://github.com/Musicutd/ruvanas-platform/pull/113) | `8cb2ba9` | Paid auto-deploy | Anonymous, capacity-controlled listening page and embed use the shared playout engine and protected delivery; paid service verified. |
+| 19.15 | Listener Interaction | IN DEVELOPMENT | — | — | — | Opt-in requests with moderation, deduplication, rate limits and anonymous-session abuse controls. |
 | 19.16 | Podcasts | NOT STARTED | — | — | — | Shared podcast core; School policy remains intact. |
 | 19.17 | Station Website | NOT STARTED | — | — | — | Public pages, branding, now-playing and domains. |
 | 19.18 | PWA/Mobile | NOT STARTED | — | — | — | Installability/offline; native stores remain external. |

@@ -9,7 +9,7 @@ export const metadata = { title: "Public player | Ruvanas" };
 export default async function PublicPlayerSettingsPage({ params }) {
   const context = await getActiveOrganisationContext();
   if (!context?.membership) redirect("/login");
-  const station = await prisma.station.findFirst({ where: { id: params.stationId, organisationId: context.membership.organisationId }, select: { id: true, name: true, slug: true, status: true, publicPlayerEnabled: true, publicPlayerTagline: true, publicPlayerAccent: true, listenerLimit: true } });
+  const station = await prisma.station.findFirst({ where: { id: params.stationId, organisationId: context.membership.organisationId }, select: { id: true, name: true, slug: true, status: true, publicPlayerEnabled: true, publicPlayerTagline: true, publicPlayerAccent: true, listenerRequestsEnabled: true, listenerRequestInstructions: true, listenerLimit: true } });
   if (!station) notFound();
   const canManage = ["OWNER", "MANAGER"].includes(context.membership.role);
   return <main style={styles.page}><section style={styles.shell}>

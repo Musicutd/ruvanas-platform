@@ -6,6 +6,8 @@ export default function PublicPlayerSettings({ station, canManage }) {
   const [enabled, setEnabled] = useState(station.publicPlayerEnabled);
   const [tagline, setTagline] = useState(station.publicPlayerTagline || "");
   const [accent, setAccent] = useState(station.publicPlayerAccent || "#f4b942");
+  const [listenerRequestsEnabled, setListenerRequestsEnabled] = useState(station.listenerRequestsEnabled);
+  const [listenerRequestInstructions, setListenerRequestInstructions] = useState(station.listenerRequestInstructions || "");
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const origin = typeof window === "undefined" ? "" : window.location.origin;
@@ -16,7 +18,7 @@ export default function PublicPlayerSettings({ station, canManage }) {
   async function save() {
     setSaving(true); setMessage("");
     try {
-      const response = await fetch(`/api/stations/${station.id}/public-player`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled, tagline, accent }) });
+      const response = await fetch(`/api/stations/${station.id}/public-player`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled, tagline, accent, listenerRequestsEnabled, listenerRequestInstructions }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Unable to save the public player.");
       setMessage(enabled ? "Public player published." : "Public player is private.");
@@ -27,9 +29,15 @@ export default function PublicPlayerSettings({ station, canManage }) {
   return <div style={styles.grid}>
     <section style={styles.card}>
       <div style={styles.statusRow}><div><strong>Public availability</strong><p style={styles.muted}>{enabled ? "Listeners can open the public and embedded players." : "Only your private station tools are available."}</p></div><span style={{ ...styles.badge, ...(enabled ? styles.live : {}) }}>{enabled ? "LIVE" : "PRIVATE"}</span></div>
-      <label style={styles.toggle}><input type="checkbox" checked={enabled} disabled={!canManage} onChange={(event) => setEnabled(event.target.checked)} /> Publish this station’s public player</label>
+      <label style={styles.toggle}><input type="checkbox" checked={enabled} disabled={!canManage} onChange={(event) => { setEnabled(event.target.checked); if (!event.target.checked) setListenerRequestsEnabled(false); }} /> Publish this station’s public player</label>
       <label style={styles.label}>Listener-facing tagline<input style={styles.input} value={tagline} maxLength={160} disabled={!canManage} onChange={(event) => setTagline(event.target.value)} placeholder="Live music, shows and stories from our station." /></label>
       <label style={styles.label}>Accent colour<input style={{ ...styles.input, maxWidth: 180 }} type="color" value={accent} disabled={!canManage} onChange={(event) => setAccent(event.target.value)} /></label>
+      <div style={styles.requestBox}>
+        <label style={styles.toggle}><input type="checkbox" checked={listenerRequestsEnabled} disabled={!canManage || !enabled} onChange={(event) => setListenerRequestsEnabled(event.target.checked)} /> Accept moderated song requests</label>
+        <label style={styles.label}>Instructions for listeners<textarea style={{ ...styles.input, minHeight: 88 }} value={listenerRequestInstructions} maxLength={240} disabled={!canManage || !listenerRequestsEnabled} onChange={(event) => setListenerRequestInstructions(event.target.value)} placeholder="Tell us the artist and song you would like to hear." /></label>
+        <p style={styles.muted}>Requests enter a review queue. They never change the live schedule automatically.</p>
+        <a style={styles.queueLink} href={`/stations/${station.id}/listener-requests`}>Open moderation queue</a>
+      </div>
       <p style={styles.muted}>Capacity: up to {station.listenerLimit.toLocaleString("en-MT")} simultaneous public listeners, subject to the organisation plan.</p>
       {canManage ? <button style={styles.button} disabled={saving} onClick={save}>{saving ? "Saving…" : "Save public player"}</button> : <p style={styles.notice}>An organisation owner or manager can change these settings.</p>}
       {message ? <p aria-live="polite" style={styles.notice}>{message}</p> : null}
@@ -60,5 +68,7 @@ const styles = {
   subheading: { fontSize: 28, margin: "5px 0" },
   actions: { display: "flex", gap: 10, flexWrap: "wrap", marginTop: 20 },
   linkButton: { borderRadius: 9, padding: "11px 15px", background: "#f4b942", color: "#111827", fontWeight: 900, textDecoration: "none" },
-  secondary: { border: "1px solid #52627a", borderRadius: 9, padding: "11px 15px", background: "transparent", color: "#f8fafc", fontWeight: 800, cursor: "pointer" }
+  secondary: { border: "1px solid #52627a", borderRadius: 9, padding: "11px 15px", background: "transparent", color: "#f8fafc", fontWeight: 800, cursor: "pointer" },
+  requestBox: { marginTop: 22, padding: 18, border: "1px solid #334762", borderRadius: 14, background: "#0d1728" },
+  queueLink: { display: "inline-block", marginTop: 14, color: "#f4b942", fontWeight: 800, textDecoration: "none" }
 };

@@ -118,6 +118,15 @@ enum NotificationType {
   BILLING_STATE
   SCHOOL_REVIEW_REQUEST
   CONSENT_EXPIRY
+  LISTENER_REQUEST
+}
+
+enum ListenerRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  PLAYED
+  ARCHIVED
 }
 
 enum NotificationSeverity {
@@ -1324,6 +1333,9 @@ model User {
   updatedLiveFailoverPolicies        LiveFailoverPolicy[]             @relation("LiveFailoverPolicyUpdatedBy")
   createdVoiceTrackSegues            VoiceTrackSegue[]                @relation("VoiceTrackSegueCreatedBy")
   approvedVoiceTrackSegues           VoiceTrackSegue[]                @relation("VoiceTrackSegueApprovedBy")
+  reviewedListenerRequests           ListenerRequest[]                @relation("ListenerRequestReviewedBy")
+  createdListenerRequestBlocks       ListenerRequestBlock[]           @relation("ListenerRequestBlockCreatedBy")
+  revokedListenerRequestBlocks       ListenerRequestBlock[]           @relation("ListenerRequestBlockRevokedBy")
 }
 
 model Organisation {
@@ -1333,124 +1345,126 @@ model Organisation {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  members                          OrganisationMember[]
-  invitations                      OrganisationInvitation[]
-  subscription                     Subscription?
-  stations                         Station[]
-  brands                           Brand[]
-  locations                        Location[]
-  locationGroups                   LocationGroup[]
-  channels                         Channel[]
-  mediaAssets                      MediaAsset[]                      @relation("OrganisationMediaAssets")
-  promoAssets                      PromoAsset[]
-  auditLogs                        AuditLog[]
-  players                          Player[]
-  musicModes                       MusicMode[]
-  smartPlaylists                   SmartPlaylist[]
-  radioClocks                      RadioClock[]
-  programmeSchedules               ProgrammeSchedule[]
-  programmeScheduleVersions        ProgrammeScheduleVersion[]
-  programmeScheduleItems           ProgrammeScheduleItem[]
-  musicSchedules                   MusicSchedule[]
-  proofOfPlayEvents                ProofOfPlayEvent[]
-  campaigns                        Campaign[]
-  playoutIntents                   PlayoutIntent[]
-  reportExports                    ReportExportJob[]
-  analyticsHourlyAggregates        AnalyticsHourlyAggregate[]
-  analyticsAggregationCursor       AnalyticsAggregationCursor?
-  activeSessions                   Session[]
-  schoolProfile                    SchoolProfile?
-  schoolSafeguardingReadiness      SchoolSafeguardingReadiness?
-  schoolSafeguardingReviews        SchoolSafeguardingReview[]
-  schoolRetentionHolds             SchoolRetentionHold[]
-  schoolPilotReadiness             SchoolPilotReadiness?
-  schoolPilotRuns                  SchoolPilotRun[]
-  schoolPilotEvents                SchoolPilotEvent[]
-  schoolAnnouncements              SchoolAnnouncement[]
-  schoolNoticeboardPosts           SchoolNoticeboardPost[]
-  schoolBroadcastSlots             SchoolBroadcastSlot[]
-  productionOrders                 ProductionOrder[]
-  productionOrderEvents            ProductionOrderEvent[]
-  productionOrderFiles             ProductionOrderFile[]
-  productionScriptVersions         ProductionScriptVersion[]
-  productionRevisionRequests       ProductionRevisionRequest[]
-  productionCreditEntries          ProductionCreditLedgerEntry[]
-  staffSupervisors                 StaffSupervisor[]
-  studentGroups                    StudentGroup[]
-  studentContributors              StudentContributor[]
-  schoolStudentAccess              SchoolStudentAccess[]
-  schoolProgrammes                 SchoolProgramme[]
-  schoolEpisodes                   SchoolEpisode[]
-  schoolSubmissions                SchoolSubmission[]
-  schoolModerationReviews          SchoolModerationReview[]
-  consentRecords                   ConsentRecord[]
-  audioProjects                    AudioProject[]
-  audioTakes                       AudioTake[]
-  schoolAudioUploads               SchoolAudioUploadSession[]
-  audioRenders                     AudioRender[]
-  broadcastProcessingProfiles      BroadcastProcessingProfile[]
-  schoolRundowns                   SchoolRundown[]
-  schoolPodcastSeries              SchoolPodcastSeries[]
-  schoolPodcastEpisodes            SchoolPodcastEpisode[]
-  schoolPublicationDecisions       SchoolPublicationDecision[]
-  schoolPublicationDailyAggregates SchoolPublicationDailyAggregate[]
-  transcripts                      Transcript[]
-  schoolNewsStories                SchoolNewsStory[]
-  liveStudioSessions               LiveStudioSession[]
-  assignments                      Assignment[]
-  assignmentSubmissions            AssignmentSubmission[]
-  billingAccount                   BillingAccount?
-  billingInvoices                  BillingInvoice[]
-  billingReconciliations           BillingUsageReconciliation[]
-  assessments                      Assessment[]
-  portfolioEntries                 PortfolioEntry[]
-  schoolNetworkSchool              SchoolNetworkSchool?
-  sourceSchoolEpisodeExchanges     SchoolEpisodeExchangeOffer[]      @relation("SchoolEpisodeExchangeSource")
-  targetSchoolEpisodeRequests      SchoolEpisodeExchangeRequest[]    @relation("SchoolEpisodeExchangeTarget")
-  enterpriseSecurityPolicy         EnterpriseSecurityPolicy?
-  enterpriseIdentityProviders      EnterpriseIdentityProvider[]
-  serviceAccounts                  ServiceAccount[]
-  policyAcceptances                PolicyAcceptance[]
-  dataRequests                     DataRequest[]
-  retentionPolicy                  RetentionPolicy?
-  retentionJobs                    RetentionJob[]
-  supportTickets                   SupportTicket[]
-  auditExportSeals                 AuditExportSeal[]
-  aiJobs                           AIJob[]
-  integrationConnections           IntegrationConnection[]
-  integrationSyncRuns              IntegrationSyncRun[]
-  integrationMetricSummaries       IntegrationMetricSummary[]
-  outgoingWebhookEvents            OutgoingWebhookEvent[]
-  playerHeartbeatSamples           PlayerHeartbeatSample[]
-  playerHealthIncidents            PlayerHealthIncident[]
-  playerCommands                   PlayerCommand[]
-  playerListenerLeases             PlayerListenerLease[]
-  streamHealthSamples              StationStreamHealthSample[]
-  streamHealthIncidents            StationStreamHealthIncident[]
-  jobs                             Job[]
-  notificationEvents               NotificationEvent[]
-  notificationPreferences          NotificationPreference[]
-  notificationDeliveries           NotificationDelivery[]
-  retailMediaPartners              RetailMediaPartner[]
-  retailMediaInventory             RetailMediaInventoryPackage[]
-  retailMediaOrders                RetailMediaOrder[]
-  digitalSignageAssets             DigitalSignageAsset[]
-  digitalSignageLayouts            DigitalSignageLayout[]
-  digitalSignageDevices            DigitalSignageDevice[]
-  digitalSignagePlaylists          DigitalSignagePlaylist[]
-  digitalSignageDeliveryProofs     DigitalSignageDeliveryProof[]
-  digitalSignageTakeovers          DigitalSignageTakeover[]
-  complimentaryAccessCodes         ComplimentaryAccessCode[]
-  autoDjPolicies                   AutoDjPolicy[]
-  externalLiveSources              ExternalLiveSource[]
-  djAccessGrants                   DjAccessGrant[]
-  liveFailoverPolicies             LiveFailoverPolicy[]
-  liveFailoverEvents               LiveFailoverEvent[]
-  voiceTrackSegues                 VoiceTrackSegue[]
-  listenerAnalyticsEvents          ListenerAnalyticsEvent[]
-  listenerAnalyticsHourlyAggregates ListenerAnalyticsHourlyAggregate[]
+  members                            OrganisationMember[]
+  invitations                        OrganisationInvitation[]
+  subscription                       Subscription?
+  stations                           Station[]
+  brands                             Brand[]
+  locations                          Location[]
+  locationGroups                     LocationGroup[]
+  channels                           Channel[]
+  mediaAssets                        MediaAsset[]                        @relation("OrganisationMediaAssets")
+  promoAssets                        PromoAsset[]
+  auditLogs                          AuditLog[]
+  players                            Player[]
+  musicModes                         MusicMode[]
+  smartPlaylists                     SmartPlaylist[]
+  radioClocks                        RadioClock[]
+  programmeSchedules                 ProgrammeSchedule[]
+  programmeScheduleVersions          ProgrammeScheduleVersion[]
+  programmeScheduleItems             ProgrammeScheduleItem[]
+  musicSchedules                     MusicSchedule[]
+  proofOfPlayEvents                  ProofOfPlayEvent[]
+  campaigns                          Campaign[]
+  playoutIntents                     PlayoutIntent[]
+  reportExports                      ReportExportJob[]
+  analyticsHourlyAggregates          AnalyticsHourlyAggregate[]
+  analyticsAggregationCursor         AnalyticsAggregationCursor?
+  activeSessions                     Session[]
+  schoolProfile                      SchoolProfile?
+  schoolSafeguardingReadiness        SchoolSafeguardingReadiness?
+  schoolSafeguardingReviews          SchoolSafeguardingReview[]
+  schoolRetentionHolds               SchoolRetentionHold[]
+  schoolPilotReadiness               SchoolPilotReadiness?
+  schoolPilotRuns                    SchoolPilotRun[]
+  schoolPilotEvents                  SchoolPilotEvent[]
+  schoolAnnouncements                SchoolAnnouncement[]
+  schoolNoticeboardPosts             SchoolNoticeboardPost[]
+  schoolBroadcastSlots               SchoolBroadcastSlot[]
+  productionOrders                   ProductionOrder[]
+  productionOrderEvents              ProductionOrderEvent[]
+  productionOrderFiles               ProductionOrderFile[]
+  productionScriptVersions           ProductionScriptVersion[]
+  productionRevisionRequests         ProductionRevisionRequest[]
+  productionCreditEntries            ProductionCreditLedgerEntry[]
+  staffSupervisors                   StaffSupervisor[]
+  studentGroups                      StudentGroup[]
+  studentContributors                StudentContributor[]
+  schoolStudentAccess                SchoolStudentAccess[]
+  schoolProgrammes                   SchoolProgramme[]
+  schoolEpisodes                     SchoolEpisode[]
+  schoolSubmissions                  SchoolSubmission[]
+  schoolModerationReviews            SchoolModerationReview[]
+  consentRecords                     ConsentRecord[]
+  audioProjects                      AudioProject[]
+  audioTakes                         AudioTake[]
+  schoolAudioUploads                 SchoolAudioUploadSession[]
+  audioRenders                       AudioRender[]
+  broadcastProcessingProfiles        BroadcastProcessingProfile[]
+  schoolRundowns                     SchoolRundown[]
+  schoolPodcastSeries                SchoolPodcastSeries[]
+  schoolPodcastEpisodes              SchoolPodcastEpisode[]
+  schoolPublicationDecisions         SchoolPublicationDecision[]
+  schoolPublicationDailyAggregates   SchoolPublicationDailyAggregate[]
+  transcripts                        Transcript[]
+  schoolNewsStories                  SchoolNewsStory[]
+  liveStudioSessions                 LiveStudioSession[]
+  assignments                        Assignment[]
+  assignmentSubmissions              AssignmentSubmission[]
+  billingAccount                     BillingAccount?
+  billingInvoices                    BillingInvoice[]
+  billingReconciliations             BillingUsageReconciliation[]
+  assessments                        Assessment[]
+  portfolioEntries                   PortfolioEntry[]
+  schoolNetworkSchool                SchoolNetworkSchool?
+  sourceSchoolEpisodeExchanges       SchoolEpisodeExchangeOffer[]        @relation("SchoolEpisodeExchangeSource")
+  targetSchoolEpisodeRequests        SchoolEpisodeExchangeRequest[]      @relation("SchoolEpisodeExchangeTarget")
+  enterpriseSecurityPolicy           EnterpriseSecurityPolicy?
+  enterpriseIdentityProviders        EnterpriseIdentityProvider[]
+  serviceAccounts                    ServiceAccount[]
+  policyAcceptances                  PolicyAcceptance[]
+  dataRequests                       DataRequest[]
+  retentionPolicy                    RetentionPolicy?
+  retentionJobs                      RetentionJob[]
+  supportTickets                     SupportTicket[]
+  auditExportSeals                   AuditExportSeal[]
+  aiJobs                             AIJob[]
+  integrationConnections             IntegrationConnection[]
+  integrationSyncRuns                IntegrationSyncRun[]
+  integrationMetricSummaries         IntegrationMetricSummary[]
+  outgoingWebhookEvents              OutgoingWebhookEvent[]
+  playerHeartbeatSamples             PlayerHeartbeatSample[]
+  playerHealthIncidents              PlayerHealthIncident[]
+  playerCommands                     PlayerCommand[]
+  playerListenerLeases               PlayerListenerLease[]
+  streamHealthSamples                StationStreamHealthSample[]
+  streamHealthIncidents              StationStreamHealthIncident[]
+  jobs                               Job[]
+  notificationEvents                 NotificationEvent[]
+  notificationPreferences            NotificationPreference[]
+  notificationDeliveries             NotificationDelivery[]
+  retailMediaPartners                RetailMediaPartner[]
+  retailMediaInventory               RetailMediaInventoryPackage[]
+  retailMediaOrders                  RetailMediaOrder[]
+  digitalSignageAssets               DigitalSignageAsset[]
+  digitalSignageLayouts              DigitalSignageLayout[]
+  digitalSignageDevices              DigitalSignageDevice[]
+  digitalSignagePlaylists            DigitalSignagePlaylist[]
+  digitalSignageDeliveryProofs       DigitalSignageDeliveryProof[]
+  digitalSignageTakeovers            DigitalSignageTakeover[]
+  complimentaryAccessCodes           ComplimentaryAccessCode[]
+  autoDjPolicies                     AutoDjPolicy[]
+  externalLiveSources                ExternalLiveSource[]
+  djAccessGrants                     DjAccessGrant[]
+  liveFailoverPolicies               LiveFailoverPolicy[]
+  liveFailoverEvents                 LiveFailoverEvent[]
+  voiceTrackSegues                   VoiceTrackSegue[]
+  listenerAnalyticsEvents            ListenerAnalyticsEvent[]
+  listenerAnalyticsHourlyAggregates  ListenerAnalyticsHourlyAggregate[]
   listenerAnalyticsAggregationCursor ListenerAnalyticsAggregationCursor?
-  publicListenerLeases             PublicListenerLease[]
+  publicListenerLeases               PublicListenerLease[]
+  listenerRequests                   ListenerRequest[]
+  listenerRequestBlocks              ListenerRequestBlock[]
 }
 
 model OrganisationMember {
@@ -1958,24 +1972,25 @@ model Channel {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
-  organisation        Organisation         @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  brand               Brand?               @relation(fields: [brandId], references: [id], onDelete: SetNull)
-  station             Station?             @relation(fields: [stationId], references: [id], onDelete: SetNull)
-  zoneAssignments     ChannelAssignment[]
-  playoutEvents       PlayoutEvent[]
-  playoutIntents      PlayoutIntent[]
-  proofOfPlayEvents   ProofOfPlayEvent[]
-  liveStudioSessions  LiveStudioSession[]
-  autoDjPolicy        AutoDjPolicy?
-  programmeSchedule   ProgrammeSchedule?
-  externalLiveSources ExternalLiveSource[]
-  djAccessGrants      DjAccessGrant[]
-  liveFailoverPolicy  LiveFailoverPolicy?
-  liveFailoverEvents  LiveFailoverEvent[]
-  voiceTrackSegues    VoiceTrackSegue[]
-  listenerAnalyticsEvents ListenerAnalyticsEvent[]
+  organisation                      Organisation                       @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  brand                             Brand?                             @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  station                           Station?                           @relation(fields: [stationId], references: [id], onDelete: SetNull)
+  zoneAssignments                   ChannelAssignment[]
+  playoutEvents                     PlayoutEvent[]
+  playoutIntents                    PlayoutIntent[]
+  proofOfPlayEvents                 ProofOfPlayEvent[]
+  liveStudioSessions                LiveStudioSession[]
+  autoDjPolicy                      AutoDjPolicy?
+  programmeSchedule                 ProgrammeSchedule?
+  externalLiveSources               ExternalLiveSource[]
+  djAccessGrants                    DjAccessGrant[]
+  liveFailoverPolicy                LiveFailoverPolicy?
+  liveFailoverEvents                LiveFailoverEvent[]
+  voiceTrackSegues                  VoiceTrackSegue[]
+  listenerAnalyticsEvents           ListenerAnalyticsEvent[]
   listenerAnalyticsHourlyAggregates ListenerAnalyticsHourlyAggregate[]
-  publicListenerLeases   PublicListenerLease[]
+  publicListenerLeases              PublicListenerLease[]
+  listenerRequests                  ListenerRequest[]
 
   @@unique([organisationId, slug])
   @@unique([id, organisationId])
@@ -2023,24 +2038,26 @@ model AutoDjPolicy {
 }
 
 model Station {
-  id                String        @id @default(cuid())
-  organisationId    String
-  name              String
-  slug              String        @unique
-  description       String?
-  logoUrl           String?
-  status            StationStatus @default(DRAFT)
-  storageUsedMb     Int           @default(0)
-  listenerLimit     Int
-  storageLimitGb    Int
-  maxBitrateKbps    Int
-  providerName      String?
-  providerAccountId String?
-  publicPlayerEnabled Boolean      @default(false)
-  publicPlayerTagline String?
-  publicPlayerAccent  String       @default("#f4b942")
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
+  id                          String        @id @default(cuid())
+  organisationId              String
+  name                        String
+  slug                        String        @unique
+  description                 String?
+  logoUrl                     String?
+  status                      StationStatus @default(DRAFT)
+  storageUsedMb               Int           @default(0)
+  listenerLimit               Int
+  storageLimitGb              Int
+  maxBitrateKbps              Int
+  providerName                String?
+  providerAccountId           String?
+  publicPlayerEnabled         Boolean       @default(false)
+  publicPlayerTagline         String?
+  publicPlayerAccent          String        @default("#f4b942")
+  listenerRequestsEnabled     Boolean       @default(false)
+  listenerRequestInstructions String?
+  createdAt                   DateTime      @default(now())
+  updatedAt                   DateTime      @updatedAt
 
   organisation          Organisation                  @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   streamConfig          StationStreamConfig?
@@ -2048,7 +2065,9 @@ model Station {
   playoutEvents         PlayoutEvent[]
   streamHealthSamples   StationStreamHealthSample[]
   streamHealthIncidents StationStreamHealthIncident[]
-  publicListenerLeases PublicListenerLease[]
+  publicListenerLeases  PublicListenerLease[]
+  listenerRequests      ListenerRequest[]
+  listenerRequestBlocks ListenerRequestBlock[]
 
   @@unique([id, organisationId])
   @@index([organisationId])
@@ -5328,6 +5347,61 @@ model PublicListenerLease {
   @@index([channelId, expiresAt])
 }
 
+model ListenerRequest {
+  id               String                @id @default(cuid())
+  organisationId   String
+  stationId        String
+  channelId        String
+  sessionHash      String                @db.Char(64)
+  dedupeKey        String                @db.Char(64)
+  artist           String
+  title            String
+  message          String?
+  status           ListenerRequestStatus @default(PENDING)
+  reviewedByUserId String?
+  reviewedAt       DateTime?
+  reviewNote       String?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  station      Station      @relation(fields: [stationId, organisationId], references: [id, organisationId], onDelete: Cascade)
+  channel      Channel      @relation(fields: [channelId, organisationId], references: [id, organisationId], onDelete: Cascade)
+  reviewedBy   User?        @relation("ListenerRequestReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([stationId, dedupeKey])
+  @@index([organisationId, status, createdAt])
+  @@index([stationId, status, createdAt])
+  @@index([channelId, status, createdAt])
+  @@index([stationId, sessionHash, createdAt])
+  @@index([reviewedByUserId])
+}
+
+model ListenerRequestBlock {
+  id              String    @id @default(cuid())
+  organisationId  String
+  stationId       String
+  sessionHash     String    @db.Char(64)
+  reason          String
+  active          Boolean   @default(true)
+  createdByUserId String
+  revokedByUserId String?
+  revokedAt       DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  station      Station      @relation(fields: [stationId, organisationId], references: [id, organisationId], onDelete: Cascade)
+  createdBy    User         @relation("ListenerRequestBlockCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  revokedBy    User?        @relation("ListenerRequestBlockRevokedBy", fields: [revokedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([stationId, sessionHash])
+  @@index([organisationId, active, createdAt])
+  @@index([stationId, active])
+  @@index([createdByUserId])
+  @@index([revokedByUserId])
+}
+
 model PlayerCommand {
   id             String              @id @default(cuid())
   organisationId String
@@ -5751,20 +5825,20 @@ model ListenerAnalyticsEvent {
 }
 
 model ListenerAnalyticsHourlyAggregate {
-  id                  String   @id @default(cuid())
+  id                  String    @id @default(cuid())
   organisationId      String
   channelId           String
   channelName         String
   bucketStart         DateTime
-  sessionCount        Int      @default(0)
-  sessionStartedCount Int      @default(0)
-  sessionEndedCount   Int      @default(0)
-  heartbeatCount      Int      @default(0)
-  playbackErrorCount  Int      @default(0)
-  listeningSeconds    Int      @default(0)
+  sessionCount        Int       @default(0)
+  sessionStartedCount Int       @default(0)
+  sessionEndedCount   Int       @default(0)
+  heartbeatCount      Int       @default(0)
+  playbackErrorCount  Int       @default(0)
+  listeningSeconds    Int       @default(0)
   lastEventReceivedAt DateTime?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
   organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   channel      Channel      @relation(fields: [channelId, organisationId], references: [id, organisationId], onDelete: Cascade)
@@ -5775,10 +5849,10 @@ model ListenerAnalyticsHourlyAggregate {
 }
 
 model ListenerAnalyticsAggregationCursor {
-  organisationId     String   @id
+  organisationId      String    @id
   lastEventReceivedAt DateTime?
   lastEventId         String?
-  updatedAt           DateTime @updatedAt
+  updatedAt           DateTime  @updatedAt
 
   organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
 }

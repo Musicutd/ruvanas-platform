@@ -81,7 +81,8 @@ test("public manifests use protected URLs and remove enrolled-player proof autho
 });
 
 test("public-player branding is bounded", () => {
-  assert.deepEqual(normalizePublicPlayerSettings({ enabled: true, tagline: "  Malta live  ", accent: "#F4B942" }), { enabled: true, tagline: "Malta live", accent: "#f4b942" });
+  assert.deepEqual(normalizePublicPlayerSettings({ enabled: true, tagline: "  Malta live  ", accent: "#F4B942" }), { enabled: true, tagline: "Malta live", accent: "#f4b942", listenerRequestsEnabled: false, listenerRequestInstructions: null });
+  assert.equal(normalizePublicPlayerSettings({ enabled: false, listenerRequestsEnabled: true }).listenerRequestsEnabled, false);
   assert.throws(() => normalizePublicPlayerSettings({ tagline: "x".repeat(161) }), /160/);
   assert.throws(() => normalizePublicPlayerSettings({ accent: "gold" }), /six-digit/);
 });
