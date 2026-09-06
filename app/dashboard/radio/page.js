@@ -11,7 +11,7 @@ export const metadata = { title: "Online Radio dashboard | Ruvanas" };
 export default async function OnlineRadioDashboard() {
   const context = await getActiveOrganisationContext({
     subscription: { include: { plan: true, billingContract: true } },
-    stations: { select: { id: true, status: true, storageUsedMb: true, streamConfig: { select: { streamUrl: true } } }, orderBy: { createdAt: "asc" } }
+    stations: { select: { id: true, slug: true, status: true, storageUsedMb: true, publicPlayerEnabled: true, streamConfig: { select: { streamUrl: true } } }, orderBy: { createdAt: "asc" } }
   });
   if (!context?.membership) redirect("/dashboard");
   const organisation = context.membership.organisation;
@@ -19,9 +19,10 @@ export default async function OnlineRadioDashboard() {
   if (!entitlements.serviceEnabled) redirect("/dashboard/account");
   const firstStation = organisation.stations.find((station) => station.status === "ACTIVE") || organisation.stations[0] || null;
   const now = new Date();
-  const [players, liveStreams, activeMusicModes, publishedSchedules] = await Promise.all([
+  const [players, liveStreams, publicListeners, activeMusicModes, publishedSchedules] = await Promise.all([
     prisma.player.count({ where: { organisationId: organisation.id, status: { not: "DISABLED" } } }),
     prisma.playerListenerLease.count({ where: { organisationId: organisation.id, revokedAt: null, expiresAt: { gt: now } } }),
+    prisma.publicListenerLease.count({ where: { organisationId: organisation.id, expiresAt: { gt: now } } }),
     prisma.musicMode.count({ where: { organisationId: organisation.id, status: "ACTIVE" } }),
     prisma.musicSchedule.count({ where: { organisationId: organisation.id, status: "PUBLISHED" } })
   ]);
@@ -34,7 +35,8 @@ export default async function OnlineRadioDashboard() {
     streamConfigured: Boolean(firstStation?.streamConfig?.streamUrl),
     activeMusicModeCount: activeMusicModes,
     publishedScheduleCount: publishedSchedules,
-    activePlayerStreams: liveStreams
+    publicPlayerEnabled: Boolean(firstStation?.publicPlayerEnabled),
+    activePublicListeners: publicListeners
   });
 
   return <ProductDashboard
@@ -50,11 +52,13 @@ export default async function OnlineRadioDashboard() {
       { label: "Stations", value: `${organisation.stations.length} / ${entitlements.stationLimit}`, detail: "Online services configured" },
       { label: "Connected players", value: players, detail: "Secure listening endpoints" },
       { label: "Live sessions", value: `${liveStreams} / ${entitlements.streamLimit}`, detail: "Streams active now" },
+      { label: "Public listeners", value: `${publicListeners} / ${entitlements.listenerLimit}`, detail: "Anonymous sessions active now" },
       { label: "Audio storage", value: `${storageGb.toFixed(2)} GB`, detail: `of ${entitlements.storageLimitGb} GB available` }
     ]}
     sections={[
       { eyebrow: "Broadcast", title: "Operate your station", description: "Manage the essentials of a continuous online radio service.", actions: [
         { href: firstStation ? `/stations/${firstStation.id}` : "/stations/new", label: firstStation ? "Station control" : "Create your first station", description: "Review your station and streaming configuration." },
+        { href: firstStation ? `/stations/${firstStation.id}/public-player` : "/stations/new", label: "Public player", description: "Publish and preview your branded listener page and website embed." },
         { href: "/dashboard/programming", label: "Programme schedule", description: "Plan music and dayparts." },
         { href: "/dashboard/player-sessions", label: "Live sessions", description: "Monitor current listening connections." }
       ] },

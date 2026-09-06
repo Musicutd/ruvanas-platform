@@ -83,6 +83,16 @@ export default async function StationDetailsPage({ params }) {
           </article>
         </section>
 
+        <section style={styles.nextCard}>
+          <p style={styles.eyebrow}>PUBLIC LISTENING</p>
+          <h2 style={styles.nextTitle}>{station.publicPlayerEnabled ? "Your public player is live" : "Publish your station player"}</h2>
+          <p style={styles.cardText}>Create a branded listener page and website embed with protected audio delivery, live now-playing information and privacy-safe audience analytics.</p>
+          <div style={styles.actions}>
+            <a href={`/stations/${station.id}/public-player`} style={styles.setupButton}>Manage public player</a>
+            {station.publicPlayerEnabled ? <a href={`/listen/${station.slug}`} target="_blank" rel="noreferrer" style={styles.secondaryButton}>Open public player</a> : null}
+          </div>
+        </section>
+
         <ContextHelp
           title="Help with this station"
           introduction="The station supplies audio, while Ruvanas-managed programming and enrolled shop players control what each listening location receives."

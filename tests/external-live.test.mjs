@@ -76,10 +76,11 @@ test("protected probe headers reach the provider adapter", async () => {
 });
 
 test("External Live routes remain tenant-bound, quota-bound and relay-only", async () => {
-  const [api, action, relay, programming, manifest, worker, roadmap] = await Promise.all([
+  const [api, action, relay, protectedRelay, programming, manifest, worker, roadmap] = await Promise.all([
     readFile(new URL("../app/api/programming/external-live/route.js", import.meta.url), "utf8"),
     readFile(new URL("../app/api/programming/external-live/[sourceId]/route.js", import.meta.url), "utf8"),
     readFile(new URL("../app/api/player/live/[sourceId]/route.js", import.meta.url), "utf8"),
+    readFile(new URL("../lib/protected-live-response.js", import.meta.url), "utf8"),
     readFile(new URL("../lib/player-programming.js", import.meta.url), "utf8"),
     readFile(new URL("../lib/player-manifest.mjs", import.meta.url), "utf8"),
     readFile(new URL("../scripts/operations-worker.mjs", import.meta.url), "utf8"),
@@ -89,7 +90,8 @@ test("External Live routes remain tenant-bound, quota-bound and relay-only", asy
   assert.match(action, /OWNER.*MANAGER/);
   assert.match(relay, /isPlayerListenerTokenActive/);
   assert.match(relay, /playoutDecision\.sourceType !== "LIVE_SESSION"/);
-  assert.match(relay, /validatePublicStreamEndpoint/);
+  assert.match(relay, /protectedLiveResponse/);
+  assert.match(protectedRelay, /validatePublicStreamEndpoint/);
   assert.match(programming, /externalLiveCandidate/);
   assert.match(manifest, /\/api\/player\/live\//);
   assert.doesNotMatch(manifest, /credentialEncrypted|streamUrl/);

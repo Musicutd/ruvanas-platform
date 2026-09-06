@@ -2,7 +2,7 @@
 
 ## Baseline
 
-- Architecture baseline: `origin/main` through Stage 19.12 at `0a9b627`
+- Architecture baseline: `origin/main` through Stage 19.13 at `d77ea00`
 - Architecture gate: Stage 19.0
 - Detailed audit: [`stage-19-0-online-radio-architecture-audit.md`](./stage-19-0-online-radio-architecture-audit.md)
 - Status values: `NOT STARTED`, `IN DESIGN`, `IN DEVELOPMENT`, `PR OPEN`, `MERGED`, `DEPLOYED`, `BLOCKED`
@@ -26,8 +26,8 @@
 | 19.10 | Browser Live Studio | DEPLOYED | [#109](https://github.com/Musicutd/ruvanas-platform/pull/109) | `b583e41` | `dep-dadsvjks728c73fh0gt0` | Provider-neutral WHIP/WebRTC studio, DJ-grant boundary, local mixer, governed recording and heartbeat fallback are live; publishing remains locked until compatible real-time infrastructure is configured. |
 | 19.11 | Voice Tracking / Segue | DEPLOYED | [#110](https://github.com/Musicutd/ruvanas-platform/pull/110) | `1b80f8d` | `dep-dadtnac9v7es73am22rg` | Governed AudioLab render placement, bounded cue/overlap editing, audible three-source preview, approval and Radio Clock binding are live. |
 | 19.12 | Audio Processing | DEPLOYED | [#111](https://github.com/Musicutd/ruvanas-platform/pull/111) | `0a9b627` | `dep-dadu69p7lnhs73eblat0` | Versioned broadcast profiles, duplicate-safe worker jobs and measured QC are live on the paid service. |
-| 19.13 | Listener Analytics | IN DEVELOPMENT | — | — | — | Privacy-minimised public audience events, duplicate-safe hourly aggregation, bounded retention and protected subscriber reporting. |
-| 19.14 | Public Player | NOT STARTED | — | — | — | Anonymous, embeddable station listening. |
+| 19.13 | Listener Analytics | DEPLOYED | [#112](https://github.com/Musicutd/ruvanas-platform/pull/112) | `d77ea00` | Paid auto-deploy | Privacy-minimised public audience events, duplicate-safe hourly aggregation, bounded retention and protected subscriber reporting are live. |
+| 19.14 | Public Player | IN DEVELOPMENT | — | — | — | Anonymous, capacity-controlled listening page and embed using the shared playout engine and protected delivery. |
 | 19.15 | Listener Interaction | NOT STARTED | — | — | — | Requests with moderation and abuse controls. |
 | 19.16 | Podcasts | NOT STARTED | — | — | — | Shared podcast core; School policy remains intact. |
 | 19.17 | Station Website | NOT STARTED | — | — | — | Public pages, branding, now-playing and domains. |
