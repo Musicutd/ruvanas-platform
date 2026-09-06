@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { loadPublicPodcastSeries } from "@/lib/public-podcast";
+import PwaLifecycle from "@/app/components/PwaLifecycle";
 import styles from "./podcast.module.css";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +17,11 @@ function duration(value) {
 export async function generateMetadata({ params }) {
   const { organisationSlug, feedSlug } = await params;
   const publication = await loadPublicPodcastSeries(organisationSlug, feedSlug);
-  return publication ? { title: `${publication.series.title} | Ruvanas Podcasts`, description: publication.series.description || `Listen to ${publication.series.title}.` } : { title: "Podcast | Ruvanas" };
+  return publication ? {
+    title: `${publication.series.title} | Ruvanas Podcasts`,
+    description: publication.series.description || `Listen to ${publication.series.title}.`,
+    ...(publication.series.station.stationWebsiteEnabled ? { manifest: `/api/public/station-websites/${publication.series.station.slug}/manifest`, appleWebApp: { capable: true, title: publication.series.station.name, statusBarStyle: "black-translucent" } } : {})
+  } : { title: "Podcast | Ruvanas" };
 }
 
 export default async function PublicPodcastPage({ params }) {
@@ -40,5 +45,6 @@ export default async function PublicPodcastPage({ params }) {
       </article>) : <div className={styles.empty}>No public episodes are available yet.</div>}
     </section>
     <footer className={styles.footer}>High-quality audio delivery by Ruvanas · A 21-Three platform</footer>
+    {publication.series.station.stationWebsiteEnabled ? <PwaLifecycle stationPath={`/radio/${publication.series.station.slug}`} /> : null}
   </main>;
 }
