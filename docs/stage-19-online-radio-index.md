@@ -37,8 +37,8 @@
 | 19.21 | Advertising | DEPLOYED | [#120](https://github.com/Musicutd/ruvanas-platform/pull/120) | `9608d80` | `dep-daenf8h7lnhs73evp1m0` | Station/channel campaigns, Retail Media inventory, bounded break policy, placement readiness and proof-of-play evidence are live. |
 | 19.22 | Rights/Royalty reporting | DEPLOYED | [#121](https://github.com/Musicutd/ruvanas-platform/pull/121) | `a9e7a91` | Paid auto-deploy | Authority profiles, work mapping, immutable usage evidence, attestation and bounded CSV exports are live. |
 | 19.23 | Distribution | DEPLOYED | [#122](https://github.com/Musicutd/ruvanas-platform/pull/122) | `14b8d49` | Paid auto-deploy | Provider-neutral directory, streaming/CDN, app and voice-assistant adapters are live over the governed integration delivery core. |
-| 19.24 | AI Programme Director | IN DEVELOPMENT | — | — | — | Explainable local recommendations, separate owner/manager review, provenance and schedule-draft application; live publication remains outside the AI workflow. |
-| 19.25 | Newsroom | NOT STARTED | — | — | — | Generalise School editorial workflow. |
+| 19.24 | AI Programme Director | DEPLOYED | [#123](https://github.com/Musicutd/ruvanas-platform/pull/123) | `f7dc686` | `dep-daepprs9v7es73bd7kj0` | Explainable local recommendations, separate owner/manager review, provenance and schedule-draft application are live; live publication remains outside the AI workflow. |
+| 19.25 | Newsroom | READY TO PUBLISH | — | Local branch | Not deployed | Shared School/Online Radio editorial core, source and revision evidence, assignments, Studio production links and manager-controlled release have passed local verification. |
 | 19.26 | Enterprise/Scale | NOT STARTED | — | — | — | Isolation, capacity, SLOs, soak and failover. |
 
 ## Dependency rules
