@@ -190,6 +190,26 @@ enum StationNetworkAgreementStatus {
   REVOKED
 }
 
+enum RadioSyndicationKind {
+  RECORDED_PROGRAMME
+  LIVE_RELAY
+}
+
+enum RadioSyndicationOfferStatus {
+  DRAFT
+  AVAILABLE
+  PAUSED
+  WITHDRAWN
+}
+
+enum RadioSyndicationAgreementStatus {
+  PENDING
+  APPROVED
+  DECLINED
+  CANCELLED
+  REVOKED
+}
+
 enum SchoolEpisodeExchangeOfferStatus {
   AVAILABLE
   PAUSED
@@ -1371,6 +1391,13 @@ model User {
   invitedStationNetworkAgreements    StationNetworkAgreement[]        @relation("StationNetworkAgreementInvitedBy")
   decidedStationNetworkAgreements    StationNetworkAgreement[]        @relation("StationNetworkAgreementDecidedBy")
   revokedStationNetworkAgreements    StationNetworkAgreement[]        @relation("StationNetworkAgreementRevokedBy")
+  createdRadioSyndicationOffers      RadioSyndicationOffer[]          @relation("RadioSyndicationOfferCreatedBy")
+  publishedRadioSyndicationOffers    RadioSyndicationOffer[]          @relation("RadioSyndicationOfferPublishedBy")
+  changedRadioSyndicationOffers      RadioSyndicationOffer[]          @relation("RadioSyndicationOfferChangedBy")
+  requestedRadioSyndication          RadioSyndicationAgreement[]      @relation("RadioSyndicationRequestedBy")
+  decidedRadioSyndication            RadioSyndicationAgreement[]      @relation("RadioSyndicationDecidedBy")
+  revokedRadioSyndication            RadioSyndicationAgreement[]      @relation("RadioSyndicationRevokedBy")
+  importedRadioSyndication           RadioSyndicationAgreement[]      @relation("RadioSyndicationImportedBy")
 }
 
 model Organisation {
@@ -1503,6 +1530,8 @@ model Organisation {
   listenerRequestBlocks              ListenerRequestBlock[]
   ownedStationNetworks               StationNetwork[]                    @relation("StationNetworkOwner")
   stationNetworkAgreements           StationNetworkAgreement[]           @relation("StationNetworkAgreementOrganisation")
+  sourceRadioSyndicationOffers       RadioSyndicationOffer[]             @relation("RadioSyndicationSourceOrganisation")
+  targetRadioSyndicationAgreements   RadioSyndicationAgreement[]         @relation("RadioSyndicationTargetOrganisation")
 }
 
 model OrganisationMember {
@@ -1605,6 +1634,7 @@ model StationNetwork {
   ownerOrganisation Organisation              @relation("StationNetworkOwner", fields: [ownerOrganisationId], references: [id], onDelete: Restrict)
   createdBy         User                      @relation("StationNetworkCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
   agreements        StationNetworkAgreement[]
+  syndicationOffers RadioSyndicationOffer[]
   auditLogs         AuditLog[]
 
   @@unique([id, ownerOrganisationId])
@@ -1628,17 +1658,108 @@ model StationNetworkAgreement {
   createdAt             DateTime                      @default(now())
   updatedAt             DateTime                      @updatedAt
 
-  network             StationNetwork @relation(fields: [stationNetworkId], references: [id], onDelete: Cascade)
-  station             Station        @relation(fields: [stationId, stationOrganisationId], references: [id, organisationId], onDelete: Restrict)
-  stationOrganisation Organisation   @relation("StationNetworkAgreementOrganisation", fields: [stationOrganisationId], references: [id], onDelete: Restrict)
-  invitedBy           User           @relation("StationNetworkAgreementInvitedBy", fields: [invitedByUserId], references: [id], onDelete: Restrict)
-  decidedBy           User?          @relation("StationNetworkAgreementDecidedBy", fields: [decidedByUserId], references: [id], onDelete: SetNull)
-  revokedBy           User?          @relation("StationNetworkAgreementRevokedBy", fields: [revokedByUserId], references: [id], onDelete: SetNull)
+  network                     StationNetwork              @relation(fields: [stationNetworkId], references: [id], onDelete: Cascade)
+  station                     Station                     @relation(fields: [stationId, stationOrganisationId], references: [id, organisationId], onDelete: Restrict)
+  stationOrganisation         Organisation                @relation("StationNetworkAgreementOrganisation", fields: [stationOrganisationId], references: [id], onDelete: Restrict)
+  invitedBy                   User                        @relation("StationNetworkAgreementInvitedBy", fields: [invitedByUserId], references: [id], onDelete: Restrict)
+  decidedBy                   User?                       @relation("StationNetworkAgreementDecidedBy", fields: [decidedByUserId], references: [id], onDelete: SetNull)
+  revokedBy                   User?                       @relation("StationNetworkAgreementRevokedBy", fields: [revokedByUserId], references: [id], onDelete: SetNull)
+  sourceSyndicationOffers     RadioSyndicationOffer[]     @relation("RadioSyndicationSourceMembership")
+  targetSyndicationAgreements RadioSyndicationAgreement[] @relation("RadioSyndicationTargetMembership")
 
   @@unique([stationNetworkId, stationId])
   @@index([stationOrganisationId, status])
   @@index([stationNetworkId, status])
   @@index([stationId, status])
+}
+
+model RadioSyndicationOffer {
+  id                       String                      @id @default(cuid())
+  stationNetworkId         String
+  sourceNetworkAgreementId String
+  sourceOrganisationId     String
+  sourceStationId          String
+  kind                     RadioSyndicationKind
+  sourcePodcastEpisodeId   String?
+  sourceChannelId          String?
+  title                    String
+  description              String?
+  rightsHolder             String
+  rightsReference          String
+  rightsBasis              MusicRightsBasis
+  permittedTerritories     String
+  availableFrom            DateTime
+  availableUntil           DateTime?
+  termsVersion             String                      @default("radio-syndication-v1")
+  status                   RadioSyndicationOfferStatus @default(DRAFT)
+  createdByUserId          String
+  publishedByUserId        String?
+  changedByUserId          String?
+  publishedAt              DateTime?
+  pausedAt                 DateTime?
+  withdrawnAt              DateTime?
+  createdAt                DateTime                    @default(now())
+  updatedAt                DateTime                    @updatedAt
+
+  network                StationNetwork              @relation(fields: [stationNetworkId], references: [id], onDelete: Restrict)
+  sourceNetworkAgreement StationNetworkAgreement     @relation("RadioSyndicationSourceMembership", fields: [sourceNetworkAgreementId], references: [id], onDelete: Restrict)
+  sourceOrganisation     Organisation                @relation("RadioSyndicationSourceOrganisation", fields: [sourceOrganisationId], references: [id], onDelete: Restrict)
+  sourceStation          Station                     @relation("RadioSyndicationSourceStation", fields: [sourceStationId, sourceOrganisationId], references: [id, organisationId], onDelete: Restrict)
+  sourcePodcastEpisode   SchoolPodcastEpisode?       @relation(fields: [sourcePodcastEpisodeId], references: [id], onDelete: Restrict)
+  sourceChannel          Channel?                    @relation("RadioSyndicationSourceChannel", fields: [sourceChannelId, sourceOrganisationId], references: [id, organisationId], onDelete: Restrict)
+  createdBy              User                        @relation("RadioSyndicationOfferCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  publishedBy            User?                       @relation("RadioSyndicationOfferPublishedBy", fields: [publishedByUserId], references: [id], onDelete: SetNull)
+  changedBy              User?                       @relation("RadioSyndicationOfferChangedBy", fields: [changedByUserId], references: [id], onDelete: SetNull)
+  agreements             RadioSyndicationAgreement[]
+
+  @@index([stationNetworkId, sourcePodcastEpisodeId, status])
+  @@index([stationNetworkId, sourceChannelId, status])
+  @@index([stationNetworkId, status, availableFrom])
+  @@index([sourceOrganisationId, status])
+  @@index([sourceStationId, status])
+  @@index([sourceNetworkAgreementId])
+}
+
+model RadioSyndicationAgreement {
+  id                       String                          @id @default(cuid())
+  offerId                  String
+  targetNetworkAgreementId String
+  targetOrganisationId     String
+  targetStationId          String
+  targetChannelId          String?
+  requestedTerritories     String
+  requestedFrom            DateTime
+  requestedUntil           DateTime?
+  intendedUse              String
+  status                   RadioSyndicationAgreementStatus @default(PENDING)
+  policyVersion            String                          @default("radio-syndication-v1")
+  requestedByUserId        String
+  decidedByUserId          String?
+  revokedByUserId          String?
+  importedByUserId         String?
+  requestedAt              DateTime                        @default(now())
+  decidedAt                DateTime?
+  revokedAt                DateTime?
+  importedAt               DateTime?
+  decisionNotes            String?
+  createdAt                DateTime                        @default(now())
+  updatedAt                DateTime                        @updatedAt
+
+  offer                  RadioSyndicationOffer   @relation(fields: [offerId], references: [id], onDelete: Restrict)
+  targetNetworkAgreement StationNetworkAgreement @relation("RadioSyndicationTargetMembership", fields: [targetNetworkAgreementId], references: [id], onDelete: Restrict)
+  targetOrganisation     Organisation            @relation("RadioSyndicationTargetOrganisation", fields: [targetOrganisationId], references: [id], onDelete: Restrict)
+  targetStation          Station                 @relation("RadioSyndicationTargetStation", fields: [targetStationId, targetOrganisationId], references: [id, organisationId], onDelete: Restrict)
+  targetChannel          Channel?                @relation("RadioSyndicationTargetChannel", fields: [targetChannelId, targetOrganisationId], references: [id, organisationId], onDelete: Restrict)
+  requestedBy            User                    @relation("RadioSyndicationRequestedBy", fields: [requestedByUserId], references: [id], onDelete: Restrict)
+  decidedBy              User?                   @relation("RadioSyndicationDecidedBy", fields: [decidedByUserId], references: [id], onDelete: SetNull)
+  revokedBy              User?                   @relation("RadioSyndicationRevokedBy", fields: [revokedByUserId], references: [id], onDelete: SetNull)
+  importedBy             User?                   @relation("RadioSyndicationImportedBy", fields: [importedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([offerId, targetStationId, status])
+  @@index([targetOrganisationId, status])
+  @@index([targetStationId, status])
+  @@index([targetNetworkAgreementId])
+  @@index([offerId, status])
 }
 
 model SchoolEpisodeExchangeOffer {
@@ -2080,6 +2201,8 @@ model Channel {
   publicListenerLeases              PublicListenerLease[]
   listenerRequests                  ListenerRequest[]
   podcastSeries                     SchoolPodcastSeries[]
+  sourceSyndicationOffers           RadioSyndicationOffer[]            @relation("RadioSyndicationSourceChannel")
+  targetSyndicationAgreements       RadioSyndicationAgreement[]        @relation("RadioSyndicationTargetChannel")
 
   @@unique([organisationId, slug])
   @@unique([id, organisationId])
@@ -2157,18 +2280,20 @@ model Station {
   createdAt                    DateTime            @default(now())
   updatedAt                    DateTime            @updatedAt
 
-  organisation          Organisation                  @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  streamConfig          StationStreamConfig?
-  channels              Channel[]
-  playoutEvents         PlayoutEvent[]
-  streamHealthSamples   StationStreamHealthSample[]
-  streamHealthIncidents StationStreamHealthIncident[]
-  publicListenerLeases  PublicListenerLease[]
-  listenerRequests      ListenerRequest[]
-  listenerRequestBlocks ListenerRequestBlock[]
-  podcastSeries         SchoolPodcastSeries[]
-  websiteDomains        StationDomain[]
-  networkAgreements     StationNetworkAgreement[]
+  organisation                Organisation                  @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  streamConfig                StationStreamConfig?
+  channels                    Channel[]
+  playoutEvents               PlayoutEvent[]
+  streamHealthSamples         StationStreamHealthSample[]
+  streamHealthIncidents       StationStreamHealthIncident[]
+  publicListenerLeases        PublicListenerLease[]
+  listenerRequests            ListenerRequest[]
+  listenerRequestBlocks       ListenerRequestBlock[]
+  podcastSeries               SchoolPodcastSeries[]
+  websiteDomains              StationDomain[]
+  networkAgreements           StationNetworkAgreement[]
+  sourceSyndicationOffers     RadioSyndicationOffer[]       @relation("RadioSyndicationSourceStation")
+  targetSyndicationAgreements RadioSyndicationAgreement[]   @relation("RadioSyndicationTargetStation")
 
   @@unique([id, organisationId])
   @@index([organisationId])
@@ -4468,6 +4593,7 @@ model SchoolPodcastEpisode {
   transcript                 Transcript?
   publicationDecisions       SchoolPublicationDecision[]
   publicationDailyAggregates SchoolPublicationDailyAggregate[]
+  syndicationOffers          RadioSyndicationOffer[]
 
   @@unique([seriesId, slug])
   @@index([organisationId, status, updatedAt])
