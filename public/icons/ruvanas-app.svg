@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Ruvanas">
+  <rect width="512" height="512" rx="112" fill="#07101d"/>
+  <circle cx="256" cy="256" r="154" fill="none" stroke="#f4b942" stroke-width="30"/>
+  <path d="M164 321V191h91c62 0 101 29 101 80 0 34-18 58-50 70l58 76h-68l-49-66h-24v66h-59zm59-79h31c28 0 42-10 42-30s-14-29-42-29h-31v59z" fill="#f7f8fb" transform="translate(0 -48)"/>
+  <path d="M172 367c38 22 130 22 168 0" fill="none" stroke="#f4b942" stroke-width="22" stroke-linecap="round"/>
+</svg>

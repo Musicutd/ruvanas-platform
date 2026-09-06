@@ -30,8 +30,8 @@
 | 19.14 | Public Player | DEPLOYED | [#113](https://github.com/Musicutd/ruvanas-platform/pull/113) | `8cb2ba9` | Paid auto-deploy | Anonymous, capacity-controlled listening page and embed use the shared playout engine and protected delivery; paid service verified. |
 | 19.15 | Listener Interaction | DEPLOYED | [#114](https://github.com/Musicutd/ruvanas-platform/pull/114) | `ab827a6` | Paid auto-deploy | Opt-in requests with moderation, deduplication, rate limits and anonymous-session abuse controls are live. |
 | 19.16 | Podcasts | DEPLOYED | [#115](https://github.com/Musicutd/ruvanas-platform/pull/115) | `5f3b7f7` | Paid auto-deploy | Shared series, episode, transcript, RSS and protected-audio core are live; School policy remains intact through its dedicated adapter. |
-| 19.17 | Station Website | IN DEVELOPMENT | — | — | — | Public station home, branding, safe now-playing, podcast discovery and verified-domain routing. |
-| 19.18 | PWA/Mobile | NOT STARTED | — | — | — | Installability/offline; native stores remain external. |
+| 19.17 | Station Website | PR OPEN | [#116](https://github.com/Musicutd/ruvanas-platform/pull/116) | — | — | CI passed; public station home, branding, safe now-playing, podcast discovery and verified-domain routing await merge. |
+| 19.18 | PWA/Mobile | IN DEVELOPMENT | — | — | — | Station-branded installability, conservative public-page caching, offline/update state and mobile guidance; native stores remain external. |
 | 19.19 | Multi-Station Network | NOT STARTED | — | — | — | Explicit station/network agreements. |
 | 19.20 | Syndication | NOT STARTED | — | — | — | Recorded/live sharing with rights windows. |
 | 19.21 | Advertising | NOT STARTED | — | — | — | Generalise campaigns and Retail Media inventory. |

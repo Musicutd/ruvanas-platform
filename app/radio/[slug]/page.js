@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { loadPublicStationWebsiteBySlug } from "@/lib/station-website-service";
+import PwaLifecycle from "@/app/components/PwaLifecycle";
 import NowPlaying from "./NowPlaying";
 import styles from "./station-website.module.css";
 
@@ -13,6 +14,8 @@ export async function generateMetadata({ params }) {
     title: `${website.name} | Live radio`,
     description: website.tagline || website.description || `Listen live and discover programmes from ${website.name}.`,
     alternates: { canonical: `/radio/${website.slug}` },
+    manifest: `/api/public/station-websites/${website.slug}/manifest`,
+    appleWebApp: { capable: true, title: website.name, statusBarStyle: "black-translucent" },
     openGraph: {
       title: website.name,
       description: website.tagline || website.description || `Listen live to ${website.name}.`,
@@ -86,5 +89,6 @@ export default async function StationWebsitePage({ params }) {
     </section> : null}
 
     <footer className={styles.footer}><div><strong>{website.name}</strong><span>{website.tagline || "Live radio, wherever you are."}</span></div><div><span>High-quality audio delivery by Ruvanas</span><span>A 21-Three platform</span></div></footer>
+    <PwaLifecycle stationPath={`/radio/${website.slug}`} />
   </main>;
 }
