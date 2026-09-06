@@ -61,6 +61,7 @@ export default async function OnlineRadioDashboard() {
         { href: firstStation ? `/stations/${firstStation.id}/public-player` : "/stations/new", label: "Public player", description: "Publish and preview your branded listener page and website embed." },
         { href: firstStation ? `/stations/${firstStation.id}/website` : "/stations/new", label: "Station website & mobile", description: firstStation?.stationWebsiteEnabled ? "Manage the public station home, installable app experience and domain." : "Publish a professional, installable public home for the station." },
         { href: "/dashboard/radio/networks", label: "Station networks", description: "Create explicit, revocable relationships between independently owned stations." },
+        ...(entitlements.retailMediaEnabled ? [{ href: "/dashboard/radio/advertising", label: "Radio advertising", description: "Set break limits and review commercial placement readiness and completed-play evidence." }] : []),
         { href: firstStation ? `/stations/${firstStation.id}/listener-requests` : "/stations/new", label: "Listener requests", description: "Moderate audience song requests without changing the live schedule automatically." },
         { href: "/dashboard/podcasts", label: "Podcasts", description: "Publish on-demand programmes with protected audio and an RSS feed." },
         { href: "/dashboard/programming", label: "Programme schedule", description: "Plan music and dayparts." },

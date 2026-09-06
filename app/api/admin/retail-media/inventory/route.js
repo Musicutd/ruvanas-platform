@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 function includeInventory() {
   return {
-    targets: { include: { brand: { select: { id: true, name: true } }, locationGroup: { select: { id: true, name: true } }, zone: { select: { id: true, name: true, location: { select: { id: true, name: true } } } } } },
+    targets: { include: { brand: { select: { id: true, name: true } }, locationGroup: { select: { id: true, name: true } }, zone: { select: { id: true, name: true, location: { select: { id: true, name: true } } } }, station: { select: { id: true, name: true } }, channel: { select: { id: true, name: true } } } },
     dayparts: { orderBy: [{ weekday: "asc" }, { startMinute: "asc" }] },
     _count: { select: { orders: true } }
   };
@@ -19,12 +19,16 @@ async function validateTargetOwnership(organisationId, targets) {
   const brandIds = targets.map((item) => item.brandId).filter(Boolean);
   const groupIds = targets.map((item) => item.locationGroupId).filter(Boolean);
   const zoneIds = targets.map((item) => item.zoneId).filter(Boolean);
-  const [brandCount, groupCount, zoneCount] = await Promise.all([
+  const stationIds = targets.map((item) => item.stationId).filter(Boolean);
+  const channelIds = targets.map((item) => item.channelId).filter(Boolean);
+  const [brandCount, groupCount, zoneCount, stationCount, channelCount] = await Promise.all([
     prisma.brand.count({ where: { organisationId, id: { in: brandIds } } }),
     prisma.locationGroup.count({ where: { organisationId, id: { in: groupIds } } }),
-    prisma.zone.count({ where: { location: { organisationId }, id: { in: zoneIds } } })
+    prisma.zone.count({ where: { location: { organisationId }, id: { in: zoneIds } } }),
+    prisma.station.count({ where: { organisationId, id: { in: stationIds } } }),
+    prisma.channel.count({ where: { organisationId, id: { in: channelIds } } })
   ]);
-  return brandCount === brandIds.length && groupCount === groupIds.length && zoneCount === zoneIds.length;
+  return brandCount === brandIds.length && groupCount === groupIds.length && zoneCount === zoneIds.length && stationCount === stationIds.length && channelCount === channelIds.length;
 }
 
 export async function GET(request) {

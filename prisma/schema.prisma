@@ -487,6 +487,8 @@ enum CampaignTargetType {
   LOCATION_GROUP
   LOCATION
   ZONE
+  STATION
+  CHANNEL
 }
 
 enum CampaignSchedulingMode {
@@ -531,6 +533,19 @@ enum RetailMediaInventoryTargetType {
   BRAND
   LOCATION_GROUP
   ZONE
+  STATION
+  CHANNEL
+}
+
+enum RadioAdvertisingPolicyStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+}
+
+enum RadioAdvertisingPacingMode {
+  EVEN
+  PRIORITY
 }
 
 enum RetailMediaOrderStatus {
@@ -1398,6 +1413,8 @@ model User {
   decidedRadioSyndication            RadioSyndicationAgreement[]      @relation("RadioSyndicationDecidedBy")
   revokedRadioSyndication            RadioSyndicationAgreement[]      @relation("RadioSyndicationRevokedBy")
   importedRadioSyndication           RadioSyndicationAgreement[]      @relation("RadioSyndicationImportedBy")
+  createdRadioAdvertisingPolicies    RadioAdvertisingPolicy[]         @relation("RadioAdvertisingPolicyCreatedBy")
+  approvedRadioAdvertisingPolicies   RadioAdvertisingPolicy[]         @relation("RadioAdvertisingPolicyApprovedBy")
 }
 
 model Organisation {
@@ -1532,6 +1549,7 @@ model Organisation {
   stationNetworkAgreements           StationNetworkAgreement[]           @relation("StationNetworkAgreementOrganisation")
   sourceRadioSyndicationOffers       RadioSyndicationOffer[]             @relation("RadioSyndicationSourceOrganisation")
   targetRadioSyndicationAgreements   RadioSyndicationAgreement[]         @relation("RadioSyndicationTargetOrganisation")
+  radioAdvertisingPolicies          RadioAdvertisingPolicy[]
 }
 
 model OrganisationMember {
@@ -2203,12 +2221,49 @@ model Channel {
   podcastSeries                     SchoolPodcastSeries[]
   sourceSyndicationOffers           RadioSyndicationOffer[]            @relation("RadioSyndicationSourceChannel")
   targetSyndicationAgreements       RadioSyndicationAgreement[]        @relation("RadioSyndicationTargetChannel")
+  campaignTargets                   CampaignTarget[]
+  retailMediaInventoryTargets       RetailMediaInventoryTarget[]
+  radioAdvertisingPolicies         RadioAdvertisingPolicy[]
 
   @@unique([organisationId, slug])
   @@unique([id, organisationId])
+  @@unique([id, stationId, organisationId])
   @@index([organisationId])
   @@index([brandId])
   @@index([stationId])
+}
+
+model RadioAdvertisingPolicy {
+  id                            String                       @id @default(cuid())
+  organisationId                String
+  stationId                     String
+  channelId                     String
+  status                        RadioAdvertisingPolicyStatus @default(DRAFT)
+  pacingMode                    RadioAdvertisingPacingMode    @default(EVEN)
+  maxSpotsPerBreak              Int                          @default(4)
+  maxBreakSeconds               Int                          @default(180)
+  minBreakGapMinutes            Int                          @default(10)
+  maxAdvertisingSecondsPerHour  Int                          @default(720)
+  revision                      Int                          @default(0)
+  configurationHash             String?
+  policyVersion                 String                       @default("radio-advertising-v1")
+  createdByUserId               String
+  approvedByUserId              String?
+  approvedAt                    DateTime?
+  createdAt                     DateTime                     @default(now())
+  updatedAt                     DateTime                     @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  station      Station      @relation(fields: [stationId, organisationId], references: [id, organisationId], onDelete: Cascade)
+  channel      Channel      @relation(fields: [channelId, stationId, organisationId], references: [id, stationId, organisationId], onDelete: Cascade)
+  createdBy    User         @relation("RadioAdvertisingPolicyCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  approvedBy   User?        @relation("RadioAdvertisingPolicyApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([channelId, organisationId])
+  @@index([organisationId, status])
+  @@index([stationId])
+  @@index([createdByUserId])
+  @@index([approvedByUserId])
 }
 
 model ChannelAssignment {
@@ -2294,6 +2349,9 @@ model Station {
   networkAgreements           StationNetworkAgreement[]
   sourceSyndicationOffers     RadioSyndicationOffer[]       @relation("RadioSyndicationSourceStation")
   targetSyndicationAgreements RadioSyndicationAgreement[]   @relation("RadioSyndicationTargetStation")
+  campaignTargets             CampaignTarget[]
+  retailMediaInventoryTargets RetailMediaInventoryTarget[]
+  radioAdvertisingPolicies    RadioAdvertisingPolicy[]
 
   @@unique([id, organisationId])
   @@index([organisationId])
@@ -2764,6 +2822,8 @@ model CampaignTarget {
   locationGroupId String?
   locationId      String?
   zoneId          String?
+  stationId       String?
+  channelId       String?
   createdAt       DateTime           @default(now())
 
   campaign      Campaign       @relation(fields: [campaignId], references: [id], onDelete: Cascade)
@@ -2771,6 +2831,8 @@ model CampaignTarget {
   locationGroup LocationGroup? @relation(fields: [locationGroupId], references: [id], onDelete: Cascade)
   location      Location?      @relation(fields: [locationId], references: [id], onDelete: Cascade)
   zone          Zone?          @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  station       Station?       @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  channel       Channel?       @relation(fields: [channelId], references: [id], onDelete: Cascade)
 
   @@unique([campaignId, targetType, brandId, locationGroupId, locationId, zoneId])
   @@index([campaignId, targetType])
@@ -2778,6 +2840,8 @@ model CampaignTarget {
   @@index([locationGroupId])
   @@index([locationId])
   @@index([zoneId])
+  @@index([stationId])
+  @@index([channelId])
 }
 
 model CampaignRule {
@@ -2867,18 +2931,24 @@ model RetailMediaInventoryTarget {
   brandId            String?
   locationGroupId    String?
   zoneId             String?
+  stationId          String?
+  channelId          String?
   createdAt          DateTime                       @default(now())
 
   inventoryPackage RetailMediaInventoryPackage @relation(fields: [inventoryPackageId], references: [id], onDelete: Cascade)
   brand            Brand?                      @relation(fields: [brandId], references: [id], onDelete: Cascade)
   locationGroup    LocationGroup?              @relation(fields: [locationGroupId], references: [id], onDelete: Cascade)
   zone             Zone?                       @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  station          Station?                    @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  channel          Channel?                    @relation(fields: [channelId], references: [id], onDelete: Cascade)
 
   @@unique([inventoryPackageId, targetType, brandId, locationGroupId, zoneId])
   @@index([inventoryPackageId, targetType])
   @@index([brandId])
   @@index([locationGroupId])
   @@index([zoneId])
+  @@index([stationId])
+  @@index([channelId])
 }
 
 model RetailMediaInventoryDaypart {

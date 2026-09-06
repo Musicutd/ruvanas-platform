@@ -15,6 +15,8 @@ export default async function RetailMediaPage() {
       brands: { select: { id: true, name: true }, orderBy: { name: "asc" } },
       locationGroups: { select: { id: true, name: true }, orderBy: { name: "asc" } },
       locations: { select: { id: true, name: true, zones: { select: { id: true, name: true }, orderBy: { name: "asc" } } }, orderBy: { name: "asc" } },
+      stations: { where: { status: "ACTIVE" }, select: { id: true, name: true }, orderBy: { name: "asc" } },
+      channels: { where: { status: "ACTIVE" }, select: { id: true, name: true, station: { select: { name: true } } }, orderBy: { name: "asc" } },
       promoAssets: { where: { status: "ACTIVE" }, select: { id: true, name: true, versions: { where: { status: "APPROVED", mediaAsset: { status: "READY" } }, select: { id: true, version: true }, orderBy: { version: "desc" } } }, orderBy: { name: "asc" } },
       campaigns: { where: { status: "DRAFT", retailMediaOrder: null }, select: { id: true, name: true, promoVersionId: true }, orderBy: { name: "asc" } },
       digitalSignageAssets: { where: { status: "READY" }, select: { id: true, name: true, kind: true }, orderBy: { name: "asc" } },
