@@ -8,6 +8,43 @@ import { securityLog } from "@/lib/security-log";
 const REGISTRATION_LIMIT = 5;
 const REGISTRATION_WINDOW_MS = 60 * 60 * 1000;
 
+const STARTER_PLAN_CREATE = {
+  name: "Starter",
+  code: "STARTER",
+  monthlyPriceCents: 999,
+  stationLimit: 1,
+  storageLimitGb: 2,
+  listenerLimit: 100,
+  maxBitrateKbps: 128,
+  active: true
+};
+
+async function ensureStarterPlan() {
+  try {
+    return await prisma.plan.upsert({
+      where: { code: STARTER_PLAN_CREATE.code },
+      update: {},
+      create: STARTER_PLAN_CREATE
+    });
+  } catch (error) {
+    if (error?.code !== "P2002") throw error;
+
+    // Concurrent registrations can both observe an empty Plan table. If the
+    // other request wins either unique index, reuse the row it just created.
+    const existingPlan = await prisma.plan.findFirst({
+      where: {
+        OR: [
+          { code: STARTER_PLAN_CREATE.code },
+          { name: STARTER_PLAN_CREATE.name }
+        ]
+      }
+    });
+    if (existingPlan) return existingPlan;
+
+    throw error;
+  }
+}
+
 function createSlug(value) {
   return value
     .toLowerCase()
@@ -72,20 +109,7 @@ export async function POST(request) {
       );
     }
 
-    const starterPlan = await prisma.plan.upsert({
-      where: { code: "STARTER" },
-      update: {},
-      create: {
-        name: "Starter",
-        code: "STARTER",
-        monthlyPriceCents: 999,
-        stationLimit: 1,
-        storageLimitGb: 2,
-        listenerLimit: 100,
-        maxBitrateKbps: 128,
-        active: true
-      }
-    });
+    const starterPlan = await ensureStarterPlan();
 
     const baseSlug = createSlug(organisationName) || "ruvanas-client";
     const uniqueSuffix = Math.random().toString(36).slice(2, 8);
