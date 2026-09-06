@@ -10,6 +10,7 @@ import { scanExternalLiveHealth } from "../lib/external-live-service.js";
 import { scanLiveFailoverPolicies } from "../lib/live-failover-service.js";
 import { scanStaleBrowserStudioSessions } from "../lib/browser-live-studio-service.js";
 import { applyListenerAnalyticsRetention, refreshPendingListenerAnalytics } from "../lib/listener-analytics-service.js";
+import { expirePublicListenerLeases } from "../lib/public-player.mjs";
 import { deploymentIdentity, safeOperationalErrorCode, structuredServiceLog } from "../lib/operational-observability.mjs";
 import { recordServiceHeartbeat } from "../lib/operational-observability-service.js";
 
@@ -44,6 +45,8 @@ while (!stopping) {
     if (browserStudios.scanned > 0) writeLog(browserStudios.fallback > 0 ? "warn" : "info", "browser_live_studios_scanned", browserStudios);
     const listenerAnalytics = await refreshPendingListenerAnalytics(prisma);
     if (listenerAnalytics.processed > 0) writeLog("info", "listener_analytics_aggregated", listenerAnalytics);
+    const publicListeners = await expirePublicListenerLeases(prisma);
+    if (publicListeners.expired > 0) writeLog("info", "public_listener_leases_expired", publicListeners);
     if (Date.now() - lastListenerRetentionAt >= 60 * 60 * 1000) {
       const listenerRetention = await applyListenerAnalyticsRetention(prisma);
       lastListenerRetentionAt = Date.now();

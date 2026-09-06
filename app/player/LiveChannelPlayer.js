@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+const NOOP = () => {};
+
 function waitForMetadata(audio) {
   if (audio.readyState >= 1) return Promise.resolve();
   return new Promise((resolve, reject) => {
@@ -51,7 +53,7 @@ function positionAtClientTime(manifest) {
   return { index, offset };
 }
 
-export default function LiveChannelPlayer({ manifest, onPlaybackEvent, onActiveItem, onMessage }) {
+export default function LiveChannelPlayer({ manifest, onPlaybackEvent, onActiveItem, onMessage, onPlayingChange = NOOP }) {
   const manifestRef = useRef(manifest);
   const firstAudio = useRef(null);
   const secondAudio = useRef(null);
@@ -194,15 +196,17 @@ export default function LiveChannelPlayer({ manifest, onPlaybackEvent, onActiveI
         scheduleNext(index, 0, offset);
       }
       setPlaying(true);
+      onPlayingChange(true);
       setNeedsStart(false);
       onMessage("");
     } catch {
       stopRuntime();
       setPlaying(false);
+      onPlayingChange(false);
       setNeedsStart(true);
       onMessage("Press Start live radio to join the channel at its current live position.");
     }
-  }, [onActiveItem, onMessage, playItem, stopRuntime]);
+  }, [onActiveItem, onMessage, onPlayingChange, playItem, stopRuntime]);
 
   useEffect(() => {
     synchronise();
@@ -221,6 +225,7 @@ export default function LiveChannelPlayer({ manifest, onPlaybackEvent, onActiveI
       if (playing) {
         stopRuntime();
         setPlaying(false);
+        onPlayingChange(false);
         setNeedsStart(true);
       } else {
         synchronise();

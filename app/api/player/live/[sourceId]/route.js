@@ -5,7 +5,7 @@ import { resolvePlayerProgramming } from "@/lib/player-programming";
 import { isPlayerListenerTokenActive } from "@/lib/player-listener-lease.mjs";
 import { decryptSecret } from "@/lib/crypto";
 import { externalLiveAuthorizationHeaders } from "@/lib/external-live.mjs";
-import { validatePublicStreamEndpoint } from "@/lib/stream-source-health.mjs";
+import { protectedLiveResponse } from "@/lib/protected-live-response";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -24,21 +24,11 @@ export async function GET(request, { params }) {
     }
     const source = await prisma.externalLiveSource.findFirst({ where: { id: sourceId, organisationId: player.organisationId, channelId: playoutDecision.channelId, status: { in: ["ACTIVE", "READY"] }, healthStatus: "HEALTHY" } });
     if (!source) return NextResponse.json({ error: "The live source is no longer available." }, { status: 409 });
-    const url = await validatePublicStreamEndpoint(source.streamUrl);
-    const upstream = await fetch(url, {
-      method: "GET",
-      headers: { Accept: "audio/*,*/*;q=0.1", "User-Agent": "Ruvanas-Live-Relay/1.0", ...externalLiveAuthorizationHeaders(source, decryptSecret) },
-      redirect: "manual",
-      cache: "no-store",
-      signal: request.signal
+    return protectedLiveResponse(request, {
+      streamUrl: source.streamUrl,
+      authorizationHeaders: externalLiveAuthorizationHeaders(source, decryptSecret),
+      userAgent: "Ruvanas-Live-Relay/1.0"
     });
-    if (!upstream.ok || (upstream.status >= 300 && upstream.status < 400) || !upstream.body) return NextResponse.json({ error: "The upstream live source is unavailable." }, { status: 502 });
-    const contentType = String(upstream.headers.get("content-type") || "audio/mpeg").slice(0, 160);
-    if (!contentType.toLowerCase().startsWith("audio/") && !new Set(["application/ogg", "application/octet-stream"]).has(contentType.toLowerCase().split(";", 1)[0])) {
-      await upstream.body.cancel().catch(() => undefined);
-      return NextResponse.json({ error: "The upstream endpoint did not return supported live audio." }, { status: 502 });
-    }
-    return new NextResponse(upstream.body, { headers: { "Content-Type": contentType, "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" } });
   } catch (error) {
     console.error("External live relay failed:", error);
     return NextResponse.json({ error: "The live source could not be played." }, { status: 502 });

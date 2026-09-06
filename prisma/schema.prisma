@@ -1450,6 +1450,7 @@ model Organisation {
   listenerAnalyticsEvents          ListenerAnalyticsEvent[]
   listenerAnalyticsHourlyAggregates ListenerAnalyticsHourlyAggregate[]
   listenerAnalyticsAggregationCursor ListenerAnalyticsAggregationCursor?
+  publicListenerLeases             PublicListenerLease[]
 }
 
 model OrganisationMember {
@@ -1974,6 +1975,7 @@ model Channel {
   voiceTrackSegues    VoiceTrackSegue[]
   listenerAnalyticsEvents ListenerAnalyticsEvent[]
   listenerAnalyticsHourlyAggregates ListenerAnalyticsHourlyAggregate[]
+  publicListenerLeases   PublicListenerLease[]
 
   @@unique([organisationId, slug])
   @@unique([id, organisationId])
@@ -2034,6 +2036,9 @@ model Station {
   maxBitrateKbps    Int
   providerName      String?
   providerAccountId String?
+  publicPlayerEnabled Boolean      @default(false)
+  publicPlayerTagline String?
+  publicPlayerAccent  String       @default("#f4b942")
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
 
@@ -2043,7 +2048,9 @@ model Station {
   playoutEvents         PlayoutEvent[]
   streamHealthSamples   StationStreamHealthSample[]
   streamHealthIncidents StationStreamHealthIncident[]
+  publicListenerLeases PublicListenerLease[]
 
+  @@unique([id, organisationId])
   @@index([organisationId])
 }
 
@@ -5298,6 +5305,27 @@ model PlayerListenerLease {
   @@unique([playerId, instanceHash])
   @@index([organisationId, revokedAt, expiresAt])
   @@index([playerId, expiresAt])
+}
+
+model PublicListenerLease {
+  id             String   @id @default(cuid())
+  organisationId String
+  stationId      String
+  channelId      String
+  sessionHash    String   @db.Char(64)
+  lastSeenAt     DateTime @default(now())
+  expiresAt      DateTime
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  station      Station      @relation(fields: [stationId, organisationId], references: [id, organisationId], onDelete: Cascade)
+  channel      Channel      @relation(fields: [channelId, organisationId], references: [id, organisationId], onDelete: Cascade)
+
+  @@unique([stationId, sessionHash])
+  @@index([organisationId, expiresAt])
+  @@index([stationId, expiresAt])
+  @@index([channelId, expiresAt])
 }
 
 model PlayerCommand {
