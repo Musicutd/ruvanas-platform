@@ -42,7 +42,7 @@ export async function GET() {
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const organisationId = access.organisation.id;
   const [series, programmes, eligibleEpisodes, profile, readiness] = await Promise.all([
-    prisma.schoolPodcastSeries.findMany({ where: { organisationId }, orderBy: { updatedAt: "desc" }, include }),
+    prisma.schoolPodcastSeries.findMany({ where: { organisationId, product: "SCHOOL_RADIO" }, orderBy: { updatedAt: "desc" }, include }),
     prisma.schoolProgramme.findMany({ where: { organisationId, status: "ACTIVE" }, orderBy: { title: "asc" }, select: { id: true, title: true } }),
     prisma.schoolEpisode.findMany({ where: { organisationId, status: "APPROVED", podcastEpisode: null, submissions: { some: { organisationId, status: "SUBMITTED", promoVersion: { status: "APPROVED", mediaAsset: { organisationId, status: "READY" }, promoAsset: { organisationId } } } } }, orderBy: { approvedAt: "desc" }, select: { id: true, title: true, summary: true, programmeId: true } }),
     prisma.schoolProfile.findUnique({ where: { organisationId }, select: { publishingPolicy: true } }),
@@ -74,16 +74,16 @@ export async function POST(request) {
         const programme = await prisma.schoolProgramme.findFirst({ where: { id: data.programmeId, organisationId, status: "ACTIVE" }, select: { id: true } });
         if (!programme) return NextResponse.json({ error: "Choose an active programme from this school." }, { status: 404 });
       }
-      result = await prisma.schoolPodcastSeries.create({ data: { organisationId, programmeId: data.programmeId || null, title: data.title, description: data.description || null, publicationScope: "INTERNAL_ONLY", rssEnabled: false, createdByUserId: access.user.id } });
+      result = await prisma.schoolPodcastSeries.create({ data: { organisationId, product: "SCHOOL_RADIO", programmeId: data.programmeId || null, title: data.title, description: data.description || null, publicationScope: "INTERNAL_ONLY", rssEnabled: false, createdByUserId: access.user.id } });
     } else if (data.action === "CREATE_EPISODE") {
       const [series, episode] = await Promise.all([
-        prisma.schoolPodcastSeries.findFirst({ where: { id: data.seriesId, organisationId }, select: { id: true } }),
+        prisma.schoolPodcastSeries.findFirst({ where: { id: data.seriesId, organisationId, product: "SCHOOL_RADIO" }, select: { id: true } }),
         prisma.schoolEpisode.findFirst({ where: { id: data.episodeId, organisationId, status: "APPROVED", podcastEpisode: null, submissions: { some: { organisationId, status: "SUBMITTED", promoVersion: { status: "APPROVED", mediaAsset: { organisationId, status: "READY" }, promoAsset: { organisationId } } } } }, select: { id: true } })
       ]);
       if (!series || !episode) return NextResponse.json({ error: "Choose an approved, unpublished school episode and a valid series." }, { status: 404 });
       result = await prisma.schoolPodcastEpisode.create({ data: { organisationId, seriesId: series.id, episodeId: episode.id, publicationScope: "INTERNAL_ONLY", accessibleDescription: data.accessibleDescription || null, createdByUserId: access.user.id } });
     } else if (data.action === "SAVE_EDITOR") {
-      const podcast = await prisma.schoolPodcastEpisode.findFirst({ where: { id: data.podcastEpisodeId, organisationId }, include: { transcript: true } });
+      const podcast = await prisma.schoolPodcastEpisode.findFirst({ where: { id: data.podcastEpisodeId, organisationId, series: { product: "SCHOOL_RADIO" } }, include: { transcript: true } });
       if (!podcast) return NextResponse.json({ error: "The podcast episode was not found." }, { status: 404 });
       const transcriptSegments = normalizeTranscriptSegments(data.transcriptSegments);
       const chapters = normalizePodcastChapters(data.chapters);
@@ -96,14 +96,14 @@ export async function POST(request) {
       });
     } else if (data.action === "APPROVE_TRANSCRIPT") {
       const denied = managerRequired(access); if (denied) return denied;
-      const podcast = await prisma.schoolPodcastEpisode.findFirst({ where: { id: data.podcastEpisodeId, organisationId }, include: { transcript: true } });
+      const podcast = await prisma.schoolPodcastEpisode.findFirst({ where: { id: data.podcastEpisodeId, organisationId, series: { product: "SCHOOL_RADIO" } }, include: { transcript: true } });
       if (!podcast) return NextResponse.json({ error: "The podcast episode was not found." }, { status: 404 });
       if (podcast.transcript?.status !== "NEEDS_REVIEW") return NextResponse.json({ error: "Only a submitted transcript can be approved." }, { status: 409 });
       result = await prisma.transcript.update({ where: { id: podcast.transcript.id }, data: { status: "APPROVED" } });
     } else {
       const denied = managerRequired(access); if (denied) return denied;
       const podcast = await prisma.schoolPodcastEpisode.findFirst({
-        where: { id: data.podcastEpisodeId, organisationId },
+        where: { id: data.podcastEpisodeId, organisationId, series: { product: "SCHOOL_RADIO" } },
         include: { transcript: true, series: true, episode: { include: { programme: { select: { title: true } }, contributors: true, submissions: { where: { organisationId, status: "SUBMITTED", promoVersion: { status: "APPROVED", mediaAsset: { organisationId, status: "READY" }, promoAsset: { organisationId } } }, orderBy: { revision: "desc" }, take: 1 } } } }
       });
       if (!podcast) return NextResponse.json({ error: "The podcast episode was not found." }, { status: 404 });

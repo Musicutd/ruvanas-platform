@@ -1035,6 +1035,11 @@ enum SchoolPodcastStatus {
   UNPUBLISHED
 }
 
+enum PodcastProduct {
+  ONLINE_RADIO
+  SCHOOL_RADIO
+}
+
 enum TranscriptStatus {
   DRAFT
   NEEDS_REVIEW
@@ -1991,6 +1996,7 @@ model Channel {
   listenerAnalyticsHourlyAggregates ListenerAnalyticsHourlyAggregate[]
   publicListenerLeases              PublicListenerLease[]
   listenerRequests                  ListenerRequest[]
+  podcastSeries                     SchoolPodcastSeries[]
 
   @@unique([organisationId, slug])
   @@unique([id, organisationId])
@@ -2068,6 +2074,7 @@ model Station {
   publicListenerLeases  PublicListenerLease[]
   listenerRequests      ListenerRequest[]
   listenerRequestBlocks ListenerRequestBlock[]
+  podcastSeries         SchoolPodcastSeries[]
 
   @@unique([id, organisationId])
   @@index([organisationId])
@@ -2360,20 +2367,22 @@ model MediaAsset {
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
-  organisation       Organisation?       @relation("OrganisationMediaAssets", fields: [organisationId], references: [id], onDelete: Cascade)
+  organisation       Organisation?          @relation("OrganisationMediaAssets", fields: [organisationId], references: [id], onDelete: Cascade)
   genres             MediaAssetGenre[]
   track              Track?
   promoVersions      PromoVersion[]
   audioTakes         AudioTake[]
   audioClips         AudioClip[]
-  audioRenderOutputs AudioRender[]       @relation("AudioRenderOutput")
+  audioRenderOutputs AudioRender[]          @relation("AudioRenderOutput")
   proofOfPlayEvents  ProofOfPlayEvent[]
   playoutIntents     PlayoutIntent[]
   schoolRundownItems SchoolRundownItem[]
   transcripts        Transcript[]
-  interviewStories   SchoolNewsStory[]   @relation("SchoolNewsInterviewAsset")
-  liveRecordings     LiveStudioSession[] @relation("LiveStudioRecordingAsset")
+  interviewStories   SchoolNewsStory[]      @relation("SchoolNewsInterviewAsset")
+  liveRecordings     LiveStudioSession[]    @relation("LiveStudioRecordingAsset")
+  podcastEpisodes    SchoolPodcastEpisode[]
 
+  @@unique([id, organisationId])
   @@index([organisationId])
   @@index([libraryType])
   @@index([organisationId, libraryType])
@@ -4279,8 +4288,13 @@ model SchoolPodcastSeries {
   id               String                 @id @default(cuid())
   organisationId   String
   programmeId      String?
+  product          PodcastProduct         @default(SCHOOL_RADIO)
+  stationId        String?
+  channelId        String?
   title            String
   description      String?
+  feedSlug         String?
+  author           String?
   publicationScope SchoolPublicationScope @default(INTERNAL_ONLY)
   rssEnabled       Boolean                @default(false)
   artworkUrl       String?
@@ -4290,19 +4304,31 @@ model SchoolPodcastSeries {
 
   organisation Organisation           @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   programme    SchoolProgramme?       @relation(fields: [programmeId], references: [id], onDelete: SetNull)
+  station      Station?               @relation(fields: [stationId, organisationId], references: [id, organisationId], onDelete: Cascade)
+  channel      Channel?               @relation(fields: [channelId, organisationId], references: [id, organisationId], onDelete: Cascade)
   createdBy    User                   @relation("SchoolPodcastSeriesCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
   episodes     SchoolPodcastEpisode[]
 
-  @@unique([organisationId, title])
-  @@index([organisationId, updatedAt])
+  @@unique([organisationId, product, title])
+  @@unique([organisationId, feedSlug])
+  @@index([organisationId, product, updatedAt])
   @@index([programmeId])
+  @@index([stationId])
+  @@index([channelId])
 }
 
 model SchoolPodcastEpisode {
   id                       String                 @id @default(cuid())
   organisationId           String
   seriesId                 String
-  episodeId                String                 @unique
+  episodeId                String?                @unique
+  mediaAssetId             String?
+  title                    String?
+  summary                  String?
+  slug                     String?
+  explicit                 Boolean                @default(false)
+  seasonNumber             Int?
+  episodeNumber            Int?
   status                   SchoolPodcastStatus    @default(DRAFT)
   publicationScope         SchoolPublicationScope @default(INTERNAL_ONLY)
   accessibleDescription    String?
@@ -4320,15 +4346,18 @@ model SchoolPodcastEpisode {
 
   organisation               Organisation                      @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   series                     SchoolPodcastSeries               @relation(fields: [seriesId], references: [id], onDelete: Cascade)
-  episode                    SchoolEpisode                     @relation(fields: [episodeId], references: [id], onDelete: Restrict)
+  episode                    SchoolEpisode?                    @relation(fields: [episodeId], references: [id], onDelete: Restrict)
+  mediaAsset                 MediaAsset?                       @relation(fields: [mediaAssetId, organisationId], references: [id, organisationId], onDelete: Restrict)
   createdBy                  User                              @relation("SchoolPodcastEpisodeCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
   reviewedBy                 User?                             @relation("SchoolPodcastEpisodeReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
   transcript                 Transcript?
   publicationDecisions       SchoolPublicationDecision[]
   publicationDailyAggregates SchoolPublicationDailyAggregate[]
 
+  @@unique([seriesId, slug])
   @@index([organisationId, status, updatedAt])
   @@index([seriesId, createdAt])
+  @@index([mediaAssetId])
 }
 
 model SchoolPublicationDecision {
