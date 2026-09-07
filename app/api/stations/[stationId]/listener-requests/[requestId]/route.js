@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireOrganisationAccess, ORGANISATION_CONTENT_ROLES, ORGANISATION_MANAGER_ROLES } from "@/lib/access-control";
+import { requireOrganisationProductAccess, ORGANISATION_CONTENT_ROLES, ORGANISATION_MANAGER_ROLES } from "@/lib/access-control";
 import { listenerRequestTransition, LISTENER_REQUEST_ACTIONS, safeListenerRequest } from "@/lib/listener-interaction.mjs";
 import { getRequestId } from "@/lib/security-log";
 
@@ -11,7 +11,7 @@ export async function PATCH(request, { params }) {
     if (!LISTENER_REQUEST_ACTIONS.includes(action)) return NextResponse.json({ error: "Choose a supported moderation action." }, { status: 400 });
     const requestRecord = await prisma.listenerRequest.findFirst({ where: { id: String(params.requestId || ""), stationId: String(params.stationId || "") } });
     if (!requestRecord) return NextResponse.json({ error: "Listener request not found." }, { status: 404 });
-    const access = await requireOrganisationAccess(requestRecord.organisationId, ["UNBLOCK"].includes(action) || body?.blockSession === true ? ORGANISATION_MANAGER_ROLES : ORGANISATION_CONTENT_ROLES);
+    const access = await requireOrganisationProductAccess(requestRecord.organisationId, "ONLINE", ["UNBLOCK"].includes(action) || body?.blockSession === true ? ORGANISATION_MANAGER_ROLES : ORGANISATION_CONTENT_ROLES);
     if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
     const note = String(body?.note || "").trim();
     const instant = new Date();

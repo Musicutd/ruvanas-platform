@@ -8,11 +8,13 @@ import {
   resolveDashboardNextAction
 } from "../lib/user-experience-navigation.mjs";
 
-test("subscriber navigation is organised by tasks and hides unavailable products", () => {
+test("subscriber navigation is organised by tasks and isolates an Online Radio account", () => {
   const navigation = buildSubscriberNavigation({
     entitlements: {
       serviceEnabled: true,
+      retailRadioEnabled: false,
       schoolRadioEnabled: false,
+      onlineRadioEnabled: true,
       retailMediaEnabled: true,
       digitalSignageEnabled: false
     },
@@ -33,20 +35,25 @@ test("subscriber navigation is organised by tasks and hides unavailable products
   assert.equal(items.find((item) => item.id === "radioAdvertising").href, "/dashboard/radio/advertising");
   assert.ok(!items.some((item) => item.id === "school"));
   assert.ok(!items.some((item) => item.id === "signage"));
-  assert.equal(items.find((item) => item.id === "schoolHome").available, false);
-  assert.equal(items.find((item) => item.id === "schoolHome").href, "/dashboard/account");
+  assert.ok(!items.some((item) => item.id === "retailHome"));
+  assert.ok(!items.some((item) => item.id === "schoolHome"));
+  assert.equal(items.find((item) => item.id === "radioHome").href, "/dashboard/radio");
 });
 
-test("three product dashboards stay visible while unavailable products lead to plan review", () => {
-  const products = buildSubscriberProductCards({ entitlements: { serviceEnabled: true, schoolRadioEnabled: false } });
-  assert.deepEqual(products.map((product) => product.label), ["Retail Radio", "School Radio", "Online Radio"]);
-  assert.equal(products.find((product) => product.id === "retailHome").actionHref, "/dashboard/retail");
-  assert.equal(products.find((product) => product.id === "radioHome").actionHref, "/dashboard/radio");
-  assert.equal(products.find((product) => product.id === "schoolHome").actionHref, "/dashboard/account");
+test("product cards show only products owned by the subscriber", () => {
+  const products = buildSubscriberProductCards({ entitlements: {
+    serviceEnabled: true,
+    retailRadioEnabled: true,
+    schoolRadioEnabled: false,
+    onlineRadioEnabled: false
+  } });
+  assert.deepEqual(products.map((product) => product.label), ["Retail Radio"]);
+  assert.equal(products[0].actionHref, "/dashboard/retail");
+  assert.equal(products[0].status, "Available");
 });
 
-test("subscriber navigation sends a new organisation to station creation", () => {
-  const navigation = buildSubscriberNavigation({ entitlements: {}, firstStationId: null });
+test("Online Radio navigation sends a new organisation to station creation", () => {
+  const navigation = buildSubscriberNavigation({ entitlements: { serviceEnabled: true, onlineRadioEnabled: true }, firstStationId: null });
   const station = navigation.flatMap((section) => section.items).find((item) => item.id === "station");
   assert.equal(station.href, "/stations/new");
   assert.equal(station.label, "Create your station");

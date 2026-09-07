@@ -1,22 +1,16 @@
-import { redirect } from "next/navigation";
-import { getActiveOrganisationContext } from "@/lib/auth";
-import { resolveEntitlements } from "@/lib/entitlements.mjs";
 import { buildSchoolProductOnboarding } from "@/lib/product-onboarding.mjs";
 import { prisma } from "@/lib/prisma";
+import { requireSubscriberProduct } from "@/lib/subscriber-product-access";
 import ProductDashboard from "../ProductDashboard";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "School Radio dashboard | Ruvanas" };
 
 export default async function SchoolProductDashboard() {
-  const context = await getActiveOrganisationContext({
-    subscription: { include: { plan: true, billingContract: true } },
+  const { context, entitlements } = await requireSubscriberProduct("SCHOOL", {
     stations: { select: { id: true, status: true } }
   });
-  if (!context?.membership) redirect("/dashboard");
   const organisation = context.membership.organisation;
-  const entitlements = resolveEntitlements(organisation.subscription);
-  if (!entitlements.schoolRadioEnabled) redirect("/dashboard/account");
   const now = new Date();
   const [episodes, reviewQueue, liveStreams, readiness, schoolProfile, activeSupervisors, activeProgrammes, approvedEpisodes] = await Promise.all([
     prisma.schoolEpisode.count({ where: { organisationId: organisation.id } }),

@@ -1,22 +1,16 @@
-import { redirect } from "next/navigation";
-import { getActiveOrganisationContext } from "@/lib/auth";
-import { resolveEntitlements } from "@/lib/entitlements.mjs";
 import { buildOnlineRadioProductOnboarding } from "@/lib/product-onboarding.mjs";
 import { prisma } from "@/lib/prisma";
+import { requireSubscriberProduct } from "@/lib/subscriber-product-access";
 import ProductDashboard from "../ProductDashboard";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Online Radio dashboard | Ruvanas" };
 
 export default async function OnlineRadioDashboard() {
-  const context = await getActiveOrganisationContext({
-    subscription: { include: { plan: true, billingContract: true } },
+  const { context, entitlements } = await requireSubscriberProduct("ONLINE", {
     stations: { select: { id: true, slug: true, status: true, storageUsedMb: true, publicPlayerEnabled: true, stationWebsiteEnabled: true, streamConfig: { select: { streamUrl: true } } }, orderBy: { createdAt: "asc" } }
   });
-  if (!context?.membership) redirect("/dashboard");
   const organisation = context.membership.organisation;
-  const entitlements = resolveEntitlements(organisation.subscription);
-  if (!entitlements.serviceEnabled) redirect("/dashboard/account");
   const firstStation = organisation.stations.find((station) => station.status === "ACTIVE") || organisation.stations[0] || null;
   const now = new Date();
   const [players, liveStreams, publicListeners, activeMusicModes, publishedSchedules] = await Promise.all([

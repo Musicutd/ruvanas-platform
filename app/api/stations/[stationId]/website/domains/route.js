@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireOrganisationAccess, ORGANISATION_MANAGER_ROLES } from "@/lib/access-control";
+import { requireOrganisationProductAccess, ORGANISATION_MANAGER_ROLES } from "@/lib/access-control";
 import { createStationDomainVerificationToken, normalizeStationDomain, stationDomainDnsName, stationDomainDnsValue } from "@/lib/station-website.mjs";
 
 export async function POST(request, { params }) {
   try {
     const station = await prisma.station.findUnique({ where: { id: String(params.stationId || "") }, select: { id: true, organisationId: true } });
     if (!station) return NextResponse.json({ error: "Station not found." }, { status: 404 });
-    const access = await requireOrganisationAccess(station.organisationId, ORGANISATION_MANAGER_ROLES);
+    const access = await requireOrganisationProductAccess(station.organisationId, "ONLINE", ORGANISATION_MANAGER_ROLES);
     if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
     const text = await request.text();
     if (text.length > 2_048) return NextResponse.json({ error: "The domain request is too large." }, { status: 413 });

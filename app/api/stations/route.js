@@ -57,9 +57,9 @@ export async function POST(request) {
   const entitlements = resolveEntitlements(org.subscription);
   const stationCount = org.stations.length;
 
-  if (!entitlements.serviceEnabled) {
+  if (!entitlements.onlineRadioEnabled) {
     return NextResponse.json(
-      { error: "An active subscription is required to create a station." },
+      { error: "Online Radio is required to create a station." },
       { status: 403 }
     );
   }

@@ -27,7 +27,7 @@ export default async function PlayerSessionsPage({ searchParams }) {
 
   return <main style={styles.page}>
     <section style={styles.content}>
-      <PageHeader eyebrow="Client stream control" title={interfaceMessages.playerSessions.title} description="See which enrolled shop players are using your plan and release a session that should no longer be active. Each enrolled player can run on one device at a time." backHref="/dashboard" backLabel="Client dashboard" tone="dark" />
+      <PageHeader eyebrow="Client stream control" title={interfaceMessages.playerSessions.title} description="See which enrolled players are using your plan and release a session that should no longer be active. Each enrolled player can run on one device at a time." backHref="/dashboard" backLabel="Client dashboard" tone="dark" />
 
       {query?.released === "1" ? <p role="status" aria-live="polite" style={styles.success}>The player session was stopped and its stream slot is now available.</p> : null}
 
@@ -37,7 +37,7 @@ export default async function PlayerSessionsPage({ searchParams }) {
         <div><span style={styles.summaryLabel}>Your access</span><strong>{canManage ? "Can stop sessions" : "View only"}</strong></div>
       </section>
 
-      {!sessions.length ? <EmptyState tone="dark" title={interfaceMessages.playerSessions.emptyTitle} description={interfaceMessages.playerSessions.emptyDescription} /> : <section style={styles.list} aria-label="Active shop streams">
+      {!sessions.length ? <EmptyState tone="dark" title={interfaceMessages.playerSessions.emptyTitle} description={interfaceMessages.playerSessions.emptyDescription} /> : <section style={styles.list} aria-label="Active player streams">
         {sessions.map((session) => <article key={session.id} style={styles.sessionCard}>
           <div>
             <p style={styles.status}>LIVE SESSION</p>
@@ -51,7 +51,7 @@ export default async function PlayerSessionsPage({ searchParams }) {
         </article>)}
       </section>}
 
-      <p style={styles.note}>A different shop or device needs its own enrolled player. Stopping a session is recorded in the organisation audit trail and lets an authorised replacement device take over; disabling an enrolled player remains available to Ruvanas operations for permanent device retirement.</p>
+      <p style={styles.note}>A different location or device needs its own enrolled player. Stopping a session is recorded in the organisation audit trail and lets an authorised replacement device take over; disabling an enrolled player remains available to Ruvanas operations for permanent device retirement.</p>
     </section>
   </main>;
 }

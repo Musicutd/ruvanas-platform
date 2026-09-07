@@ -58,7 +58,8 @@ test("Stage 19.15 routes require a live listener lease, tenant moderation and ab
   assert.match(publicRoute, /listenerRequestBlock\.findUnique/);
   assert.match(publicRoute, /consumeRateLimit/);
   assert.match(publicRoute, /enqueueNotificationEvent/);
-  assert.match(queueRoute, /requireOrganisationAccess/);
+  assert.match(queueRoute, /requireOrganisationProductAccess/);
+  assert.match(queueRoute, /"ONLINE"/);
   assert.match(actionRoute, /updateMany/);
   assert.match(actionRoute, /LISTENER_REQUEST_SESSION_UNBLOCKED/);
   assert.match(player, /Requests are moderated and are not guaranteed to play/);
