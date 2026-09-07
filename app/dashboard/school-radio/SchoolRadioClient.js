@@ -2,10 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import SchoolEditorialClient from "./SchoolEditorialClient";
-import AudioLabClient from "./AudioLabClient";
-import WaveformEditorClient from "./WaveformEditorClient";
 import ShowBuilderClient from "./ShowBuilderClient";
-import MultitrackStudioClient from "./MultitrackStudioClient";
+import StudioWorkspaceClient from "./StudioWorkspaceClient";
 import PodcastNewsLiveClient from "./PodcastNewsLiveClient";
 import LearningWorkspaceClient from "./LearningWorkspaceClient";
 import AcademyWorkspaceClient from "./AcademyWorkspaceClient";
@@ -171,9 +169,7 @@ export default function SchoolRadioClient() {
         {canManage ? <SchoolStudentAccessClient /> : <section style={styles.card}><p style={styles.eyebrow}>PEOPLE & SAFETY</p><h2 style={styles.cardTitle}>Manager access required</h2><p style={styles.hint}>An owner or manager controls student access and safeguarding settings.</p></section>}
       </div>
       <div style={styles.tabStack}>
-        <AudioLabClient />
-        <WaveformEditorClient />
-        <MultitrackStudioClient />
+        <StudioWorkspaceClient />
       </div>
       <div style={styles.tabStack}>
         <AcademyWorkspaceClient />

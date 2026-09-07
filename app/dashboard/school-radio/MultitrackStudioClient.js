@@ -10,7 +10,7 @@ const seconds = (milliseconds) => (Math.max(0, Number(milliseconds) || 0) / 1000
 
 function clone(value) { return structuredClone(value); }
 
-export default function MultitrackStudioClient() {
+export default function MultitrackStudioClient({ requestedProjectId = "", experienceMode = "BEGINNER", onExperienceModeChange }) {
   const [catalogue, setCatalogue] = useState(null);
   const [projectId, setProjectId] = useState("");
   const [project, setProject] = useState(null);
@@ -39,6 +39,14 @@ export default function MultitrackStudioClient() {
 
   useEffect(() => { loadCatalogue().catch((loadError) => setError(loadError.message)); }, [loadCatalogue]);
   useEffect(() => { loadProject().catch((loadError) => setError(loadError.message)); }, [projectId, loadProject]);
+  useEffect(() => {
+    if (requestedProjectId && catalogue?.projects.some((item) => item.id === requestedProjectId)) setProjectId(requestedProjectId);
+  }, [catalogue, requestedProjectId]);
+  useEffect(() => {
+    setProject((current) => current && current.state.mode !== experienceMode
+      ? { ...current, state: { ...current.state, mode: experienceMode } }
+      : current);
+  }, [experienceMode]);
 
   const sourceMap = useMemo(() => new Map((catalogue?.sources || []).map((source) => [source.id, source])), [catalogue]);
   const durationMs = useMemo(() => Math.max(0, ...(project?.state.tracks || []).flatMap((track) => track.clips.map((clip) => clip.timelineStartMs + clip.sourceEndMs - clip.sourceStartMs))), [project]);
@@ -58,10 +66,12 @@ export default function MultitrackStudioClient() {
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || "The multitrack project could not be created.");
       setDraft(emptyProject); await loadCatalogue(); setProjectId(payload.project.id); setNotice("Multitrack project created with a voice track and music bed.");
+      window.dispatchEvent(new CustomEvent("ruvanas:studio-projects-refresh"));
     } catch (actionError) { setError(actionError.message); } finally { setWorking(false); }
   }
 
   function addTrack() {
+    if (project.state.tracks.length >= 16) { setError("This Studio project has reached its safe limit of 16 tracks."); return; }
     const track = { clientId: uid("track"), name: `Track ${project.state.tracks.length + 1}`, kind: "VOICE", order: project.state.tracks.length, gainDb: 0, pan: 0, muted: false, solo: false, armed: false, locked: false, preset: "NONE", automation: [], clips: [] };
     updateState((state) => ({ ...state, tracks: [...state.tracks, track] })); setTargetTrackId(track.clientId);
   }
@@ -88,19 +98,20 @@ export default function MultitrackStudioClient() {
       if (!response.ok) throw new Error(payload.error || "The multitrack action could not be completed.");
       setProject(payload); await loadCatalogue();
       setNotice(action === "SAVE" ? "Project snapshot saved." : action === "QUEUE_RENDER" ? "Final mix queued. The audio worker will render it safely in the background." : "Final output approved for school use.");
+      window.dispatchEvent(new CustomEvent("ruvanas:studio-projects-refresh"));
     } catch (actionError) { setError(actionError.message); } finally { setWorking(false); }
   }
 
   if (!catalogue) return <section style={s.panel}><p style={s.hint}>{error || "Loading Multitrack Studio…"}</p></section>;
   return <section id="multitrack-studio" style={s.panel}>
-    <div style={s.heading}><div><p style={s.eyebrow}>STAGE 4F · MULTITRACK STUDIO</p><h2 style={s.title}>Build a complete school production</h2><p style={s.hint}>Layer voice, music and effects without changing source recordings. Server rendering, loudness checks and teacher approval create the final version.</p></div>{project ? <div style={s.mode}><button style={project.state.mode === "BEGINNER" ? s.active : s.secondary} onClick={() => updateState((state) => ({ ...state, mode: "BEGINNER" }))}>Beginner</button><button style={project.state.mode === "ADVANCED" ? s.active : s.secondary} onClick={() => updateState((state) => ({ ...state, mode: "ADVANCED" }))}>Advanced</button></div> : null}</div>
+    <div style={s.heading}><div><p style={s.eyebrow}>MULTITRACK</p><h2 style={s.title}>Build a complete school production</h2><p style={s.hint}>Layer voice, music and effects without changing source recordings. Server rendering, loudness checks and teacher approval create the final version.</p></div>{project ? <div style={s.mode}><button type="button" style={project.state.mode === "BEGINNER" ? s.active : s.secondary} onClick={() => { updateState((state) => ({ ...state, mode: "BEGINNER" })); onExperienceModeChange?.("BEGINNER"); }}>Beginner</button><button type="button" style={project.state.mode === "ADVANCED" ? s.active : s.secondary} onClick={() => { updateState((state) => ({ ...state, mode: "ADVANCED" })); onExperienceModeChange?.("ADVANCED"); }}>Advanced</button></div> : null}</div>
     {error ? <div style={s.error}>{error}</div> : null}{notice ? <div style={s.notice}>{notice}</div> : null}
     <div style={s.topGrid}>
       <form style={s.card} onSubmit={createProject}><p style={s.eyebrow}>1 · PROJECT</p><h3 style={s.cardTitle}>New production</h3><label style={s.label}>Title<input style={s.input} value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} placeholder="Year 8 podcast special" required /></label><label style={s.label}>Programme<select style={s.input} value={draft.programmeId} onChange={(event) => setDraft({ ...draft, programmeId: event.target.value, episodeId: "" })}><option value="">No programme link</option>{catalogue.programmes.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label><label style={s.label}>Episode<select style={s.input} value={draft.episodeId} onChange={(event) => setDraft({ ...draft, episodeId: event.target.value })}><option value="">No episode link</option>{catalogue.episodes.filter((item) => !draft.programmeId || item.programmeId === draft.programmeId).map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label><button style={s.primary} disabled={working}>Create production</button></form>
       <section style={s.card}><p style={s.eyebrow}>2 · OPEN & ADD AUDIO</p><h3 style={s.cardTitle}>Studio project</h3><label style={s.label}>Project<select style={s.input} value={projectId} onChange={(event) => setProjectId(event.target.value)}><option value="">Choose project…</option>{catalogue.projects.map((item) => <option key={item.id} value={item.id}>{item.title} · v{item.currentVersion}</option>)}</select></label>{project ? <><label style={s.label}>Protected source<select style={s.input} value={sourceId} onChange={(event) => setSourceId(event.target.value)}><option value="">Choose recording, music or audio…</option>{catalogue.sources.map((item) => <option key={item.id} value={item.id}>{item.label} · {item.sourceType.toLowerCase()} · {seconds(item.durationMs)}s</option>)}</select></label><label style={s.label}>Destination track<select style={s.input} value={targetTrackId} onChange={(event) => setTargetTrackId(event.target.value)}>{project.state.tracks.map((track) => <option key={track.clientId} value={track.clientId}>{track.name}</option>)}</select></label><button style={s.primary} type="button" onClick={addClip}>Add clip</button></> : <p style={s.hint}>Create or choose a production to open the mixer.</p>}</section>
     </div>
 
-    {project ? <><div style={s.transport}><strong>{project.title}</strong><span>Version {project.currentVersion} · timeline {seconds(durationMs)}s</span><button style={s.secondary} onClick={addTrack}>+ Track</button><button style={s.primary} disabled={working} onClick={() => sendAction("SAVE", { reason: "Multitrack manual save" })}>Save snapshot</button><button style={s.primary} disabled={working} onClick={() => sendAction("QUEUE_RENDER", { preset: "SCHOOL_RADIO_MP3" })}>Render final MP3</button></div>
+    {project ? <><div style={s.transport}><strong>{project.title}</strong><span>Version {project.currentVersion} · timeline {seconds(durationMs)}s · {project.state.tracks.length}/16 tracks</span><button type="button" style={s.secondary} disabled={project.state.tracks.length >= 16} onClick={addTrack}>+ Track</button><button type="button" style={s.primary} disabled={working} onClick={() => sendAction("SAVE", { reason: "Multitrack manual save" })}>Save snapshot</button><button type="button" style={s.primary} disabled={working} onClick={() => sendAction("QUEUE_RENDER", { preset: "SCHOOL_RADIO_MP3" })}>Render final MP3</button></div>
       <div style={s.timeline}>{project.state.tracks.map((track) => <article key={track.clientId} style={s.track}>
         <div style={s.trackHeader}><input aria-label="Track name" style={{ ...s.input, fontWeight: 900 }} value={track.name} disabled={track.locked} onChange={(event) => updateTrack(track.clientId, { name: event.target.value })} /><select aria-label="Track kind" style={s.compact} value={track.kind} disabled={track.locked} onChange={(event) => updateTrack(track.clientId, { kind: event.target.value })}>{trackKinds.map((kind) => <option key={kind}>{kind}</option>)}</select><button style={track.muted ? s.toggleOn : s.toggle} onClick={() => updateTrack(track.clientId, { muted: !track.muted })}>M</button><button style={track.solo ? s.toggleOn : s.toggle} onClick={() => updateTrack(track.clientId, { solo: !track.solo })}>S</button><button style={track.armed ? s.recordOn : s.toggle} onClick={() => updateTrack(track.clientId, { armed: !track.armed })}>Arm</button><button style={track.locked ? s.toggleOn : s.toggle} onClick={() => updateTrack(track.clientId, { locked: !track.locked })}>Lock</button></div>
         <div style={s.mixer}><label style={s.inline}>Gain <input type="range" min="-36" max="12" step="0.5" value={track.gainDb} disabled={track.locked} onChange={(event) => updateTrack(track.clientId, { gainDb: Number(event.target.value) })} /><span>{track.gainDb} dB</span></label><label style={s.inline}>Pan <input type="range" min="-1" max="1" step="0.05" value={track.pan} disabled={track.locked} onChange={(event) => updateTrack(track.clientId, { pan: Number(event.target.value) })} /><span>{track.pan}</span></label><label style={s.inline}>Preset <select style={s.compact} value={track.preset} disabled={track.locked} onChange={(event) => updateTrack(track.clientId, { preset: event.target.value })}>{presets.map((preset) => <option key={preset}>{preset.replaceAll("_", " ")}</option>)}</select></label></div>
