@@ -9,7 +9,12 @@ export const dynamic = "force-dynamic";
 export default async function DashboardLayout({ children }) {
   const context = await getActiveOrganisationContext({
     subscription: { include: { plan: true, billingContract: true } },
-    stations: { select: { id: true, status: true }, orderBy: { createdAt: "asc" } }
+    stations: { select: { id: true, status: true }, orderBy: { createdAt: "asc" } },
+    betaParticipations: {
+      where: { status: "ACTIVE", programme: { status: "ACTIVE" } },
+      select: { id: true },
+      take: 1
+    }
   });
 
   if (!context) redirect("/login");
@@ -23,7 +28,8 @@ export default async function DashboardLayout({ children }) {
     || null;
   const navigation = buildSubscriberNavigation({
     entitlements,
-    firstStationId: firstStation?.id || null
+    firstStationId: firstStation?.id || null,
+    betaActive: organisation.betaParticipations.length > 0
   });
 
   return (

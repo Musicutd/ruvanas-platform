@@ -576,6 +576,21 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   });
   assert.equal(unauthenticatedSubscriberSupportCreate.status, 401);
 
+  const unauthenticatedBetaAdmin = await api("/api/admin/beta", {
+    method: "POST",
+    body: { action: "CREATE_PROGRAMME", name: "Unauthorised beta", maxOrganisations: 5 }
+  });
+  assert.equal(unauthenticatedBetaAdmin.status, 401);
+
+  const unauthenticatedBetaFeedbackList = await api("/api/beta/feedback");
+  assert.equal(unauthenticatedBetaFeedbackList.status, 401);
+
+  const unauthenticatedBetaFeedbackCreate = await api("/api/beta/feedback", {
+    method: "POST",
+    body: { participantId: "not-a-participant", category: "OTHER", severity: "NORMAL", subject: "No session", description: "No unauthenticated beta feedback is accepted." }
+  });
+  assert.equal(unauthenticatedBetaFeedbackCreate.status, 401);
+
   const invalidPlayerEnrolment = await api("/api/player/enrol", {
     method: "POST",
     body: { code: "invalid-enrolment-code" }
@@ -898,6 +913,78 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     assert.ok(["READY_FOR_OPERATOR_SIGN_OFF", "ATTENTION", "BLOCKED"].includes(platformLaunchBody.status));
     assert.equal(platformLaunchBody.signoff.requiredCount, LAUNCH_OPERATOR_CHECK_IDS.length);
     assert.equal(JSON.stringify(platformLaunchBody).includes("passwordHash"), false);
+
+    const subscriptionBeforeBeta = await db.subscription.findUniqueOrThrow({
+      where: { organisationId: accountABody.organisation.id }
+    });
+    const createBetaProgramme = await api("/api/admin/beta", {
+      method: "POST",
+      cookie: cookieA,
+      body: {
+        action: "CREATE_PROGRAMME",
+        name: `Controlled Online beta ${suffix}`,
+        description: "Integration acceptance cohort for structured product feedback.",
+        maxOrganisations: 3
+      }
+    });
+    assert.equal(createBetaProgramme.status, 201, await createBetaProgramme.clone().text());
+    const betaProgramme = (await createBetaProgramme.json()).programme;
+
+    const activateBetaProgramme = await api("/api/admin/beta", {
+      method: "POST",
+      cookie: cookieA,
+      body: { action: "SET_PROGRAMME_STATUS", programmeId: betaProgramme.id, status: "ACTIVE" }
+    });
+    assert.equal(activateBetaProgramme.status, 200, await activateBetaProgramme.clone().text());
+
+    const admitBetaParticipant = await api("/api/admin/beta", {
+      method: "POST",
+      cookie: cookieA,
+      body: {
+        action: "ADD_PARTICIPANT",
+        programmeId: betaProgramme.id,
+        organisationId: accountABody.organisation.id,
+        product: "ONLINE",
+        internalNote: "Approved integration beta participant."
+      }
+    });
+    assert.equal(admitBetaParticipant.status, 201, await admitBetaParticipant.clone().text());
+    const betaParticipant = (await admitBetaParticipant.json()).participant;
+
+    const submitBetaFeedback = await api("/api/beta/feedback", {
+      method: "POST",
+      cookie: cookieA,
+      body: {
+        participantId: betaParticipant.id,
+        category: "USABILITY",
+        severity: "NORMAL",
+        rating: 4,
+        subject: "Controlled beta workflow",
+        description: "The integration participant can submit product-scoped feedback without receiving free service or changing billing."
+      }
+    });
+    assert.equal(submitBetaFeedback.status, 201, await submitBetaFeedback.clone().text());
+    const betaFeedback = (await submitBetaFeedback.json()).feedback;
+
+    const triageBetaFeedback = await api("/api/admin/beta", {
+      method: "POST",
+      cookie: cookieA,
+      body: {
+        action: "TRIAGE_FEEDBACK",
+        feedbackId: betaFeedback.id,
+        status: "RESOLVED",
+        adminResponse: "Feedback reviewed and recorded for the controlled beta decision log."
+      }
+    });
+    assert.equal(triageBetaFeedback.status, 200, await triageBetaFeedback.clone().text());
+    assert.equal((await triageBetaFeedback.json()).feedback.status, "RESOLVED");
+    const subscriptionAfterBeta = await db.subscription.findUniqueOrThrow({
+      where: { organisationId: accountABody.organisation.id }
+    });
+    assert.equal(subscriptionAfterBeta.planId, subscriptionBeforeBeta.planId);
+    assert.equal(subscriptionAfterBeta.status, subscriptionBeforeBeta.status);
+    assert.equal(await db.auditLog.count({ where: { action: "BETA_PARTICIPANT_ADMITTED", entityId: betaParticipant.id } }), 1);
+    assert.equal(await db.auditLog.count({ where: { action: "BETA_FEEDBACK_SUBMITTED", entityId: betaFeedback.id } }), 1);
 
     const missingStreamProbe = await api("/api/admin/streams/not-a-station/probe", { method: "POST", cookie: cookieA });
     assert.equal(missingStreamProbe.status, 404);
