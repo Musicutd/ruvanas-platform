@@ -163,7 +163,6 @@ export default async function SubscriberAccountPage({ searchParams }) {
             <h2>Need a change?</h2>
             <p>Ask Ruvanas about more locations, a different platform, account access or a service-plan review.</p>
             <Link href="/dashboard/support">Contact support</Link>
-            {entitlements.complimentaryAccess ? <Link href="/dashboard/complimentary-access" className={styles.secondaryLink}>Review complimentary access</Link> : null}
           </aside>
         </section>
 

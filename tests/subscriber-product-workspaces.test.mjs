@@ -32,22 +32,36 @@ test("Retail, School and Online Radio have separate subscriber dashboards", asyn
   assert.match(styles, /:focus-visible/);
 });
 
-test("complimentary access is perpetual, organisation-bound and duplicate-safe", async () => {
-  const [createRoute, redeemRoute, revokeRoute, admin, account] = await Promise.all([
+test("complimentary access is perpetual and controlled only by Super Admin", async () => {
+  const [createRoute, redeemRoute, revokeRoute, admin, account, subscriberNavigation, clientPage] = await Promise.all([
     readFile(new URL("../app/api/admin/complimentary-access/route.js", import.meta.url), "utf8"),
     readFile(new URL("../app/api/complimentary-access/redeem/route.js", import.meta.url), "utf8"),
     readFile(new URL("../app/api/admin/complimentary-access/[codeId]/route.js", import.meta.url), "utf8"),
     readFile(new URL("../app/admin/complimentary-access/ComplimentaryAccessAdmin.js", import.meta.url), "utf8"),
-    readFile(new URL("../app/dashboard/complimentary-access/ComplimentaryAccessClient.js", import.meta.url), "utf8")
+    readFile(new URL("../app/dashboard/account/page.js", import.meta.url), "utf8"),
+    readFile(new URL("../lib/user-experience-navigation.mjs", import.meta.url), "utf8"),
+    readFile(new URL("../app/dashboard/complimentary-access/page.js", import.meta.url), "utf8")
   ]);
 
-  assert.match(createRoute, /status: \{ in: \["ISSUED", "ACTIVE"\] \}/);
   assert.match(createRoute, /runSerializableTransaction\(prisma/);
-  assert.match(createRoute, /Only a Ruvanas Super Admin can issue complimentary access/);
-  assert.match(redeemRoute, /accessCode\.organisationId !== context\.membership\.organisationId/);
+  assert.match(createRoute, /Only a Ruvanas Super Admin can grant complimentary access/);
+  assert.match(createRoute, /complimentaryAccessActive \|\| activeCode/);
+  assert.match(createRoute, /status: "ISSUED"/);
+  assert.match(createRoute, /status: "ACTIVE"/);
+  assert.match(createRoute, /complimentaryAccessActive: true/);
+  assert.match(createRoute, /COMPLIMENTARY_ACCESS_GRANTED/);
+  assert.doesNotMatch(createRoute, /code: internalCode/);
+  assert.doesNotMatch(createRoute, /billingEvent|billingInvoice/);
+  assert.match(redeemRoute, /Client activation is disabled/);
+  assert.doesNotMatch(redeemRoute, /prisma/);
   assert.match(revokeRoute, /Only a Ruvanas Super Admin can stop complimentary access/);
   assert.doesNotMatch(createRoute, /expiresAt/);
+  assert.match(admin, /Grant free access/);
+  assert.doesNotMatch(admin, /navigator\.clipboard|Copy this code now|Enter your complimentary code/);
   assert.match(admin, /No automatic expiry/);
   assert.match(admin, /Until Super Admin disables/);
-  assert.match(account, /not a timed trial/);
+  assert.match(account, /No subscription charge applies/);
+  assert.doesNotMatch(account, /href="\/dashboard\/complimentary-access"/);
+  assert.doesNotMatch(subscriberNavigation, /href: "\/dashboard\/complimentary-access"/);
+  assert.match(clientPage, /user\.role === "SUPER_ADMIN" \? "\/admin\/complimentary-access" : "\/dashboard\/account"/);
 });
