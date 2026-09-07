@@ -1246,6 +1246,45 @@ enum SupportTicketStatus {
   CLOSED
 }
 
+enum BetaProgrammeStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  CLOSED
+}
+
+enum BetaParticipantStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+  REMOVED
+}
+
+enum BetaFeedbackCategory {
+  USABILITY
+  RELIABILITY
+  CONTENT
+  ACCESS
+  FEATURE_REQUEST
+  OTHER
+}
+
+enum BetaFeedbackSeverity {
+  LOW
+  NORMAL
+  HIGH
+  BLOCKER
+}
+
+enum BetaFeedbackStatus {
+  NEW
+  TRIAGED
+  PLANNED
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
 enum ProductionOrderStatus {
   DRAFT
   SUBMITTED
@@ -1402,6 +1441,10 @@ model User {
   requestedRetentionJobs                 RetentionJob[]                   @relation("RetentionJobRequestedBy")
   createdSupportTickets                  SupportTicket[]                  @relation("SupportTicketCreatedBy")
   assignedSupportTickets                 SupportTicket[]                  @relation("SupportTicketAssignedTo")
+  createdBetaProgrammes                  BetaProgramme[]                  @relation("BetaProgrammeCreatedBy")
+  admittedBetaParticipants               BetaParticipant[]                @relation("BetaParticipantAdmittedBy")
+  submittedBetaFeedback                  BetaFeedback[]                   @relation("BetaFeedbackCreatedBy")
+  triagedBetaFeedback                    BetaFeedback[]                   @relation("BetaFeedbackTriagedBy")
   requestedAIJobs                        AIJob[]                          @relation("AIJobRequestedBy")
   reviewedAIJobs                         AIJob[]                          @relation("AIJobReviewedBy")
   recommendationFeedback                 RecommendationFeedback[]
@@ -1558,6 +1601,8 @@ model Organisation {
   retentionPolicy                    RetentionPolicy?
   retentionJobs                      RetentionJob[]
   supportTickets                     SupportTicket[]
+  betaParticipations                 BetaParticipant[]
+  betaFeedback                       BetaFeedback[]
   auditExportSeals                   AuditExportSeal[]
   aiJobs                             AIJob[]
   integrationConnections             IntegrationConnection[]
@@ -4848,17 +4893,17 @@ model SchoolNewsStory {
   createdAt                 DateTime              @default(now())
   updatedAt                 DateTime              @updatedAt
 
-  organisation        Organisation     @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  station             Station?         @relation(fields: [stationId, organisationId], references: [id, organisationId], onDelete: Restrict)
-  channel             Channel?         @relation(fields: [channelId, stationId, organisationId], references: [id, stationId, organisationId], onDelete: Restrict)
-  programme           SchoolProgramme? @relation(fields: [programmeId], references: [id], onDelete: SetNull)
-  episode             SchoolEpisode?   @relation(fields: [episodeId], references: [id], onDelete: SetNull)
-  audioProject        AudioProject?    @relation(fields: [audioProjectId, organisationId], references: [id, organisationId], onDelete: Restrict)
-  interviewMediaAsset MediaAsset?      @relation("SchoolNewsInterviewAsset", fields: [interviewMediaAssetId], references: [id], onDelete: SetNull)
-  createdBy           User             @relation("SchoolNewsStoryCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  assignedTo          User?            @relation("SchoolNewsStoryAssignedTo", fields: [assignedToUserId], references: [id], onDelete: SetNull)
-  reviewedBy          User?            @relation("SchoolNewsStoryReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
-  publishedBy         User?            @relation("SchoolNewsStoryPublishedBy", fields: [publishedByUserId], references: [id], onDelete: SetNull)
+  organisation        Organisation        @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  station             Station?            @relation(fields: [stationId, organisationId], references: [id, organisationId], onDelete: Restrict)
+  channel             Channel?            @relation(fields: [channelId, stationId, organisationId], references: [id, stationId, organisationId], onDelete: Restrict)
+  programme           SchoolProgramme?    @relation(fields: [programmeId], references: [id], onDelete: SetNull)
+  episode             SchoolEpisode?      @relation(fields: [episodeId], references: [id], onDelete: SetNull)
+  audioProject        AudioProject?       @relation(fields: [audioProjectId, organisationId], references: [id, organisationId], onDelete: Restrict)
+  interviewMediaAsset MediaAsset?         @relation("SchoolNewsInterviewAsset", fields: [interviewMediaAssetId], references: [id], onDelete: SetNull)
+  createdBy           User                @relation("SchoolNewsStoryCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  assignedTo          User?               @relation("SchoolNewsStoryAssignedTo", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+  reviewedBy          User?               @relation("SchoolNewsStoryReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+  publishedBy         User?               @relation("SchoolNewsStoryPublishedBy", fields: [publishedByUserId], references: [id], onDelete: SetNull)
   revisions           NewsStoryRevision[]
   decisions           NewsStoryDecision[]
 
@@ -4898,15 +4943,15 @@ model NewsStoryRevision {
 }
 
 model NewsStoryDecision {
-  id              String                @id @default(cuid())
-  organisationId  String
-  storyId         String
-  action          String
-  fromStatus      SchoolNewsStoryStatus
-  toStatus        SchoolNewsStoryStatus
-  note            String?
-  actorUserId     String
-  createdAt       DateTime              @default(now())
+  id             String                @id @default(cuid())
+  organisationId String
+  storyId        String
+  action         String
+  fromStatus     SchoolNewsStoryStatus
+  toStatus       SchoolNewsStoryStatus
+  note           String?
+  actorUserId    String
+  createdAt      DateTime              @default(now())
 
   organisation Organisation    @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   story        SchoolNewsStory @relation(fields: [storyId, organisationId], references: [id, organisationId], onDelete: Cascade)
@@ -6374,6 +6419,76 @@ model SupportTicket {
   @@index([organisationId, status, createdAt])
   @@index([assignedToUserId, status])
   @@index([linkedEntityType, linkedEntityId])
+}
+
+model BetaProgramme {
+  id               String              @id @default(cuid())
+  name             String
+  description      String?             @db.Text
+  status           BetaProgrammeStatus @default(DRAFT)
+  maxOrganisations Int                 @default(25)
+  startsAt         DateTime?
+  endsAt           DateTime?
+  createdByUserId  String
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  createdBy    User              @relation("BetaProgrammeCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  participants BetaParticipant[]
+  feedback     BetaFeedback[]
+
+  @@index([status, createdAt])
+}
+
+model BetaParticipant {
+  id               String                @id @default(cuid())
+  programmeId      String
+  organisationId   String
+  product          PlanProductFamily
+  status           BetaParticipantStatus @default(ACTIVE)
+  admittedByUserId String
+  internalNote     String?
+  admittedAt       DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+
+  programme    BetaProgramme  @relation(fields: [programmeId], references: [id], onDelete: Cascade)
+  organisation Organisation   @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  admittedBy   User           @relation("BetaParticipantAdmittedBy", fields: [admittedByUserId], references: [id], onDelete: Restrict)
+  feedback     BetaFeedback[]
+
+  @@unique([programmeId, organisationId, product])
+  @@index([organisationId, status, updatedAt])
+  @@index([programmeId, status, product])
+}
+
+model BetaFeedback {
+  id              String               @id @default(cuid())
+  programmeId     String
+  participantId   String
+  organisationId  String
+  createdByUserId String
+  triagedByUserId String?
+  product         PlanProductFamily
+  category        BetaFeedbackCategory
+  severity        BetaFeedbackSeverity @default(NORMAL)
+  status          BetaFeedbackStatus   @default(NEW)
+  rating          Int?
+  subject         String
+  description     String               @db.Text
+  adminResponse   String?              @db.Text
+  resolvedAt      DateTime?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  programme    BetaProgramme   @relation(fields: [programmeId], references: [id], onDelete: Cascade)
+  participant  BetaParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  organisation Organisation    @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  createdBy    User            @relation("BetaFeedbackCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  triagedBy    User?           @relation("BetaFeedbackTriagedBy", fields: [triagedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([programmeId, status, severity, createdAt])
+  @@index([organisationId, status, createdAt])
+  @@index([participantId, createdAt])
 }
 
 model AuditExportSeal {
