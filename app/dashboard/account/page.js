@@ -102,11 +102,14 @@ export default async function SubscriberAccountPage({ searchParams }) {
     school: "School Radio",
     online: "Online Radio"
   }[String(query?.product || "").toLowerCase()] || null;
-  const accessNotice = requestedProduct
-    ? query?.reason === "service-inactive"
+  let accessNotice = null;
+  if (query?.reason === "service-activation") {
+    accessNotice = "No Ruvanas product is active for this organisation yet. Contact Ruvanas to activate the appropriate service or review your current plan.";
+  } else if (requestedProduct) {
+    accessNotice = query?.reason === "service-inactive"
       ? `${requestedProduct} is paused because this organisation's service is not active. Contact Ruvanas to review the account.`
-      : `${requestedProduct} is not included in this organisation's current access. Contact Ruvanas if you would like to add it.`
-    : null;
+      : `${requestedProduct} is not included in this organisation's current access. Contact Ruvanas if you would like to add it.`;
+  }
 
   return (
     <main className={styles.page}>

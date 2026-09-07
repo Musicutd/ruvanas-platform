@@ -45,15 +45,7 @@ export default function LoginPage() {
         return;
       }
 
-      const role = data.user?.role;
-
-      if (role === "STUDENT") {
-        router.push("/school-student");
-      } else if (role === "SUPER_ADMIN" || role === "ADMIN") {
-        router.push("/admin/stations");
-      } else {
-        router.push("/dashboard");
-      }
+      router.push(data.recommendedDashboardRoute || "/dashboard");
 
       router.refresh();
     } catch {
