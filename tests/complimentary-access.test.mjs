@@ -23,8 +23,11 @@ const tier = {
   listenerLimit: 500,
   maxBitrateKbps: 320,
   includesRuvanasCatalogue: true,
+  licensedMusicCatalogueLevel: "PREMIUM",
   promoUploadEnabled: true,
+  retailRadioEnabled: true,
   schoolRadioEnabled: true,
+  onlineRadioEnabled: true,
   schoolPublicPublishingEnabled: false,
   retailMediaEnabled: true,
   digitalSignageEnabled: true
@@ -66,7 +69,10 @@ test("an active complimentary tier overrides billing without becoming a trial", 
   assert.equal(entitlements.stationLimit, 5);
   assert.equal(entitlements.streamLimit, 5);
   assert.equal(entitlements.listenerLimit, 500);
+  assert.equal(entitlements.retailRadioEnabled, true);
   assert.equal(entitlements.schoolRadioEnabled, true);
+  assert.equal(entitlements.onlineRadioEnabled, true);
+  assert.equal(entitlements.licensedMusicCatalogueLevel, "PREMIUM");
   assert.equal(entitlements.retailMediaEnabled, true);
   assert.equal(entitlements.digitalSignageEnabled, true);
 });
@@ -90,6 +96,23 @@ test("inactive tiers cannot be snapshotted for complimentary access", () => {
 });
 
 test("complimentary tiers identify the product dashboards they unlock", () => {
-  assert.deepEqual(complimentaryPlanProducts(tier), ["Retail Radio", "Online Radio", "School Radio"]);
-  assert.deepEqual(complimentaryPlanProducts({ ...tier, promoUploadEnabled: false, retailMediaEnabled: false, digitalSignageEnabled: false, schoolRadioEnabled: false }), ["Online Radio"]);
+  assert.deepEqual(complimentaryPlanProducts(tier), ["Retail Radio", "School Radio", "Online Radio"]);
+  assert.deepEqual(
+    complimentaryPlanProducts({ ...tier, retailRadioEnabled: false, schoolRadioEnabled: false }),
+    ["Online Radio"]
+  );
+});
+
+test("complimentary snapshots preserve product and catalogue authority", () => {
+  const snapshot = complimentaryPlanSnapshot(tier);
+  assert.equal(snapshot.complimentaryRetailRadioEnabled, true);
+  assert.equal(snapshot.complimentarySchoolRadioEnabled, true);
+  assert.equal(snapshot.complimentaryOnlineRadioEnabled, true);
+  assert.equal(snapshot.complimentaryLicensedMusicCatalogueLevel, "PREMIUM");
+
+  const cleared = clearComplimentaryAccess();
+  assert.equal(cleared.complimentaryRetailRadioEnabled, null);
+  assert.equal(cleared.complimentarySchoolRadioEnabled, null);
+  assert.equal(cleared.complimentaryOnlineRadioEnabled, null);
+  assert.equal(cleared.complimentaryLicensedMusicCatalogueLevel, null);
 });

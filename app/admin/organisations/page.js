@@ -26,9 +26,10 @@ function ProductReadinessSummary({ organisation }) {
   const products = [
     {
       label: "Retail",
-      enabled: entitlements.serviceEnabled,
+      enabled: entitlements.retailRadioEnabled,
       readiness: buildRetailProductOnboarding({
         ...common,
+        serviceEnabled: entitlements.retailRadioEnabled,
         activeLocationCount: organisation.locations.length,
         activeMusicModeCount: organisation.musicModes.length,
         publishedScheduleCount: organisation.musicSchedules.length,
@@ -50,9 +51,10 @@ function ProductReadinessSummary({ organisation }) {
     },
     {
       label: "Online",
-      enabled: entitlements.serviceEnabled,
+      enabled: entitlements.onlineRadioEnabled,
       readiness: buildOnlineRadioProductOnboarding({
         ...common,
+        serviceEnabled: entitlements.onlineRadioEnabled,
         firstStationId: firstStation?.id || null,
         stationActive: firstStation?.status === "ACTIVE",
         streamConfigured: Boolean(firstStation?.streamConfig?.streamUrl),
@@ -76,6 +78,31 @@ function ProductReadinessSummary({ organisation }) {
           ) : <span style={styles.notIncluded}>Not included</span>}
         </div>
       ))}
+    </div>
+  );
+}
+
+function ProductAccessSummary({ subscription }) {
+  if (!subscription) return <span style={styles.muted}>No subscription</span>;
+  const entitlements = resolveEntitlements(subscription);
+  const products = [
+    ["Retail", entitlements.retailRadioEnabled],
+    ["School", entitlements.schoolRadioEnabled],
+    ["Online", entitlements.onlineRadioEnabled]
+  ];
+
+  return (
+    <div style={styles.accessSummary}>
+      <div style={styles.accessBadges}>
+        {products.map(([label, enabled]) => (
+          <span key={label} style={enabled ? styles.accessBadge : styles.accessBadgeDisabled}>
+            {label}: {enabled ? "Included" : "Not included"}
+          </span>
+        ))}
+      </div>
+      <span style={styles.catalogueLevel}>
+        Licensed Music Catalogue: {entitlements.licensedMusicCatalogueLevel}
+      </span>
     </div>
   );
 }
@@ -148,6 +175,7 @@ export default async function AdminOrganisationsPage() {
                   <th scope="col" style={styles.tableHeader}>Organisation</th>
                   <th scope="col" style={styles.tableHeader}>Plan</th>
                   <th scope="col" style={styles.tableHeader}>Subscription</th>
+                  <th scope="col" style={styles.tableHeader}>Product access</th>
                   <th scope="col" style={styles.tableHeader}>Product readiness</th>
                   <th scope="col" style={styles.tableHeader}>School Radio</th>
                   <th scope="col" style={styles.tableHeader}>School Public Publishing</th>
@@ -176,6 +204,10 @@ export default async function AdminOrganisationsPage() {
 
                     <td style={styles.tableCell}>
                       {organisation.subscription?.status || "No subscription"}
+                    </td>
+
+                    <td style={styles.tableCellAccess}>
+                      <ProductAccessSummary subscription={organisation.subscription} />
                     </td>
 
                     <td style={styles.tableCellReadiness}>
@@ -361,7 +393,7 @@ const styles = {
   },
   table: {
     width: "100%",
-    minWidth: 2180,
+    minWidth: 2480,
     borderCollapse: "collapse"
   },
   tableHeader: {
@@ -401,6 +433,41 @@ const styles = {
     minWidth: 270,
     padding: "12px",
     verticalAlign: "middle"
+  },
+  tableCellAccess: {
+    minWidth: 270,
+    padding: "12px",
+    verticalAlign: "middle"
+  },
+  accessSummary: {
+    display: "grid",
+    gap: 8
+  },
+  accessBadges: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 5
+  },
+  accessBadge: {
+    borderRadius: 999,
+    background: "#dcfce7",
+    color: "#166534",
+    padding: "4px 7px",
+    fontSize: 10,
+    fontWeight: 850
+  },
+  accessBadgeDisabled: {
+    borderRadius: 999,
+    background: "#f1f5f9",
+    color: "#64748b",
+    padding: "4px 7px",
+    fontSize: 10,
+    fontWeight: 750
+  },
+  catalogueLevel: {
+    color: "#334155",
+    fontSize: 11,
+    fontWeight: 800
   },
   readinessList: {
     display: "grid",

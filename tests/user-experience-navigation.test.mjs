@@ -67,8 +67,10 @@ test("support navigation excludes super-admin controls", () => {
   assert.ok(supportItems.some((item) => item.href === "/admin/organisations"));
   assert.ok(supportItems.some((item) => item.href === "/admin/compliance"));
   assert.ok(!supportItems.some((item) => item.href === "/admin/billing"));
+  assert.ok(!supportItems.some((item) => item.href === "/admin/plans"));
   assert.ok(!supportItems.some((item) => item.href === "/admin/recovery"));
   assert.ok(superAdminItems.some((item) => item.href === "/admin/billing"));
+  assert.ok(superAdminItems.some((item) => item.href === "/admin/plans"));
   assert.ok(superAdminItems.some((item) => item.href === "/admin/recovery"));
 });
 

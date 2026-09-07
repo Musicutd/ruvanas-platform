@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  hasLicensedMusicCatalogueLevel,
   isWithinLimit,
   resolveEntitlements
 } from "../lib/entitlements.mjs";
@@ -14,8 +15,11 @@ const plan = {
   listenerLimit: 200,
   maxBitrateKbps: 192,
   includesRuvanasCatalogue: true,
+  licensedMusicCatalogueLevel: "PROFESSIONAL",
   promoUploadEnabled: true,
+  retailRadioEnabled: true,
   schoolRadioEnabled: true,
+  onlineRadioEnabled: true,
   schoolPublicPublishingEnabled: false,
   retailMediaEnabled: true,
   digitalSignageEnabled: true
@@ -29,7 +33,11 @@ test("active and trial subscriptions receive plan entitlements", () => {
     assert.equal(entitlements.streamLimit, 5);
     assert.equal(entitlements.simultaneousStreamsEnabled, true);
     assert.equal(entitlements.promoUploadEnabled, true);
+    assert.equal(entitlements.retailRadioEnabled, true);
     assert.equal(entitlements.schoolRadioEnabled, true);
+    assert.equal(entitlements.onlineRadioEnabled, true);
+    assert.equal(entitlements.licensedMusicCatalogueLevel, "PROFESSIONAL");
+    assert.equal(entitlements.licensedMusicCatalogueEnabled, true);
     assert.equal(entitlements.schoolPublicPublishingEnabled, false);
     assert.equal(entitlements.retailMediaEnabled, true);
     assert.equal(entitlements.digitalSignageEnabled, true);
@@ -79,6 +87,57 @@ test("an organisation subscription can override the shared School Radio plan def
     }).schoolRadioEnabled,
     true
   );
+});
+
+test("Retail, School and Online Radio access resolve independently", () => {
+  const entitlements = resolveEntitlements({
+    status: "ACTIVE",
+    retailRadioEnabled: false,
+    schoolRadioEnabled: true,
+    onlineRadioEnabled: false,
+    plan
+  });
+
+  assert.equal(entitlements.retailRadioEnabled, false);
+  assert.equal(entitlements.schoolRadioEnabled, true);
+  assert.equal(entitlements.onlineRadioEnabled, false);
+  assert.deepEqual(entitlements.productAccessSource, {
+    retail: "SUBSCRIPTION_OVERRIDE",
+    school: "SUBSCRIPTION_OVERRIDE",
+    online: "SUBSCRIPTION_OVERRIDE",
+    licensedMusicCatalogue: "PLAN"
+  });
+});
+
+test("legacy generic service access does not silently grant Retail or Online Radio", () => {
+  const entitlements = resolveEntitlements({
+    status: "ACTIVE",
+    plan: {
+      ...plan,
+      retailRadioEnabled: undefined,
+      schoolRadioEnabled: false,
+      onlineRadioEnabled: undefined,
+      licensedMusicCatalogueLevel: undefined
+    }
+  });
+
+  assert.equal(entitlements.serviceEnabled, true);
+  assert.equal(entitlements.retailRadioEnabled, false);
+  assert.equal(entitlements.schoolRadioEnabled, false);
+  assert.equal(entitlements.onlineRadioEnabled, false);
+  assert.equal(entitlements.licensedMusicCatalogueLevel, "NONE");
+});
+
+test("Licensed Music Catalogue levels are ordered and fail closed", () => {
+  assert.equal(hasLicensedMusicCatalogueLevel("FOCUSED", "FOCUSED"), true);
+  assert.equal(hasLicensedMusicCatalogueLevel("PREMIUM", "PROFESSIONAL"), true);
+  assert.equal(hasLicensedMusicCatalogueLevel("FOCUSED", "PROFESSIONAL"), false);
+  assert.equal(hasLicensedMusicCatalogueLevel("UNKNOWN", "FOCUSED"), false);
+  assert.equal(hasLicensedMusicCatalogueLevel("PREMIUM", "UNKNOWN"), false);
+
+  const suspended = resolveEntitlements({ status: "SUSPENDED", plan });
+  assert.equal(suspended.licensedMusicCatalogueLevel, "NONE");
+  assert.equal(suspended.licensedMusicCatalogueEnabled, false);
 });
 
 test("controlled public School Radio publishing is separately entitled", () => {
@@ -160,7 +219,10 @@ test("suspended, cancelled, missing, and inactive plans deny service", () => {
     assert.equal(entitlements.streamLimit, 0);
     assert.equal(entitlements.simultaneousStreamsEnabled, false);
     assert.equal(entitlements.promoUploadEnabled, false);
+    assert.equal(entitlements.retailRadioEnabled, false);
     assert.equal(entitlements.schoolRadioEnabled, false);
+    assert.equal(entitlements.onlineRadioEnabled, false);
+    assert.equal(entitlements.licensedMusicCatalogueLevel, "NONE");
     assert.equal(entitlements.schoolPublicPublishingEnabled, false);
     assert.equal(entitlements.retailMediaEnabled, false);
     assert.equal(entitlements.digitalSignageEnabled, false);

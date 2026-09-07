@@ -247,6 +247,20 @@ enum SubscriptionStatus {
   SUSPENDED
 }
 
+enum PlanProductFamily {
+  RETAIL
+  SCHOOL
+  ONLINE
+  MULTI
+}
+
+enum LicensedMusicCatalogueLevel {
+  NONE
+  FOCUSED
+  PROFESSIONAL
+  PREMIUM
+}
+
 enum ComplimentaryAccessStatus {
   ISSUED
   ACTIVE
@@ -1888,40 +1902,51 @@ model SchoolEpisodeExchangeRequest {
 }
 
 model Plan {
-  id                            String   @id @default(cuid())
-  name                          String   @unique
-  code                          String   @unique
+  id                            String                      @id @default(cuid())
+  name                          String                      @unique
+  code                          String                      @unique
+  publicSlug                    String?                     @unique
+  productFamily                 PlanProductFamily?
+  tierNumber                    Int?
+  publiclyAvailable             Boolean                     @default(false)
   monthlyPriceCents             Int
-  stationLimit                  Int      @default(1)
+  stationLimit                  Int                         @default(1)
   storageLimitGb                Int
   listenerLimit                 Int
   maxBitrateKbps                Int
-  includesRuvanasCatalogue      Boolean  @default(false)
-  promoUploadEnabled            Boolean  @default(true)
-  schoolRadioEnabled            Boolean  @default(false)
-  schoolPublicPublishingEnabled Boolean  @default(false)
-  retailMediaEnabled            Boolean  @default(false)
-  digitalSignageEnabled         Boolean  @default(false)
-  active                        Boolean  @default(true)
-  createdAt                     DateTime @default(now())
-  updatedAt                     DateTime @updatedAt
+  includesRuvanasCatalogue      Boolean                     @default(false)
+  licensedMusicCatalogueLevel   LicensedMusicCatalogueLevel @default(NONE)
+  promoUploadEnabled            Boolean                     @default(true)
+  retailRadioEnabled            Boolean                     @default(false)
+  schoolRadioEnabled            Boolean                     @default(false)
+  onlineRadioEnabled            Boolean                     @default(false)
+  schoolPublicPublishingEnabled Boolean                     @default(false)
+  retailMediaEnabled            Boolean                     @default(false)
+  digitalSignageEnabled         Boolean                     @default(false)
+  active                        Boolean                     @default(true)
+  createdAt                     DateTime                    @default(now())
+  updatedAt                     DateTime                    @updatedAt
 
   subscriptions            Subscription[]
   complimentaryAccessCodes ComplimentaryAccessCode[]
+
+  @@index([productFamily, tierNumber, publiclyAvailable, active])
 }
 
 model Subscription {
-  id                                         String             @id @default(cuid())
-  organisationId                             String             @unique
+  id                                         String                       @id @default(cuid())
+  organisationId                             String                       @unique
   planId                                     String
-  status                                     SubscriptionStatus @default(TRIAL)
+  status                                     SubscriptionStatus           @default(TRIAL)
   currentPeriodEnd                           DateTime?
+  retailRadioEnabled                         Boolean?
   schoolRadioEnabled                         Boolean?
+  onlineRadioEnabled                         Boolean?
   schoolPublicPublishingEnabled              Boolean?
   retailMediaEnabled                         Boolean?
   digitalSignageEnabled                      Boolean?
-  complimentaryAccessCodeId                  String?            @unique
-  complimentaryAccessActive                  Boolean            @default(false)
+  complimentaryAccessCodeId                  String?                      @unique
+  complimentaryAccessActive                  Boolean                      @default(false)
   complimentaryAccessActivatedAt             DateTime?
   complimentaryPlanName                      String?
   complimentaryPlanCode                      String?
@@ -1930,13 +1955,16 @@ model Subscription {
   complimentaryListenerLimit                 Int?
   complimentaryMaxBitrateKbps                Int?
   complimentaryIncludesCatalogue             Boolean?
+  complimentaryLicensedMusicCatalogueLevel   LicensedMusicCatalogueLevel?
   complimentaryPromoUploadEnabled            Boolean?
+  complimentaryRetailRadioEnabled            Boolean?
   complimentarySchoolRadioEnabled            Boolean?
+  complimentaryOnlineRadioEnabled            Boolean?
   complimentarySchoolPublicPublishingEnabled Boolean?
   complimentaryRetailMediaEnabled            Boolean?
   complimentaryDigitalSignageEnabled         Boolean?
-  createdAt                                  DateTime           @default(now())
-  updatedAt                                  DateTime           @updatedAt
+  createdAt                                  DateTime                     @default(now())
+  updatedAt                                  DateTime                     @updatedAt
 
   organisation            Organisation                 @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   plan                    Plan                         @relation(fields: [planId], references: [id])
