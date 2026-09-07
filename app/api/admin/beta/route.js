@@ -11,6 +11,12 @@ import {
   normalizeBetaParticipant,
   normalizeBetaProgramme
 } from "@/lib/beta-operations.mjs";
+import {
+  betaReviewDecision,
+  betaReviewSnapshot,
+  buildBetaProgrammeInsights,
+  normalizeBetaReview
+} from "@/lib/beta-insights.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -39,6 +45,14 @@ const requestSchema = z.discriminatedUnion("action", [
     action: z.literal("SET_PARTICIPANT_STATUS"),
     participantId: z.string().min(1).max(191),
     status: z.enum(["ACTIVE", "PAUSED", "COMPLETED", "REMOVED"])
+  }).strict(),
+  z.object({
+    action: z.literal("RECORD_REVIEW"),
+    programmeId: z.string(),
+    decision: z.enum(["CONTINUE_BETA", "PAUSE_AND_FIX", "EXPAND_COHORT", "END_BETA"]),
+    reviewNote: z.string(),
+    evidenceReference: z.string().optional().nullable(),
+    nextCapacity: z.number().optional().nullable()
   }).strict(),
   z.object({
     action: z.literal("TRIAGE_FEEDBACK"),
@@ -167,6 +181,73 @@ export async function POST(request) {
         return updated;
       });
       return NextResponse.json({ ok: true, participant });
+    }
+
+    if (input.action === "RECORD_REVIEW") {
+      let reviewInput;
+      try { reviewInput = normalizeBetaReview(input); } catch (error) { return denied(error.message); }
+      const programme = await prisma.betaProgramme.findUnique({
+        where: { id: reviewInput.programmeId },
+        include: { participants: true, feedback: true }
+      });
+      if (!programme) return denied("Beta programme not found.", 404);
+      const insights = buildBetaProgrammeInsights(programme);
+      let outcome;
+      try {
+        outcome = betaReviewDecision({ programme, insights, review: reviewInput });
+        assertBetaTransition("programme", programme.status, outcome.nextStatus);
+      } catch (error) {
+        return denied(error.message, 409);
+      }
+      const snapshot = betaReviewSnapshot(insights, programme);
+      let result;
+      try {
+        result = await prisma.$transaction(async (tx) => {
+          const programmeUpdate = await tx.betaProgramme.updateMany({
+            where: {
+              id: programme.id,
+              status: programme.status,
+              maxOrganisations: programme.maxOrganisations
+            },
+            data: { status: outcome.nextStatus, maxOrganisations: outcome.nextCapacity }
+          });
+          if (programmeUpdate.count !== 1) throw new Error("BETA_REVIEW_CONFLICT");
+          const review = await tx.betaProgrammeReview.create({ data: {
+            programmeId: programme.id,
+            decision: reviewInput.decision,
+            reviewNote: reviewInput.reviewNote,
+            evidenceReference: reviewInput.evidenceReference,
+            snapshot,
+            reviewedByUserId: access.user.id
+          } });
+          const updatedProgramme = await tx.betaProgramme.findUniqueOrThrow({ where: { id: programme.id } });
+          await tx.auditLog.create({ data: {
+            actorUserId: access.user.id,
+            action: "BETA_RELEASE_DECISION_RECORDED",
+            entityType: "BetaProgrammeReview",
+            entityId: review.id,
+            details: {
+              programmeId: programme.id,
+              decision: review.decision,
+              previousStatus: programme.status,
+              nextStatus: updatedProgramme.status,
+              previousCapacity: programme.maxOrganisations,
+              nextCapacity: updatedProgramme.maxOrganisations,
+              readiness: insights.readiness,
+              openBlockers: insights.openBlockers,
+              billingChanged: false,
+              requestId
+            }
+          } });
+          return { review, programme: updatedProgramme };
+        });
+      } catch (error) {
+        if (error.message === "BETA_REVIEW_CONFLICT") {
+          return denied("This beta programme changed during the review. Refresh it before recording the decision.", 409);
+        }
+        throw error;
+      }
+      return NextResponse.json({ ok: true, ...result }, { status: 201 });
     }
 
     const existing = await prisma.betaFeedback.findUnique({ where: { id: input.feedbackId } });

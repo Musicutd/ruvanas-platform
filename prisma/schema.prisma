@@ -1285,6 +1285,13 @@ enum BetaFeedbackStatus {
   CLOSED
 }
 
+enum BetaReviewDecision {
+  CONTINUE_BETA
+  PAUSE_AND_FIX
+  EXPAND_COHORT
+  END_BETA
+}
+
 enum ProductionOrderStatus {
   DRAFT
   SUBMITTED
@@ -1445,6 +1452,7 @@ model User {
   admittedBetaParticipants               BetaParticipant[]                @relation("BetaParticipantAdmittedBy")
   submittedBetaFeedback                  BetaFeedback[]                   @relation("BetaFeedbackCreatedBy")
   triagedBetaFeedback                    BetaFeedback[]                   @relation("BetaFeedbackTriagedBy")
+  reviewedBetaProgrammes                 BetaProgrammeReview[]            @relation("BetaProgrammeReviewedBy")
   requestedAIJobs                        AIJob[]                          @relation("AIJobRequestedBy")
   reviewedAIJobs                         AIJob[]                          @relation("AIJobReviewedBy")
   recommendationFeedback                 RecommendationFeedback[]
@@ -6433,9 +6441,10 @@ model BetaProgramme {
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt
 
-  createdBy    User              @relation("BetaProgrammeCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  createdBy    User                  @relation("BetaProgrammeCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
   participants BetaParticipant[]
   feedback     BetaFeedback[]
+  reviews      BetaProgrammeReview[]
 
   @@index([status, createdAt])
 }
@@ -6489,6 +6498,23 @@ model BetaFeedback {
   @@index([programmeId, status, severity, createdAt])
   @@index([organisationId, status, createdAt])
   @@index([participantId, createdAt])
+}
+
+model BetaProgrammeReview {
+  id                String             @id @default(cuid())
+  programmeId       String
+  decision          BetaReviewDecision
+  reviewNote        String             @db.Text
+  evidenceReference String?
+  snapshot          Json
+  reviewedByUserId  String
+  createdAt         DateTime           @default(now())
+
+  programme  BetaProgramme @relation(fields: [programmeId], references: [id], onDelete: Cascade)
+  reviewedBy User          @relation("BetaProgrammeReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([programmeId, createdAt])
+  @@index([decision, createdAt])
 }
 
 model AuditExportSeal {

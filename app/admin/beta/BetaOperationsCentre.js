@@ -7,6 +7,10 @@ import {
   betaFeedbackCategoryLabel,
   betaProductLabel
 } from "@/lib/beta-operations.mjs";
+import {
+  BETA_REVIEW_DECISIONS,
+  betaReviewDecisionLabel
+} from "@/lib/beta-insights.mjs";
 import styles from "./beta-operations.module.css";
 
 async function callApi(payload) {
@@ -20,7 +24,7 @@ async function callApi(payload) {
   return body;
 }
 
-export default function BetaOperationsCentre({ role, initialProgrammes, organisations, summary }) {
+export default function BetaOperationsCentre({ role, initialProgrammes, organisations, summary, portfolio }) {
   const [programmes, setProgrammes] = useState(initialProgrammes);
   const [selectedId, setSelectedId] = useState(initialProgrammes[0]?.id || "");
   const [busy, setBusy] = useState(false);
@@ -63,12 +67,12 @@ export default function BetaOperationsCentre({ role, initialProgrammes, organisa
   return (
     <main className={styles.page}>
       <header className={styles.hero}>
-        <div><p className={styles.eyebrow}>STAGE 30A · CONTROLLED BETA</p><h1>Beta operations</h1><p>Admit selected organisations by product, track their participation and turn structured feedback into an accountable delivery queue.</p></div>
+        <div><p className={styles.eyebrow}>STAGE 30B · BETA INSIGHTS</p><h1>Beta operations</h1><p>Admit selected organisations by product, track their participation and turn structured feedback into accountable release decisions.</p></div>
         <div className={styles.boundary}><strong>No billing changes</strong><span>Beta participation never creates a subscription, changes a plan, grants a product or issues a complimentary code.</span></div>
       </header>
 
       {message ? <p className={styles.message} role="status">{message}</p> : null}
-      <section className={styles.metrics} aria-label="Beta programme summary"><Metric value={summary.activeProgrammes} label="Active programmes" /><Metric value={summary.activeParticipants} label="Active participants" /><Metric value={summary.openFeedback} label="Open feedback" /><Metric value={summary.blockers} label="Testing blockers" warning={summary.blockers > 0} /></section>
+      <section className={styles.metrics} aria-label="Beta programme summary"><Metric value={summary.activeProgrammes} label="Active programmes" /><Metric value={portfolio.organisations} label="Organisations" /><Metric value={portfolio.feedback} label="Feedback items" /><Metric value={summary.openFeedback} label="Open feedback" /><Metric value={portfolio.readyProgrammes} label="Ready for decision" /><Metric value={summary.blockers} label="Testing blockers" warning={summary.blockers > 0} /></section>
 
       <div className={styles.workspace}>
         <aside className={styles.sidebar}>
@@ -86,6 +90,8 @@ export default function BetaOperationsCentre({ role, initialProgrammes, organisa
         <section className={styles.main}>
           {!selected ? <div className={styles.empty}><h2>Create the first controlled beta</h2><p>Begin with a small cohort and admit only organisations whose existing product access has already been verified.</p></div> : <>
             <div className={styles.programmeHeader}><div><p className={styles.eyebrow}>{selected.status}</p><h2>{selected.name}</h2><p>{selected.description || "No programme description."}</p></div>{canControl ? <ProgrammeActions programme={selected} busy={busy} run={run} /> : null}</div>
+
+            <BetaInsightsPanel key={selected.id} programme={selected} canControl={canControl} busy={busy} run={run} />
 
             <section className={styles.section}>
               <div className={styles.sectionHeader}><div><h2>Participants</h2><p>Admission checks the organisation’s existing product entitlement and the cohort capacity.</p></div><span>{selected.participants.filter((item) => item.status === "ACTIVE").length} active</span></div>
@@ -110,6 +116,52 @@ export default function BetaOperationsCentre({ role, initialProgrammes, organisa
 }
 
 function Metric({ value, label, warning }) { return <div data-warning={warning}><strong>{value}</strong><span>{label}</span></div>; }
+
+function BetaInsightsPanel({ programme, canControl, busy, run }) {
+  const insights = programme.insights;
+  const [decision, setDecision] = useState("CONTINUE_BETA");
+  const [reviewNote, setReviewNote] = useState("");
+  const [evidenceReference, setEvidenceReference] = useState("");
+  const [nextCapacity, setNextCapacity] = useState(Math.min(500, programme.maxOrganisations + 5));
+  const totalCategoryFeedback = Math.max(1, insights.feedback);
+  const availableDecisions = BETA_REVIEW_DECISIONS.filter((item) => item.value !== "EXPAND_COHORT" || (insights.readiness === "READY_FOR_DECISION" && programme.maxOrganisations < 500));
+
+  function recordReview(event) {
+    event.preventDefault();
+    run({
+      action: "RECORD_REVIEW",
+      programmeId: programme.id,
+      decision,
+      reviewNote,
+      evidenceReference: evidenceReference || null,
+      nextCapacity: decision === "EXPAND_COHORT" ? Number(nextCapacity) : null
+    }, `${betaReviewDecisionLabel(decision)} decision recorded with an immutable evidence snapshot.`);
+  }
+
+  return <section className={`${styles.section} ${styles.insightsSection}`} aria-labelledby="beta-insights-title">
+    <div className={styles.sectionHeader}><div><h2 id="beta-insights-title">Evidence and release decision</h2><p>Aggregate product evidence only. Feedback text, customer names and contact details are excluded from review snapshots.</p></div><span className={styles.readiness} data-state={insights.readiness}>{insights.readiness.replaceAll("_", " ")}</span></div>
+    <div className={styles.insightMetrics}>
+      <Metric value={insights.activeOrganisations} label="Active organisations" />
+      <Metric value={insights.averageRating ?? "—"} label="Average rating" />
+      <Metric value={`${insights.responseRate}%`} label="Response coverage" />
+      <Metric value={`${insights.resolutionRate}%`} label="Resolution rate" />
+    </div>
+    <div className={styles.insightGrid}>
+      <div className={styles.chartCard}><h3>Product evidence</h3>{insights.products.map((item) => <div className={styles.productEvidence} key={item.product}><div><strong>{item.label}</strong><span>{item.participants} participants · {item.feedback} feedback · {item.averageRating ?? "—"}/5</span></div><div className={styles.bar} aria-label={`${item.label}: ${item.feedback} feedback items`}><span style={{ width: `${Math.min(100, (item.feedback / totalCategoryFeedback) * 100)}%` }} /></div></div>)}</div>
+      <div className={styles.chartCard}><h3>Feedback themes</h3>{insights.categories.map((item) => <div className={styles.categoryBar} key={item.value}><span>{betaFeedbackCategoryLabel(item.value)}</span><div className={styles.bar}><span style={{ width: `${(item.count / totalCategoryFeedback) * 100}%` }} /></div><b>{item.count}</b></div>)}</div>
+    </div>
+    {insights.findings.length ? <div className={styles.findings}><strong>Readiness findings</strong><ul>{insights.findings.map((finding) => <li key={finding.code} data-level={finding.level}>{finding.message}</li>)}</ul></div> : <div className={styles.clearGate}><strong>Evidence gate clear</strong><span>The programme has enough participation and feedback, with no untriaged items or open blockers.</span></div>}
+    {canControl && ["ACTIVE", "PAUSED"].includes(programme.status) ? <form className={styles.reviewForm} onSubmit={recordReview}>
+      <div className={styles.reviewHeading}><div><h3>Record accountable decision</h3><p>The decision stores the current aggregate evidence and never changes a subscription or product entitlement.</p></div></div>
+      <label>Decision<select value={decision} onChange={(event) => setDecision(event.target.value)}>{availableDecisions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+      {decision === "EXPAND_COHORT" ? <label>New maximum organisations<input type="number" min={programme.maxOrganisations + 1} max="500" required value={nextCapacity} onChange={(event) => setNextCapacity(event.target.value)} /></label> : null}
+      <label>Review note<textarea required minLength="20" maxLength="4000" rows="4" value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} placeholder="Summarise the evidence, decision and accountable next action." /></label>
+      <label>Evidence reference {!["EXPAND_COHORT", "END_BETA"].includes(decision) ? <small>optional</small> : null}<input required={["EXPAND_COHORT", "END_BETA"].includes(decision)} maxLength="300" value={evidenceReference} onChange={(event) => setEvidenceReference(event.target.value)} placeholder="Review meeting, test report or evidence identifier" /></label>
+      <button disabled={busy}>Record decision</button>
+    </form> : null}
+    <div className={styles.reviewHistory}><h3>Decision history</h3>{!programme.reviews.length ? <p className={styles.muted}>No formal review has been recorded.</p> : programme.reviews.map((review) => <article key={review.id}><div><strong>{betaReviewDecisionLabel(review.decision)}</strong><span>{new Date(review.createdAt).toLocaleString()} · {review.reviewedBy.name || review.reviewedBy.email}</span></div><p>{review.reviewNote}</p>{review.evidenceReference ? <small>Evidence: {review.evidenceReference}</small> : null}</article>)}</div>
+  </section>;
+}
 
 function ProgrammeActions({ programme, busy, run }) {
   const actions = programme.status === "DRAFT" ? ["ACTIVE", "CLOSED"] : programme.status === "ACTIVE" ? ["PAUSED", "CLOSED"] : programme.status === "PAUSED" ? ["ACTIVE", "CLOSED"] : [];
