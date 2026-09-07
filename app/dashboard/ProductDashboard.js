@@ -1,5 +1,6 @@
 import Link from "next/link";
 import styles from "./product-dashboard.module.css";
+import WorkspaceTabs from "./WorkspaceTabs";
 
 export default function ProductDashboard({ eyebrow, title, description, status, statusTone = "healthy", metrics, primaryAction, sections, complimentary, onboarding }) {
   const heroAction = onboarding && !onboarding.complete ? onboarding.nextAction : primaryAction;
@@ -63,7 +64,15 @@ export default function ProductDashboard({ eyebrow, title, description, status, 
         </article>)}
       </section>
 
-      <div className={styles.sectionGrid}>
+      <WorkspaceTabs
+        label={`${title} tools`}
+        intro="Choose one area at a time. Your place is kept when you move between tabs."
+        tabs={sections.map((section) => ({
+          id: section.title.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+          label: section.title,
+          description: section.eyebrow
+        }))}
+      >
         {sections.map((section) => <section key={section.title} className={styles.section}>
           <div className={styles.sectionHeading}>
             <p className={styles.eyebrow}>{section.eyebrow}</p>
@@ -77,7 +86,7 @@ export default function ProductDashboard({ eyebrow, title, description, status, 
             </Link>)}
           </div>
         </section>)}
-      </div>
+      </WorkspaceTabs>
     </main>
   );
 }
