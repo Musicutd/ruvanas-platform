@@ -64,6 +64,16 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   const cookieA = sessionCookie(accountA);
   assert.ok(cookieA);
 
+  const onlineRelogin = await api("/api/auth/login", {
+    method: "POST",
+    body: {
+      email: `integration-a-${suffix}@example.invalid`,
+      password: "correct-horse-battery-staple"
+    }
+  });
+  assert.equal(onlineRelogin.status, 200, await onlineRelogin.clone().text());
+  assert.equal((await onlineRelogin.json()).recommendedDashboardRoute, "/dashboard/radio");
+
   const me = await api("/api/me", { cookie: cookieA });
   assert.equal(me.status, 200);
 
@@ -652,6 +662,16 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   assert.equal(accountB.status, 201, await accountB.clone().text());
   const cookieB = sessionCookie(accountB);
   const accountBBody = await accountB.json();
+
+  const retailRelogin = await api("/api/auth/login", {
+    method: "POST",
+    body: {
+      email: `integration-b-${suffix}@example.invalid`,
+      password: "correct-horse-battery-staple"
+    }
+  });
+  assert.equal(retailRelogin.status, 200, await retailRelogin.clone().text());
+  assert.equal((await retailRelogin.json()).recommendedDashboardRoute, "/dashboard/retail");
 
   const retailStationAttempt = await api("/api/stations", {
     method: "POST",

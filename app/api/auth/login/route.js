@@ -2,6 +2,8 @@ import bcrypt from "bcryptjs";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSession } from "@/lib/auth";
+import { resolveEntitlements } from "@/lib/entitlements.mjs";
+import { loginLandingRoute } from "@/lib/login-routing.mjs";
 import { clearRateLimit, consumeRateLimit, createRateLimitKey } from "@/lib/rate-limit";
 import { securityLog } from "@/lib/security-log";
 
@@ -60,12 +62,32 @@ export async function POST(request) {
       );
     }
 
-    await createSession(user.id);
+    const membership = await prisma.organisationMember.findFirst({
+      where: { userId: user.id },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      include: {
+        organisation: {
+          include: {
+            subscription: { include: { plan: true, billingContract: true } }
+          }
+        }
+      }
+    });
+    const recommendedDashboardRoute = loginLandingRoute({
+      role: user.role,
+      hasMembership: Boolean(membership),
+      entitlements: membership
+        ? resolveEntitlements(membership.organisation.subscription)
+        : {}
+    });
+
+    await createSession(user.id, membership?.organisationId || null);
     await clearRateLimit(rateLimitKey);
     securityLog("info", "LOGIN_SUCCEEDED", request, { userId: user.id });
 
     return NextResponse.json({
       success: true,
+      recommendedDashboardRoute,
       user: {
         id: user.id,
         name: user.name,
