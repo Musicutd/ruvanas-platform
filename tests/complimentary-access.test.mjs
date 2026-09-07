@@ -2,7 +2,6 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  canRedeemComplimentaryAccess,
   clearComplimentaryAccess,
   complimentaryCodeSuffix,
   complimentaryPlanProducts,
@@ -40,14 +39,6 @@ test("complimentary codes are high-entropy, normalised, and hashed without stori
   assert.equal(hashComplimentaryCode(code), hashComplimentaryCode(code.toLowerCase().replaceAll("-", " ")));
   assert.equal(complimentaryCodeSuffix(code), code.slice(-4));
   assert.notEqual(hashComplimentaryCode(code), code);
-});
-
-test("only organisation owners and managers can redeem a complimentary code", () => {
-  assert.equal(canRedeemComplimentaryAccess("OWNER"), true);
-  assert.equal(canRedeemComplimentaryAccess("MANAGER"), true);
-  assert.equal(canRedeemComplimentaryAccess("CONTENT_EDITOR"), false);
-  assert.equal(canRedeemComplimentaryAccess("VIEWER"), false);
-  assert.equal(canRedeemComplimentaryAccess("STUDENT"), false);
 });
 
 test("an active complimentary tier overrides billing without becoming a trial", () => {

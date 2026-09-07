@@ -41,7 +41,6 @@ export default async function ComplimentaryAccessPage() {
         organisationName: item.organisation.name,
         planName: item.plan.name,
         planCode: item.plan.code,
-        codeSuffix: item.codeSuffix,
         status: item.status,
         note: item.note,
         createdAt: item.createdAt.toISOString(),
