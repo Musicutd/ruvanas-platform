@@ -16,10 +16,15 @@
 .home, .activeHome { margin-top: 15px; min-height: 43px; display: flex; align-items: center; justify-content: space-between; border-radius: 9px; color: #4b5870; font-size: 13px; font-weight: 900; padding: 0 11px; text-decoration: none; }
 .activeHome { background: #17243a; color: #fff; }
 .home:hover, .home:focus-visible { background: #f1f4f8; color: #172033; }
-.navSection { margin-top: 23px; }
-.navSection h2 { margin: 0 10px; color: #8d5d00; font-size: 10px; font-weight: 950; letter-spacing: 1px; text-transform: uppercase; }
-.navSection > p { margin: 6px 10px 9px; color: #8a95a5; font-size: 10px; line-height: 1.4; }
+.navSection { margin-top: 10px; }
+.navSectionButton { width: 100%; min-height: 42px; display: flex; align-items: center; justify-content: space-between; gap: 10px; border: 0; border-radius: 9px; background: transparent; color: #8d5d00; cursor: pointer; padding: 8px 10px; text-align: left; }
+.navSectionButton:hover, .navSectionButton:focus-visible { background: #f5f1e8; color: #664500; }
+.navSectionButton span, .navSectionButton strong, .navSectionButton small { display: block; }
+.navSectionButton strong { font-size: 10px; font-weight: 950; letter-spacing: 1px; text-transform: uppercase; }
+.navSectionButton small { margin-top: 5px; color: #8a95a5; font-size: 10px; font-weight: 600; line-height: 1.35; text-transform: none; }
+.navSectionButton b { color: #9c7a35; font-size: 16px; }
 .navSection ul { margin: 0; padding: 0; list-style: none; }
+.navSection ul[hidden] { display: none; }
 .link, .activeLink, .lockedLink { min-height: 38px; display: flex; align-items: center; justify-content: space-between; gap: 8px; border-radius: 8px; color: #536075; font-size: 12px; font-weight: 800; padding: 0 10px; text-decoration: none; }
 .link:hover, .link:focus-visible { background: #f1f4f8; color: #172033; }
 .activeLink { background: #fff4d7; color: #6d4800; box-shadow: inset 3px 0 #e4a72f; }
@@ -27,7 +32,7 @@
 .lockedLink small { color: #a16d09; font-size: 9px; font-weight: 900; }
 .content { min-width: 0; min-height: calc(100vh - 68px); }
 .scrim { display: none; }
-.brand:focus-visible, .home:focus-visible, .activeHome:focus-visible, .link:focus-visible, .activeLink:focus-visible, .lockedLink:focus-visible { outline: 3px solid #6ea8fe; outline-offset: 2px; }
+.brand:focus-visible, .home:focus-visible, .activeHome:focus-visible, .link:focus-visible, .activeLink:focus-visible, .lockedLink:focus-visible, .navSectionButton:focus-visible { outline: 3px solid #6ea8fe; outline-offset: 2px; }
 
 @media (max-width: 980px) {
   .topbar { grid-template-columns: auto auto 1fr auto; padding-inline: 16px; }

@@ -17,6 +17,7 @@ import SchoolPublicationControl from "./SchoolPublicationControl";
 import SchoolPublicationOperationsClient from "./SchoolPublicationOperationsClient";
 import SchoolPilotReadinessClient from "./SchoolPilotReadinessClient";
 import SchoolPilotOperationsClient from "./SchoolPilotOperationsClient";
+import WorkspaceTabs from "../WorkspaceTabs";
 
 const managerRoles = new Set(["OWNER", "MANAGER"]);
 
@@ -150,24 +151,44 @@ export default function SchoolRadioClient() {
     {error ? <div style={styles.error}>{error}</div> : null}
     {notice ? <div style={styles.notice}>{notice}</div> : null}
 
-    <SchoolSafeguardingReadinessClient />
-    {canManage ? <SchoolStudentAccessClient /> : null}
-    {canManage ? <SchoolPublicationControl /> : null}
-    {canManage ? <SchoolPublicationOperationsClient /> : null}
-    {canManage ? <SchoolPilotReadinessClient /> : null}
-    {canManage ? <SchoolPilotOperationsClient /> : null}
-    <AcademyWorkspaceClient />
-    <SchoolExchangeClient />
-    <AudioLabClient />
-    <WaveformEditorClient />
-    <MultitrackStudioClient />
-    <PodcastNewsLiveClient />
-    <LearningWorkspaceClient />
-    <ShowBuilderClient />
-    <SchoolEditorialClient />
-    <SchoolNoticeboardClient announcements={data.announcements} locations={data.locations} canManage={canManage} />
+    <WorkspaceTabs
+      label="School Radio tools"
+      intro="Work through one area at a time. Open another tab when you are ready to continue."
+      tabs={[
+        { id: "overview", label: "Overview", description: "Readiness and launch status" },
+        { id: "safety", label: "People & safety", description: "Students and safeguarding" },
+        { id: "studio", label: "Studio", description: "Record and edit audio" },
+        { id: "programmes", label: "Programmes", description: "Shows, learning and exchange" },
+        { id: "publishing", label: "Publishing", description: "Review, schedule and release" }
+      ]}
+    >
+      <div style={styles.tabStack}>
+        <SchoolSafeguardingReadinessClient />
+        {canManage ? <SchoolPilotReadinessClient /> : null}
+        {canManage ? <SchoolPilotOperationsClient /> : null}
+      </div>
+      <div style={styles.tabStack}>
+        {canManage ? <SchoolStudentAccessClient /> : <section style={styles.card}><p style={styles.eyebrow}>PEOPLE & SAFETY</p><h2 style={styles.cardTitle}>Manager access required</h2><p style={styles.hint}>An owner or manager controls student access and safeguarding settings.</p></section>}
+      </div>
+      <div style={styles.tabStack}>
+        <AudioLabClient />
+        <WaveformEditorClient />
+        <MultitrackStudioClient />
+      </div>
+      <div style={styles.tabStack}>
+        <AcademyWorkspaceClient />
+        <SchoolExchangeClient />
+        <LearningWorkspaceClient />
+        <ShowBuilderClient />
+      </div>
+      <div style={styles.tabStack}>
+        {canManage ? <SchoolPublicationControl /> : null}
+        {canManage ? <SchoolPublicationOperationsClient /> : null}
+        <PodcastNewsLiveClient />
+        <SchoolEditorialClient />
+        <SchoolNoticeboardClient announcements={data.announcements} locations={data.locations} canManage={canManage} />
 
-    <section style={styles.grid}>
+        <section style={styles.grid}>
       <form onSubmit={createAnnouncement} style={styles.card}>
         <p style={styles.eyebrow}>1 · PREPARE</p><h2 style={styles.cardTitle}>New staff announcement</h2>
         <label style={styles.label}>Title<input style={styles.input} value={announcement.title} onChange={(event) => setAnnouncement((current) => ({ ...current, title: event.target.value }))} maxLength={160} required /></label>
@@ -184,9 +205,9 @@ export default function SchoolRadioClient() {
         <div style={styles.twoColumns}><label style={styles.label}>Starts<input name="startsAt" style={styles.input} type="datetime-local" value={slot.startsAt} onChange={(event) => setSlot((current) => ({ ...current, startsAt: event.target.value }))} required /></label><label style={styles.label}>Ends<input name="endsAt" style={styles.input} type="datetime-local" value={slot.endsAt} onChange={(event) => setSlot((current) => ({ ...current, endsAt: event.target.value }))} required /></label></div>
         <button style={styles.primary} disabled={working || !approvedAnnouncements.length}>Approve and schedule</button>
       </form> : <section style={styles.card}><p style={styles.eyebrow}>3 · SCHEDULE</p><h2 style={styles.cardTitle}>Manager approval required</h2><p style={styles.hint}>An owner or manager reviews announcements and creates broadcast slots.</p></section>}
-    </section>
+        </section>
 
-    <section style={{ ...styles.card, marginTop: 20 }}><p style={styles.eyebrow}>2 · REVIEW & HISTORY</p><h2 style={styles.cardTitle}>Announcements</h2>
+        <section style={styles.card}><p style={styles.eyebrow}>2 · REVIEW & HISTORY</p><h2 style={styles.cardTitle}>Announcements</h2>
       {!data.announcements.length ? <p style={styles.hint}>No announcements have been created.</p> : <div style={styles.list}>{data.announcements.map((item) => <article key={item.id} style={styles.item}>
         <div style={styles.itemHeader}><div><h3 style={styles.itemTitle}>{item.title}</h3><p style={styles.hint}>{item.promoVersion.promoAsset.name} · created by {item.createdBy.name || item.createdBy.email}</p></div><Badge value={item.status} /></div>
         {item.summary ? <p style={styles.body}>{item.summary}</p> : null}{item.reviewNotes ? <p style={styles.reviewNote}>Review note: {item.reviewNotes}</p> : null}
@@ -194,13 +215,16 @@ export default function SchoolRadioClient() {
         {!canManage && new Set(["DRAFT", "CHANGES_REQUESTED"]).has(item.status) ? <button style={styles.secondary} disabled={working} onClick={() => review(item, "SUBMIT")}>Submit for review</button> : null}
         {item.broadcastSlots.length ? <div style={styles.slots}>{item.broadcastSlots.map((broadcast) => <div key={broadcast.id} style={styles.slot}><span><strong>{broadcast.zone ? `${broadcast.zone.location.name} — ${broadcast.zone.name}` : broadcast.location?.name}</strong><br />{formatDate(broadcast.startsAt)} → {formatDate(broadcast.endsAt)}</span><span><Badge value={broadcast.status} />{canManage && broadcast.status === "APPROVED" ? <button style={styles.cancelLink} disabled={working} onClick={() => cancelSlot(broadcast)}>Cancel</button> : null}</span></div>)}</div> : null}
       </article>)}</div>}
-    </section>
+        </section>
+      </div>
+    </WorkspaceTabs>
     <p style={styles.privacy}>Safety boundary: staff-managed operations · invited students use a separate read-only private workspace · private publishing policy.</p>
   </main>;
 }
 
 const styles = {
   page: { minHeight: "100vh", background: "#101827", color: "#fff", padding: "36px max(20px, calc((100vw - 1160px)/2)) 72px", fontFamily: "Arial, sans-serif" },
+  tabStack: { display: "grid", gap: 20 },
   back: { color: "#f4b942", textDecoration: "none", fontWeight: 800 },
   header: { display: "flex", justifyContent: "space-between", gap: 20, alignItems: "flex-start", margin: "34px 0 24px" },
   eyebrow: { color: "#f4b942", fontSize: 12, fontWeight: 900, letterSpacing: 1.2, margin: "0 0 8px" },
