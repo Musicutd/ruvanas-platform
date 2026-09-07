@@ -53,7 +53,10 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
       name: "Integration Owner A",
       organisationName: `Integration A ${suffix}`,
       email: `integration-a-${suffix}@example.invalid`,
-      password: "correct-horse-battery-staple"
+      password: "correct-horse-battery-staple",
+      product: "RETAIL",
+      tier: "retail-start",
+      source: "ADMIN_TEST"
     }
   });
   assert.equal(accountA.status, 201, await accountA.clone().text());
@@ -640,7 +643,10 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
       name: "Integration Owner B",
       organisationName: `Integration B ${suffix}`,
       email: `integration-b-${suffix}@example.invalid`,
-      password: "correct-horse-battery-staple"
+      password: "correct-horse-battery-staple",
+      product: "RETAIL",
+      tier: "retail-start",
+      source: "ADMIN_TEST"
     }
   });
   assert.equal(accountB.status, 201, await accountB.clone().text());
@@ -1122,14 +1128,14 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
       3
     );
 
-    const starterPlan = await db.plan.findUnique({ where: { code: "STARTER" } });
-    assert.ok(starterPlan);
+    const schoolStarterPlan = await db.plan.findUnique({ where: { code: "SCHOOL_START" } });
+    assert.ok(schoolStarterPlan);
     const createdOrganisationResponse = await api("/api/admin/organisations", {
       method: "POST",
       cookie: cookieA,
       body: {
         name: `School Radio QA ${suffix}`,
-        planId: starterPlan.id,
+        planId: schoolStarterPlan.id,
         assignCurrentUser: true
       }
     });
@@ -1139,7 +1145,7 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
       await createdOrganisationResponse.clone().text()
     );
     const createdOrganisation = (await createdOrganisationResponse.json()).organisation;
-    assert.equal(createdOrganisation.subscription.planId, starterPlan.id);
+    assert.equal(createdOrganisation.subscription.planId, schoolStarterPlan.id);
     assert.ok(
       await db.organisationMember.findUnique({
         where: {

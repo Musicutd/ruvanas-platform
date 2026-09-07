@@ -19,7 +19,7 @@ function sessionCookie(response) { return response.headers.get("set-cookie")?.sp
 async function register(label, clientAddress) {
   const suffix = randomUUID();
   const email = `advanced-scheduler-${label}-${suffix}@example.invalid`;
-  const response = await api("/api/auth/register", { method: "POST", clientAddress, body: { name: `${label} Scheduler Owner`, organisationName: `${label} Scheduler ${suffix}`, email, password: "correct-horse-battery-staple" } });
+  const response = await api("/api/auth/register", { method: "POST", clientAddress, body: { name: `${label} Scheduler Owner`, organisationName: `${label} Scheduler ${suffix}`, email, password: "correct-horse-battery-staple", product: "ONLINE", tier: "online-starter", source: "ADMIN_TEST" } });
   assert.equal(response.status, 201, await response.clone().text());
   const body = await response.json();
   return { cookie: sessionCookie(response), organisationId: body.organisation.id, userId: body.user.id };

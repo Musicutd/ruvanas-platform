@@ -17,7 +17,7 @@ function sessionCookie(response) { return response.headers.get("set-cookie")?.sp
 
 test("Radio Clock draft, exact-hour publication and revisions remain tenant scoped", async () => {
   const suffix = randomUUID();
-  const registration = await api("/api/auth/register", { method: "POST", body: { name: "Radio Clock Owner", organisationName: `Radio Clock ${suffix}`, email: `radio-clock-${suffix}@example.invalid`, password: "correct-horse-battery-staple" } });
+  const registration = await api("/api/auth/register", { method: "POST", body: { name: "Radio Clock Owner", organisationName: `Radio Clock ${suffix}`, email: `radio-clock-${suffix}@example.invalid`, password: "correct-horse-battery-staple", product: "ONLINE", tier: "online-starter", source: "ADMIN_TEST" } });
   assert.equal(registration.status, 201, await registration.clone().text());
   const registrationBody = await registration.json();
   const cookie = sessionCookie(registration);

@@ -1,4 +1,5 @@
 import styles from "./home.module.css";
+import { registrationProducts } from "@/lib/registration-experience.mjs";
 
 export const metadata = {
   title: "Ruvanas | Professional Radio Platforms by 21-Three",
@@ -41,98 +42,44 @@ const services = [
   ["Room to grow", "Start with one location or station, then add streams, schools, signage and campaigns as you expand."],
 ];
 
+const approvedProductPlans = registrationProducts();
+
 const pricingFamilies = [
   {
     id: "retail",
+    productId: "RETAIL",
     eyebrow: "In-house & Retail Radio",
     title: "Build the right atmosphere in every location.",
-    text: "Professional music, messages and reporting for independent shops, growing businesses and multi-site brands.",
-    tiers: [
-      {
-        slug: "retail-start",
-        name: "Retail Start",
-        price: "9.99",
-        description: "For one independent shop or customer-facing space.",
-        features: ["1 active location", "10 GB media storage", "Audio up to 192 kbps", "Scheduling and AutoDJ", "Web player and device enrolment"],
-      },
-      {
-        slug: "retail-business",
-        name: "Retail Business",
-        price: "29",
-        description: "For a growing business operating several locations.",
-        featured: true,
-        features: ["Up to 3 active locations", "50 GB media storage", "Audio up to 256 kbps", "Branded promos and announcements", "Proof of play and reporting"],
-      },
-      {
-        slug: "retail-network",
-        name: "Retail Network",
-        price: "69",
-        description: "For established brands that need central control.",
-        features: ["Up to 10 active locations", "200 GB media storage", "High-quality 320 kbps audio", "Advanced analytics and campaigns", "Retail media and signage tools"],
-      },
-    ],
+    text: "Professional music, messages and reporting for independent shops, growing businesses and multi-site brands."
   },
   {
     id: "school",
+    productId: "SCHOOL",
     eyebrow: "School Radio",
     title: "Give every school a safe, creative voice.",
-    text: "Purpose-built tools for supervised production, protected publishing and confident school-wide broadcasting.",
-    tiers: [
-      {
-        slug: "school-starter",
-        name: "School Starter",
-        price: "19",
-        description: "For one school beginning its radio journey.",
-        features: ["1 School Radio workspace", "25 GB protected media", "Supervised student production", "Review and approval workflows", "Scheduled school broadcasts"],
-      },
-      {
-        slug: "school-pro",
-        name: "School Pro",
-        price: "49",
-        description: "For an active school with a growing programme.",
-        featured: true,
-        features: ["Everything in School Starter", "100 GB protected media", "Live supervised sessions", "Podcast and episode production", "Digital noticeboards and analytics"],
-      },
-      {
-        slug: "school-academy",
-        name: "School Academy",
-        price: "129",
-        description: "For academies and groups managing several schools.",
-        features: ["Up to 10 school workspaces", "Multi-school administration", "Verified episode exchange", "Central safeguarding oversight", "Priority onboarding and support"],
-      },
-    ],
+    text: "Purpose-built tools for supervised production, protected publishing and confident school-wide broadcasting."
   },
   {
     id: "online",
+    productId: "ONLINE",
     eyebrow: "Complete Online Radio",
     title: "Launch a station built to reach listeners everywhere.",
-    text: "Live and automated broadcasting, public listening and professional station operations in one complete platform.",
-    tiers: [
-      {
-        slug: "online-start",
-        name: "Online Start",
-        price: "14.99",
-        description: "For a new online station building its audience.",
-        features: ["1 public radio channel", "Up to 100 simultaneous listeners", "25 GB media storage", "Audio up to 192 kbps", "AutoDJ and public web player"],
-      },
-      {
-        slug: "online-pro",
-        name: "Online Pro",
-        price: "49",
-        description: "For an established station ready to grow.",
-        featured: true,
-        features: ["Up to 3 public channels", "Up to 1,000 simultaneous listeners", "200 GB media storage", "High-quality 320 kbps audio", "Live shows, AutoDJ and analytics"],
-      },
-      {
-        slug: "online-network",
-        name: "Online Network",
-        price: "119",
-        description: "For ambitious broadcasters running a network.",
-        features: ["Up to 10 public channels", "Up to 5,000 simultaneous listeners", "500 GB media storage", "Advanced scheduling and operations", "Priority support and growth planning"],
-      },
-    ],
+    text: "Live and automated broadcasting, public listening and professional station operations in one complete platform."
   },
-];
+].map((family) => ({
+  ...family,
+  tiers: approvedProductPlans.find((product) => product.id === family.productId)?.plans || []
+}));
+
+function planFeatures(plan) {
+  return [
+    `Up to ${plan.stationLimit} ${plan.productFamily === "RETAIL" ? "location or station" : "station"}${plan.stationLimit === 1 ? "" : "s"}`,
+    `${plan.storageLimitGb} GB media storage`,
+    `Up to ${plan.listenerLimit.toLocaleString("en-GB")} active listeners`,
+    `High-quality audio up to ${plan.maxBitrateKbps} kbps`,
+    plan.catalogueDescription
+  ];
+}
 
 function BrandMark() {
   return (
@@ -359,18 +306,16 @@ export default function HomePage() {
               </div>
               <div className={styles.pricingGrid}>
                 {family.tiers.map((tier) => (
-                  <article className={`${styles.priceCard} ${tier.featured ? styles.featuredTier : ""}`} key={tier.name}>
-                    {tier.featured ? <span className={styles.popularLabel}>Most popular</span> : null}
+                  <article className={`${styles.priceCard} ${tier.tierNumber === 3 ? styles.featuredTier : ""}`} key={tier.name}>
+                    {tier.tierNumber === 3 ? <span className={styles.popularLabel}>Most popular</span> : null}
                     <h4>{tier.name}</h4>
                     <p className={styles.tierDescription}>{tier.description}</p>
-                    <div className={styles.price}>
-                      <span>€</span><strong>{tier.price}</strong><small>/ month</small>
-                    </div>
-                    <a className={tier.featured ? styles.priceCtaFeatured : styles.priceCta} href={`/register?platform=${family.id}&tier=${tier.slug}`}>
-                      Choose {tier.name} <ArrowIcon />
+                    <div className={`${styles.price} ${styles.priceLabel}`}><strong>{tier.priceLabel}</strong></div>
+                    <a className={tier.tierNumber === 3 ? styles.priceCtaFeatured : styles.priceCta} href={`/register?platform=${family.id}&tier=${tier.publicSlug}`}>
+                      {tier.enterpriseContactRequired ? "Discuss " : "Choose "}{tier.name} <ArrowIcon />
                     </a>
                     <ul>
-                      {tier.features.map((feature) => <li key={feature}><span>✓</span>{feature}</li>)}
+                      {planFeatures(tier).map((feature) => <li key={feature}><span>✓</span>{feature}</li>)}
                     </ul>
                   </article>
                 ))}
