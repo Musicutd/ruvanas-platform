@@ -39,7 +39,7 @@ function Meter({ label, value, limit, detail }) {
   );
 }
 
-export default async function SubscriberAccountPage() {
+export default async function SubscriberAccountPage({ searchParams }) {
   const context = await getActiveOrganisationContext({
     subscription: { include: { plan: true, billingContract: true } },
     stations: { select: { id: true, status: true, storageUsedMb: true } },
@@ -51,6 +51,7 @@ export default async function SubscriberAccountPage() {
   if (!context.membership) redirect("/register");
 
   const { membership } = context;
+  const query = await searchParams;
   const organisation = membership.organisation;
   const subscription = organisation.subscription;
   const plan = resolveEffectivePlan(subscription);
@@ -96,6 +97,16 @@ export default async function SubscriberAccountPage() {
   const monthlyPrice = plan && !entitlements.complimentaryAccess
     ? formatSubscriberCurrency(plan.monthlyPriceCents)
     : null;
+  const requestedProduct = {
+    retail: "Retail Radio",
+    school: "School Radio",
+    online: "Online Radio"
+  }[String(query?.product || "").toLowerCase()] || null;
+  const accessNotice = requestedProduct
+    ? query?.reason === "service-inactive"
+      ? `${requestedProduct} is paused because this organisation's service is not active. Contact Ruvanas to review the account.`
+      : `${requestedProduct} is not included in this organisation's current access. Contact Ruvanas if you would like to add it.`
+    : null;
 
   return (
     <main className={styles.page}>
@@ -118,6 +129,8 @@ export default async function SubscriberAccountPage() {
           </div>
           <span className={styles.roleBadge}>{membership.role.replaceAll("_", " ").toLowerCase()}</span>
         </header>
+
+        {accessNotice ? <section className={styles.accessNotice} role="status"><strong>Product access</strong><span>{accessNotice}</span></section> : null}
 
         <section className={styles.overviewGrid} aria-label="Account overview">
           <article className={styles.planCard}>

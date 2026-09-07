@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireOrganisationAccess, ORGANISATION_MANAGER_ROLES } from "@/lib/access-control";
+import { requireOrganisationProductAccess, ORGANISATION_MANAGER_ROLES } from "@/lib/access-control";
 import { stationDomainDnsName, stationDomainDnsValue } from "@/lib/station-website.mjs";
 import { verifyStationDomainDns } from "@/lib/station-website-service";
 
@@ -8,7 +8,7 @@ export async function PATCH(request, { params }) {
   try {
     const domain = await prisma.stationDomain.findFirst({ where: { id: String(params.domainId || ""), stationId: String(params.stationId || "") }, include: { station: { select: { stationWebsiteEnabled: true } } } });
     if (!domain) return NextResponse.json({ error: "Station domain not found." }, { status: 404 });
-    const access = await requireOrganisationAccess(domain.organisationId, ORGANISATION_MANAGER_ROLES);
+    const access = await requireOrganisationProductAccess(domain.organisationId, "ONLINE", ORGANISATION_MANAGER_ROLES);
     if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
     let body;
     try { body = await request.json(); }

@@ -72,13 +72,13 @@ export default function PlayerSetupClient({ players, zones, canManage, configure
         body: JSON.stringify(form)
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Unable to prepare the shop player.");
+      if (!response.ok) throw new Error(data.error || "Unable to prepare the player.");
       setEnrolment(data.player);
       setForm((current) => ({ ...current, name: "" }));
       await refreshReadiness({ quiet: true });
       router.refresh();
     } catch (actionError) {
-      setError(safeWorkflowMessage(actionError, "Unable to prepare the shop player."));
+      setError(safeWorkflowMessage(actionError, "Unable to prepare the player."));
     } finally { setBusy(""); }
   }
 
@@ -92,13 +92,13 @@ export default function PlayerSetupClient({ players, zones, canManage, configure
         body: JSON.stringify({ note: replacement.note, replacementName: replacement.replacementName, confirmReplacement: replacement.confirmed })
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Unable to replace the shop player.");
+      if (!response.ok) throw new Error(data.error || "Unable to replace the player.");
       setEnrolment(data.replacement);
       setReplacement({ playerId: "", note: "", replacementName: "", confirmed: false });
       await refreshReadiness({ quiet: true });
       router.refresh();
     } catch (actionError) {
-      setError(safeWorkflowMessage(actionError, "Unable to replace the shop player."));
+      setError(safeWorkflowMessage(actionError, "Unable to replace the player."));
     } finally { setBusy(""); }
   }
 
@@ -118,16 +118,16 @@ export default function PlayerSetupClient({ players, zones, canManage, configure
       <div><span style={styles.label}>Device rule</span><strong>One device per player</strong></div>
     </section>
 
-    <WorkflowProgress title="First shop go-live" steps={progress} />
+    <WorkflowProgress title="First player go-live" steps={progress} />
 
     <aside style={styles.guidance}>
       <strong>Complete one step at a time.</strong>
-      <span>The progress line uses live device evidence. It cannot mark a shop ready until recent playback is confirmed.</span>
+      <span>The progress line uses live device evidence. It cannot mark a listening area ready until recent playback is confirmed.</span>
     </aside>
 
     {canManage ? <section style={styles.card}>
-      <h2 style={styles.title}>Prepare a shop player</h2>
-      <p style={styles.copy}>Create one enrolled player for each shop or playback zone, within your plan allowance.</p>
+      <h2 style={styles.title}>Prepare a player</h2>
+      <p style={styles.copy}>Create one enrolled player for each location or playback area, within your plan allowance.</p>
       <form onSubmit={createPlayer} style={styles.form}>
         <label style={styles.field}>Location and zone
           <select value={form.zoneId} onChange={(event) => setForm({ ...form, zoneId: event.target.value })} style={styles.input}>
@@ -135,15 +135,15 @@ export default function PlayerSetupClient({ players, zones, canManage, configure
           </select>
         </label>
         <label style={styles.field}>Player name
-          <input value={form.name} maxLength={120} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Marsa main-shop player" style={styles.input} />
+          <input value={form.name} maxLength={120} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Marsa main-area player" style={styles.input} />
         </label>
         <button disabled={busy || currentConfigured >= limit || !form.zoneId || form.name.trim().length < 2} style={styles.primary}>{busy === "create" ? "Preparing…" : "Create enrolment"}</button>
       </form>
-      {currentConfigured >= limit ? <p style={styles.warning}>Your configured player allowance is full. Replace an existing player to move a shop to new hardware.</p> : null}
+      {currentConfigured >= limit ? <p style={styles.warning}>Your configured player allowance is full. Replace an existing player to move a listening area to new hardware.</p> : null}
     </section> : null}
 
     {canManage && activePlayers.length ? <section style={styles.card}>
-      <h2 style={styles.title}>Replace a shop device</h2>
+      <h2 style={styles.title}>Replace a player device</h2>
       <p style={styles.copy}>This immediately disables the selected device, releases its active stream, and creates a one-time code for its replacement in the same zone.</p>
       <form onSubmit={replacePlayer} style={styles.replaceForm}>
         <label style={styles.field}>Current player
@@ -156,7 +156,7 @@ export default function PlayerSetupClient({ players, zones, canManage, configure
           <input value={replacement.replacementName} maxLength={120} onChange={(event) => setReplacement({ ...replacement, replacementName: event.target.value })} style={styles.input} />
         </label>
         <label style={styles.field}>Reason
-          <input value={replacement.note} maxLength={2000} onChange={(event) => setReplacement({ ...replacement, note: event.target.value })} placeholder="Example: shop tablet replaced" style={styles.input} />
+          <input value={replacement.note} maxLength={2000} onChange={(event) => setReplacement({ ...replacement, note: event.target.value })} placeholder="Example: location tablet replaced" style={styles.input} />
         </label>
         <label style={styles.confirm}><input type="checkbox" checked={replacement.confirmed} onChange={(event) => setReplacement({ ...replacement, confirmed: event.target.checked })} /> I understand the current device will stop immediately.</label>
         <button disabled={busy || !replacement.playerId || replacement.note.trim().length < 3 || !replacement.confirmed} style={styles.danger}>{busy === "replace" ? "Replacing…" : "Disable and replace"}</button>
@@ -169,11 +169,11 @@ export default function PlayerSetupClient({ players, zones, canManage, configure
       <code style={styles.code}>{enrolment.enrolmentCode}</code>
       <div style={styles.actionRow}>
         <button type="button" onClick={copyEnrolmentCode} style={styles.secondary}>Copy code</button>
-        <a href="/player" target="_blank" rel="noreferrer" style={styles.linkButton}>Open shop player</a>
+        <a href="/player" target="_blank" rel="noreferrer" style={styles.linkButton}>Open player</a>
       </div>
       <span>This code is shown only here and expires {new Date(enrolment.enrolmentExpiresAt).toLocaleString()}.</span>
       <ol style={styles.steps}>
-        <li>Open the shop player on the device that will remain in this location.</li>
+        <li>Open the player on the device that will remain in this location.</li>
         <li>Enter the one-time code and keep the player page open.</li>
         <li>Allow browser audio if the device asks, then start playback.</li>
         <li>Return here; readiness refreshes automatically every 15 seconds.</li>
@@ -182,10 +182,10 @@ export default function PlayerSetupClient({ players, zones, canManage, configure
 
     <section style={styles.card}>
       <div style={styles.sectionHeader}>
-        <div><h2 style={styles.title}>Shop go-live readiness</h2><p style={styles.copy}>Live evidence from the enrolled device, assigned channel and recent playback.</p></div>
+        <div><h2 style={styles.title}>Player go-live readiness</h2><p style={styles.copy}>Live evidence from the enrolled device, assigned channel and recent playback.</p></div>
         <button type="button" onClick={() => refreshReadiness()} disabled={refreshing} style={styles.secondary}>{refreshing ? "Refreshing…" : "Refresh status"}</button>
       </div>
-      {!playerRows.length ? <p style={styles.copy}>No shop players have been configured.</p> : <div style={styles.list}>{playerRows.map((player) => {
+      {!playerRows.length ? <p style={styles.copy}>No players have been configured.</p> : <div style={styles.list}>{playerRows.map((player) => {
         const readiness = player.readiness;
         return <article key={player.id} style={styles.player}>
           <div style={styles.playerHeader}>

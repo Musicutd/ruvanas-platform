@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireOrganisationAccess, ORGANISATION_CONTENT_ROLES } from "@/lib/access-control";
+import { requireOrganisationProductAccess, ORGANISATION_CONTENT_ROLES } from "@/lib/access-control";
 import { LISTENER_REQUEST_STATUSES, safeListenerRequest } from "@/lib/listener-interaction.mjs";
 
 export const dynamic = "force-dynamic";
@@ -9,7 +9,7 @@ export async function GET(request, { params }) {
   try {
     const station = await prisma.station.findUnique({ where: { id: String(params.stationId || "") }, select: { id: true, organisationId: true } });
     if (!station) return NextResponse.json({ error: "Station not found." }, { status: 404 });
-    const access = await requireOrganisationAccess(station.organisationId, ORGANISATION_CONTENT_ROLES);
+    const access = await requireOrganisationProductAccess(station.organisationId, "ONLINE", ORGANISATION_CONTENT_ROLES);
     if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
     const status = new URL(request.url).searchParams.get("status")?.toUpperCase();
     const where = { stationId: station.id, organisationId: station.organisationId, ...(LISTENER_REQUEST_STATUSES.includes(status) ? { status } : {}) };

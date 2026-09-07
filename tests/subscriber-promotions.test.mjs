@@ -50,10 +50,14 @@ test("promotion summaries use safe target and lifecycle labels", () => {
   assert.equal(promotionStatusLabel({ status: "PUBLISHED", effectiveFrom: "2026-08-01", effectiveTo: "2026-08-10" }, "2026-09-01"), "ENDED");
 });
 
-test("subscriber navigation exposes promotions only with an active radio service", () => {
-  const enabled = buildSubscriberNavigation({ entitlements: { serviceEnabled: true } }).flatMap((section) => section.items);
-  const disabled = buildSubscriberNavigation({ entitlements: { serviceEnabled: false } }).flatMap((section) => section.items);
-  assert.ok(enabled.some((item) => item.href === "/dashboard/promotions"));
+test("subscriber navigation exposes promotions only to active Retail or Online products", () => {
+  const retail = buildSubscriberNavigation({ entitlements: { serviceEnabled: true, retailRadioEnabled: true } }).flatMap((section) => section.items);
+  const online = buildSubscriberNavigation({ entitlements: { serviceEnabled: true, onlineRadioEnabled: true } }).flatMap((section) => section.items);
+  const school = buildSubscriberNavigation({ entitlements: { serviceEnabled: true, schoolRadioEnabled: true } }).flatMap((section) => section.items);
+  const disabled = buildSubscriberNavigation({ entitlements: { serviceEnabled: false, retailRadioEnabled: true, onlineRadioEnabled: true } }).flatMap((section) => section.items);
+  assert.ok(retail.some((item) => item.href === "/dashboard/promotions"));
+  assert.ok(online.some((item) => item.href === "/dashboard/promotions"));
+  assert.ok(!school.some((item) => item.href === "/dashboard/promotions"));
   assert.ok(!disabled.some((item) => item.href === "/dashboard/promotions"));
 });
 

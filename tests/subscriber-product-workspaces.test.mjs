@@ -3,21 +3,29 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 test("Retail, School and Online Radio have separate subscriber dashboards", async () => {
-  const [retail, school, radio, shared, styles] = await Promise.all([
+  const [retail, school, radio, radioLayout, stationLayout, schoolSuiteLayout, shared, styles] = await Promise.all([
     readFile(new URL("../app/dashboard/retail/page.js", import.meta.url), "utf8"),
     readFile(new URL("../app/dashboard/school/page.js", import.meta.url), "utf8"),
     readFile(new URL("../app/dashboard/radio/page.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/dashboard/radio/layout.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/stations/layout.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/dashboard/school-radio/layout.js", import.meta.url), "utf8"),
     readFile(new URL("../app/dashboard/ProductDashboard.js", import.meta.url), "utf8"),
     readFile(new URL("../app/dashboard/product-dashboard.module.css", import.meta.url), "utf8")
   ]);
 
   assert.match(retail, /Retail Radio dashboard/);
   assert.match(retail, /organisationId/);
+  assert.match(retail, /requireSubscriberProduct\("RETAIL"\)/);
   assert.match(school, /School Radio dashboard/);
-  assert.match(school, /schoolRadioEnabled/);
+  assert.match(school, /requireSubscriberProduct\("SCHOOL"/);
   assert.match(school, /schoolEpisode\.count\(\{ where: \{ organisationId:/);
   assert.match(radio, /Online Radio dashboard/);
   assert.match(radio, /stationLimit/);
+  assert.match(radio, /requireSubscriberProduct\("ONLINE"/);
+  assert.match(radioLayout, /requireSubscriberProduct\("ONLINE"\)/);
+  assert.match(stationLayout, /requireSubscriberProduct\("ONLINE"\)/);
+  assert.match(schoolSuiteLayout, /requireSubscriberProduct\("SCHOOL"\)/);
   assert.match(shared, /Service status/);
   assert.match(shared, /Complimentary service · active until Ruvanas stops it/);
   assert.match(styles, /@media \(max-width: 660px\)/);

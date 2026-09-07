@@ -31,20 +31,20 @@ export default async function SubscriberPlayersPage() {
     <header style={styles.header}><a href="/dashboard" style={styles.brand}>RUVANAS</a><a href="/dashboard" style={styles.back}>Back to dashboard</a></header>
     <section style={styles.content} id="main-content">
       <p style={styles.eyebrow}>CLIENT PLAYER SETUP</p>
-      <h1 style={styles.heading}>Shop players</h1>
-      <p style={styles.subtitle}>Prepare one secure enrolled player for each subscribed shop, and replace a shop device without sharing its player identity.</p>
+      <h1 style={styles.heading}>Players & devices</h1>
+      <p style={styles.subtitle}>Prepare one secure enrolled player for each subscribed location or listening area, and replace a device without sharing its player identity.</p>
       <ContextHelp
-        title="Help with your first shop player"
-        introduction="Use one enrolled player for each subscribed shop or listening zone. The setup page checks the real device connection and playback evidence for you."
+        title="Help with your first player"
+        introduction="Use one enrolled player for each subscribed location or listening area. The setup page checks the real device connection and playback evidence for you."
         items={[
-          { title: "Before enrolment", description: "The shop and listening zone must already be available. Ruvanas operations can prepare them when required." },
-          { title: "One-time code", description: "Enter the code only on the device that will remain in that shop. Do not reuse or share it." },
+          { title: "Before enrolment", description: "The location and listening area must already be available. Ruvanas operations can prepare them when required." },
+          { title: "One-time code", description: "Enter the code only on the device that will remain in that listening area. Do not reuse or share it." },
           { title: "Ready means verified", description: "The player is ready only after enrolment, channel assignment, recent contact and playback evidence." }
         ]}
         articleHref="/dashboard/help#shop-players"
-        articleLabel="Open the shop-player guide"
+        articleLabel="Open the player guide"
       />
-      {!serviceEnabled ? <p style={styles.warning}>Shop-player setup is currently unavailable for this subscription.</p> : null}
+      {!serviceEnabled ? <p style={styles.warning}>Player setup is currently unavailable for this subscription.</p> : null}
       <PlayerSetupClient
         players={players.map((player) => ({
           id: player.id,

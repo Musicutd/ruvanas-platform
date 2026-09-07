@@ -1,19 +1,14 @@
-import { redirect } from "next/navigation";
-import { getActiveOrganisationContext } from "@/lib/auth";
-import { resolveEntitlements } from "@/lib/entitlements.mjs";
 import { buildRetailProductOnboarding } from "@/lib/product-onboarding.mjs";
 import { prisma } from "@/lib/prisma";
+import { requireSubscriberProduct } from "@/lib/subscriber-product-access";
 import ProductDashboard from "../ProductDashboard";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Retail Radio dashboard | Ruvanas" };
 
 export default async function RetailRadioDashboard() {
-  const context = await getActiveOrganisationContext({ subscription: { include: { plan: true, billingContract: true } } });
-  if (!context?.membership) redirect("/dashboard");
+  const { context, entitlements } = await requireSubscriberProduct("RETAIL");
   const organisationId = context.membership.organisationId;
-  const entitlements = resolveEntitlements(context.membership.organisation.subscription);
-  if (!entitlements.serviceEnabled) redirect("/dashboard/account");
   const now = new Date();
   const [locations, players, liveStreams, activeMusicModes, schedules] = await Promise.all([
     prisma.location.count({ where: { organisationId, status: "ACTIVE" } }),
