@@ -54,8 +54,8 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
       organisationName: `Integration A ${suffix}`,
       email: `integration-a-${suffix}@example.invalid`,
       password: "correct-horse-battery-staple",
-      product: "RETAIL",
-      tier: "retail-start",
+      product: "ONLINE",
+      tier: "online-starter",
       source: "ADMIN_TEST"
     }
   });
@@ -652,6 +652,13 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   assert.equal(accountB.status, 201, await accountB.clone().text());
   const cookieB = sessionCookie(accountB);
   const accountBBody = await accountB.json();
+
+  const retailStationAttempt = await api("/api/stations", {
+    method: "POST",
+    cookie: cookieB,
+    body: { name: "Retail account station attempt" }
+  });
+  assert.equal(retailStationAttempt.status, 403);
 
   const crossTenantOrganisationSwitch = await api("/api/me/organisation", {
     method: "POST",
