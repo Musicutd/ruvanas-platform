@@ -53,7 +53,10 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
       name: "Integration Owner A",
       organisationName: `Integration A ${suffix}`,
       email: `integration-a-${suffix}@example.invalid`,
-      password: "correct-horse-battery-staple"
+      password: "correct-horse-battery-staple",
+      product: "RETAIL",
+      tier: "retail-start",
+      source: "ADMIN_TEST"
     }
   });
   assert.equal(accountA.status, 201, await accountA.clone().text());
@@ -640,7 +643,10 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
       name: "Integration Owner B",
       organisationName: `Integration B ${suffix}`,
       email: `integration-b-${suffix}@example.invalid`,
-      password: "correct-horse-battery-staple"
+      password: "correct-horse-battery-staple",
+      product: "RETAIL",
+      tier: "retail-start",
+      source: "ADMIN_TEST"
     }
   });
   assert.equal(accountB.status, 201, await accountB.clone().text());

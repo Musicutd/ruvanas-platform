@@ -25,7 +25,10 @@ test("Smart Playlist draft, preview and publication remain tenant-scoped", async
       name: "Smart Playlist Owner",
       organisationName: `Smart Playlist ${suffix}`,
       email: `smart-playlist-${suffix}@example.invalid`,
-      password: "correct-horse-battery-staple"
+      password: "correct-horse-battery-staple",
+      product: "ONLINE",
+      tier: "online-starter",
+      source: "ADMIN_TEST"
     }
   });
   assert.equal(registration.status, 201, await registration.clone().text());

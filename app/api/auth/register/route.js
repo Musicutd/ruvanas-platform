@@ -3,65 +3,18 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSession } from "@/lib/auth";
 import { consumeRateLimit, createRateLimitKey } from "@/lib/rate-limit";
+import {
+  createProductRegistration,
+  parseRegistrationRequest,
+  ProductRegistrationError
+} from "@/lib/product-registration.mjs";
 import { securityLog } from "@/lib/security-log";
 
 const REGISTRATION_LIMIT = 5;
 const REGISTRATION_WINDOW_MS = 60 * 60 * 1000;
 
-const STARTER_PLAN_CREATE = {
-  name: "Starter",
-  code: "STARTER",
-  monthlyPriceCents: 999,
-  stationLimit: 1,
-  storageLimitGb: 2,
-  listenerLimit: 100,
-  maxBitrateKbps: 128,
-  active: true
-};
-
-async function ensureStarterPlan() {
-  try {
-    return await prisma.plan.upsert({
-      where: { code: STARTER_PLAN_CREATE.code },
-      update: {},
-      create: STARTER_PLAN_CREATE
-    });
-  } catch (error) {
-    if (error?.code !== "P2002") throw error;
-
-    // Concurrent registrations can both observe an empty Plan table. If the
-    // other request wins either unique index, reuse the row it just created.
-    const existingPlan = await prisma.plan.findFirst({
-      where: {
-        OR: [
-          { code: STARTER_PLAN_CREATE.code },
-          { name: STARTER_PLAN_CREATE.name }
-        ]
-      }
-    });
-    if (existingPlan) return existingPlan;
-
-    throw error;
-  }
-}
-
-function createSlug(value) {
-  return value
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "")
-    .slice(0, 48);
-}
-
 export async function POST(request) {
   try {
-    const body = await request.json();
-
-    const name = String(body.name || "").trim();
-    const email = String(body.email || "").trim().toLowerCase();
-    const password = String(body.password || "");
-    const organisationName = String(body.organisationName || "").trim();
     const rateLimitKey = createRateLimitKey("register", request);
     const rateLimit = await consumeRateLimit({
       key: rateLimitKey,
@@ -77,103 +30,27 @@ export async function POST(request) {
       );
     }
 
-    if (!name || !email || !password || !organisationName) {
+    const parsed = parseRegistrationRequest(await request.json().catch(() => null));
+    if (!parsed.success) {
       return NextResponse.json(
-        { error: "Please complete all required fields." },
+        { error: "Please complete all required fields and choose a valid Ruvanas service and plan." },
         { status: 400 }
       );
     }
 
-    if (!email.includes("@")) {
-      return NextResponse.json(
-        { error: "Please enter a valid email address." },
-        { status: 400 }
-      );
-    }
-
-    if (password.length < 8) {
-      return NextResponse.json(
-        { error: "Your password must contain at least 8 characters." },
-        { status: 400 }
-      );
-    }
-
-    const existingUser = await prisma.user.findUnique({
-      where: { email }
-    });
-
-    if (existingUser) {
-      return NextResponse.json(
-        { error: "An account with this email already exists." },
-        { status: 409 }
-      );
-    }
-
-    const starterPlan = await ensureStarterPlan();
-
-    const baseSlug = createSlug(organisationName) || "ruvanas-client";
-    const uniqueSuffix = Math.random().toString(36).slice(2, 8);
-    const organisationSlug = `${baseSlug}-${uniqueSuffix}`;
-
-    const passwordHash = await bcrypt.hash(password, 12);
-    const trialEndsAt = new Date();
-    trialEndsAt.setDate(trialEndsAt.getDate() + 30);
-
-    const result = await prisma.$transaction(async (tx) => {
-      const user = await tx.user.create({
-        data: {
-          name,
-          email,
-          passwordHash,
-          role: "OWNER"
-        }
-      });
-
-      const organisation = await tx.organisation.create({
-        data: {
-          name: organisationName,
-          slug: organisationSlug
-        }
-      });
-
-      await tx.organisationMember.create({
-        data: {
-          userId: user.id,
-          organisationId: organisation.id,
-          role: "OWNER"
-        }
-      });
-
-      await tx.subscription.create({
-        data: {
-          organisationId: organisation.id,
-          planId: starterPlan.id,
-          status: "TRIAL",
-          currentPeriodEnd: trialEndsAt
-        }
-      });
-
-      await tx.auditLog.create({
-        data: {
-          organisationId: organisation.id,
-          actorUserId: user.id,
-          action: "ACCOUNT_REGISTERED",
-          entityType: "User",
-          entityId: user.id,
-          details: {
-            email,
-            plan: "STARTER"
-          }
-        }
-      });
-
-      return { user, organisation };
+    const passwordHash = await bcrypt.hash(parsed.data.password, 12);
+    const result = await createProductRegistration(prisma, {
+      registration: parsed.data,
+      passwordHash
     });
 
     await createSession(result.user.id, result.organisation.id);
     securityLog("info", "REGISTRATION_SUCCEEDED", request, {
       userId: result.user.id,
-      organisationId: result.organisation.id
+      organisationId: result.organisation.id,
+      productFamily: result.plan.productFamily,
+      planCode: result.plan.code,
+      registrationSource: parsed.data.source
     });
 
     return NextResponse.json(
@@ -187,11 +64,31 @@ export async function POST(request) {
         organisation: {
           id: result.organisation.id,
           name: result.organisation.name
-        }
+        },
+        subscription: {
+          status: result.subscription.status,
+          trialEndsAt: result.trialEndsAt,
+          plan: result.plan
+        },
+        recommendedDashboardRoute: result.recommendedDashboardRoute
       },
       { status: 201 }
     );
   } catch (error) {
+    if (error instanceof ProductRegistrationError) {
+      securityLog("warn", "REGISTRATION_REJECTED", request, {
+        reason: error.code
+      });
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+
+    if (error?.code === "P2002") {
+      return NextResponse.json(
+        { error: "An account with this email already exists." },
+        { status: 409 }
+      );
+    }
+
     securityLog("error", "REGISTRATION_ERROR", request, {
       error: error instanceof Error ? error.message : "unknown"
     });
