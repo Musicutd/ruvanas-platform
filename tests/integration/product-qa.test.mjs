@@ -126,6 +126,8 @@ test("three isolated QA tenants can traverse Tier 1–5 without billing events",
   assert.equal(await prisma.auditLog.count({
     where: { organisationId: { in: organisationIds }, action: "PRODUCT_QA_TIER_SWITCHED" }
   }), 15);
-  assert.equal(await prisma.billingContract.count({ where: { organisationId: { in: organisationIds } } }), 0);
+  assert.equal(await prisma.billingContract.count({
+    where: { subscription: { organisationId: { in: organisationIds } } }
+  }), 0);
   assert.equal(await prisma.billingInvoice.count({ where: { organisationId: { in: organisationIds } } }), 0);
 });
