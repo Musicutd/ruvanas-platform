@@ -69,6 +69,7 @@ test("operational and recovery warnings require attention while critical evidenc
 test("operator confirmations never claim automatic approval", () => {
   assert.deepEqual(LAUNCH_OPERATOR_CHECKS.map((item) => item.id), [
     "CI_ACCEPTANCE_PASSED",
+    "PRODUCT_REGISTRATION_ACCEPTANCE_PASSED",
     "PAID_DEPLOYMENT_LIVE",
     "PUBLIC_SMOKE_PASSED",
     "FREE_STAGING_SUSPENDED",

@@ -70,6 +70,9 @@ jobs:
       - name: Apply database migrations
         run: npx prisma migrate deploy
 
+      - name: Verify migration history is clean
+        run: npx prisma migrate status
+
       - name: Run unit tests
         run: npm test
 
@@ -89,7 +92,7 @@ jobs:
           cat /tmp/ruvanas-next.log
           exit 1
 
-      - name: Run final retail and School Radio platform acceptance
+      - name: Run final Retail, School and Online Radio platform acceptance
         env:
           INTEGRATION_BASE_URL: http://127.0.0.1:3100
         run: npm run test:acceptance

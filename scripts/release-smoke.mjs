@@ -25,8 +25,15 @@ async function expectProtectedPage(path) {
   results.push({ path, status: response.status, expectation: "LOGIN_REDIRECT" });
 }
 
-async function expectProtectedApi(path) {
-  const response = await request(path, { headers: { accept: "application/json" } });
+async function expectProtectedApi(path, { method = "GET", body } = {}) {
+  const headers = { accept: "application/json" };
+  if (!new Set(["GET", "HEAD"]).has(method)) headers.origin = baseUrl;
+  if (body !== undefined) headers["content-type"] = "application/json";
+  const response = await request(path, {
+    method,
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body)
+  });
   if (response.status !== 401 || !response.headers.get("x-request-id")) {
     throw new Error(`${path} did not return an attributable unauthenticated API response.`);
   }
@@ -36,12 +43,20 @@ async function expectProtectedApi(path) {
 await expectPublicPage("/", "Every space deserves its");
 await expectPublicPage("/login", "Welcome back");
 await expectPublicPage("/register", "Create your account");
+await expectPublicPage("/register?platform=retail&tier=retail-professional", "Retail Professional");
+await expectPublicPage("/register?platform=school&tier=school-create", "School Create");
+await expectPublicPage("/register?platform=online&tier=online-professional", "Online Professional");
 await expectPublicPage("/player", "Connecting player...");
 await expectProtectedPage("/dashboard");
+await expectProtectedPage("/dashboard/retail");
+await expectProtectedPage("/dashboard/school");
+await expectProtectedPage("/dashboard/radio");
+await expectProtectedPage("/admin/product-qa");
 await expectProtectedPage("/admin/recovery");
 await expectProtectedApi("/api/admin/recovery");
 await expectProtectedApi("/api/admin/operations/health");
 await expectProtectedApi("/api/admin/enterprise-scale");
+await expectProtectedApi("/api/admin/product-qa", { method: "PATCH", body: {} });
 await expectProtectedApi("/api/notifications");
 
 process.stdout.write(JSON.stringify({ event: "release_smoke_passed", baseUrl, checks: results }) + "\n");

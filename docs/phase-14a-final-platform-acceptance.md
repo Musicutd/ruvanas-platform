@@ -1,4 +1,4 @@
-# Stage 14A: final retail and School Radio platform acceptance
+# Stage 14A: final three product platform acceptance
 
 Stage 14A turns the master build specification's final architecture scenario into one explicit release gate. It does not add customer-facing features or change customer data. It assembles the existing automated evidence into a single controlled acceptance run.
 
@@ -12,9 +12,11 @@ The player lifecycle suite separately proves enrolment, assigned state, reconnec
 
 `npm run test:acceptance` runs, in order:
 
-1. the complete database-backed route and player lifecycle integration suite;
-2. the non-destructive release regression smoke; and
-3. the performance and capacity baseline.
+1. the product registration, entitlement, routing and controlled QA policy suite;
+2. the complete database-backed route and player lifecycle integration suite across Retail, School and Online Radio;
+3. the non-destructive release regression smoke;
+4. the performance and capacity baseline; and
+5. the enterprise isolation and scale policy suite.
 
 Failure stops the gate and prevents release. CI continues to run unit tests, schema validation, migrations, protected-media checks and the production build before this final gate.
 
@@ -27,7 +29,7 @@ The acceptance fixtures use generated identities and records on the disposable C
 ## Stage 14A exit criteria
 
 - Unit tests, migrations, production build and the final acceptance gate pass in CI.
-- The final retail and School Radio architecture scenarios remain supported without separate product forks.
+- The final Retail, School and Online Radio architecture scenarios remain supported without separate product forks.
 - Tenant isolation, capability boundaries, safeguarding, consent and public-response redaction remain enforced.
 - Player and signage delivery evidence is never described as listeners, viewers, reach or commercial causality.
 - Only the paid `ruvanas-platform` service may be deployed after approval; the free staging service stays suspended.

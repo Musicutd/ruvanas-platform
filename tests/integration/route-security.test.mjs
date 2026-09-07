@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
 import { PrismaClient } from "@prisma/client";
+import { LAUNCH_OPERATOR_CHECK_IDS } from "../../lib/launch-signoff.mjs";
 import { hashPlayerToken } from "../../lib/player-tokens.mjs";
 
 const baseUrl = process.env.INTEGRATION_BASE_URL || "http://127.0.0.1:3100";
@@ -895,7 +896,7 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     assert.equal(platformLaunchReadiness.status, 200, await platformLaunchReadiness.clone().text());
     const platformLaunchBody = await platformLaunchReadiness.json();
     assert.ok(["READY_FOR_OPERATOR_SIGN_OFF", "ATTENTION", "BLOCKED"].includes(platformLaunchBody.status));
-    assert.equal(platformLaunchBody.signoff.requiredCount, 5);
+    assert.equal(platformLaunchBody.signoff.requiredCount, LAUNCH_OPERATOR_CHECK_IDS.length);
     assert.equal(JSON.stringify(platformLaunchBody).includes("passwordHash"), false);
 
     const missingStreamProbe = await api("/api/admin/streams/not-a-station/probe", { method: "POST", cookie: cookieA });
