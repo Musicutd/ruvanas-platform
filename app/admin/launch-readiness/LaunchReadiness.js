@@ -91,7 +91,7 @@ export default function LaunchReadiness() {
           <Metric label="Active versions" value={report.deployment.activeVersions.length} warning={report.deployment.activeVersions.length !== 1} />
           <Metric label="Missing services" value={report.deployment.missingServices.length} warning={report.deployment.missingServices.length > 0} />
         </div>
-        <div style={styles.links}><Link href="/admin/operations" style={styles.link}>Review platform health</Link><Link href="/admin/recovery" style={styles.link}>Review backup & recovery</Link></div>
+        <div style={styles.links}><Link href="/admin/operations" style={styles.link}>Review platform health</Link><Link href="/admin/recovery" style={styles.link}>Review backup & recovery</Link><Link href="/admin/product-qa" style={styles.link}>Review Product QA</Link></div>
       </div>
 
       <div style={styles.card}>

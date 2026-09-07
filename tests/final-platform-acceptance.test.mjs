@@ -35,7 +35,14 @@ test("final acceptance is restricted to a local application and disposable datab
   }), /RUN_DATABASE_TESTS=1/);
 });
 
-test("final acceptance requires every integration, regression, and capacity step", () => {
+test("final acceptance requires product registration, three-product integration, regression, capacity, and scale evidence", () => {
+  assert.deepEqual(FINAL_PLATFORM_ACCEPTANCE_STEPS.map((step) => step.id), [
+    "product-registration-policy",
+    "three-product-integration",
+    "release-regression",
+    "capacity-baseline",
+    "enterprise-scale-policy"
+  ]);
   const passed = finalAcceptanceSummary(FINAL_PLATFORM_ACCEPTANCE_STEPS.map((step, index) => ({
     id: step.id,
     passed: true,
