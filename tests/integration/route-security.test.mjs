@@ -978,6 +978,22 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     });
     assert.equal(triageBetaFeedback.status, 200, await triageBetaFeedback.clone().text());
     assert.equal((await triageBetaFeedback.json()).feedback.status, "RESOLVED");
+    const recordBetaReview = await api("/api/admin/beta", {
+      method: "POST",
+      cookie: cookieA,
+      body: {
+        action: "RECORD_REVIEW",
+        programmeId: betaProgramme.id,
+        decision: "CONTINUE_BETA",
+        reviewNote: "Continue the controlled cohort while more product evidence is collected."
+      }
+    });
+    assert.equal(recordBetaReview.status, 201, await recordBetaReview.clone().text());
+    const betaReviewBody = await recordBetaReview.json();
+    assert.equal(betaReviewBody.review.decision, "CONTINUE_BETA");
+    assert.equal(betaReviewBody.programme.status, "ACTIVE");
+    assert.equal(betaReviewBody.review.snapshot.feedback, 1);
+    assert.equal(JSON.stringify(betaReviewBody.review.snapshot).includes("Controlled beta workflow"), false);
     const subscriptionAfterBeta = await db.subscription.findUniqueOrThrow({
       where: { organisationId: accountABody.organisation.id }
     });
@@ -985,6 +1001,7 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     assert.equal(subscriptionAfterBeta.status, subscriptionBeforeBeta.status);
     assert.equal(await db.auditLog.count({ where: { action: "BETA_PARTICIPANT_ADMITTED", entityId: betaParticipant.id } }), 1);
     assert.equal(await db.auditLog.count({ where: { action: "BETA_FEEDBACK_SUBMITTED", entityId: betaFeedback.id } }), 1);
+    assert.equal(await db.auditLog.count({ where: { action: "BETA_RELEASE_DECISION_RECORDED", entityId: betaReviewBody.review.id } }), 1);
 
     const missingStreamProbe = await api("/api/admin/streams/not-a-station/probe", { method: "POST", cookie: cookieA });
     assert.equal(missingStreamProbe.status, 404);

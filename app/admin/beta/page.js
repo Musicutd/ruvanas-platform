@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getAdminUser } from "@/lib/requireAdmin";
 import { resolveEntitlements } from "@/lib/entitlements.mjs";
 import { betaOperationsSummary } from "@/lib/beta-operations.mjs";
+import { buildBetaPortfolioInsights, buildBetaProgrammeInsights } from "@/lib/beta-insights.mjs";
 import BetaOperationsCentre from "./BetaOperationsCentre";
 
 export const dynamic = "force-dynamic";
@@ -34,6 +35,10 @@ export default async function BetaOperationsPage() {
             triagedBy: { select: { name: true, email: true } }
           },
           orderBy: [{ status: "asc" }, { severity: "desc" }, { createdAt: "desc" }]
+        },
+        reviews: {
+          include: { reviewedBy: { select: { name: true, email: true } } },
+          orderBy: { createdAt: "desc" }
         }
       },
       orderBy: { createdAt: "desc" }
@@ -50,13 +55,18 @@ export default async function BetaOperationsPage() {
     entitlements: resolveEntitlements(organisation.subscription),
     planName: organisation.subscription?.plan?.name || "No plan"
   }));
+  const programmesWithInsights = programmes.map((programme) => ({
+    ...programme,
+    insights: buildBetaProgrammeInsights(programme)
+  }));
 
   return (
     <BetaOperationsCentre
       role={adminUser.role}
-      initialProgrammes={serializable(programmes)}
+      initialProgrammes={serializable(programmesWithInsights)}
       organisations={serializable(organisationOptions)}
       summary={betaOperationsSummary(programmes)}
+      portfolio={buildBetaPortfolioInsights(programmes)}
     />
   );
 }
