@@ -57,7 +57,7 @@ function recorderType() {
   return ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/mp4"].find((type) => MediaRecorder.isTypeSupported(type)) || "";
 }
 
-export default function AudioLabClient() {
+export default function AudioLabClient({ requestedProjectId = "", experienceMode = "BEGINNER" }) {
   const [data, setData] = useState(null);
   const [draft, setDraft] = useState(emptyProject);
   const [projectId, setProjectId] = useState("");
@@ -93,11 +93,15 @@ export default function AudioLabClient() {
     const response = await fetch("/api/school-radio/audio-lab", { cache: "no-store" });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || "AudioLab could not be loaded.");
-    setData(payload);
-    setProjectId((current) => current || payload.projects[0]?.id || "");
+    const projects = (payload.projects || []).filter((project) => project.type !== "MULTITRACK");
+    setData({ ...payload, projects });
+    setProjectId((current) => current || projects[0]?.id || "");
   }, []);
 
   useEffect(() => { load().catch((loadError) => setError(loadError.message)); }, [load]);
+  useEffect(() => {
+    if (requestedProjectId && data?.projects.some((project) => project.id === requestedProjectId)) setProjectId(requestedProjectId);
+  }, [data, requestedProjectId]);
   useEffect(() => {
     const refresh = (event) => load().then(() => { if (event.detail?.projectId) setProjectId(event.detail.projectId); }).catch((loadError) => setError(loadError.message));
     window.addEventListener("ruvanas:audiolab-refresh", refresh);
@@ -147,6 +151,7 @@ export default function AudioLabClient() {
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || "The project could not be created.");
       setDraft(emptyProject); await load(); setProjectId(payload.project.id); setNotice("Quick Record project created.");
+      window.dispatchEvent(new CustomEvent("ruvanas:studio-projects-refresh"));
     } catch (actionError) { setError(actionError.message); } finally { setWorking(false); }
   }
 
@@ -282,6 +287,7 @@ export default function AudioLabClient() {
       const result = await completed.json().catch(() => ({}));
       if (!completed.ok) throw new Error(result.error || "The recording could not be finalised.");
       setProgress(100); setServerTake(result); await recoveryDelete(selected.id).catch(() => {}); setRecording(null); setNotice("Take uploaded safely. It is ready for teacher preview and audio approval."); await load();
+      window.dispatchEvent(new CustomEvent("ruvanas:studio-projects-refresh"));
     } catch (uploadError) { setError(uploadError.message); } finally { setWorking(false); }
   }
 
@@ -300,7 +306,7 @@ export default function AudioLabClient() {
 
   if (!data) return <section style={s.panel}><p style={s.hint}>{error || "Loading AudioLab…"}</p></section>;
   return <section id="audio-lab-quick-record" style={s.panel}>
-    <div style={s.heading}><div><p style={s.eyebrow}>STAGE 4C · AUDIOLAB QUICK RECORD</p><h2 style={s.title}>Record safely in the browser</h2><p style={s.hint}>Immutable source takes, local recovery, resumable protected uploads, non-destructive edits, and teacher preview.</p></div><span style={s.autosave}>{autosave}</span></div>
+    <div style={s.heading}><div><p style={s.eyebrow}>RECORD</p><h2 style={s.title}>Record safely in the browser</h2><p style={s.hint}>Immutable source takes, local recovery, resumable protected uploads, non-destructive edits, and teacher preview.</p></div><span style={s.autosave}>{experienceMode === "ADVANCED" ? "Advanced" : "Beginner"} · {autosave}</span></div>
     {error ? <div style={s.error}>{error}</div> : null}{notice ? <div style={s.notice}>{notice}</div> : null}
     <div style={s.grid}>
       <form style={s.card} onSubmit={createProject}><p style={s.eyebrow}>1 · PROJECT</p><h3 style={s.cardTitle}>New Quick Record</h3>
@@ -326,10 +332,16 @@ export default function AudioLabClient() {
       </section>
     </div>
     <div style={{ ...s.grid, marginTop: 16 }}>
-      <section style={s.card}><p style={s.eyebrow}>5 · NON-DESTRUCTIVE EDITS</p><h3 style={s.cardTitle}>Trim and finish</h3>
-        <div style={s.two}><label style={s.label}>Trim start (ms)<input style={s.input} type="number" min="0" value={edits.trimStartMs} onChange={(event) => setEdits({ ...edits, trimStartMs: Number(event.target.value) })} /></label><label style={s.label}>Trim end (ms)<input style={s.input} type="number" min="0" value={edits.trimEndMs} onChange={(event) => setEdits({ ...edits, trimEndMs: event.target.value })} placeholder="End of take" /></label></div>
-        <div style={s.two}><label style={s.label}>Fade in (ms)<input style={s.input} type="number" min="0" max="60000" value={edits.fadeInMs} onChange={(event) => setEdits({ ...edits, fadeInMs: Number(event.target.value) })} /></label><label style={s.label}>Fade out (ms)<input style={s.input} type="number" min="0" max="60000" value={edits.fadeOutMs} onChange={(event) => setEdits({ ...edits, fadeOutMs: Number(event.target.value) })} /></label></div>
-        <label style={s.check}><input type="checkbox" checked={edits.normalize} onChange={(event) => setEdits({ ...edits, normalize: event.target.checked })} /> Normalize for speech</label><label style={s.label}>Loudness target<select style={s.input} value={edits.targetLufs} onChange={(event) => setEdits({ ...edits, targetLufs: Number(event.target.value) })}><option value="-16">-16 LUFS · web/radio</option><option value="-18">-18 LUFS · gentle</option><option value="-23">-23 LUFS · broadcast</option></select></label><label style={s.check}><input type="checkbox" checked={edits.noiseCleanup} onChange={(event) => setEdits({ ...edits, noiseCleanup: event.target.checked })} /> Request optional noise cleanup</label><p style={s.hint}>The source recording is never overwritten. These edit decisions are versioned and applied by the processing pipeline.</p>
+      <section style={s.card}><p style={s.eyebrow}>5 · NON-DESTRUCTIVE FINISH</p><h3 style={s.cardTitle}>{experienceMode === "ADVANCED" ? "Trim and finish" : "Choose a simple finish"}</h3>
+        {experienceMode === "ADVANCED" ? <>
+          <div style={s.two}><label style={s.label}>Trim start (ms)<input style={s.input} type="number" min="0" value={edits.trimStartMs} onChange={(event) => setEdits({ ...edits, trimStartMs: Number(event.target.value) })} /></label><label style={s.label}>Trim end (ms)<input style={s.input} type="number" min="0" value={edits.trimEndMs} onChange={(event) => setEdits({ ...edits, trimEndMs: event.target.value })} placeholder="End of take" /></label></div>
+          <div style={s.two}><label style={s.label}>Fade in (ms)<input style={s.input} type="number" min="0" max="60000" value={edits.fadeInMs} onChange={(event) => setEdits({ ...edits, fadeInMs: Number(event.target.value) })} /></label><label style={s.label}>Fade out (ms)<input style={s.input} type="number" min="0" max="60000" value={edits.fadeOutMs} onChange={(event) => setEdits({ ...edits, fadeOutMs: Number(event.target.value) })} /></label></div>
+          <label style={s.check}><input type="checkbox" checked={edits.normalize} onChange={(event) => setEdits({ ...edits, normalize: event.target.checked })} /> Normalize for speech</label><label style={s.label}>Loudness target<select style={s.input} value={edits.targetLufs} onChange={(event) => setEdits({ ...edits, targetLufs: Number(event.target.value) })}><option value="-16">-16 LUFS · web/radio</option><option value="-18">-18 LUFS · gentle</option><option value="-23">-23 LUFS · broadcast</option></select></label><label style={s.check}><input type="checkbox" checked={edits.noiseCleanup} onChange={(event) => setEdits({ ...edits, noiseCleanup: event.target.checked })} /> Request optional noise cleanup</label>
+        </> : <label style={s.label}>Finish preset<select style={s.input} value={!edits.normalize ? "ORIGINAL" : edits.noiseCleanup ? "CLEAN_SPEECH" : "CLEAR_SPEECH"} onChange={(event) => {
+          const preset = event.target.value;
+          setEdits({ ...edits, normalize: preset !== "ORIGINAL", targetLufs: -16, noiseCleanup: preset === "CLEAN_SPEECH" });
+        }}><option value="CLEAR_SPEECH">Clear speech · balanced level</option><option value="CLEAN_SPEECH">Clean speech · reduce steady noise</option><option value="ORIGINAL">Keep original level</option></select><span style={s.hint}>Open Waveform for precise trim, fade and timing controls.</span></label>}
+        <p style={s.hint}>The source recording is never overwritten. These edit decisions are versioned and applied by the processing pipeline.</p>
       </section>
       <section style={s.card}><p style={s.eyebrow}>6 · PREVIEW & UPLOAD</p><h3 style={s.cardTitle}>Teacher preview</h3>
         {previewUrl ? <audio controls src={previewUrl} style={s.audio} /> : serverTake?.streamUrl ? <audio controls src={serverTake.streamUrl} style={s.audio} /> : <p style={s.hint}>Stop a recording to preview it here.</p>}

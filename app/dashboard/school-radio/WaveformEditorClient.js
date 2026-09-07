@@ -10,7 +10,7 @@ const newId = () => crypto.randomUUID();
 const seconds = (milliseconds) => (Number(milliseconds || 0) / 1000).toFixed(2);
 const milliseconds = (value) => Math.max(0, Math.round(Number(value || 0) * 1000));
 
-export default function WaveformEditorClient() {
+export default function WaveformEditorClient({ requestedProjectId = "", experienceMode, onExperienceModeChange }) {
   const [projects, setProjects] = useState([]);
   const [projectId, setProjectId] = useState("");
   const [editor, setEditor] = useState(null);
@@ -20,7 +20,7 @@ export default function WaveformEditorClient() {
   const [cursorMs, setCursorMs] = useState(0);
   const [selection, setSelection] = useState({ startMs: 0, endMs: 0 });
   const [looping, setLooping] = useState(false);
-  const [advanced, setAdvanced] = useState(false);
+  const [localMode, setLocalMode] = useState("BEGINNER");
   const [zoom, setZoom] = useState(1);
   const [markerType, setMarkerType] = useState("EDIT_NOTE");
   const [message, setMessage] = useState("");
@@ -32,13 +32,15 @@ export default function WaveformEditorClient() {
   const durationMs = useMemo(() => timelineDuration(state.clips), [state.clips]);
   const sourceTake = useMemo(() => editor?.takes.find((take) => state.clips.some((clip) => clip.mediaAssetId === take.mediaAsset.id)) || editor?.takes[0], [editor, state.clips]);
   const peaks = sourceTake?.waveformPeaks || [];
+  const advanced = (experienceMode || localMode) === "ADVANCED";
 
   const loadProjects = useCallback(async () => {
     const response = await fetch("/api/school-radio/audio-lab", { cache: "no-store" });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || "Waveform projects could not be loaded.");
-    setProjects(payload.projects || []);
-    setProjectId((current) => current || payload.projects?.[0]?.id || "");
+    const editableProjects = (payload.projects || []).filter((project) => project.type !== "MULTITRACK");
+    setProjects(editableProjects);
+    setProjectId((current) => current || editableProjects[0]?.id || "");
   }, []);
 
   const loadEditor = useCallback(async () => {
@@ -51,6 +53,9 @@ export default function WaveformEditorClient() {
   }, [projectId]);
 
   useEffect(() => { loadProjects().catch((loadError) => setError(loadError.message)); }, [loadProjects]);
+  useEffect(() => {
+    if (requestedProjectId && projects.some((project) => project.id === requestedProjectId)) setProjectId(requestedProjectId);
+  }, [projects, requestedProjectId]);
   useEffect(() => { loadEditor().catch((loadError) => setError(loadError.message)); }, [loadEditor]);
   useEffect(() => {
     const hasActiveWork = editor?.takes.some((take) => ["PENDING", "RUNNING"].includes(take.waveformStatus)) || editor?.renders.some((render) => ["QUEUED", "RUNNING"].includes(render.status));
@@ -156,6 +161,7 @@ export default function WaveformEditorClient() {
       if (!response.ok) throw new Error(payload.error || "The waveform action failed.");
       setEditor(payload); setState(payload.state); setHistory([]); setFuture([]);
       setMessage(action === "QUEUE_RENDER" ? "Final render queued. The background audio worker will prepare the review copy." : action === "INITIALIZE" ? "The source take is ready in the non-destructive timeline." : `Project saved as version ${payload.currentVersion}.`);
+      window.dispatchEvent(new CustomEvent("ruvanas:studio-projects-refresh"));
     } catch (actionError) { setError(actionError.message); } finally { setWorking(false); }
   }
 
@@ -165,7 +171,7 @@ export default function WaveformEditorClient() {
 
   if (!projects.length) return <section style={s.panel}><p style={s.hint}>{error || "Create and upload an AudioLab take to unlock the waveform editor."}</p></section>;
   return <section style={s.panel} aria-labelledby="waveform-title">
-    <div style={s.heading}><div><p style={s.eyebrow}>STAGE 4D · WAVEFORM EDITOR</p><h2 id="waveform-title" style={s.title}>Shape the programme without touching the source</h2><p style={s.hint}>Cached waveform peaks, versioned edits, markers, undo/redo, and server-rendered review copies.</p></div><button style={s.secondary} onClick={() => setAdvanced((value) => !value)}>{advanced ? "Beginner controls" : "Advanced controls"}</button></div>
+    <div style={s.heading}><div><p style={s.eyebrow}>WAVEFORM</p><h2 id="waveform-title" style={s.title}>Shape the programme without touching the source</h2><p style={s.hint}>Cached waveform peaks, versioned edits, markers, undo/redo, and server-rendered review copies.</p></div><button type="button" style={s.secondary} onClick={() => { const next = advanced ? "BEGINNER" : "ADVANCED"; setLocalMode(next); onExperienceModeChange?.(next); }}>{advanced ? "Use Beginner" : "Use Advanced"}</button></div>
     {error ? <div style={s.error}>{error}</div> : null}{message ? <div style={s.notice}>{message}</div> : null}
     <label style={s.label}>AudioLab project<select style={s.input} value={projectId} onChange={(event) => setProjectId(event.target.value)}>{projects.map((project) => <option key={project.id} value={project.id}>{project.title}</option>)}</select></label>
     {editor && !state.clips.length ? <div style={s.empty}><p style={s.hint}>Choose a protected take to place it on the timeline. Its source file will remain unchanged.</p><div style={s.actions}>{editor.takes.map((take) => <button key={take.id} style={s.primary} disabled={working || !take.durationMs} onClick={() => send("INITIALIZE", { takeId: take.id })}>Use {take.mediaAsset.name} {take.waveformStatus === "READY" ? "· waveform ready" : "· analysing"}</button>)}</div></div> : null}
