@@ -85,10 +85,11 @@ test("catalogue validation rejects cross-product access and malformed tier sets"
   assert.throws(() => validatePublicPlanCatalogue(malformed), /exactly one product family/i);
 });
 
-test("the database migration and Super Admin view expose the authoritative catalogue safely", async () => {
-  const [migration, adminPage] = await Promise.all([
+test("the database migration and Super Admin controls expose the authoritative catalogue safely", async () => {
+  const [migration, adminPage, organisationRoute] = await Promise.all([
     readFile(new URL("../prisma/migrations/20261027000000_stage_29r_2_product_capabilities/migration.sql", import.meta.url), "utf8"),
-    readFile(new URL("../app/admin/plans/page.js", import.meta.url), "utf8")
+    readFile(new URL("../app/admin/plans/page.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/admin/organisations/route.js", import.meta.url), "utf8")
   ]);
 
   for (const plan of PUBLIC_PLAN_CATALOGUE) {
@@ -99,4 +100,7 @@ test("the database migration and Super Admin view expose the authoritative catal
   assert.match(adminPage, /Licensed Music Catalogue/);
   assert.match(adminPage, /adminUser\?\.role !== "SUPER_ADMIN"/);
   assert.doesNotMatch(adminPage, /supplier/i);
+  assert.match(organisationRoute, /planId: z\.string\(\)\.trim\(\)\.min\(1\)\.max\(191\)/);
+  assert.match(organisationRoute, /where: \{ id: parsed\.data\.planId, active: true \}/);
+  assert.doesNotMatch(organisationRoute, /planId: z\.string\(\)\.cuid\(\)/);
 });

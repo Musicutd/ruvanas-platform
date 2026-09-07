@@ -68,7 +68,10 @@ export async function GET() {
 const createSchema = z.object({
   name: z.string().trim().min(2).max(160),
   slug: z.string().trim().max(180).optional(),
-  planId: z.string().cuid(),
+  // Public catalogue plans use stable, human-readable database IDs while
+  // legacy plans may still use CUIDs. Authority comes from the active-plan
+  // database lookup below, so accept either bounded identifier shape here.
+  planId: z.string().trim().min(1).max(191),
   assignCurrentUser: z.boolean().default(true)
 });
 
