@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { destroySession } from "@/lib/auth";
 
-export async function POST(request) {
+export async function POST() {
   try {
     await destroySession();
 
-    return NextResponse.redirect(new URL("/login", request.url), 303);
+    return new NextResponse(null, {
+      status: 303,
+      headers: { location: "/login" }
+    });
   } catch (error) {
     console.error("Logout failed:", error);
 
