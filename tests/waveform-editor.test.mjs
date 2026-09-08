@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { adjustSelection, deleteSelection, duplicateSelection, normalizeEditorState, silenceSelection, splitAt, timelineDuration, trimToSelection } from "../lib/waveform-editor.mjs";
+import { adjustSelection, copySelection, deleteSelection, duplicateSelection, normalizeEditorState, pasteSelection, silenceSelection, splitAt, timelineDuration, trimToSelection } from "../lib/waveform-editor.mjs";
 
 const source = { clientId: "source", kind: "SOURCE", mediaAssetId: "media-1", sourceStartMs: 0, sourceEndMs: 10_000, timelineStartMs: 0, gainDb: 0, fadeInMs: 0, fadeOutMs: 0, fadeInCurve: "linear", fadeOutCurve: "linear", locked: false };
 let nextId = 0;
@@ -34,5 +34,15 @@ test("waveform state normalises untrusted clips and markers", () => {
   assert.equal(state.markers[0].type, "EDIT_NOTE");
   assert.equal(state.markers[0].label, "note");
   assert.equal(state.targetLufs, -23);
+});
+
+test("waveform clipboard crops source safely and ripples pasted audio", () => {
+  const copied = copySelection([source], 2_000, 5_000);
+  assert.equal(copied.durationMs, 3_000);
+  assert.equal(copied.clips[0].sourceStartMs, 2_000);
+  assert.equal(copied.clips[0].sourceEndMs, 5_000);
+  const pasted = pasteSelection([source], copied, 5_000, id);
+  assert.equal(timelineDuration(pasted), 13_000);
+  assert.equal(pasted.filter((clip) => clip.mediaAssetId === source.mediaAssetId).length, 3);
 });
 
