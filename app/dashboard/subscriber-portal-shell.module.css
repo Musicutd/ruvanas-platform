@@ -1,4 +1,4 @@
-.portal { min-height: 100vh; background: #eef2f7; color: #172033; }
+.portal { min-height: 100vh; background: #101827; color: #f8fafc; }
 .topbar { position: sticky; top: 0; z-index: 60; min-height: 68px; display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 22px; padding: 0 24px; border-bottom: 1px solid #27354b; background: #0d1727; box-shadow: 0 8px 28px rgba(15, 23, 42, .16); }
 .brand { color: #f4b942; font-size: 17px; font-weight: 950; letter-spacing: 2px; text-decoration: none; }
 .organisation { min-width: 0; justify-self: end; display: flex; align-items: baseline; gap: 9px; color: #f8fafc; }
@@ -8,28 +8,28 @@
 .menuButton { display: none; }
 .signOut:hover, .signOut:focus-visible, .menuButton:hover, .menuButton:focus-visible { border-color: #f4b942; color: #f4b942; }
 .workspace { display: grid; grid-template-columns: 270px minmax(0, 1fr); align-items: start; }
-.sidebar { position: sticky; top: 68px; height: calc(100vh - 68px); overflow-y: auto; border-right: 1px solid #d5dde8; background: #fff; padding: 22px 15px 40px; box-sizing: border-box; }
-.identity { padding: 0 10px 19px; border-bottom: 1px solid #e4e9f0; }
+.sidebar { position: sticky; top: 68px; height: calc(100vh - 68px); overflow-y: auto; border-right: 1px solid #2b3a54; background: #111b2b; padding: 22px 15px 40px; box-sizing: border-box; }
+.identity { padding: 0 10px 19px; border-bottom: 1px solid #2b3a54; }
 .identity span, .identity strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.identity span { color: #7b8798; font-size: 10px; font-weight: 850; letter-spacing: .8px; text-transform: uppercase; }
+.identity span { color: #93a3ba; font-size: 10px; font-weight: 850; letter-spacing: .8px; text-transform: uppercase; }
 .identity strong { margin-top: 5px; font-size: 13px; }
-.home, .activeHome { margin-top: 15px; min-height: 43px; display: flex; align-items: center; justify-content: space-between; border-radius: 9px; color: #4b5870; font-size: 13px; font-weight: 900; padding: 0 11px; text-decoration: none; }
-.activeHome { background: #17243a; color: #fff; }
-.home:hover, .home:focus-visible { background: #f1f4f8; color: #172033; }
+.home, .activeHome { margin-top: 15px; min-height: 43px; display: flex; align-items: center; justify-content: space-between; border-radius: 9px; color: #c3cede; font-size: 13px; font-weight: 900; padding: 0 11px; text-decoration: none; }
+.activeHome { background: #243149; color: #fff; box-shadow: inset 3px 0 #f4b942; }
+.home:hover, .home:focus-visible { background: #1a2639; color: #fff; }
 .navSection { margin-top: 10px; }
-.navSectionButton { width: 100%; min-height: 42px; display: flex; align-items: center; justify-content: space-between; gap: 10px; border: 0; border-radius: 9px; background: transparent; color: #8d5d00; cursor: pointer; padding: 8px 10px; text-align: left; }
-.navSectionButton:hover, .navSectionButton:focus-visible { background: #f5f1e8; color: #664500; }
+.navSectionButton { width: 100%; min-height: 42px; display: flex; align-items: center; justify-content: space-between; gap: 10px; border: 0; border-radius: 9px; background: transparent; color: #f4b942; cursor: pointer; padding: 8px 10px; text-align: left; }
+.navSectionButton:hover, .navSectionButton:focus-visible { background: #1a2639; color: #ffd77e; }
 .navSectionButton span, .navSectionButton strong, .navSectionButton small { display: block; }
 .navSectionButton strong { font-size: 10px; font-weight: 950; letter-spacing: 1px; text-transform: uppercase; }
-.navSectionButton small { margin-top: 5px; color: #8a95a5; font-size: 10px; font-weight: 600; line-height: 1.35; text-transform: none; }
-.navSectionButton b { color: #9c7a35; font-size: 16px; }
+.navSectionButton small { margin-top: 5px; color: #93a3ba; font-size: 10px; font-weight: 600; line-height: 1.35; text-transform: none; }
+.navSectionButton b { color: #d6a944; font-size: 16px; }
 .navSection ul { margin: 0; padding: 0; list-style: none; }
 .navSection ul[hidden] { display: none; }
-.link, .activeLink, .lockedLink { min-height: 38px; display: flex; align-items: center; justify-content: space-between; gap: 8px; border-radius: 8px; color: #536075; font-size: 12px; font-weight: 800; padding: 0 10px; text-decoration: none; }
-.link:hover, .link:focus-visible { background: #f1f4f8; color: #172033; }
-.activeLink { background: #fff4d7; color: #6d4800; box-shadow: inset 3px 0 #e4a72f; }
-.lockedLink { color: #8b95a4; }
-.lockedLink small { color: #a16d09; font-size: 9px; font-weight: 900; }
+.link, .activeLink, .lockedLink { min-height: 38px; display: flex; align-items: center; justify-content: space-between; gap: 8px; border-radius: 8px; color: #b9c5d6; font-size: 12px; font-weight: 800; padding: 0 10px; text-decoration: none; }
+.link:hover, .link:focus-visible { background: #1a2639; color: #fff; }
+.activeLink { background: #2b2416; color: #ffe2a0; box-shadow: inset 3px 0 #f4b942; }
+.lockedLink { color: #748198; }
+.lockedLink small { color: #d0a544; font-size: 9px; font-weight: 900; }
 .content { min-width: 0; min-height: calc(100vh - 68px); }
 .scrim { display: none; }
 .brand:focus-visible, .home:focus-visible, .activeHome:focus-visible, .link:focus-visible, .activeLink:focus-visible, .lockedLink:focus-visible, .navSectionButton:focus-visible { outline: 3px solid #6ea8fe; outline-offset: 2px; }

@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 const emptyData = { assets: [], layouts: [], devices: [], playlists: [], takeovers: [] };
 
 export default function DigitalSignageConsole({ organisations, showOrganisationSelector = true, locationsHref = "/admin/locations" }) {
+  const styles = showOrganisationSelector ? lightStyles : darkStyles;
   const enabledOrganisations = organisations.filter((item) => item.digitalSignageEnabled);
   const [organisationId, setOrganisationId] = useState(enabledOrganisations[0]?.id || "");
   const [data, setData] = useState(emptyData);
@@ -307,7 +308,7 @@ export default function DigitalSignageConsole({ organisations, showOrganisationS
   </main>;
 }
 
-const styles = {
+const lightStyles = {
   page: { maxWidth: 1180, margin: "0 auto", padding: "40px 20px 72px", color: "#172033" },
   eyebrow: { margin: "0 0 8px", color: "#9a6400", fontSize: 13, fontWeight: 900, letterSpacing: 1.2, textTransform: "uppercase" },
   title: { margin: 0, color: "#0f172a", fontSize: 36 },
@@ -350,4 +351,40 @@ const styles = {
   choiceHint: { color: "#64748b", fontSize: 12 },
   emptyState: { display: "grid", justifyItems: "start", gap: 12, padding: 15, borderRadius: 9, border: "1px solid #f59e0b", background: "#fffbeb", color: "#78350f", lineHeight: 1.5 },
   emptyAction: { display: "inline-flex", padding: "9px 12px", borderRadius: 7, background: "#0f172a", color: "#fff", fontWeight: 900, textDecoration: "none" }
+};
+
+const darkStyles = {
+  ...lightStyles,
+  page: { ...lightStyles.page, maxWidth: "none", minHeight: "calc(100vh - 68px)", margin: 0, padding: "40px max(20px, calc((100% - 1180px) / 2)) 72px", boxSizing: "border-box", background: "radial-gradient(circle at 90% 2%, rgba(244, 185, 66, .10), transparent 30%), #101827", color: "#f8fafc" },
+  eyebrow: { ...lightStyles.eyebrow, color: "#f4b942" },
+  title: { ...lightStyles.title, color: "#f8fafc" },
+  copy: { ...lightStyles.copy, color: "#b9c5d6" },
+  notice: { ...lightStyles.notice, border: "1px solid #9a6b17", background: "#2f291c", color: "#fde68a" },
+  message: { ...lightStyles.message, border: "1px solid #315b76", background: "#0c1b28", color: "#bae6fd" },
+  tabs: { ...lightStyles.tabs, border: "1px solid #2f405b", background: "#111b2b" },
+  tab: { ...lightStyles.tab, color: "#aebbd0" },
+  activeTab: { ...lightStyles.activeTab, background: "#2b2416", color: "#f8fafc", boxShadow: "inset 0 -3px #f4b942" },
+  tabCount: { ...lightStyles.tabCount, background: "#314058", color: "#e8eef7" },
+  tabDetail: { ...lightStyles.tabDetail, color: "#93a3ba" },
+  card: { ...lightStyles.card, border: "1px solid #2b3a54", background: "#182235", boxShadow: "0 12px 30px rgba(0,0,0,.14)" },
+  cardTitle: { ...lightStyles.cardTitle, color: "#f8fafc" },
+  small: { ...lightStyles.small, color: "#aebbd0" },
+  label: { ...lightStyles.label, color: "#dce5f2" },
+  button: { ...lightStyles.button, background: "#f4b942", color: "#101827" },
+  smallButton: { ...lightStyles.smallButton, border: "1px solid #64748b", background: "#24334b", color: "#f8fafc" },
+  count: { ...lightStyles.count, color: "#f4b942" },
+  row: { ...lightStyles.row, borderTop: "1px solid #2b3a54", color: "#d6deeb" },
+  errorText: { ...lightStyles.errorText, color: "#fecaca" },
+  localSuccess: { ...lightStyles.localSuccess, background: "#12372a", color: "#bbf7d0" },
+  localError: { ...lightStyles.localError, background: "#481b24", color: "#fecaca" },
+  enrolmentResult: { ...lightStyles.enrolmentResult, background: "#12372a", color: "#bbf7d0" },
+  codeLabel: { ...lightStyles.codeLabel, color: "#bbf7d0" },
+  openDisplay: { ...lightStyles.openDisplay, background: "#f4b942", color: "#101827" },
+  resultHint: { ...lightStyles.resultHint, color: "#bbf7d0" },
+  choiceFieldset: { ...lightStyles.choiceFieldset, border: "1px solid #52627a" },
+  choiceLegend: { ...lightStyles.choiceLegend, color: "#dce5f2" },
+  deviceChoice: { ...lightStyles.deviceChoice, background: "#111b2b", color: "#f8fafc" },
+  choiceHint: { ...lightStyles.choiceHint, color: "#93a3ba" },
+  emptyState: { ...lightStyles.emptyState, border: "1px solid #9a6b17", background: "#2f291c", color: "#fde68a" },
+  emptyAction: { ...lightStyles.emptyAction, background: "#f4b942", color: "#101827" }
 };
