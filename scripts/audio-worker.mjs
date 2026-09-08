@@ -12,7 +12,7 @@ import ffprobeStatic from "ffprobe-static";
 import { S3Client } from "@aws-sdk/client-s3";
 import { buildMultitrackRenderGraph, buildRenderGraph, parseLoudnessReport, reducePcmPeaks } from "../lib/audio-worker.mjs";
 import { broadcastEncoding, evaluateBroadcastProcessingQc, normalizeBroadcastProcessingProfile } from "../lib/broadcast-audio-processing.mjs";
-import { evaluateStudioMasteringQuality, normalizeStudioMastering } from "../lib/studio-effects-mastering.mjs";
+import { buildStudioMasteringCorrectionFilters, evaluateStudioMasteringQuality, normalizeStudioMastering, studioMasteringCorrectionDb } from "../lib/studio-effects-mastering.mjs";
 import { deploymentIdentity, safeOperationalErrorCode, structuredServiceLog } from "../lib/operational-observability.mjs";
 import { recordServiceHeartbeat } from "../lib/operational-observability-service.js";
 
@@ -55,6 +55,12 @@ async function download(storageKey, filePath) {
     return;
   }
   throw new Error("Protected storage did not provide a readable audio stream.");
+}
+
+async function measureLoudness(filePath) {
+  const loudness = await run(ffmpegPath, ["-hide_banner", "-nostats", "-i", filePath, "-filter_complex", "ebur128=peak=true", "-f", "null", "-"])
+    .catch((error) => ({ stderr: error.stderr || error.message }));
+  return parseLoudnessReport(loudness.stderr);
 }
 
 async function processWaveform() {
@@ -118,15 +124,33 @@ async function processRender() {
     const mimeType = processingEncoding?.mimeType || (wav ? "audio/wav" : "audio/mpeg");
     const output = path.join(directory, `render.${extension}`);
     const codecArgs = processingEncoding?.codecArgs || (wav ? ["-c:a", "pcm_s24le"] : ["-c:a", "libmp3lame", "-b:a", render.preset === "SPEECH_MP3" ? "128k" : "192k"]);
-    await run(ffmpegPath, ["-y", ...inputArgs, "-filter_complex", graph.filterComplex, "-map", graph.outputLabel, ...codecArgs, output]);
-    const [probe, loudness, fileInfo] = await Promise.all([
+    const studioMastering = multitrack ? normalizeStudioMastering(state?.master, state?.master || {}) : normalizeStudioMastering(state?.mastering, state || {});
+    const measuredStudioMaster = !processingProfile && studioMastering.enabled;
+    const initialOutput = measuredStudioMaster ? path.join(directory, "mastered-intermediate.wav") : output;
+    const initialCodecArgs = measuredStudioMaster ? ["-c:a", "pcm_s24le"] : codecArgs;
+    await run(ffmpegPath, ["-y", ...inputArgs, "-filter_complex", graph.filterComplex, "-map", graph.outputLabel, ...initialCodecArgs, initialOutput]);
+
+    let report;
+    if (measuredStudioMaster) {
+      const initialReport = await measureLoudness(initialOutput);
+      let correctionDb = studioMasteringCorrectionDb(initialReport, studioMastering);
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const correctionFilters = buildStudioMasteringCorrectionFilters(studioMastering, correctionDb);
+        await run(ffmpegPath, ["-y", "-i", initialOutput, ...(correctionFilters.length ? ["-af", correctionFilters.join(",")] : []), ...codecArgs, output]);
+        report = await measureLoudness(output);
+        const residualDb = studioMasteringCorrectionDb(report, studioMastering);
+        if (!residualDb) break;
+        correctionDb = Number(Math.max(-6, Math.min(6, correctionDb + residualDb)).toFixed(1));
+      }
+    } else {
+      report = await measureLoudness(output);
+    }
+
+    const [probe, fileInfo] = await Promise.all([
       run(ffprobeStatic.path, ["-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", output]),
-      run(ffmpegPath, ["-hide_banner", "-nostats", "-i", output, "-filter_complex", "ebur128=peak=true", "-f", "null", "-"]).catch((error) => ({ stderr: error.stderr || error.message })),
       stat(output)
     ]);
-    const report = parseLoudnessReport(loudness.stderr);
     const processingQc = processingProfile ? evaluateBroadcastProcessingQc(report, processingProfile) : null;
-    const studioMastering = multitrack ? normalizeStudioMastering(state?.master, state?.master || {}) : normalizeStudioMastering(state?.mastering, state || {});
     const masteringQuality = processingProfile ? null : evaluateStudioMasteringQuality(report, studioMastering);
     const durationSeconds = Math.max(1, Math.round(Number(probe.stdout.toString("utf8").trim()) || 1));
     const key = processingProfile

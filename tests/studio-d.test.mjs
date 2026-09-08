@@ -5,11 +5,13 @@ import { buildMultitrackRenderGraph, buildRenderGraph } from "../lib/audio-worke
 import {
   applyStudioEffectPreset,
   applyStudioMasteringPreset,
+  buildStudioMasteringCorrectionFilters,
   buildStudioEffectsFilters,
   buildStudioMasteringFilters,
   evaluateStudioMasteringQuality,
   normalizeStudioEffects,
-  normalizeStudioMastering
+  normalizeStudioMastering,
+  studioMasteringCorrectionDb
 } from "../lib/studio-effects-mastering.mjs";
 
 test("Studio D provides bounded curated effects and delivery presets", () => {
@@ -43,6 +45,19 @@ test("Studio D reports READY only when loudness, True Peak and range meet the se
   assert.equal(evaluateStudioMasteringQuality({}, target).findings.length, 3);
 });
 
+test("Studio mastering corrects a measured loudness miss without weakening acceptance limits", () => {
+  const target = applyStudioMasteringPreset("SCHOOL_PROGRAMME");
+  const correction = studioMasteringCorrectionDb({ integratedLufs: -19.7 }, target);
+  assert.equal(correction, 1.7);
+  assert.deepEqual(buildStudioMasteringCorrectionFilters(target, correction), [
+    "volume=1.7dB",
+    "alimiter=limit=0.8414:level=false"
+  ]);
+  assert.equal(studioMasteringCorrectionDb({ integratedLufs: -18.8 }, target), 0);
+  assert.equal(studioMasteringCorrectionDb({ integratedLufs: -30 }, target), 6);
+  assert.equal(studioMasteringCorrectionDb({}, target), 0);
+});
+
 test("Studio D adds effects before mastering in waveform and multitrack render graphs", () => {
   const clip = { kind: "SOURCE", mediaAssetId: "asset", sourceStartMs: 0, sourceEndMs: 4_000, timelineStartMs: 0 };
   const waveform = buildRenderGraph([clip], { effects: applyStudioEffectPreset("TELEPHONE_VOICE"), mastering: applyStudioMasteringPreset("ONLINE_RADIO") });
@@ -56,9 +71,13 @@ test("Studio D adds effects before mastering in waveform and multitrack render g
 test("Studio D UI keeps effects and mastering in a separate, previewable workspace", async () => {
   const waveformSource = await readFile(new URL("../app/dashboard/school-radio/WaveformEditorClient.js", import.meta.url), "utf8");
   const routeSource = await readFile(new URL("../app/api/school-radio/audio-lab/projects/[projectId]/editor/route.js", import.meta.url), "utf8");
+  const workerSource = await readFile(new URL("../scripts/audio-worker.mjs", import.meta.url), "utf8");
   assert.match(waveformSource, /Effects & master/);
   assert.match(waveformSource, /Create mastered preview/);
   assert.match(waveformSource, /True Peak ceiling/);
   assert.match(routeSource, /QUEUE_MASTER_PREVIEW/);
   assert.match(routeSource, /STUDIO_MASTER_PREVIEW_QUEUED/);
+  assert.match(workerSource, /mastered-intermediate\.wav/);
+  assert.match(workerSource, /studioMasteringCorrectionDb/);
+  assert.match(workerSource, /buildStudioMasteringCorrectionFilters/);
 });
