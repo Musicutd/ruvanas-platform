@@ -4,13 +4,17 @@ import { prisma } from "@/lib/prisma";
 import { ORGANISATION_CONTENT_ROLES } from "@/lib/permissions.mjs";
 import { requireActiveSchoolRadio } from "@/lib/school-radio-access";
 import { normalizeEditorState } from "@/lib/waveform-editor.mjs";
+import { normalizeVoiceCleanup } from "@/lib/voice-cleanup.mjs";
+import { applyStudioMasteringPreset, normalizeStudioEffects, normalizeStudioMastering } from "@/lib/studio-effects-mastering.mjs";
 
 export const dynamic = "force-dynamic";
 
 const requestSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("INITIALIZE"), takeId: z.string().cuid() }),
   z.object({ action: z.literal("SAVE"), state: z.record(z.unknown()), reason: z.string().trim().max(120).optional() }),
-  z.object({ action: z.literal("QUEUE_RENDER"), state: z.record(z.unknown()), preset: z.enum(["SCHOOL_RADIO_MP3", "SPEECH_MP3", "WAV_MASTER"]) })
+  z.object({ action: z.literal("QUEUE_RENDER"), state: z.record(z.unknown()), preset: z.enum(["SCHOOL_RADIO_MP3", "SPEECH_MP3", "WAV_MASTER"]) }),
+  z.object({ action: z.literal("QUEUE_CLEANUP_PREVIEW"), state: z.record(z.unknown()) }),
+  z.object({ action: z.literal("QUEUE_MASTER_PREVIEW"), state: z.record(z.unknown()) })
 ]);
 
 const editorInclude = {
@@ -59,7 +63,10 @@ function serialize(project) {
       markers: project.markers.map((marker) => ({ clientId: marker.id, positionMs: marker.positionMs, type: marker.type, label: marker.label })),
       normalize: project.editDecision?.normalize !== false,
       targetLufs: project.editDecision?.targetLufs ?? -16,
-      noiseCleanup: project.editDecision?.noiseCleanup === true
+      noiseCleanup: project.editDecision?.noiseCleanup === true,
+      voiceCleanup: normalizeVoiceCleanup(project.editDecision?.voiceCleanup, project.editDecision?.noiseCleanup === true),
+      effects: normalizeStudioEffects(project.editDecision?.effects),
+      mastering: normalizeStudioMastering(project.editDecision?.mastering, project.editDecision || {})
     },
     renders: project.renders.map((render) => ({
       id: render.id, status: render.status, preset: render.preset, loudnessLufs: render.loudnessLufs,
@@ -102,7 +109,7 @@ async function saveSnapshot(tx, { project, userId, state, reason }) {
     })) });
   }
   const nextVersion = project.currentVersion + 1;
-  const snapshot = { editor: clean, title: project.title, editDecision: { ...project.editDecision, normalize: clean.normalize, targetLufs: clean.targetLufs, noiseCleanup: clean.noiseCleanup } };
+  const snapshot = { editor: clean, title: project.title, editDecision: { ...project.editDecision, normalize: clean.mastering.enabled, targetLufs: clean.mastering.targetLufs, noiseCleanup: clean.noiseCleanup, voiceCleanup: clean.voiceCleanup, effects: clean.effects, mastering: clean.mastering } };
   const version = await tx.audioProjectVersion.create({ data: { projectId: project.id, version: nextVersion, state: snapshot, reason, createdByUserId: userId } });
   await tx.audioProject.update({ where: { id: project.id }, data: { currentVersion: nextVersion, editDecision: snapshot.editDecision, status: "READY" } });
   return { clean, version };
@@ -122,13 +129,36 @@ export async function POST(request, { params }) {
       if (!take) return NextResponse.json({ error: "Choose an available source take from this project." }, { status: 404 });
       const durationMs = take.durationMs || (take.mediaAsset.durationSeconds ? take.mediaAsset.durationSeconds * 1000 : 0);
       if (!durationMs) return NextResponse.json({ error: "This take is still being analysed. Try again shortly." }, { status: 409 });
-      const state = { clips: [{ clientId: `take-${take.id}`, kind: "SOURCE", mediaAssetId: take.mediaAssetId, sourceStartMs: 0, sourceEndMs: durationMs, timelineStartMs: 0, gainDb: 0, fadeInMs: 0, fadeOutMs: 0, fadeInCurve: "linear", fadeOutCurve: "linear", locked: false }], markers: [], normalize: true, targetLufs: -16, noiseCleanup: false };
+      const state = { clips: [{ clientId: `take-${take.id}`, kind: "SOURCE", mediaAssetId: take.mediaAssetId, sourceStartMs: 0, sourceEndMs: durationMs, timelineStartMs: 0, gainDb: 0, fadeInMs: 0, fadeOutMs: 0, fadeInCurve: "linear", fadeOutCurve: "linear", locked: false }], markers: [], normalize: true, targetLufs: -16, noiseCleanup: false, voiceCleanup: normalizeVoiceCleanup(), effects: normalizeStudioEffects(), mastering: applyStudioMasteringPreset("PODCAST") };
       await prisma.$transaction((tx) => saveSnapshot(tx, { project, userId: access.user.id, state, reason: "Waveform editor initialized" }));
     } else {
-      const saved = await prisma.$transaction((tx) => saveSnapshot(tx, { project, userId: access.user.id, state: parsed.data.state, reason: parsed.data.action === "QUEUE_RENDER" ? "Final render requested" : parsed.data.reason || "Waveform editor save" }));
+      const renderRequested = parsed.data.action === "QUEUE_RENDER";
+      const cleanupPreviewRequested = parsed.data.action === "QUEUE_CLEANUP_PREVIEW";
+      const masterPreviewRequested = parsed.data.action === "QUEUE_MASTER_PREVIEW";
+      const requestedState = normalizeEditorState(parsed.data.state);
+      if (cleanupPreviewRequested && !requestedState.voiceCleanup.enabled) {
+        return NextResponse.json({ error: "Choose a Voice Cleanup preset before creating a comparison." }, { status: 409 });
+      }
+      if (masterPreviewRequested && !requestedState.effects.enabled && !requestedState.mastering.enabled) {
+        return NextResponse.json({ error: "Choose an Effects or Mastering preset before creating a preview." }, { status: 409 });
+      }
+      const saved = await prisma.$transaction((tx) => saveSnapshot(tx, { project, userId: access.user.id, state: requestedState, reason: renderRequested ? "Final render requested" : cleanupPreviewRequested ? "Voice cleanup comparison requested" : masterPreviewRequested ? "Effects and mastering preview requested" : parsed.data.reason || "Waveform editor save" }));
       if (parsed.data.action === "QUEUE_RENDER") {
         await prisma.audioRender.create({ data: { organisationId: access.organisation.id, projectId, versionId: saved.version.id, requestedByUserId: access.user.id, preset: parsed.data.preset } });
         await prisma.auditLog.create({ data: { organisationId: access.organisation.id, actorUserId: access.user.id, action: "AUDIO_RENDER_QUEUED", entityType: "AudioProject", entityId: projectId, details: { version: saved.version.version, preset: parsed.data.preset } } });
+      } else if (cleanupPreviewRequested) {
+        const groupId = crypto.randomUUID();
+        await prisma.$transaction([
+          prisma.audioRender.create({ data: { organisationId: access.organisation.id, projectId, versionId: saved.version.id, requestedByUserId: access.user.id, preset: "SPEECH_MP3", resultJson: { studioPreview: { groupId, purpose: "VOICE_CLEANUP", variant: "BEFORE" } } } }),
+          prisma.audioRender.create({ data: { organisationId: access.organisation.id, projectId, versionId: saved.version.id, requestedByUserId: access.user.id, preset: "SPEECH_MP3", resultJson: { studioPreview: { groupId, purpose: "VOICE_CLEANUP", variant: "AFTER" } } } }),
+          prisma.auditLog.create({ data: { organisationId: access.organisation.id, actorUserId: access.user.id, action: "VOICE_CLEANUP_PREVIEW_QUEUED", entityType: "AudioProject", entityId: projectId, details: { version: saved.version.version, groupId, variants: ["BEFORE", "AFTER"] } } })
+        ]);
+      } else if (masterPreviewRequested) {
+        const groupId = crypto.randomUUID();
+        await prisma.$transaction([
+          prisma.audioRender.create({ data: { organisationId: access.organisation.id, projectId, versionId: saved.version.id, requestedByUserId: access.user.id, preset: "SPEECH_MP3", resultJson: { studioPreview: { groupId, purpose: "EFFECTS_MASTERING", variant: "MASTER" } } } }),
+          prisma.auditLog.create({ data: { organisationId: access.organisation.id, actorUserId: access.user.id, action: "STUDIO_MASTER_PREVIEW_QUEUED", entityType: "AudioProject", entityId: projectId, details: { version: saved.version.version, groupId, effectsPreset: saved.clean.effects.preset, masteringPreset: saved.clean.mastering.preset } } })
+        ]);
       }
     }
     const updated = await findProject(projectId, access.organisation.id);
