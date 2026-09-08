@@ -1,13 +1,31 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 
 import {
   digitalSignageOrientation,
+  normaliseDigitalSignageEnrolmentCode,
   normaliseDigitalSignageDevice,
   normaliseDigitalSignageLayout,
   validateDigitalSignageImage,
   validateDigitalSignageVideo
 } from "../lib/digital-signage.mjs";
+
+test("display enrolment accepts either a code or the copied confirmation sentence", () => {
+  const code = "A".repeat(43);
+  assert.equal(normaliseDigitalSignageEnrolmentCode(code), code);
+  assert.equal(normaliseDigitalSignageEnrolmentCode(`Device created. One-time enrolment code: ${code}`), code);
+  assert.equal(normaliseDigitalSignageEnrolmentCode(""), "");
+});
+
+test("the Digital Signage interface separates tasks and makes display enrolment explicit", async () => {
+  const consoleSource = await readFile(new URL("../app/admin/digital-signage/DigitalSignageConsole.js", import.meta.url), "utf8");
+  const displaySource = await readFile(new URL("../app/signage/page.js", import.meta.url), "utf8");
+  for (const label of ["Displays", "Visuals & layouts", "Playlists", "Takeovers", "Copy code", "Open display screen"]) {
+    assert.ok(consoleSource.includes(label));
+  }
+  assert.match(displaySource, /TV or display screen, not an audio player/);
+});
 
 function pngHeader(width, height) {
   const buffer = Buffer.alloc(24);

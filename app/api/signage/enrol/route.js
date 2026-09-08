@@ -2,12 +2,13 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createPlayerToken } from "@/lib/player-tokens.mjs";
 import { digitalSignageTokenHash, setDigitalSignageDeviceCookie } from "@/lib/digital-signage-device-auth";
+import { normaliseDigitalSignageEnrolmentCode } from "@/lib/digital-signage.mjs";
 import { resolveEntitlements } from "@/lib/entitlements.mjs";
 
 export async function POST(request) {
   try {
     const body = await request.json();
-    const code = typeof body.code === "string" ? body.code.trim() : "";
+    const code = normaliseDigitalSignageEnrolmentCode(body.code);
     if (!code) return NextResponse.json({ error: "Enter the display enrolment code." }, { status: 400 });
     const enrolmentTokenHash = digitalSignageTokenHash(code);
     const sessionToken = createPlayerToken();

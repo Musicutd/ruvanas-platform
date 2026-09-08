@@ -256,8 +256,9 @@ export default function SignagePage() {
   if (loading) return <main style={styles.center}><p>Connecting secure display…</p></main>;
   if (!state) return <main style={styles.center}><section style={styles.card}>
     <p style={styles.eyebrow}>RUVANAS DIGITAL SIGNAGE</p><h1 style={styles.heading}>Enrol this display</h1>
-    <p style={styles.copy}>Enter the one-time code supplied by an authorised Ruvanas administrator.</p>
-    <form onSubmit={enrol} style={styles.form}><input value={code} onChange={(event) => setCode(event.target.value)} aria-label="Display enrolment code" autoComplete="off" style={styles.input} /><button disabled={!code.trim()} style={styles.button}>Enrol display</button></form>
+    <p style={styles.copy}>Paste the one-time code created in Digital Signage → Displays. This page is for the TV or display screen, not an audio player.</p>
+    <form onSubmit={enrol} style={styles.form}><input value={code} onChange={(event) => setCode(event.target.value)} aria-label="Display enrolment code" autoComplete="off" placeholder="Paste display code" style={styles.input} /><button disabled={!code.trim()} style={styles.button}>Enrol display</button></form>
+    <p style={styles.hint}>The display will connect once and then update its published content automatically.</p>
     {message ? <p style={styles.error}>{message}</p> : null}
   </section></main>;
   if (noticeboardItems.length && (!canvas || manifest.state !== "READY")) return <main style={styles.player} aria-label="School digital noticeboard">
@@ -287,6 +288,7 @@ const styles = {
   button: { minHeight: 48, border: 0, borderRadius: 8, background: "#f4b942", color: "#111827", fontWeight: 900, cursor: "pointer" },
   waiting: { marginTop: 28, padding: 18, borderRadius: 10, background: "#1e293b", color: "#cbd5e1", lineHeight: 1.6 },
   error: { color: "#fca5a5", fontWeight: 800 },
+  hint: { margin: "12px 0 0", color: "#94a3b8", fontSize: 13, lineHeight: 1.5 },
   notice: { color: "#fde68a", fontWeight: 700 },
   offline: { position: "fixed", right: 12, bottom: 12, zIndex: 9999, padding: "7px 10px", borderRadius: 7, background: "rgba(15,23,42,.88)", color: "#fde68a", font: "700 12px Arial" }
 };
