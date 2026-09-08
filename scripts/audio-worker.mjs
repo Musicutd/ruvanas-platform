@@ -95,10 +95,11 @@ async function processRender() {
   try {
     const multitrack = render.version.state?.multitrack;
     const state = multitrack || render.version.state?.editor;
+    const studioPreview = render.resultJson?.studioPreview;
     const processingProfile = render.processingProfileJson ? normalizeBroadcastProcessingProfile(render.processingProfileJson) : null;
     const graph = multitrack
       ? buildMultitrackRenderGraph(multitrack, { processingProfile })
-      : buildRenderGraph(state?.clips, { ...(state || {}), processingProfile });
+      : buildRenderGraph(state?.clips, { ...(state || {}), processingProfile, voiceCleanupBypass: studioPreview?.variant === "BEFORE" });
     const sourceIds = graph.inputs.map((input) => input.mediaAssetId);
     const assets = await prisma.mediaAsset.findMany({ where: { id: { in: [...new Set(sourceIds)] }, organisationId: render.organisationId } });
     const byId = new Map(assets.map((asset) => [asset.id, asset]));
@@ -128,21 +129,22 @@ async function processRender() {
     const key = processingProfile
       ? `organisations/${render.organisationId}/broadcast-audio/renders/${render.projectId}/${render.id}.${extension}`
       : `organisations/${render.organisationId}/school-audio/renders/${render.projectId}/${crypto.randomUUID()}.${extension}`;
-    await storage.client.send(new PutObjectCommand({ Bucket: storage.bucketName, Key: key, Body: createReadStream(output), ContentLength: fileInfo.size, ContentType: mimeType, Metadata: { source: processingProfile ? "broadcast-processing" : multitrack ? "multitrack-studio" : "waveform-editor", project: render.projectId, version: String(render.version.version), ...(processingProfile ? { profile: String(render.broadcastProcessingProfileId), revision: String(render.broadcastProcessingProfileRevision) } : {}) } }));
+    await storage.client.send(new PutObjectCommand({ Bucket: storage.bucketName, Key: key, Body: createReadStream(output), ContentLength: fileInfo.size, ContentType: mimeType, Metadata: { source: processingProfile ? "broadcast-processing" : multitrack ? "multitrack-studio" : studioPreview ? "voice-cleanup-preview" : "waveform-editor", project: render.projectId, version: String(render.version.version), ...(studioPreview ? { comparison: String(studioPreview.variant).toLowerCase() } : {}), ...(processingProfile ? { profile: String(render.broadcastProcessingProfileId), revision: String(render.broadcastProcessingProfileRevision) } : {}) } }));
 
     const sourceTake = await prisma.audioTake.findFirst({ where: { projectId: render.projectId, mediaAssetId: { in: sourceIds }, promoVersionId: { not: null } }, include: { promoVersion: { include: { promoAsset: { include: { versions: { select: { version: true } } } } } } } });
     const priorOutput = multitrack ? await prisma.audioRender.findFirst({ where: { projectId: render.projectId, id: { not: render.id }, outputPromoVersionId: { not: null } }, orderBy: { completedAt: "desc" }, include: { outputPromoVersion: { include: { promoAsset: { include: { versions: { select: { version: true } } } } } } } }) : null;
     const result = await prisma.$transaction(async (tx) => {
-      const mediaAsset = await tx.mediaAsset.create({ data: { organisationId: render.organisationId, libraryType: "ORGANISATION_PROMO", name: `${render.project.title}${processingProfile ? ` · ${processingProfile.name}` : " final"}`, originalName: `${render.project.title}.${extension}`, storageKey: key, mimeType, sizeBytes: BigInt(fileInfo.size), durationSeconds, mediaType: "ANNOUNCEMENT", status: "READY" } });
+      const previewName = studioPreview ? ` · voice ${String(studioPreview.variant).toLowerCase()} preview` : "";
+      const mediaAsset = await tx.mediaAsset.create({ data: { organisationId: render.organisationId, libraryType: "ORGANISATION_PROMO", name: `${render.project.title}${processingProfile ? ` · ${processingProfile.name}` : previewName || " final"}`, originalName: `${render.project.title}${previewName}.${extension}`, storageKey: key, mimeType, sizeBytes: BigInt(fileInfo.size), durationSeconds, mediaType: "ANNOUNCEMENT", status: "READY" } });
       let promoVersion = null;
       const existingPromo = priorOutput?.outputPromoVersion?.promoAsset || sourceTake?.promoVersion?.promoAsset || null;
-      if (existingPromo || multitrack) {
+      if (!studioPreview && (existingPromo || multitrack)) {
         const promoAsset = existingPromo || await tx.promoAsset.create({ data: { organisationId: render.organisationId, name: render.project.title, mediaType: "ANNOUNCEMENT", languageCode: "und" } });
         const nextVersion = Math.max(0, ...(promoAsset.versions || []).map((item) => item.version)) + 1;
         const processingJobs = multitrack || processingProfile ? undefined : { create: ["PREVIEW", "TRANSCODE", "LOUDNESS_ANALYSIS"].map((jobType) => ({ jobType, status: "QUEUED" })) };
         promoVersion = await tx.promoVersion.create({ data: { promoAssetId: promoAsset.id, mediaAssetId: mediaAsset.id, version: nextVersion, status: "IN_REVIEW", qcStatus: processingProfile ? processingQc.status : multitrack ? "PASSED" : "PENDING", qcNotes: processingProfile ? (processingQc.findings.join(" ") || `Passed ${processingProfile.name} broadcast profile.`) : undefined, sourceType: "STUDIO", sourceReference: `audio-render:${render.id}`, languageCode: sourceTake?.promoVersion?.languageCode || "und", durationSeconds, loudnessLufs: report.integratedLufs, submittedById: render.requestedByUserId, submittedAt: new Date(), ...(processingJobs ? { processingJobs } : {}) } });
       }
-      await tx.audioRender.update({ where: { id: render.id }, data: { status: "SUCCEEDED", completedAt: new Date(), outputMediaAssetId: mediaAsset.id, outputPromoVersionId: promoVersion?.id || null, loudnessLufs: report.integratedLufs, processingQcStatus: processingQc?.status, processingQcNotes: processingQc ? (processingQc.findings.join(" ") || "Broadcast profile targets passed.") : undefined, resultJson: { ...report, durationSeconds, immutableSource: true, version: render.version.version, ...(processingProfile ? { broadcastProfile: { id: render.broadcastProcessingProfileId, revision: render.broadcastProcessingProfileRevision, name: processingProfile.name, codec: processingProfile.codec }, qc: processingQc } : {}) } } });
+      await tx.audioRender.update({ where: { id: render.id }, data: { status: "SUCCEEDED", completedAt: new Date(), outputMediaAssetId: mediaAsset.id, outputPromoVersionId: promoVersion?.id || null, loudnessLufs: report.integratedLufs, processingQcStatus: processingQc?.status, processingQcNotes: processingQc ? (processingQc.findings.join(" ") || "Broadcast profile targets passed.") : undefined, resultJson: { ...report, durationSeconds, immutableSource: true, version: render.version.version, ...(studioPreview ? { studioPreview } : {}), ...(processingProfile ? { broadcastProfile: { id: render.broadcastProcessingProfileId, revision: render.broadcastProcessingProfileRevision, name: processingProfile.name, codec: processingProfile.codec }, qc: processingQc } : {}) } } });
       return { mediaAsset, promoVersion };
     });
     writeLog("info", "audio_render_completed", { entityId: render.id, outputEntityId: result.mediaAsset.id });
