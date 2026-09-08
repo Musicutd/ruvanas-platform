@@ -24,7 +24,12 @@ test("Studio D provides bounded curated effects and delivery presets", () => {
 
   const school = applyStudioMasteringPreset("SCHOOL_PROGRAMME");
   assert.equal(school.targetLufs, -18);
-  assert.match(buildStudioMasteringFilters(school).join(","), /loudnorm=I=-18:TP=-1\.5:LRA=14/);
+  const schoolFilters = buildStudioMasteringFilters(school);
+  assert.match(schoolFilters.join(","), /acompressor=threshold=0\.0631:ratio=2\.57/);
+  assert.match(schoolFilters.join(","), /loudnorm=I=-18:TP=-1\.5:LRA=14/);
+  assert.match(schoolFilters.at(-1), /alimiter=limit=0\.8414:level=false/);
+  assert.ok(schoolFilters.findIndex((filter) => filter.startsWith("acompressor=")) < schoolFilters.findIndex((filter) => filter.startsWith("loudnorm=")));
+  assert.ok(schoolFilters.findIndex((filter) => filter.startsWith("loudnorm=")) < schoolFilters.findIndex((filter) => filter.startsWith("alimiter=")));
   assert.equal(normalizeStudioMastering({ targetLufs: -100, truePeakDbfs: 5 }).targetLufs, -24);
   assert.equal(normalizeStudioMastering({ targetLufs: -100, truePeakDbfs: 5 }).truePeakDbfs, -0.5);
 });
