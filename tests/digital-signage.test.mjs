@@ -25,6 +25,9 @@ test("the Digital Signage interface separates tasks and makes display enrolment 
     assert.ok(consoleSource.includes(label));
   }
   assert.match(displaySource, /TV or display screen, not an audio player/);
+  assert.match(consoleSource, /showOrganisationSelector \? lightStyles : darkStyles/);
+  assert.match(consoleSource, /const darkStyles =/);
+  assert.match(consoleSource, /background: "radial-gradient\([^\n]+#101827"/);
 });
 
 function pngHeader(width, height) {

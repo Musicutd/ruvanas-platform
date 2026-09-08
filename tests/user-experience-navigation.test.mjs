@@ -119,6 +119,9 @@ test("subscriber command centre keeps shortcuts permission-filtered and accessib
   assert.match(styles, /@media \(max-width: 520px\)/);
   assert.match(styles, /:focus-visible/);
   assert.match(shellStyles, /@media \(max-width: 980px\)/);
+  assert.match(shellStyles, /\.portal \{[^}]*background: #101827/);
+  assert.match(shellStyles, /\.sidebar \{[^}]*background: #111b2b/);
+  assert.match(shellStyles, /\.activeLink \{[^}]*#f4b942/);
 });
 
 test("admin command centre uses role-filtered tabs and accessible interactive analytics", async () => {
