@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { ORGANISATION_CONTENT_ROLES, ORGANISATION_MANAGER_ROLES, isOrganisationRoleAllowed } from "@/lib/permissions.mjs";
 import { requireActiveSchoolRadio } from "@/lib/school-radio-access";
-import { defaultMultitrackState } from "@/lib/multitrack-studio.mjs";
+import { defaultMultitrackState, studioMultitrackTrackLimit } from "@/lib/multitrack-studio.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -48,7 +48,9 @@ export async function GET() {
   for (const item of organisationAudio) if (!sources.has(item.id)) sources.set(item.id, { ...item, label: item.name, sourceType: "ORGANISATION", durationMs: (item.durationSeconds || 0) * 1000 });
   return NextResponse.json({
     projects, programmes, episodes, groups, sources: [...sources.values()],
-    canApprove: isOrganisationRoleAllowed(access.membership.role, ORGANISATION_MANAGER_ROLES)
+    canApprove: isOrganisationRoleAllowed(access.membership.role, ORGANISATION_MANAGER_ROLES),
+    trackLimit: studioMultitrackTrackLimit(access.entitlements),
+    planName: access.entitlements.planName
   });
 }
 
