@@ -55,7 +55,7 @@ function requestBody(form) {
   };
 }
 
-export default function PodcastWorkspace() {
+export default function PodcastWorkspace({ initialMediaAssetId = "" }) {
   const [data, setData] = useState(null);
   const [seriesForm, setSeriesForm] = useState(emptySeries);
   const [episodeForm, setEpisodeForm] = useState(emptyEpisode);
@@ -70,7 +70,7 @@ export default function PodcastWorkspace() {
     if (!response.ok) throw new Error(payload.error || "Podcasts could not be loaded.");
     setData(payload);
     setSeriesForm((current) => ({ ...current, stationId: current.stationId || payload.stations[0]?.id || "" }));
-    setEpisodeForm((current) => ({ ...current, seriesId: current.seriesId || payload.series[0]?.id || "", mediaAssetId: current.mediaAssetId || payload.approvedAudio[0]?.id || "" }));
+    setEpisodeForm((current) => ({ ...current, seriesId: current.seriesId || payload.series[0]?.id || "", mediaAssetId: current.mediaAssetId || (payload.approvedAudio.some((item) => item.id === initialMediaAssetId) ? initialMediaAssetId : payload.approvedAudio[0]?.id || "") }));
   }
 
   useEffect(() => { load().catch((loadError) => setError(loadError.message)); }, []);

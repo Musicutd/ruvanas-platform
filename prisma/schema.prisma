@@ -953,6 +953,12 @@ enum SchoolRundownItemType {
   FLEXIBLE_MARKER
 }
 
+enum StudioProductDestination {
+  RETAIL_PROMOTION
+  SCHOOL_EPISODE
+  ONLINE_PODCAST
+}
+
 enum SchoolPublicationScope {
   INTERNAL_ONLY
   PUBLIC
@@ -1402,6 +1408,7 @@ model User {
   schoolAudioUploads                     SchoolAudioUploadSession[]       @relation("SchoolAudioUploadCreatedBy")
   createdAudioMarkers                    AudioMarker[]                    @relation("AudioMarkerCreatedBy")
   requestedAudioRenders                  AudioRender[]                    @relation("AudioRenderRequestedBy")
+  createdStudioProductHandoffs           StudioProductHandoff[]           @relation("StudioProductHandoffCreatedBy")
   createdBroadcastProcessingProfiles     BroadcastProcessingProfile[]     @relation("BroadcastProcessingProfileCreatedBy")
   createdSchoolRundowns                  SchoolRundown[]                  @relation("SchoolRundownCreatedBy")
   reviewedSchoolRundowns                 SchoolRundown[]                  @relation("SchoolRundownReviewedBy")
@@ -1580,6 +1587,7 @@ model Organisation {
   audioTakes                         AudioTake[]
   schoolAudioUploads                 SchoolAudioUploadSession[]
   audioRenders                       AudioRender[]
+  studioProductHandoffs              StudioProductHandoff[]
   broadcastProcessingProfiles        BroadcastProcessingProfile[]
   schoolRundowns                     SchoolRundown[]
   schoolPodcastSeries                SchoolPodcastSeries[]
@@ -2794,21 +2802,22 @@ model MediaAsset {
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
-  organisation       Organisation?          @relation("OrganisationMediaAssets", fields: [organisationId], references: [id], onDelete: Cascade)
-  genres             MediaAssetGenre[]
-  track              Track?
-  promoVersions      PromoVersion[]
-  audioTakes         AudioTake[]
-  audioClips         AudioClip[]
-  audioRenderOutputs AudioRender[]          @relation("AudioRenderOutput")
-  proofOfPlayEvents  ProofOfPlayEvent[]
-  playoutIntents     PlayoutIntent[]
-  schoolRundownItems SchoolRundownItem[]
-  transcripts        Transcript[]
-  interviewStories   SchoolNewsStory[]      @relation("SchoolNewsInterviewAsset")
-  newsStoryRevisions NewsStoryRevision[]    @relation("NewsStoryRevisionInterviewAsset")
-  liveRecordings     LiveStudioSession[]    @relation("LiveStudioRecordingAsset")
-  podcastEpisodes    SchoolPodcastEpisode[]
+  organisation          Organisation?          @relation("OrganisationMediaAssets", fields: [organisationId], references: [id], onDelete: Cascade)
+  genres                MediaAssetGenre[]
+  track                 Track?
+  promoVersions         PromoVersion[]
+  audioTakes            AudioTake[]
+  audioClips            AudioClip[]
+  audioRenderOutputs    AudioRender[]          @relation("AudioRenderOutput")
+  proofOfPlayEvents     ProofOfPlayEvent[]
+  playoutIntents        PlayoutIntent[]
+  schoolRundownItems    SchoolRundownItem[]
+  transcripts           Transcript[]
+  interviewStories      SchoolNewsStory[]      @relation("SchoolNewsInterviewAsset")
+  newsStoryRevisions    NewsStoryRevision[]    @relation("NewsStoryRevisionInterviewAsset")
+  liveRecordings        LiveStudioSession[]    @relation("LiveStudioRecordingAsset")
+  podcastEpisodes       SchoolPodcastEpisode[]
+  studioProductHandoffs StudioProductHandoff[]
 
   @@unique([id, organisationId])
   @@index([organisationId])
@@ -2879,6 +2888,7 @@ model PromoVersion {
   voiceTrackSegues            VoiceTrackSegue[]
   retailMediaCreatives        RetailMediaOrderCreative[]
   schoolEpisodeExchangeOffers SchoolEpisodeExchangeOffer[]
+  studioProductHandoffs       StudioProductHandoff[]
 
   @@unique([promoAssetId, version])
   @@unique([promoAssetId, sourceReference])
@@ -4183,6 +4193,7 @@ model SchoolEpisode {
   newsStories           SchoolNewsStory[]
   liveSessions          LiveStudioSession[]
   assignmentSubmissions AssignmentSubmission[]
+  studioProductHandoffs StudioProductHandoff[]
 
   @@index([organisationId, status])
   @@index([programmeId, createdAt])
@@ -4362,6 +4373,7 @@ model AudioProject {
   voiceTrackSegues      VoiceTrackSegue[]
   newsStories           SchoolNewsStory[]
   newsStoryRevisions    NewsStoryRevision[]
+  studioProductHandoffs StudioProductHandoff[]
 
   @@unique([id, organisationId])
   @@index([organisationId, status])
@@ -4687,12 +4699,43 @@ model AudioRender {
   requestedBy                User                        @relation("AudioRenderRequestedBy", fields: [requestedByUserId], references: [id], onDelete: Restrict)
   broadcastProcessingProfile BroadcastProcessingProfile? @relation(fields: [broadcastProcessingProfileId], references: [id], onDelete: SetNull)
   voiceTrackSegues           VoiceTrackSegue[]
+  studioProductHandoffs      StudioProductHandoff[]
 
   @@index([organisationId, createdAt])
   @@index([projectId, createdAt])
   @@index([status, createdAt])
   @@index([versionId])
   @@index([broadcastProcessingProfileId, processingQcStatus, createdAt])
+}
+
+model StudioProductHandoff {
+  id              String                   @id @default(cuid())
+  organisationId  String
+  projectId       String
+  renderId        String
+  promoVersionId  String
+  mediaAssetId    String
+  targetEpisodeId String?
+  destination     StudioProductDestination
+  destinationKey  String                   @unique
+  workflowPath    String
+  snapshot        Json
+  createdByUserId String
+  createdAt       DateTime                 @default(now())
+
+  organisation  Organisation   @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  project       AudioProject   @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  render        AudioRender    @relation(fields: [renderId], references: [id], onDelete: Restrict)
+  promoVersion  PromoVersion   @relation(fields: [promoVersionId], references: [id], onDelete: Restrict)
+  mediaAsset    MediaAsset     @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+  targetEpisode SchoolEpisode? @relation(fields: [targetEpisodeId], references: [id], onDelete: Restrict)
+  createdBy     User           @relation("StudioProductHandoffCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@index([organisationId, createdAt])
+  @@index([projectId, createdAt])
+  @@index([renderId, destination])
+  @@index([targetEpisodeId])
+  @@index([createdByUserId])
 }
 
 model BroadcastProcessingProfile {
