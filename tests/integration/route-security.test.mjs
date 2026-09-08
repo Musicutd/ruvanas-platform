@@ -706,6 +706,7 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   });
   assert.equal(onlineLocationAttempt.status, 403);
 
+  const db = new PrismaClient();
   const billingBeforeLocation = await db.billingInvoice.count({ where: { organisationId: accountBBody.organisation.id } });
   const subscriptionBeforeLocation = await db.subscription.findUnique({ where: { organisationId: accountBBody.organisation.id }, select: { id: true, planId: true, status: true } });
   const retailLocation = await api("/api/locations", {
@@ -899,7 +900,6 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   });
   assert.equal(crossTenantProductionOrderAttempt.status, 404);
 
-  const db = new PrismaClient();
   try {
     await db.user.update({
       where: { id: accountABody.user.id },
