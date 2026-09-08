@@ -378,6 +378,9 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   const unauthenticatedMultitrackProject = await api("/api/school-radio/multitrack/projects/not-a-project");
   assert.equal(unauthenticatedMultitrackProject.status, 401);
 
+  const unauthenticatedStudioDestinations = await api("/api/school-radio/studio-destinations?renderId=not-a-render");
+  assert.equal(unauthenticatedStudioDestinations.status, 401);
+
   const unauthenticatedPodcasts = await api("/api/school-radio/podcasts");
   assert.equal(unauthenticatedPodcasts.status, 401);
 
