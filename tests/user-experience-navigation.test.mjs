@@ -35,9 +35,20 @@ test("subscriber navigation is organised by tasks and isolates an Online Radio a
   assert.equal(items.find((item) => item.id === "radioAdvertising").href, "/dashboard/radio/advertising");
   assert.ok(!items.some((item) => item.id === "school"));
   assert.ok(!items.some((item) => item.id === "signage"));
+  assert.ok(!items.some((item) => item.id === "locations"));
   assert.ok(!items.some((item) => item.id === "retailHome"));
   assert.ok(!items.some((item) => item.id === "schoolHome"));
   assert.equal(items.find((item) => item.id === "radioHome").href, "/dashboard/radio");
+});
+
+test("Locations & Zones appears before Players & Devices only for physical products", () => {
+  for (const capability of ["retailRadioEnabled", "schoolRadioEnabled"]) {
+    const items = buildSubscriberNavigation({ entitlements: { serviceEnabled: true, [capability]: true } }).flatMap((section) => section.items);
+    assert.ok(items.findIndex((item) => item.id === "locations") >= 0);
+    assert.ok(items.findIndex((item) => item.id === "locations") < items.findIndex((item) => item.id === "players"));
+  }
+  const online = buildSubscriberNavigation({ entitlements: { serviceEnabled: true, onlineRadioEnabled: true } }).flatMap((section) => section.items);
+  assert.equal(online.some((item) => item.id === "locations"), false);
 });
 
 test("product cards show only products owned by the subscriber", () => {

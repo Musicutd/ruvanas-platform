@@ -699,6 +699,32 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   });
   assert.equal(retailStationAttempt.status, 403);
 
+  const onlineLocationAttempt = await api("/api/locations", {
+    method: "POST",
+    cookie: cookieA,
+    body: { name: "Online-only location", timezone: "Europe/Malta", firstZoneName: "Not required" }
+  });
+  assert.equal(onlineLocationAttempt.status, 403);
+
+  const billingBeforeLocation = await db.billingInvoice.count({ where: { organisationId: accountBBody.organisation.id } });
+  const subscriptionBeforeLocation = await db.subscription.findUnique({ where: { organisationId: accountBBody.organisation.id }, select: { id: true, planId: true, status: true } });
+  const retailLocation = await api("/api/locations", {
+    method: "POST",
+    cookie: cookieB,
+    body: { name: `Retail location ${suffix}`, timezone: "Europe/Malta", firstZoneName: "Main floor", city: "Valletta", countryCode: "MT" }
+  });
+  assert.equal(retailLocation.status, 201, await retailLocation.clone().text());
+  const retailLocationBody = await retailLocation.json();
+  assert.equal(retailLocationBody.location.zones[0].name, "Main floor");
+  const retailLocations = await api("/api/locations", { cookie: cookieB });
+  assert.equal(retailLocations.status, 200, await retailLocations.clone().text());
+  assert.equal((await retailLocations.json()).locations.some((item) => item.id === retailLocationBody.location.id), true);
+  const crossTenantAreaAttempt = await api(`/api/locations/${retailLocationBody.location.id}/zones`, { method: "POST", cookie: cookieA, body: { name: "Foreign area" } });
+  assert.equal(crossTenantAreaAttempt.status, 403);
+  assert.equal(await db.auditLog.count({ where: { organisationId: accountBBody.organisation.id, action: "SUBSCRIBER_LOCATION_CREATED", entityId: retailLocationBody.location.id } }), 1);
+  assert.equal(await db.billingInvoice.count({ where: { organisationId: accountBBody.organisation.id } }), billingBeforeLocation);
+  assert.deepEqual(await db.subscription.findUnique({ where: { organisationId: accountBBody.organisation.id }, select: { id: true, planId: true, status: true } }), subscriptionBeforeLocation);
+
   const crossTenantOrganisationSwitch = await api("/api/me/organisation", {
     method: "POST",
     cookie: cookieB,

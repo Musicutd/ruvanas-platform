@@ -48,6 +48,7 @@ export default async function RetailRadioDashboard() {
     ]}
     sections={[
       { eyebrow: "Daily control", title: "Run your locations", description: "The tools used most often by retail teams.", actions: [
+        { href: "/dashboard/locations", label: "Locations & Zones", description: "Create shops and the playback or display areas inside them." },
         { href: "/dashboard/programming", label: "Music programming", description: "Choose modes and schedule the week." },
         { href: "/dashboard/players", label: "Shop players", description: "Set up and check each listening device." },
         { href: "/dashboard/player-sessions", label: "Live stream sessions", description: "See which stream slots are active now." }

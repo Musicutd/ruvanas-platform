@@ -125,7 +125,12 @@ export default function PlayerSetupClient({ players, zones, canManage, configure
       <span>The progress line uses live device evidence. It cannot mark a listening area ready until recent playback is confirmed.</span>
     </aside>
 
-    {canManage ? <section style={styles.card}>
+    {canManage && zones.length === 0 ? <section style={styles.emptyState}>
+      <strong>No locations or playback areas have been created yet. Create your first location and area before preparing a player.</strong>
+      <a href="/dashboard/locations?returnTo=players" style={styles.linkButton}>Create your first location</a>
+    </section> : null}
+
+    {canManage && zones.length > 0 ? <section style={styles.card}>
       <h2 style={styles.title}>Prepare a player</h2>
       <p style={styles.copy}>Create one enrolled player for each location or playback area, within your plan allowance.</p>
       <form onSubmit={createPlayer} style={styles.form}>
@@ -240,5 +245,6 @@ const styles = {
   checkItem: { display: "flex", gap: 9, padding: 10, borderRadius: 8, background: "#17243a" },
   checkPass: { color: "#4ade80", fontWeight: 900 },
   checkPending: { color: "#fbbf24", fontWeight: 900 },
-  meta: { color: "#91a2ba", fontSize: 12, lineHeight: 1.45, margin: "4px 0 0" }
+  meta: { color: "#91a2ba", fontSize: 12, lineHeight: 1.45, margin: "4px 0 0" },
+  emptyState: { marginTop: 18, display: "grid", justifyItems: "start", gap: 12, padding: 20, borderRadius: 12, border: "1px solid #f4b942", background: "#2f291c", color: "#fde68a" }
 };

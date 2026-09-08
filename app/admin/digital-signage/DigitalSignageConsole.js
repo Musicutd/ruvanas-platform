@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 const emptyData = { assets: [], layouts: [], devices: [], playlists: [], takeovers: [] };
 
-export default function DigitalSignageConsole({ organisations, showOrganisationSelector = true }) {
+export default function DigitalSignageConsole({ organisations, showOrganisationSelector = true, locationsHref = "/admin/locations" }) {
   const enabledOrganisations = organisations.filter((item) => item.digitalSignageEnabled);
   const [organisationId, setOrganisationId] = useState(enabledOrganisations[0]?.id || "");
   const [data, setData] = useState(emptyData);
@@ -38,13 +38,14 @@ export default function DigitalSignageConsole({ organisations, showOrganisationS
 
   async function uploadAsset(event) {
     event.preventDefault(); setBusy("asset"); setMessage("");
+    const form = event.currentTarget;
     try {
-      const formData = new FormData(event.currentTarget);
+      const formData = new FormData(form);
       formData.set("organisationId", organisationId);
       const response = await fetch("/api/admin/digital-signage/assets", { method: "POST", body: formData });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Unable to upload the visual.");
-      event.currentTarget.reset();
+      form.reset();
       await load();
       setMessage(result.duplicate ? "This visual already exists in the library." : result.asset.kind === "VIDEO" ? "Video uploaded. Protected processing is now running; refresh shortly to see when it is ready." : "Visual asset uploaded safely.");
     } catch (error) { setMessage(error instanceof Error ? error.message : "Unable to upload the visual."); }
@@ -53,7 +54,8 @@ export default function DigitalSignageConsole({ organisations, showOrganisationS
 
   async function createLayout(event) {
     event.preventDefault(); setBusy("layout"); setMessage("");
-    const formData = new FormData(event.currentTarget);
+    const form = event.currentTarget;
+    const formData = new FormData(form);
     const canvasWidth = Number(formData.get("canvasWidth"));
     const canvasHeight = Number(formData.get("canvasHeight"));
     try {
@@ -68,14 +70,15 @@ export default function DigitalSignageConsole({ organisations, showOrganisationS
       }) });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Unable to create the layout.");
-      event.currentTarget.reset(); await load(); setMessage("Reusable full-screen layout created.");
+      form.reset(); await load(); setMessage("Reusable full-screen layout created.");
     } catch (error) { setMessage(error instanceof Error ? error.message : "Unable to create the layout."); }
     finally { setBusy(""); }
   }
 
   async function createDevice(event) {
     event.preventDefault(); setBusy("device"); setMessage("");
-    const formData = new FormData(event.currentTarget);
+    const form = event.currentTarget;
+    const formData = new FormData(form);
     try {
       const response = await fetch("/api/admin/digital-signage/devices", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
         organisationId,
@@ -86,7 +89,7 @@ export default function DigitalSignageConsole({ organisations, showOrganisationS
       }) });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Unable to create the device.");
-      event.currentTarget.reset();
+      form.reset();
       await load();
       setMessage(`Device created. One-time enrolment code: ${result.device.enrolmentCode}`);
     } catch (error) { setMessage(error instanceof Error ? error.message : "Unable to create the device."); }
@@ -194,10 +197,12 @@ export default function DigitalSignageConsole({ organisations, showOrganisationS
         <form onSubmit={createDevice} style={styles.card}>
           <h2 style={styles.cardTitle}>Display devices</h2>
           <p style={styles.small}>Bind each screen to one existing location zone. Enrolment codes expire after 24 hours and are shown only once.</p>
-          <label style={styles.label}>Device name<input name="name" required maxLength={200} style={styles.input} /></label>
-          <label style={styles.label}>Location and zone<select name="zoneId" required style={styles.input}><option value="">Select a zone</option>{zones.map((zone) => <option key={zone.id} value={zone.id}>{zone.locationName} — {zone.name}</option>)}</select></label>
-          <div style={styles.two}><label style={styles.label}>Screen width<input name="viewportWidth" type="number" min="320" max="8192" defaultValue="1920" required style={styles.input} /></label><label style={styles.label}>Screen height<input name="viewportHeight" type="number" min="240" max="8192" defaultValue="1080" required style={styles.input} /></label></div>
-          <button disabled={busy === "device" || zones.length === 0} style={styles.button}>{busy === "device" ? "Creating…" : "Create device enrolment"}</button>
+          {zones.length === 0 ? <div style={styles.emptyState}><strong>Before adding a display, create the location and area where this screen will operate.</strong><a href={locationsHref} style={styles.emptyAction}>Create location / area</a></div> : <>
+            <label style={styles.label}>Device name<input name="name" required maxLength={200} style={styles.input} /></label>
+            <label style={styles.label}>Location and zone<select name="zoneId" required style={styles.input}><option value="">Select a zone</option>{zones.map((zone) => <option key={zone.id} value={zone.id}>{zone.locationName} — {zone.name}</option>)}</select></label>
+            <div style={styles.two}><label style={styles.label}>Screen width<input name="viewportWidth" type="number" min="320" max="8192" defaultValue="1920" required style={styles.input} /></label><label style={styles.label}>Screen height<input name="viewportHeight" type="number" min="240" max="8192" defaultValue="1080" required style={styles.input} /></label></div>
+            <button disabled={busy === "device"} style={styles.button}>{busy === "device" ? "Creating…" : "Create device enrolment"}</button>
+          </>}
           <p style={styles.count}>{data.devices.length} registered device{data.devices.length === 1 ? "" : "s"}</p>
           {data.devices.slice(0, 5).map((device) => <div key={device.id} style={styles.row}><strong>{device.name}</strong><span>{device.zone.location.name} · {device.status}</span></div>)}
         </form>
@@ -255,5 +260,7 @@ const styles = {
   count: { margin: "8px 0 0", color: "#9a6400", fontSize: 12, fontWeight: 900, textTransform: "uppercase" },
   row: { display: "grid", gap: 3, paddingTop: 10, borderTop: "1px solid #e2e8f0", color: "#334155", fontSize: 13 },
   actions: { display: "flex", gap: 8, flexWrap: "wrap" },
-  errorText: { color: "#b91c1c", fontWeight: 700 }
+  errorText: { color: "#b91c1c", fontWeight: 700 },
+  emptyState: { display: "grid", justifyItems: "start", gap: 12, padding: 15, borderRadius: 9, border: "1px solid #f59e0b", background: "#fffbeb", color: "#78350f", lineHeight: 1.5 },
+  emptyAction: { display: "inline-flex", padding: "9px 12px", borderRadius: 7, background: "#0f172a", color: "#fff", fontWeight: 900, textDecoration: "none" }
 };
