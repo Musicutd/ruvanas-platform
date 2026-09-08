@@ -51,6 +51,7 @@ export default async function SchoolProductDashboard() {
     ]}
     sections={[
       { eyebrow: "Production", title: "School creative suite", description: "Create programmes with staff oversight at every important step.", actions: [
+        { href: "/dashboard/locations", label: "Locations & Zones", description: "Create the school sites and supervised playback or display areas." },
         { href: "/dashboard/school-radio", label: "School Radio workspace", description: "Open shows, episodes, podcasts, news and the live studio." },
         { href: "/dashboard/media", label: "School media library", description: "Organise approved organisation audio." },
         { href: "/dashboard/studio", label: "Professional production", description: "Request support from Ruvanas Studio." }

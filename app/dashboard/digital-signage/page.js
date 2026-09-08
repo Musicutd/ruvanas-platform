@@ -16,5 +16,5 @@ export default async function SubscriberDigitalSignagePage() {
   const organisation = context.membership.organisation;
   const entitlements = resolveEntitlements(organisation.subscription);
   if (!entitlements.digitalSignageEnabled) redirect("/dashboard");
-  return <DigitalSignageConsole organisations={[{ id: organisation.id, name: organisation.name, locations: organisation.locations, digitalSignageEnabled: true }]} showOrganisationSelector={false} />;
+  return <DigitalSignageConsole organisations={[{ id: organisation.id, name: organisation.name, locations: organisation.locations, digitalSignageEnabled: true }]} showOrganisationSelector={false} locationsHref="/dashboard/locations?returnTo=signage" />;
 }
