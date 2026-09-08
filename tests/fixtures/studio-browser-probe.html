@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Ruvanas Studio browser probe</title>
+  </head>
+  <body>
+    <output id="result">Running Studio browser probe…</output>
+    <script>
+      const mediaTypes = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/mp4"];
+      const result = {
+        mediaRecorder: typeof MediaRecorder === "function",
+        audioContext: typeof (window.AudioContext || window.webkitAudioContext) === "function",
+        indexedDb: Boolean(window.indexedDB),
+        supportedRecordingTypes: typeof MediaRecorder === "function" && typeof MediaRecorder.isTypeSupported === "function"
+          ? mediaTypes.filter((type) => MediaRecorder.isTypeSupported(type))
+          : []
+      };
+      document.querySelector("#result").textContent = JSON.stringify(result);
+    </script>
+  </body>
+</html>

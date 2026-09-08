@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { studioMeterState } from "@/lib/studio-recording.mjs";
+import { inspectStudioBrowserSupport, studioBrowserSupportMessage } from "@/lib/studio-browser-support.mjs";
 
 const emptyProject = { title: "", programmeId: "", episodeId: "", studentGroupId: "" };
 const defaultEdits = { trimStartMs: 0, trimEndMs: "", fadeInMs: 0, fadeOutMs: 0, normalize: true, targetLufs: -16, noiseCleanup: false };
@@ -54,8 +55,13 @@ async function recoveryDelete(projectId) {
   database.close();
 }
 
-function recorderType() {
-  return ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/mp4"].find((type) => MediaRecorder.isTypeSupported(type)) || "";
+function recordingSupport() {
+  return inspectStudioBrowserSupport({
+    mediaDevices: navigator.mediaDevices,
+    MediaRecorderClass: window.MediaRecorder,
+    AudioContextClass: window.AudioContext || window.webkitAudioContext,
+    indexedDb: window.indexedDB
+  });
 }
 
 export default function AudioLabClient({ requestedProjectId = "", experienceMode = "BEGINNER" }) {
@@ -187,6 +193,8 @@ export default function AudioLabClient({ requestedProjectId = "", experienceMode
   async function testMicrophone() {
     setError(""); setNotice("");
     try {
+      const support = recordingSupport();
+      if (!support.ready) throw new Error(studioBrowserSupportMessage(support));
       stopInput();
       const stream = await navigator.mediaDevices.getUserMedia({ audio: deviceId ? { deviceId: { exact: deviceId }, echoCancellation: false, noiseSuppression: false, autoGainControl: false } : true });
       streamRef.current = stream;
@@ -194,13 +202,20 @@ export default function AudioLabClient({ requestedProjectId = "", experienceMode
       const available = await navigator.mediaDevices.enumerateDevices();
       const microphones = available.filter((item) => item.kind === "audioinput");
       setDevices(microphones); setDeviceId((current) => current || microphones[0]?.deviceId || ""); setPermission("READY"); setNotice("Microphone is live. Check the level before recording and use headphones for monitoring.");
-    } catch { setPermission("BLOCKED"); setError("Microphone access was blocked. Allow microphone access in the browser and test again."); }
+    } catch (permissionError) {
+      setPermission("BLOCKED");
+      setError(permissionError instanceof Error && permissionError.message.startsWith("This browser")
+        ? permissionError.message
+        : "Microphone access was blocked. Allow microphone access in the browser and test again.");
+    }
   }
 
   function startMeter(stream) {
     cancelAnimationFrame(meterFrameRef.current);
     meterContextRef.current?.close().catch(() => {});
-    const context = new AudioContext();
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) throw new Error("Live audio monitoring is not supported in this browser.");
+    const context = new AudioContextClass();
     const analyser = context.createAnalyser();
     analyser.fftSize = 256;
     const source = context.createMediaStreamSource(stream);
@@ -239,6 +254,8 @@ export default function AudioLabClient({ requestedProjectId = "", experienceMode
     }
     setError(""); setNotice(""); setServerTake(null);
     try {
+      const support = recordingSupport();
+      if (!support.ready) throw new Error(studioBrowserSupportMessage(support));
       let stream = streamRef.current;
       if (!stream?.active) {
         stream = await navigator.mediaDevices.getUserMedia({ audio: { ...(deviceId ? { deviceId: { exact: deviceId } } : {}), echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
@@ -252,7 +269,7 @@ export default function AudioLabClient({ requestedProjectId = "", experienceMode
         }
         setCountdown(0);
       }
-      const mimeType = recorderType();
+      const mimeType = support.preferredMimeType;
       const recorder = new MediaRecorder(stream, mimeType ? { mimeType, audioBitsPerSecond: 128000 } : undefined);
       chunksRef.current = [];
       recorder.ondataavailable = (event) => {
