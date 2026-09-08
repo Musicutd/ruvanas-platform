@@ -6,16 +6,27 @@ import {
   pushHistory, reflowClips, silenceSelection, splitAt, timelineDuration, trimToSelection
 } from "@/lib/waveform-editor.mjs";
 import { applyVoiceCleanupPreset, normalizeVoiceCleanup, voiceCleanupLabel } from "@/lib/voice-cleanup.mjs";
+import { applyStudioEffectPreset, applyStudioMasteringPreset, normalizeStudioEffects, normalizeStudioMastering, studioEffectLabel, studioMasteringLabel } from "@/lib/studio-effects-mastering.mjs";
 
 const newId = () => crypto.randomUUID();
 const seconds = (milliseconds) => (Number(milliseconds || 0) / 1000).toFixed(2);
 const milliseconds = (value) => Math.max(0, Math.round(Number(value || 0) * 1000));
+const effectPresets = [
+  ["NONE", "No effects", "Keep the repaired voice natural."], ["BROADCAST_VOICE", "Broadcast Voice", "Clear and controlled for radio."],
+  ["PODCAST_VOICE", "Podcast Voice", "Warm, close and gently levelled."], ["PROMO_VOICE", "Promo Voice", "Brighter and more energetic."],
+  ["TELEPHONE_VOICE", "Telephone Voice", "Intentional narrow-band character."], ["WARM_VOICE", "Warm Voice", "Softer tone with light space."],
+  ["CLEAN_INTERVIEW", "Clean Interview", "Natural dynamics with a gentle gate."]
+];
+const masteringPresets = [
+  ["PODCAST", "Podcast", "-16 LUFS · -1.5 dBTP"], ["ONLINE_RADIO", "Online Radio", "-16 LUFS · -1.0 dBTP"],
+  ["RETAIL_PROMO", "Retail Promo", "-14 LUFS · -1.0 dBTP"], ["SCHOOL_PROGRAMME", "School Programme", "-18 LUFS · -1.5 dBTP"]
+];
 
 export default function WaveformEditorClient({ requestedProjectId = "", experienceMode, onExperienceModeChange }) {
   const [projects, setProjects] = useState([]);
   const [projectId, setProjectId] = useState("");
   const [editor, setEditor] = useState(null);
-  const [state, setState] = useState({ clips: [], markers: [], normalize: true, targetLufs: -16, noiseCleanup: false, voiceCleanup: applyVoiceCleanupPreset("OFF") });
+  const [state, setState] = useState({ clips: [], markers: [], normalize: true, targetLufs: -16, noiseCleanup: false, voiceCleanup: applyVoiceCleanupPreset("OFF"), effects: applyStudioEffectPreset("NONE"), mastering: applyStudioMasteringPreset("PODCAST") });
   const [history, setHistory] = useState([]);
   const [future, setFuture] = useState([]);
   const [cursorMs, setCursorMs] = useState(0);
@@ -40,8 +51,11 @@ export default function WaveformEditorClient({ requestedProjectId = "", experien
   const advanced = (experienceMode || localMode) === "ADVANCED";
   const hasSelection = Math.max(selection.startMs, selection.endMs) > Math.min(selection.startMs, selection.endMs);
   const cleanup = normalizeVoiceCleanup(state.voiceCleanup, state.noiseCleanup);
-  const previewGroupId = editor?.renders?.find((render) => render.resultJson?.studioPreview?.groupId)?.resultJson?.studioPreview?.groupId;
-  const cleanupPreviews = (editor?.renders || []).filter((render) => render.resultJson?.studioPreview?.groupId === previewGroupId);
+  const effects = normalizeStudioEffects(state.effects);
+  const mastering = normalizeStudioMastering(state.mastering, state);
+  const previewGroupId = editor?.renders?.find((render) => render.resultJson?.studioPreview?.purpose === "VOICE_CLEANUP")?.resultJson?.studioPreview?.groupId;
+  const cleanupPreviews = (editor?.renders || []).filter((render) => render.resultJson?.studioPreview?.purpose === "VOICE_CLEANUP" && render.resultJson.studioPreview.groupId === previewGroupId);
+  const masterPreview = editor?.renders?.find((render) => render.resultJson?.studioPreview?.purpose === "EFFECTS_MASTERING");
 
   const loadProjects = useCallback(async () => {
     const response = await fetch("/api/school-radio/audio-lab", { cache: "no-store" });
@@ -114,6 +128,21 @@ export default function WaveformEditorClient({ requestedProjectId = "", experien
   function changeCleanup(changes, label) {
     const voiceCleanup = normalizeVoiceCleanup({ ...cleanup, ...changes, enabled: true, preset: "CUSTOM" });
     commit({ ...state, voiceCleanup, noiseCleanup: voiceCleanup.noiseReduction > 0 }, label);
+  }
+  function chooseEffectPreset(preset) {
+    const nextEffects = applyStudioEffectPreset(preset);
+    commit({ ...state, effects: nextEffects }, `Effects: ${studioEffectLabel(nextEffects)}`);
+  }
+  function changeEffects(changes, label) {
+    commit({ ...state, effects: normalizeStudioEffects({ ...effects, ...changes, enabled: true, preset: "CUSTOM" }) }, label);
+  }
+  function chooseMasteringPreset(preset) {
+    const nextMastering = applyStudioMasteringPreset(preset);
+    commit({ ...state, mastering: nextMastering, normalize: nextMastering.enabled, targetLufs: nextMastering.targetLufs }, `Mastering: ${studioMasteringLabel(nextMastering)}`);
+  }
+  function changeMastering(changes, label) {
+    const nextMastering = normalizeStudioMastering({ ...mastering, ...changes, preset: "CUSTOM" });
+    commit({ ...state, mastering: nextMastering, normalize: nextMastering.enabled, targetLufs: nextMastering.targetLufs }, label);
   }
   function undo() {
     if (!history.length) return;
@@ -198,7 +227,7 @@ export default function WaveformEditorClient({ requestedProjectId = "", experien
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || "The waveform action failed.");
       setEditor(payload); setState(payload.state); setHistory([]); setFuture([]);
-      setMessage(action === "QUEUE_RENDER" ? "Final render queued. The background audio worker will prepare the review copy." : action === "QUEUE_CLEANUP_PREVIEW" ? "Before and After previews queued. They will appear together when the protected worker finishes." : action === "INITIALIZE" ? "The source take is ready in the non-destructive timeline." : `Project saved as version ${payload.currentVersion}.`);
+      setMessage(action === "QUEUE_RENDER" ? "Final render queued. The background audio worker will prepare the review copy." : action === "QUEUE_CLEANUP_PREVIEW" ? "Before and After previews queued. They will appear together when the protected worker finishes." : action === "QUEUE_MASTER_PREVIEW" ? "Effects and mastering preview queued. Its quality report will appear when processing finishes." : action === "INITIALIZE" ? "The source take is ready in the non-destructive timeline." : `Project saved as version ${payload.currentVersion}.`);
       window.dispatchEvent(new CustomEvent("ruvanas:studio-projects-refresh"));
     } catch (actionError) { setError(actionError.message); } finally { setWorking(false); }
   }
@@ -227,6 +256,7 @@ export default function WaveformEditorClient({ requestedProjectId = "", experien
       <div style={s.paneTabs} role="tablist" aria-label="Waveform workflow">
         <button type="button" role="tab" aria-selected={activePane === "EDIT"} style={activePane === "EDIT" ? s.paneActive : s.paneTab} onClick={() => setActivePane("EDIT")}><strong>Edit audio</strong><span>Timeline and precision tools</span></button>
         <button type="button" role="tab" aria-selected={activePane === "CLEAN"} style={activePane === "CLEAN" ? s.paneActive : s.paneTab} onClick={() => setActivePane("CLEAN")}><strong>Clean voice</strong><span>Repair and compare</span></button>
+        <button type="button" role="tab" aria-selected={activePane === "MASTER"} style={activePane === "MASTER" ? s.paneActive : s.paneTab} onClick={() => setActivePane("MASTER")}><strong>Effects & master</strong><span>Style, loudness and quality</span></button>
       </div>
       {activePane === "EDIT" ? <>
       <div style={s.toolbar}><button style={s.primary} onClick={playFromCursor}>▶ Play / pause</button><button style={looping ? s.active : s.secondary} onClick={() => setLooping(!looping)}>↻ Loop selection</button><button style={s.secondary} disabled={!hasSelection} onClick={copyCurrentSelection}>Copy</button><button style={s.secondary} disabled={!hasSelection} onClick={cutCurrentSelection}>Cut</button><button style={s.secondary} disabled={!clipboard.clips.length} onClick={pasteAtCursor}>Paste at cursor</button><button style={s.secondary} disabled={!history.length} onClick={undo}>Undo</button><button style={s.secondary} disabled={!future.length} onClick={redo}>Redo</button><label style={s.inline}>Zoom <input type="range" min="1" max="5" step=".5" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} /></label></div>
@@ -242,7 +272,7 @@ export default function WaveformEditorClient({ requestedProjectId = "", experien
         <div style={s.markerList}>{state.markers.map((marker) => <button key={marker.clientId} style={s.marker} onClick={() => setCursorMs(marker.positionMs)}>{seconds(marker.positionMs)} · {marker.type.replaceAll("_", " ")} · {marker.label}</button>)}</div>
       </div> : null}
       <p style={s.shortcuts}>Keyboard: Space play/pause · S split · Backspace ripple delete · Delete keep gap · L loop · Ctrl/Cmd+C/X/V copy, cut and paste · Ctrl/Cmd+Z/Y undo and redo.</p>
-      </> : <section style={s.cleanup} aria-labelledby="voice-cleanup-title">
+      </> : activePane === "CLEAN" ? <section style={s.cleanup} aria-labelledby="voice-cleanup-title">
         <div style={s.cleanupHeading}><div><p style={s.eyebrow}>CLEAN VOICE</p><h3 id="voice-cleanup-title" style={s.cardTitle}>Repair common voice problems safely</h3><p style={s.hint}>Choose a starting point, then compare protected server previews. Your original recording never changes.</p></div><span style={cleanup.enabled ? s.cleanupOn : s.cleanupOff}>{voiceCleanupLabel(cleanup)}</span></div>
         <div style={s.presetGrid}>
           {[{ id: "OFF", title: "Off", text: "Keep the edited audio unchanged." }, { id: "GENTLE", title: "Gentle repair", text: "Light background cleanup for a good recording." }, { id: "CLEAN_DIALOGUE", title: "Clean dialogue", text: "Stronger repair for interviews and spoken audio." }, { id: "BROADCAST", title: "Broadcast voice", text: "Clear, level speech with a broadcast tone." }].map((preset) => <button type="button" key={preset.id} aria-pressed={cleanup.preset === preset.id} style={cleanup.preset === preset.id ? s.presetActive : s.preset} onClick={() => chooseCleanupPreset(preset.id)}><strong>{preset.title}</strong><span>{preset.text}</span></button>)}
@@ -258,9 +288,33 @@ export default function WaveformEditorClient({ requestedProjectId = "", experien
         </div> : null}
         <div style={s.previewActions}><button type="button" style={s.primary} disabled={working || !cleanup.enabled} onClick={() => send("QUEUE_CLEANUP_PREVIEW")}>Create Before/After preview</button><span style={s.hint}>{cleanup.enabled ? "Both previews use the same saved edit version." : "Choose a repair preset to enable comparison."}</span></div>
         {cleanupPreviews.length ? <CleanupPreview renders={cleanupPreviews} /> : null}
+      </section> : <section style={s.cleanup} aria-labelledby="effects-master-title">
+        <div style={s.cleanupHeading}><div><p style={s.eyebrow}>EFFECTS & MASTER</p><h3 id="effects-master-title" style={s.cardTitle}>Choose a sound, then check delivery quality</h3><p style={s.hint}>Curated effects stay editable until the protected worker renders them. Mastering reports measured LUFS, True Peak and loudness range.</p></div><span style={s.cleanupOn}>{studioEffectLabel(effects)} · {studioMasteringLabel(mastering)}</span></div>
+        <h4 style={s.sectionTitle}>1 · Sound preset</h4>
+        <div style={s.presetGrid}>{effectPresets.map(([id, title, text]) => <button type="button" key={id} aria-pressed={effects.preset === id} style={effects.preset === id ? s.presetActive : s.preset} onClick={() => chooseEffectPreset(id)}><strong>{title}</strong><span>{text}</span></button>)}</div>
+        {advanced && effects.enabled ? <div style={s.cleanupControls}>
+          <label style={s.label}>Tone<select style={s.input} value={effects.tone} onChange={(event) => changeEffects({ tone: event.target.value }, "Adjust effects tone")}><option value="NEUTRAL">Neutral</option><option value="WARM">Warm</option><option value="BRIGHT">Bright</option><option value="BROADCAST">Broadcast</option><option value="TELEPHONE">Telephone</option></select></label>
+          <label style={s.label}>Compression <span>{effects.compression}%</span><input type="range" min="0" max="100" step="5" value={effects.compression} onChange={(event) => changeEffects({ compression: Number(event.target.value) }, "Adjust compression")} /></label>
+          <label style={s.label}>Noise gate <span>{effects.gate}%</span><input type="range" min="0" max="100" step="5" value={effects.gate} onChange={(event) => changeEffects({ gate: Number(event.target.value) }, "Adjust noise gate")} /></label>
+          <label style={s.label}>Reverb <span>{effects.reverb}%</span><input type="range" min="0" max="30" step="1" value={effects.reverb} onChange={(event) => changeEffects({ reverb: Number(event.target.value) }, "Adjust reverb")} /></label>
+          <label style={s.label}>Delay <span>{effects.delayMs} ms</span><input type="range" min="0" max="250" step="10" value={effects.delayMs} onChange={(event) => changeEffects({ delayMs: Number(event.target.value) }, "Adjust delay")} /></label>
+          <label style={s.label}>High-pass Hz<input style={s.input} type="number" min="0" max="500" step="5" value={effects.highpassHz} onChange={(event) => changeEffects({ highpassHz: Number(event.target.value) }, "Adjust effects high-pass")} /></label>
+          <label style={s.label}>Low-pass Hz<input style={s.input} type="number" min="0" max="20000" step="100" value={effects.lowpassHz} onChange={(event) => changeEffects({ lowpassHz: Number(event.target.value) }, "Adjust effects low-pass")} /></label>
+          <label style={s.check}><input type="checkbox" checked={effects.hardLimiter} onChange={(event) => changeEffects({ hardLimiter: event.target.checked }, "Adjust effects limiter")} /> Hard limiter in effects rack</label>
+        </div> : null}
+        <h4 style={s.sectionTitle}>2 · Delivery preset</h4>
+        <div style={s.presetGrid}>{masteringPresets.map(([id, title, text]) => <button type="button" key={id} aria-pressed={mastering.preset === id} style={mastering.preset === id ? s.presetActive : s.preset} onClick={() => chooseMasteringPreset(id)}><strong>{title}</strong><span>{text}</span></button>)}</div>
+        {advanced ? <div style={s.cleanupControls}>
+          <label style={s.label}>Target loudness (LUFS)<input style={s.input} type="number" min="-24" max="-9" step="0.5" value={mastering.targetLufs} onChange={(event) => changeMastering({ targetLufs: Number(event.target.value), enabled: true }, "Adjust loudness target")} /></label>
+          <label style={s.label}>True Peak ceiling (dBTP)<input style={s.input} type="number" min="-3" max="-0.5" step="0.1" value={mastering.truePeakDbfs} onChange={(event) => changeMastering({ truePeakDbfs: Number(event.target.value), enabled: true }, "Adjust True Peak ceiling")} /></label>
+          <label style={s.label}>Maximum loudness range (LU)<input style={s.input} type="number" min="1" max="20" step="0.5" value={mastering.maxLoudnessRangeLu} onChange={(event) => changeMastering({ maxLoudnessRangeLu: Number(event.target.value), enabled: true }, "Adjust loudness range")} /></label>
+          <label style={s.check}><input type="checkbox" checked={mastering.limiter} onChange={(event) => changeMastering({ limiter: event.target.checked }, "Adjust mastering limiter")} /> Final clipping limiter</label>
+        </div> : null}
+        <div style={s.previewActions}><button type="button" style={s.primary} disabled={working || (!effects.enabled && !mastering.enabled)} onClick={() => send("QUEUE_MASTER_PREVIEW")}>Create mastered preview</button><span style={s.hint}>The worker measures the rendered result; it does not estimate a pass in the browser.</span></div>
+        {masterPreview ? <MasterPreview render={masterPreview} /> : null}
       </section>}
-      <div style={s.finish}><label style={s.check}><input type="checkbox" checked={state.normalize} onChange={(event) => commit({ ...state, normalize: event.target.checked })} /> Normalize final render</label><label style={s.inline}>Target <select style={s.compact} value={state.targetLufs} onChange={(event) => commit({ ...state, targetLufs: Number(event.target.value) })}><option value="-16">-16 LUFS</option><option value="-18">-18 LUFS</option><option value="-23">-23 LUFS</option></select></label><button style={s.secondary} disabled={working} onClick={() => send("SAVE", { reason: "Manual waveform snapshot" })}>Save version</button><button style={s.primary} disabled={working} onClick={() => send("QUEUE_RENDER", { preset: "SCHOOL_RADIO_MP3" })}>Create review render</button></div>
-      {editor.renders?.some((render) => !render.resultJson?.studioPreview) ? <div style={s.renders}><h3 style={{ marginTop: 0 }}>Recent renders</h3>{editor.renders.filter((render) => !render.resultJson?.studioPreview).map((render) => <div key={render.id} style={s.renderRow}><span>{render.preset.replaceAll("_", " ")} · {render.status}</span>{render.loudnessLufs != null ? <span>{render.loudnessLufs.toFixed(1)} LUFS</span> : null}{render.streamUrl ? <audio controls src={render.streamUrl} /> : null}{render.errorMessage ? <span style={{ color: "#fecaca" }}>{render.errorMessage}</span> : null}</div>)}</div> : null}
+      <div style={s.finish}><span style={s.hint}>Current finish: {studioEffectLabel(effects)} · {mastering.enabled ? `${mastering.targetLufs} LUFS · ${mastering.truePeakDbfs} dBTP` : "loudness matching off"}</span><button style={s.secondary} disabled={working} onClick={() => send("SAVE", { reason: "Manual waveform snapshot" })}>Save version</button><button style={s.primary} disabled={working} onClick={() => send("QUEUE_RENDER", { preset: "SCHOOL_RADIO_MP3" })}>Create review render</button></div>
+      {editor.renders?.some((render) => !render.resultJson?.studioPreview) ? <div style={s.renders}><h3 style={{ marginTop: 0 }}>Recent renders</h3>{editor.renders.filter((render) => !render.resultJson?.studioPreview).map((render) => <div key={render.id} style={s.renderRow}><div><strong>{render.preset.replaceAll("_", " ")} · {render.status}</strong><QualitySummary report={render.resultJson} /></div>{render.streamUrl ? <audio controls src={render.streamUrl} /> : null}{render.errorMessage ? <span style={{ color: "#fecaca" }}>{render.errorMessage}</span> : null}</div>)}</div> : null}
     </> : null}
     <p style={s.safety}>The waveform uses cached peaks. The original recording is never changed or publicly shared; every save creates a recoverable project version.</p>
   </section>;
@@ -279,7 +333,32 @@ function CleanupPreview({ renders }) {
   </div>;
 }
 
+function MasterPreview({ render }) {
+  const ready = render.status === "SUCCEEDED" && render.streamUrl;
+  return <div style={s.comparison}>
+    <div style={s.previewActions}><strong>Mastered preview</strong><span style={s.hint}>{render.status.replaceAll("_", " ")}</span></div>
+    {ready ? <audio controls src={render.streamUrl} style={{ width: "100%" }} /> : <p style={s.hint}>The protected audio worker is preparing and measuring this preview.</p>}
+    <QualitySummary report={render.resultJson} />
+    {render.status === "FAILED" ? <p style={{ color: "#fecaca" }}>{render.errorMessage || "The preview could not be prepared. Your source and saved edits are unchanged."}</p> : null}
+  </div>;
+}
+
+function QualitySummary({ report }) {
+  const quality = report?.masteringQuality;
+  if (!report || (report.integratedLufs == null && report.truePeakDbfs == null && report.loudnessRangeLu == null)) return <small style={s.qualityMuted}>Quality measurement pending</small>;
+  const measurement = [
+    report.integratedLufs == null ? null : `${report.integratedLufs} LUFS`,
+    report.truePeakDbfs == null ? null : `${report.truePeakDbfs} dBTP`,
+    report.loudnessRangeLu == null ? null : `${report.loudnessRangeLu} LU range`
+  ].filter(Boolean).join(" · ");
+  const ready = quality?.status === "READY";
+  return <small style={ready ? s.qualityReady : s.qualityWarning}>
+    {measurement || "No loudness measurement"}{quality?.status ? ` · ${quality.status.replaceAll("_", " ")}` : ""}
+    {quality?.findings?.length ? <span style={s.qualityFindings}>{quality.findings.join(" ")}</span> : null}
+  </small>;
+}
+
 const s = {
-  panel: { border: "1px solid #3b4b66", borderRadius: 16, background: "#111d30", padding: 22, marginBottom: 22 }, heading: { display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: 16, marginBottom: 16 }, eyebrow: { color: "#f4b942", fontSize: 12, fontWeight: 900, letterSpacing: 1.1, margin: "0 0 7px" }, title: { margin: "0 0 8px", fontSize: 28 }, cardTitle: { margin: "0 0 6px", fontSize: 20 }, hint: { color: "#9facbf", lineHeight: 1.5, fontSize: 13 }, label: { display: "grid", gap: 6, color: "#dce5f3", fontWeight: 800, fontSize: 13 }, input: { width: "100%", boxSizing: "border-box", border: "1px solid #61708a", borderRadius: 7, background: "#fff", color: "#111827", padding: "10px 11px", font: "inherit" }, compact: { border: "1px solid #61708a", borderRadius: 7, background: "#fff", padding: "7px" }, primary: { border: 0, borderRadius: 7, background: "#f4b942", color: "#101827", padding: "10px 13px", fontWeight: 900, cursor: "pointer" }, secondary: { border: "1px solid #94a3b8", borderRadius: 7, background: "transparent", color: "#e2e8f0", padding: "9px 12px", fontWeight: 800, cursor: "pointer" }, active: { border: "1px solid #60a5fa", borderRadius: 7, background: "#1d4ed8", color: "#fff", padding: "9px 12px", fontWeight: 800 }, actions: { display: "flex", flexWrap: "wrap", gap: 8 }, toolbar: { display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", margin: "16px 0 10px" }, paneTabs: { display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 8, marginTop: 16 }, paneTab: { display: "grid", gap: 3, textAlign: "left", border: "1px solid #475569", borderRadius: 9, background: "#0b1628", color: "#cbd5e1", padding: 12, cursor: "pointer" }, paneActive: { display: "grid", gap: 3, textAlign: "left", border: "2px solid #f4b942", borderRadius: 9, background: "#2a2416", color: "#fff", padding: 11, cursor: "pointer" }, history: { color: "#93c5fd", fontSize: 12, margin: "0 0 10px" }, inline: { display: "flex", gap: 8, alignItems: "center", color: "#dce5f3", fontWeight: 800, fontSize: 13 }, canvasWrap: { overflowX: "auto", border: "1px solid #3b4b66", borderRadius: 10, touchAction: "pan-x" }, timeGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 10, margin: "12px 0" }, duration: { color: "#9facbf", alignSelf: "end", padding: 8 }, advanced: { border: "1px solid #334155", background: "#182235", borderRadius: 10, padding: 14, marginTop: 12 }, markerRow: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 8 }, markerList: { display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }, marker: { background: "#24334d", border: "1px solid #475569", color: "#dbeafe", borderRadius: 999, padding: "6px 10px" }, cleanup: { border: "1px solid #49617e", background: "#0b1628", borderRadius: 12, padding: 16, marginTop: 16 }, cleanupHeading: { display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: 12 }, cleanupOn: { alignSelf: "start", borderRadius: 999, background: "#14532d", color: "#bbf7d0", padding: "6px 10px", fontSize: 12, fontWeight: 900 }, cleanupOff: { alignSelf: "start", borderRadius: 999, background: "#334155", color: "#dce5f3", padding: "6px 10px", fontSize: 12, fontWeight: 900 }, presetGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(155px,1fr))", gap: 9, marginTop: 12 }, preset: { display: "grid", gap: 5, textAlign: "left", border: "1px solid #475569", borderRadius: 9, background: "#111d30", color: "#e2e8f0", padding: 12, cursor: "pointer" }, presetActive: { display: "grid", gap: 5, textAlign: "left", border: "2px solid #f4b942", borderRadius: 9, background: "#2a2416", color: "#fff", padding: 11, cursor: "pointer" }, cleanupControls: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 12, borderTop: "1px solid #334155", marginTop: 14, paddingTop: 14 }, previewActions: { display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center", marginTop: 14 }, comparison: { borderTop: "1px solid #334155", marginTop: 14, paddingTop: 2 }, finish: { display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", borderTop: "1px solid #334155", marginTop: 16, paddingTop: 16 }, check: { display: "flex", gap: 7, alignItems: "center", color: "#dce5f3", fontWeight: 800, fontSize: 13 }, shortcuts: { color: "#93a4bd", fontSize: 12 }, empty: { border: "1px dashed #52627c", borderRadius: 10, padding: 16, marginTop: 14 }, notice: { border: "1px solid #22c55e", background: "#052e16", color: "#bbf7d0", borderRadius: 8, padding: 12, marginBottom: 14 }, error: { border: "1px solid #ef4444", background: "#451a1a", color: "#fecaca", borderRadius: 8, padding: 12, marginBottom: 14 }, renders: { marginTop: 16, background: "#0b1628", borderRadius: 10, padding: 14 }, renderRow: { display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", borderTop: "1px solid #26364f", padding: "10px 0" }, safety: { color: "#8ea0b8", fontSize: 12, margin: "16px 0 0" }
+  panel: { border: "1px solid #3b4b66", borderRadius: 16, background: "#111d30", padding: 22, marginBottom: 22 }, heading: { display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: 16, marginBottom: 16 }, eyebrow: { color: "#f4b942", fontSize: 12, fontWeight: 900, letterSpacing: 1.1, margin: "0 0 7px" }, title: { margin: "0 0 8px", fontSize: 28 }, cardTitle: { margin: "0 0 6px", fontSize: 20 }, sectionTitle: { margin: "18px 0 8px", fontSize: 15, color: "#f8d889" }, hint: { color: "#9facbf", lineHeight: 1.5, fontSize: 13 }, label: { display: "grid", gap: 6, color: "#dce5f3", fontWeight: 800, fontSize: 13 }, input: { width: "100%", boxSizing: "border-box", border: "1px solid #61708a", borderRadius: 7, background: "#fff", color: "#111827", padding: "10px 11px", font: "inherit" }, compact: { border: "1px solid #61708a", borderRadius: 7, background: "#fff", padding: "7px" }, primary: { border: 0, borderRadius: 7, background: "#f4b942", color: "#101827", padding: "10px 13px", fontWeight: 900, cursor: "pointer" }, secondary: { border: "1px solid #94a3b8", borderRadius: 7, background: "transparent", color: "#e2e8f0", padding: "9px 12px", fontWeight: 800, cursor: "pointer" }, active: { border: "1px solid #60a5fa", borderRadius: 7, background: "#1d4ed8", color: "#fff", padding: "9px 12px", fontWeight: 800 }, actions: { display: "flex", flexWrap: "wrap", gap: 8 }, toolbar: { display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", margin: "16px 0 10px" }, paneTabs: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 8, marginTop: 16 }, paneTab: { display: "grid", gap: 3, textAlign: "left", border: "1px solid #475569", borderRadius: 9, background: "#0b1628", color: "#cbd5e1", padding: 12, cursor: "pointer" }, paneActive: { display: "grid", gap: 3, textAlign: "left", border: "2px solid #f4b942", borderRadius: 9, background: "#2a2416", color: "#fff", padding: 11, cursor: "pointer" }, history: { color: "#93c5fd", fontSize: 12, margin: "0 0 10px" }, inline: { display: "flex", gap: 8, alignItems: "center", color: "#dce5f3", fontWeight: 800, fontSize: 13 }, canvasWrap: { overflowX: "auto", border: "1px solid #3b4b66", borderRadius: 10, touchAction: "pan-x" }, timeGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 10, margin: "12px 0" }, duration: { color: "#9facbf", alignSelf: "end", padding: 8 }, advanced: { border: "1px solid #334155", background: "#182235", borderRadius: 10, padding: 14, marginTop: 12 }, markerRow: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 8 }, markerList: { display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }, marker: { background: "#24334d", border: "1px solid #475569", color: "#dbeafe", borderRadius: 999, padding: "6px 10px" }, cleanup: { border: "1px solid #49617e", background: "#0b1628", borderRadius: 12, padding: 16, marginTop: 16 }, cleanupHeading: { display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: 12 }, cleanupOn: { alignSelf: "start", borderRadius: 999, background: "#14532d", color: "#bbf7d0", padding: "6px 10px", fontSize: 12, fontWeight: 900 }, cleanupOff: { alignSelf: "start", borderRadius: 999, background: "#334155", color: "#dce5f3", padding: "6px 10px", fontSize: 12, fontWeight: 900 }, presetGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(155px,1fr))", gap: 9, marginTop: 12 }, preset: { display: "grid", gap: 5, textAlign: "left", border: "1px solid #475569", borderRadius: 9, background: "#111d30", color: "#e2e8f0", padding: 12, cursor: "pointer" }, presetActive: { display: "grid", gap: 5, textAlign: "left", border: "2px solid #f4b942", borderRadius: 9, background: "#2a2416", color: "#fff", padding: 11, cursor: "pointer" }, cleanupControls: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 12, borderTop: "1px solid #334155", marginTop: 14, paddingTop: 14 }, previewActions: { display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center", marginTop: 14 }, comparison: { borderTop: "1px solid #334155", marginTop: 14, paddingTop: 2 }, finish: { display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", borderTop: "1px solid #334155", marginTop: 16, paddingTop: 16 }, check: { display: "flex", gap: 7, alignItems: "center", color: "#dce5f3", fontWeight: 800, fontSize: 13 }, shortcuts: { color: "#93a4bd", fontSize: 12 }, empty: { border: "1px dashed #52627c", borderRadius: 10, padding: 16, marginTop: 14 }, notice: { border: "1px solid #22c55e", background: "#052e16", color: "#bbf7d0", borderRadius: 8, padding: 12, marginBottom: 14 }, error: { border: "1px solid #ef4444", background: "#451a1a", color: "#fecaca", borderRadius: 8, padding: 12, marginBottom: 14 }, renders: { marginTop: 16, background: "#0b1628", borderRadius: 10, padding: 14 }, renderRow: { display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", borderTop: "1px solid #26364f", padding: "10px 0" }, qualityMuted: { display: "block", color: "#9facbf", marginTop: 4 }, qualityReady: { display: "block", color: "#bbf7d0", marginTop: 4 }, qualityWarning: { display: "block", color: "#fde68a", marginTop: 4 }, qualityFindings: { display: "block", color: "#f8d889", marginTop: 3, maxWidth: 620 }, safety: { color: "#8ea0b8", fontSize: 12, margin: "16px 0 0" }
 };
 

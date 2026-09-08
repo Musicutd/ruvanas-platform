@@ -12,6 +12,7 @@ import ffprobeStatic from "ffprobe-static";
 import { S3Client } from "@aws-sdk/client-s3";
 import { buildMultitrackRenderGraph, buildRenderGraph, parseLoudnessReport, reducePcmPeaks } from "../lib/audio-worker.mjs";
 import { broadcastEncoding, evaluateBroadcastProcessingQc, normalizeBroadcastProcessingProfile } from "../lib/broadcast-audio-processing.mjs";
+import { evaluateStudioMasteringQuality, normalizeStudioMastering } from "../lib/studio-effects-mastering.mjs";
 import { deploymentIdentity, safeOperationalErrorCode, structuredServiceLog } from "../lib/operational-observability.mjs";
 import { recordServiceHeartbeat } from "../lib/operational-observability-service.js";
 
@@ -125,6 +126,8 @@ async function processRender() {
     ]);
     const report = parseLoudnessReport(loudness.stderr);
     const processingQc = processingProfile ? evaluateBroadcastProcessingQc(report, processingProfile) : null;
+    const studioMastering = multitrack ? normalizeStudioMastering(state?.master, state?.master || {}) : normalizeStudioMastering(state?.mastering, state || {});
+    const masteringQuality = processingProfile ? null : evaluateStudioMasteringQuality(report, studioMastering);
     const durationSeconds = Math.max(1, Math.round(Number(probe.stdout.toString("utf8").trim()) || 1));
     const key = processingProfile
       ? `organisations/${render.organisationId}/broadcast-audio/renders/${render.projectId}/${render.id}.${extension}`
@@ -142,9 +145,9 @@ async function processRender() {
         const promoAsset = existingPromo || await tx.promoAsset.create({ data: { organisationId: render.organisationId, name: render.project.title, mediaType: "ANNOUNCEMENT", languageCode: "und" } });
         const nextVersion = Math.max(0, ...(promoAsset.versions || []).map((item) => item.version)) + 1;
         const processingJobs = multitrack || processingProfile ? undefined : { create: ["PREVIEW", "TRANSCODE", "LOUDNESS_ANALYSIS"].map((jobType) => ({ jobType, status: "QUEUED" })) };
-        promoVersion = await tx.promoVersion.create({ data: { promoAssetId: promoAsset.id, mediaAssetId: mediaAsset.id, version: nextVersion, status: "IN_REVIEW", qcStatus: processingProfile ? processingQc.status : multitrack ? "PASSED" : "PENDING", qcNotes: processingProfile ? (processingQc.findings.join(" ") || `Passed ${processingProfile.name} broadcast profile.`) : undefined, sourceType: "STUDIO", sourceReference: `audio-render:${render.id}`, languageCode: sourceTake?.promoVersion?.languageCode || "und", durationSeconds, loudnessLufs: report.integratedLufs, submittedById: render.requestedByUserId, submittedAt: new Date(), ...(processingJobs ? { processingJobs } : {}) } });
+        promoVersion = await tx.promoVersion.create({ data: { promoAssetId: promoAsset.id, mediaAssetId: mediaAsset.id, version: nextVersion, status: "IN_REVIEW", qcStatus: processingProfile ? processingQc.status : multitrack ? (masteringQuality.status === "READY" ? "PASSED" : "FAILED") : "PENDING", qcNotes: processingProfile ? (processingQc.findings.join(" ") || `Passed ${processingProfile.name} broadcast profile.`) : multitrack ? (masteringQuality.findings.join(" ") || "Studio mastering targets passed.") : undefined, sourceType: "STUDIO", sourceReference: `audio-render:${render.id}`, languageCode: sourceTake?.promoVersion?.languageCode || "und", durationSeconds, loudnessLufs: report.integratedLufs, submittedById: render.requestedByUserId, submittedAt: new Date(), ...(processingJobs ? { processingJobs } : {}) } });
       }
-      await tx.audioRender.update({ where: { id: render.id }, data: { status: "SUCCEEDED", completedAt: new Date(), outputMediaAssetId: mediaAsset.id, outputPromoVersionId: promoVersion?.id || null, loudnessLufs: report.integratedLufs, processingQcStatus: processingQc?.status, processingQcNotes: processingQc ? (processingQc.findings.join(" ") || "Broadcast profile targets passed.") : undefined, resultJson: { ...report, durationSeconds, immutableSource: true, version: render.version.version, ...(studioPreview ? { studioPreview } : {}), ...(processingProfile ? { broadcastProfile: { id: render.broadcastProcessingProfileId, revision: render.broadcastProcessingProfileRevision, name: processingProfile.name, codec: processingProfile.codec }, qc: processingQc } : {}) } } });
+      await tx.audioRender.update({ where: { id: render.id }, data: { status: "SUCCEEDED", completedAt: new Date(), outputMediaAssetId: mediaAsset.id, outputPromoVersionId: promoVersion?.id || null, loudnessLufs: report.integratedLufs, processingQcStatus: processingQc?.status, processingQcNotes: processingQc ? (processingQc.findings.join(" ") || "Broadcast profile targets passed.") : undefined, resultJson: { ...report, durationSeconds, immutableSource: true, version: render.version.version, ...(studioPreview ? { studioPreview } : {}), ...(!processingProfile ? { studioMastering, masteringQuality } : {}), ...(processingProfile ? { broadcastProfile: { id: render.broadcastProcessingProfileId, revision: render.broadcastProcessingProfileRevision, name: processingProfile.name, codec: processingProfile.codec }, qc: processingQc } : {}) } } });
       return { mediaAsset, promoVersion };
     });
     writeLog("info", "audio_render_completed", { entityId: render.id, outputEntityId: result.mediaAsset.id });
