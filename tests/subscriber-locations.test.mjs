@@ -123,6 +123,11 @@ test("corrective UI captures stable forms and gives guided zero-location paths",
   assert.equal((signage.match(/const form = event\.currentTarget;/g) || []).length, 5);
   assert.match(signage, /Before adding a display, create the location and area where this screen will operate\./);
   assert.match(signage, /Create location \/ area/);
+  assert.match(signage, /No display device is registered yet\./);
+  assert.match(signage, /Add a display device first/);
+  assert.match(signage, /defaultValue=\{zones\.length === 1 \? zones\[0\]\.id : ""\}/);
+  assert.match(signage, /defaultChecked=\{data\.devices\.length === 1\}/);
+  assert.match(signage, /role=\{deviceFeedback\.tone === "error" \? "alert" : "status"\}/);
   assert.match(players, /No locations or playback areas have been created yet\./);
   assert.match(players, /Create your first location/);
   assert.match(subscriberPage, /canManageSubscriberLocations/);

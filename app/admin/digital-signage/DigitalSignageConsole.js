@@ -11,8 +11,18 @@ export default function DigitalSignageConsole({ organisations, showOrganisationS
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState("");
+  const [deviceFeedback, setDeviceFeedback] = useState(null);
+  const [playlistFeedback, setPlaylistFeedback] = useState(null);
   const selected = useMemo(() => organisations.find((item) => item.id === organisationId), [organisationId, organisations]);
   const zones = selected?.locations.flatMap((location) => location.zones.map((zone) => ({ ...zone, locationName: location.name }))) || [];
+  const readyAssets = data.assets.filter((asset) => asset.status === "READY");
+  const playlistBlocker = !readyAssets.length
+    ? "Add a ready visual first"
+    : !data.layouts.length
+      ? "Create a layout first"
+      : !data.devices.length
+        ? "Add a display device first"
+        : "";
 
   async function load() {
     if (!organisationId) { setData(emptyData); return; }
@@ -76,7 +86,7 @@ export default function DigitalSignageConsole({ organisations, showOrganisationS
   }
 
   async function createDevice(event) {
-    event.preventDefault(); setBusy("device"); setMessage("");
+    event.preventDefault(); setBusy("device"); setMessage(""); setDeviceFeedback(null);
     const form = event.currentTarget;
     const formData = new FormData(form);
     try {
@@ -91,13 +101,13 @@ export default function DigitalSignageConsole({ organisations, showOrganisationS
       if (!response.ok) throw new Error(result.error || "Unable to create the device.");
       form.reset();
       await load();
-      setMessage(`Device created. One-time enrolment code: ${result.device.enrolmentCode}`);
-    } catch (error) { setMessage(error instanceof Error ? error.message : "Unable to create the device."); }
+      setDeviceFeedback({ tone: "success", text: `Device created. One-time enrolment code: ${result.device.enrolmentCode}` });
+    } catch (error) { setDeviceFeedback({ tone: "error", text: error instanceof Error ? error.message : "Unable to create the device." }); }
     finally { setBusy(""); }
   }
 
   async function createPlaylist(event) {
-    event.preventDefault(); setBusy("playlist"); setMessage("");
+    event.preventDefault(); setBusy("playlist"); setMessage(""); setPlaylistFeedback(null);
     const form = event.currentTarget;
     const formData = new FormData(form);
     const layout = data.layouts.find((item) => item.id === formData.get("layoutId"));
@@ -116,8 +126,8 @@ export default function DigitalSignageConsole({ organisations, showOrganisationS
       }) });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Unable to create the visual playlist.");
-      form.reset(); await load(); setMessage("Visual playlist saved as a draft. Review it, then publish it to the assigned display.");
-    } catch (error) { setMessage(error instanceof Error ? error.message : "Unable to create the visual playlist."); }
+      form.reset(); await load(); setPlaylistFeedback({ tone: "success", text: "Visual playlist saved as a draft. Review it below, then publish it to the assigned display." });
+    } catch (error) { setPlaylistFeedback({ tone: "error", text: error instanceof Error ? error.message : "Unable to create the visual playlist." }); }
     finally { setBusy(""); }
   }
 
@@ -194,29 +204,35 @@ export default function DigitalSignageConsole({ organisations, showOrganisationS
           {data.layouts.slice(0, 5).map((layout) => <div key={layout.id} style={styles.row}><strong>{layout.name}</strong><span>{layout.canvasWidth}×{layout.canvasHeight} · {layout.status}</span></div>)}
         </form>
 
-        <form onSubmit={createDevice} style={styles.card}>
+        <form id="display-devices" onSubmit={createDevice} style={styles.card}>
           <h2 style={styles.cardTitle}>Display devices</h2>
           <p style={styles.small}>Bind each screen to one existing location zone. Enrolment codes expire after 24 hours and are shown only once.</p>
           {zones.length === 0 ? <div style={styles.emptyState}><strong>Before adding a display, create the location and area where this screen will operate.</strong><a href={locationsHref} style={styles.emptyAction}>Create location / area</a></div> : <>
             <label style={styles.label}>Device name<input name="name" required maxLength={200} style={styles.input} /></label>
-            <label style={styles.label}>Location and zone<select name="zoneId" required style={styles.input}><option value="">Select a zone</option>{zones.map((zone) => <option key={zone.id} value={zone.id}>{zone.locationName} — {zone.name}</option>)}</select></label>
+            <label style={styles.label}>Location and zone<select name="zoneId" required defaultValue={zones.length === 1 ? zones[0].id : ""} style={styles.input}><option value="">Select a zone</option>{zones.map((zone) => <option key={zone.id} value={zone.id}>{zone.locationName} — {zone.name}</option>)}</select>{zones.length === 1 ? <span style={styles.choiceHint}>Your only location and area is selected automatically.</span> : null}</label>
             <div style={styles.two}><label style={styles.label}>Screen width<input name="viewportWidth" type="number" min="320" max="8192" defaultValue="1920" required style={styles.input} /></label><label style={styles.label}>Screen height<input name="viewportHeight" type="number" min="240" max="8192" defaultValue="1080" required style={styles.input} /></label></div>
             <button disabled={busy === "device"} style={styles.button}>{busy === "device" ? "Creating…" : "Create device enrolment"}</button>
           </>}
+          {deviceFeedback ? <div role={deviceFeedback.tone === "error" ? "alert" : "status"} style={deviceFeedback.tone === "error" ? styles.localError : styles.localSuccess}>{deviceFeedback.text}</div> : null}
           <p style={styles.count}>{data.devices.length} registered device{data.devices.length === 1 ? "" : "s"}</p>
           {data.devices.slice(0, 5).map((device) => <div key={device.id} style={styles.row}><strong>{device.name}</strong><span>{device.zone.location.name} · {device.status}</span></div>)}
         </form>
 
         <form onSubmit={createPlaylist} style={styles.card}>
           <h2 style={styles.cardTitle}>Scheduled visual playlists</h2>
-          <p style={styles.small}>Create a reviewed draft, assign it to one or more displays, and publish it when ready. Hold Ctrl (Windows) or Command (Mac) to select multiple displays.</p>
+          <p style={styles.small}>Create a reviewed draft, choose its displays, and publish it when ready.</p>
           <label style={styles.label}>Playlist name<input name="name" required maxLength={200} style={styles.input} /></label>
           <label style={styles.label}>Layout<select name="layoutId" required style={styles.input}><option value="">Select a layout</option>{data.layouts.map((layout) => <option key={layout.id} value={layout.id}>{layout.name}</option>)}</select></label>
-          <label style={styles.label}>Visual asset<select name="assetId" required style={styles.input}><option value="">Select a ready visual</option>{data.assets.filter((asset) => asset.status === "READY").map((asset) => <option key={asset.id} value={asset.id}>{asset.name} — {asset.kind}</option>)}</select></label>
-          <label style={styles.label}>Display devices<select name="deviceIds" required multiple size={Math.min(5, Math.max(2, data.devices.length))} style={styles.input}>{data.devices.map((device) => <option key={device.id} value={device.id}>{device.name} — {device.zone.location.name}</option>)}</select></label>
+          <label style={styles.label}>Visual asset<select name="assetId" required style={styles.input}><option value="">Select a ready visual</option>{readyAssets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name} — {asset.kind}</option>)}</select></label>
+          {!data.devices.length ? <div style={styles.emptyState}><strong>No display device is registered yet.</strong><span>Create the screen in Display devices above. It will appear here automatically.</span><a href="#display-devices" style={styles.emptyAction}>Add a display device</a></div> : <fieldset style={styles.choiceFieldset}>
+            <legend style={styles.choiceLegend}>Display devices</legend>
+            <div style={styles.deviceChoices}>{data.devices.map((device) => <label key={device.id} style={styles.deviceChoice}><input type="checkbox" name="deviceIds" value={device.id} defaultChecked={data.devices.length === 1} /> <span style={styles.deviceChoiceText}><strong>{device.name}</strong><small>{device.zone.location.name} · {device.zone.name}</small></span></label>)}</div>
+            <span style={styles.choiceHint}>{data.devices.length === 1 ? "Your only display is selected automatically." : "Select every display that should receive this playlist."}</span>
+          </fieldset>}
           <div style={styles.two}><label style={styles.label}>Daily start<input name="dailyStart" type="time" defaultValue="06:00" required style={styles.input} /></label><label style={styles.label}>Daily end<input name="dailyEnd" type="time" defaultValue="23:00" required style={styles.input} /></label></div>
           <div style={styles.two}><label style={styles.label}>Seconds per visual<input name="durationSeconds" type="number" min="3" max="86400" defaultValue="10" required style={styles.input} /></label><label style={styles.label}>Priority<input name="priority" type="number" min="0" max="100" defaultValue="0" required style={styles.input} /></label></div>
-          <button disabled={busy === "playlist" || !data.assets.length || !data.layouts.length || !data.devices.length} style={styles.button}>{busy === "playlist" ? "Creating…" : "Create playlist draft"}</button>
+          <button disabled={busy === "playlist" || Boolean(playlistBlocker)} style={styles.button}>{busy === "playlist" ? "Creating…" : playlistBlocker || "Create playlist draft"}</button>
+          {playlistFeedback ? <div role={playlistFeedback.tone === "error" ? "alert" : "status"} style={playlistFeedback.tone === "error" ? styles.localError : styles.localSuccess}>{playlistFeedback.text}</div> : null}
           <p style={styles.count}>{data.playlists.length} visual playlist{data.playlists.length === 1 ? "" : "s"}</p>
           {data.playlists.slice(0, 8).map((playlist) => <div key={playlist.id} style={styles.row}>
             <strong>{playlist.name}</strong><span>{playlist.layout.name} · {playlist.status} · priority {playlist.priority}</span>
@@ -261,6 +277,14 @@ const styles = {
   row: { display: "grid", gap: 3, paddingTop: 10, borderTop: "1px solid #e2e8f0", color: "#334155", fontSize: 13 },
   actions: { display: "flex", gap: 8, flexWrap: "wrap" },
   errorText: { color: "#b91c1c", fontWeight: 700 },
+  localSuccess: { padding: 11, borderRadius: 7, border: "1px solid #16a34a", background: "#f0fdf4", color: "#166534", fontSize: 13, fontWeight: 800, overflowWrap: "anywhere" },
+  localError: { padding: 11, borderRadius: 7, border: "1px solid #dc2626", background: "#fef2f2", color: "#991b1b", fontSize: 13, fontWeight: 800, overflowWrap: "anywhere" },
+  choiceFieldset: { display: "grid", gap: 9, minWidth: 0, margin: 0, padding: 12, border: "1px solid #94a3b8", borderRadius: 7 },
+  choiceLegend: { padding: "0 5px", color: "#334155", fontSize: 13, fontWeight: 800 },
+  deviceChoices: { display: "grid", gap: 8 },
+  deviceChoice: { display: "flex", alignItems: "flex-start", gap: 8, padding: 9, borderRadius: 6, background: "#f8fafc", color: "#0f172a", cursor: "pointer" },
+  deviceChoiceText: { display: "grid", gap: 2 },
+  choiceHint: { color: "#64748b", fontSize: 12 },
   emptyState: { display: "grid", justifyItems: "start", gap: 12, padding: 15, borderRadius: 9, border: "1px solid #f59e0b", background: "#fffbeb", color: "#78350f", lineHeight: 1.5 },
   emptyAction: { display: "inline-flex", padding: "9px 12px", borderRadius: 7, background: "#0f172a", color: "#fff", fontWeight: 900, textDecoration: "none" }
 };
