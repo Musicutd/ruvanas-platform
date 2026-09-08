@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { studioMeterState } from "@/lib/studio-recording.mjs";
 
 const emptyProject = { title: "", programmeId: "", episodeId: "", studentGroupId: "" };
 const defaultEdits = { trimStartMs: 0, trimEndMs: "", fadeInMs: 0, fadeOutMs: 0, normalize: true, targetLufs: -16, noiseCleanup: false };
@@ -66,6 +67,12 @@ export default function AudioLabClient({ requestedProjectId = "", experienceMode
   const [devices, setDevices] = useState([]);
   const [deviceId, setDeviceId] = useState("");
   const [permission, setPermission] = useState("NOT_TESTED");
+  const [recordDestination, setRecordDestination] = useState("WAVEFORM");
+  const [multitrackProjectId, setMultitrackProjectId] = useState("");
+  const [targetTrackId, setTargetTrackId] = useState("");
+  const [countIn, setCountIn] = useState(false);
+  const [countdown, setCountdown] = useState(0);
+  const [monitoring, setMonitoring] = useState(false);
   const [recordingState, setRecordingState] = useState("IDLE");
   const [durationMs, setDurationMs] = useState(0);
   const [level, setLevel] = useState(0);
@@ -84,9 +91,17 @@ export default function AudioLabClient({ requestedProjectId = "", experienceMode
   const elapsedBeforePauseRef = useRef(0);
   const timerRef = useRef(null);
   const meterFrameRef = useRef(null);
+  const meterContextRef = useRef(null);
+  const monitorGainRef = useRef(null);
   const selectingRef = useRef(false);
 
   const selected = useMemo(() => data?.projects.find((item) => item.id === projectId) || null, [data, projectId]);
+  const multitrackProject = useMemo(() => data?.multitrackProjects?.find((item) => item.id === multitrackProjectId) || null, [data, multitrackProjectId]);
+  const availableTracks = useMemo(() => (multitrackProject?.tracks || []).filter((track) => track.armed && !track.locked), [multitrackProject]);
+  const targetTrack = useMemo(() => availableTracks.find((track) => track.id === targetTrackId) || null, [availableTracks, targetTrackId]);
+  const captureProject = recordDestination === "MULTITRACK" ? multitrackProject : selected;
+  const captureKey = captureProject ? (recordDestination === "MULTITRACK" ? `${captureProject.id}:${targetTrackId || "track"}` : captureProject.id) : "";
+  const meter = useMemo(() => studioMeterState(level), [level]);
   const linkedEpisodes = useMemo(() => (data?.episodes || []).filter((item) => !projectForm.programmeId || item.programmeId === projectForm.programmeId), [data, projectForm.programmeId]);
 
   const load = useCallback(async () => {
@@ -94,8 +109,10 @@ export default function AudioLabClient({ requestedProjectId = "", experienceMode
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || "AudioLab could not be loaded.");
     const projects = (payload.projects || []).filter((project) => project.type !== "MULTITRACK");
-    setData({ ...payload, projects });
+    const multitrackProjects = (payload.projects || []).filter((project) => project.type === "MULTITRACK");
+    setData({ ...payload, projects, multitrackProjects });
     setProjectId((current) => current || projects[0]?.id || "");
+    setMultitrackProjectId((current) => current || multitrackProjects[0]?.id || "");
   }, []);
 
   useEffect(() => { load().catch((loadError) => setError(loadError.message)); }, [load]);
@@ -112,7 +129,16 @@ export default function AudioLabClient({ requestedProjectId = "", experienceMode
     clearInterval(timerRef.current);
     cancelAnimationFrame(meterFrameRef.current);
     streamRef.current?.getTracks().forEach((track) => track.stop());
+    meterContextRef.current?.close().catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!availableTracks.some((track) => track.id === targetTrackId)) setTargetTrackId(availableTracks[0]?.id || "");
+  }, [availableTracks, targetTrackId]);
+
+  useEffect(() => {
+    if (monitorGainRef.current) monitorGainRef.current.gain.value = monitoring ? 1 : 0;
+  }, [monitoring]);
 
   useEffect(() => {
     if (!selected || selectingRef.current) return;
@@ -121,14 +147,17 @@ export default function AudioLabClient({ requestedProjectId = "", experienceMode
     setEdits({ ...defaultEdits, ...(selected.editDecision || {}), trimEndMs: selected.editDecision?.trimEndMs ?? "" });
     setServerTake(selected.takes[0] ? { ...selected.takes[0], streamUrl: `/api/media/${selected.takes[0].mediaAsset.id}/stream`, promoVersionId: selected.takes[0].promoVersion?.id } : null);
     setRecording(null); setProgress(0); setAutosave("Saved"); setNotice(""); setError("");
-    recoveryRead(selected.id).then((saved) => {
-      if (saved?.blob) {
-        setRecording(saved.blob); setDurationMs(saved.durationMs || 0); setDeviceId(saved.deviceId || "");
-        setNotice("A local recording was recovered safely from this browser.");
-      }
-    }).catch(() => {});
     queueMicrotask(() => { selectingRef.current = false; });
   }, [selected?.id]);
+
+  useEffect(() => {
+    if (!captureKey) return;
+    recoveryRead(captureKey).then((saved) => {
+      if (!saved?.blob) return;
+      setRecording(saved.blob); setDurationMs(saved.durationMs || 0); setDeviceId(saved.deviceId || ""); setRecordingState("STOPPED");
+      setNotice(recordDestination === "MULTITRACK" ? "A local track recording was recovered safely from this browser." : "A local recording was recovered safely from this browser.");
+    }).catch(() => {});
+  }, [captureKey, recordDestination]);
 
   useEffect(() => {
     if (!selected || selectingRef.current) return;
@@ -158,19 +187,29 @@ export default function AudioLabClient({ requestedProjectId = "", experienceMode
   async function testMicrophone() {
     setError(""); setNotice("");
     try {
+      stopInput();
       const stream = await navigator.mediaDevices.getUserMedia({ audio: deviceId ? { deviceId: { exact: deviceId }, echoCancellation: false, noiseSuppression: false, autoGainControl: false } : true });
-      stream.getTracks().forEach((track) => track.stop());
+      streamRef.current = stream;
+      startMeter(stream);
       const available = await navigator.mediaDevices.enumerateDevices();
       const microphones = available.filter((item) => item.kind === "audioinput");
-      setDevices(microphones); setDeviceId((current) => current || microphones[0]?.deviceId || ""); setPermission("READY"); setNotice("Microphone is ready. Use headphones to avoid feedback.");
+      setDevices(microphones); setDeviceId((current) => current || microphones[0]?.deviceId || ""); setPermission("READY"); setNotice("Microphone is live. Check the level before recording and use headphones for monitoring.");
     } catch { setPermission("BLOCKED"); setError("Microphone access was blocked. Allow microphone access in the browser and test again."); }
   }
 
   function startMeter(stream) {
+    cancelAnimationFrame(meterFrameRef.current);
+    meterContextRef.current?.close().catch(() => {});
     const context = new AudioContext();
     const analyser = context.createAnalyser();
     analyser.fftSize = 256;
-    context.createMediaStreamSource(stream).connect(analyser);
+    const source = context.createMediaStreamSource(stream);
+    source.connect(analyser);
+    const monitorGain = context.createGain();
+    monitorGain.gain.value = monitoring ? 1 : 0;
+    source.connect(monitorGain).connect(context.destination);
+    meterContextRef.current = context;
+    monitorGainRef.current = monitorGain;
     const values = new Uint8Array(analyser.frequencyBinCount);
     const tick = () => {
       analyser.getByteTimeDomainData(values);
@@ -180,15 +219,39 @@ export default function AudioLabClient({ requestedProjectId = "", experienceMode
       meterFrameRef.current = requestAnimationFrame(tick);
     };
     tick();
-    stream.addEventListener("inactive", () => { cancelAnimationFrame(meterFrameRef.current); context.close(); setLevel(0); }, { once: true });
+    stream.addEventListener("inactive", () => { cancelAnimationFrame(meterFrameRef.current); context.close().catch(() => {}); setLevel(0); }, { once: true });
+  }
+
+  function stopInput() {
+    cancelAnimationFrame(meterFrameRef.current);
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+    monitorGainRef.current = null;
+    meterContextRef.current?.close().catch(() => {});
+    meterContextRef.current = null;
+    setLevel(0);
   }
 
   async function startRecording() {
-    if (!selected) return;
+    if (!captureProject || (recordDestination === "MULTITRACK" && !targetTrack)) {
+      setError("Choose an armed, unlocked multitrack track before recording.");
+      return;
+    }
     setError(""); setNotice(""); setServerTake(null);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: { ...(deviceId ? { deviceId: { exact: deviceId } } : {}), echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
-      streamRef.current = stream; startMeter(stream);
+      let stream = streamRef.current;
+      if (!stream?.active) {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: { ...(deviceId ? { deviceId: { exact: deviceId } } : {}), echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+        streamRef.current = stream; startMeter(stream);
+      }
+      if (countIn) {
+        setRecordingState("COUNT_IN");
+        for (let count = 3; count >= 1; count -= 1) {
+          setCountdown(count);
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
+        setCountdown(0);
+      }
       const mimeType = recorderType();
       const recorder = new MediaRecorder(stream, mimeType ? { mimeType, audioBitsPerSecond: 128000 } : undefined);
       chunksRef.current = [];
@@ -197,19 +260,22 @@ export default function AudioLabClient({ requestedProjectId = "", experienceMode
         chunksRef.current.push(event.data);
         const recoveryBlob = new Blob(chunksRef.current, { type: recorder.mimeType || event.data.type || "audio/webm" });
         const recoveryDuration = elapsedBeforePauseRef.current + (recorder.state === "recording" ? Date.now() - startedAtRef.current : 0);
-        recoveryWrite(selected.id, { blob: recoveryBlob, durationMs: recoveryDuration, deviceId }).catch(() => {});
+        recoveryWrite(captureKey, { blob: recoveryBlob, durationMs: recoveryDuration, deviceId, targetTrackId: targetTrack?.id || null }).catch(() => {});
       };
       recorder.onstop = async () => {
         const blob = new Blob(chunksRef.current, { type: recorder.mimeType || chunksRef.current[0]?.type || "audio/webm" });
         setRecording(blob); setRecordingState("STOPPED");
-        await recoveryWrite(selected.id, { blob, durationMs: elapsedBeforePauseRef.current, deviceId }).catch(() => {});
-        stream.getTracks().forEach((track) => track.stop());
+        await recoveryWrite(captureKey, { blob, durationMs: elapsedBeforePauseRef.current, deviceId, targetTrackId: targetTrack?.id || null }).catch(() => {});
+        stopInput();
         clearInterval(timerRef.current); setNotice("Recording stopped and saved locally for recovery.");
       };
       recorderRef.current = recorder; elapsedBeforePauseRef.current = 0; startedAtRef.current = Date.now();
       recorder.start(1000); setRecordingState("RECORDING");
       timerRef.current = setInterval(() => setDurationMs(elapsedBeforePauseRef.current + Date.now() - startedAtRef.current), 250);
-    } catch (recordError) { setError(recordError instanceof Error ? recordError.message : "Recording could not start."); }
+    } catch (recordError) {
+      setCountdown(0); setRecordingState("IDLE"); stopInput();
+      setError(recordError instanceof Error ? recordError.message : "Recording could not start.");
+    }
   }
 
   function pauseOrResume() {
@@ -229,6 +295,14 @@ export default function AudioLabClient({ requestedProjectId = "", experienceMode
     setDurationMs(elapsedBeforePauseRef.current); recorder.stop();
   }
 
+  async function retake() {
+    if (!recording || !captureKey) return;
+    if (!window.confirm("Discard this local take and record it again? The uploaded source, if any, will not be changed.")) return;
+    await recoveryDelete(captureKey).catch(() => {});
+    setRecording(null); setDurationMs(0); setProgress(0); setRecordingState("IDLE");
+    setNotice("The local take was cleared. Press Record when you are ready to retake it.");
+  }
+
   useEffect(() => {
     if (!recording) { setPreviewUrl(""); return; }
     const url = URL.createObjectURL(recording); setPreviewUrl(url);
@@ -236,12 +310,12 @@ export default function AudioLabClient({ requestedProjectId = "", experienceMode
   }, [recording]);
 
   async function uploadRecording() {
-    if (!selected || !recording) return;
+    if (!captureProject || !recording || (recordDestination === "MULTITRACK" && !targetTrack)) return;
     setWorking(true); setError(""); setNotice(""); setProgress(0);
     try {
       const baseType = recording.type.split(";", 1)[0] || "audio/webm";
       const extension = baseType.includes("ogg") ? "ogg" : baseType.includes("mp4") ? "m4a" : baseType.includes("mpeg") ? "mp3" : baseType.includes("wav") ? "wav" : "webm";
-      const recovered = await recoveryRead(selected.id).catch(() => null);
+      const recovered = await recoveryRead(captureKey).catch(() => null);
       let upload = recovered?.upload || null;
       let receivedParts = new Set();
       if (upload?.uploadId) {
@@ -256,10 +330,10 @@ export default function AudioLabClient({ requestedProjectId = "", experienceMode
         }
       }
       if (!upload) {
-        const start = await fetch("/api/school-radio/audio-lab/uploads", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId: selected.id, originalName: `${projectForm.title}.${extension}`, mimeType: baseType, sizeBytes: recording.size }) });
+        const start = await fetch("/api/school-radio/audio-lab/uploads", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId: captureProject.id, originalName: `${captureProject.title}.${extension}`, mimeType: baseType, sizeBytes: recording.size }) });
         upload = await start.json().catch(() => ({}));
         if (!start.ok) throw new Error(upload.error || "The resumable upload could not start.");
-        await recoveryWrite(selected.id, { blob: recording, durationMs, deviceId, upload }).catch(() => {});
+        await recoveryWrite(captureKey, { blob: recording, durationMs, deviceId, targetTrackId: targetTrack?.id || null, upload }).catch(() => {});
       }
       for (let partNumber = 1; partNumber <= upload.partCount; partNumber += 1) {
         if (receivedParts.has(partNumber)) {
@@ -275,7 +349,7 @@ export default function AudioLabClient({ requestedProjectId = "", experienceMode
           else if (attempt === 3) { const body = await response.json().catch(() => ({})); throw new Error(body.error || `Upload part ${partNumber} failed.`); }
         }
         receivedParts.add(partNumber);
-        await recoveryWrite(selected.id, { blob: recording, durationMs, deviceId, upload }).catch(() => {});
+        await recoveryWrite(captureKey, { blob: recording, durationMs, deviceId, targetTrackId: targetTrack?.id || null, upload }).catch(() => {});
         setProgress(Math.round((partNumber / upload.partCount) * 90));
       }
       let checksumSha256 = null;
@@ -283,11 +357,12 @@ export default function AudioLabClient({ requestedProjectId = "", experienceMode
         const digest = await crypto.subtle.digest("SHA-256", await recording.arrayBuffer());
         checksumSha256 = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
       }
-      const completed = await fetch(`/api/school-radio/audio-lab/uploads/${upload.uploadId}/complete`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ durationMs, deviceLabel: devices.find((item) => item.deviceId === deviceId)?.label || null, checksumSha256, editDecision: { ...edits, trimEndMs: edits.trimEndMs === "" ? null : Number(edits.trimEndMs) } }) });
+      const completed = await fetch(`/api/school-radio/audio-lab/uploads/${upload.uploadId}/complete`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ durationMs, deviceLabel: devices.find((item) => item.deviceId === deviceId)?.label || null, checksumSha256, targetTrackId: targetTrack?.id || null, editDecision: { ...edits, trimEndMs: edits.trimEndMs === "" ? null : Number(edits.trimEndMs) } }) });
       const result = await completed.json().catch(() => ({}));
       if (!completed.ok) throw new Error(result.error || "The recording could not be finalised.");
-      setProgress(100); setServerTake(result); await recoveryDelete(selected.id).catch(() => {}); setRecording(null); setNotice("Take uploaded safely. It is ready for teacher preview and audio approval."); await load();
+      setProgress(100); setServerTake(result); await recoveryDelete(captureKey).catch(() => {}); setRecording(null); setNotice(result.placement ? `Recording placed safely on ${result.placement.trackName}. The source take remains immutable.` : "Take uploaded safely. It is ready for teacher preview and audio approval."); await load();
       window.dispatchEvent(new CustomEvent("ruvanas:studio-projects-refresh"));
+      window.dispatchEvent(new CustomEvent("ruvanas:multitrack-refresh", { detail: { projectId: captureProject.id } }));
     } catch (uploadError) { setError(uploadError.message); } finally { setWorking(false); }
   }
 
@@ -320,14 +395,20 @@ export default function AudioLabClient({ requestedProjectId = "", experienceMode
         {selected ? <><label style={s.label}>Title<input style={s.input} value={projectForm.title} onChange={(event) => setProjectForm({ ...projectForm, title: event.target.value })} /></label><label style={s.label}>Programme<select style={s.input} value={projectForm.programmeId} onChange={(event) => setProjectForm({ ...projectForm, programmeId: event.target.value, episodeId: "" })}><option value="">No programme</option>{data.programmes.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label><label style={s.label}>Episode<select style={s.input} value={projectForm.episodeId} onChange={(event) => setProjectForm({ ...projectForm, episodeId: event.target.value })}><option value="">No episode</option>{linkedEpisodes.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label></> : <p style={s.hint}>Create or choose a project before recording.</p>}
       </section>
     </div>
-    {selected ? <><div style={{ ...s.grid, marginTop: 16 }}>
+    {selected ? <><section style={{ ...s.card, marginTop: 16 }}><p style={s.eyebrow}>RECORDING DESTINATION</p><div style={s.grid}>
+      <label style={s.label}>Send this recording to<select style={s.input} disabled={["COUNT_IN", "RECORDING", "PAUSED"].includes(recordingState)} value={recordDestination} onChange={(event) => { stopInput(); setRecordDestination(event.target.value); setRecording(null); setRecordingState("IDLE"); setDurationMs(0); }}><option value="WAVEFORM">New protected waveform take</option><option value="MULTITRACK">Armed multitrack track</option></select></label>
+      {recordDestination === "MULTITRACK" ? <><label style={s.label}>Multitrack project<select style={s.input} disabled={["COUNT_IN", "RECORDING", "PAUSED"].includes(recordingState)} value={multitrackProjectId} onChange={(event) => { setMultitrackProjectId(event.target.value); setTargetTrackId(""); }}><option value="">Choose project…</option>{(data.multitrackProjects || []).map((project) => <option key={project.id} value={project.id}>{project.title}</option>)}</select></label><label style={s.label}>Armed track<select style={s.input} disabled={["COUNT_IN", "RECORDING", "PAUSED"].includes(recordingState)} value={targetTrackId} onChange={(event) => setTargetTrackId(event.target.value)}><option value="">Choose armed track…</option>{availableTracks.map((track) => <option key={track.id} value={track.id}>{track.name}</option>)}</select>{multitrackProject && !availableTracks.length ? <span style={s.warning}>Arm and unlock a track in Multitrack before recording.</span> : null}</label></> : <p style={s.hint}>The take opens in Waveform for non-destructive precision editing.</p>}
+    </div></section><div style={{ ...s.grid, marginTop: 16 }}>
       <section style={s.card}><p style={s.eyebrow}>3 · MICROPHONE</p><h3 style={s.cardTitle}>Input check</h3>
-        <label style={s.label}>Microphone<select style={s.input} value={deviceId} onChange={(event) => setDeviceId(event.target.value)}><option value="">Browser default</option>{devices.map((item, index) => <option key={item.deviceId} value={item.deviceId}>{item.label || `Microphone ${index + 1}`}</option>)}</select></label>
-        <button style={s.secondary} onClick={testMicrophone}>Test microphone permission</button><p style={s.hint}>Status: {permission.replaceAll("_", " ")} · use headphones and keep the meter below red.</p>
-        <div style={s.meter}><div style={{ ...s.meterFill, width: `${level * 100}%`, background: level > 0.88 ? "#ef4444" : level > 0.65 ? "#f4b942" : "#22c55e" }} /></div>
+        <label style={s.label}>Microphone<select style={s.input} disabled={["COUNT_IN", "RECORDING", "PAUSED"].includes(recordingState)} value={deviceId} onChange={(event) => { stopInput(); setDeviceId(event.target.value); setPermission("NOT_TESTED"); }}><option value="">Browser default</option>{devices.map((item, index) => <option key={item.deviceId} value={item.deviceId}>{item.label || `Microphone ${index + 1}`}</option>)}</select></label>
+        <button style={s.secondary} onClick={testMicrophone}>Start live input check</button><p style={s.hint}>Status: {permission.replaceAll("_", " ")} · use headphones and keep the meter below red.</p>
+        <div role="meter" aria-label="Microphone input level" aria-valuemin="0" aria-valuemax="100" aria-valuenow={meter.percent} style={s.meter}><div style={{ ...s.meterFill, width: `${meter.percent}%`, background: meter.clipping ? "#ef4444" : meter.value > 0.65 ? "#f4b942" : "#22c55e" }} /></div>
+        <p role="status" style={meter.clipping ? s.warning : s.hint}>{meter.clipping ? "Clipping detected — lower the microphone gain or move back." : `Input level: ${meter.tone.toLowerCase()}`}</p>
+        {experienceMode === "ADVANCED" ? <label style={s.check}><input type="checkbox" checked={monitoring} onChange={(event) => setMonitoring(event.target.checked)} /> Headphone monitoring (use headphones to prevent feedback)</label> : null}
       </section>
-      <section style={s.card}><p style={s.eyebrow}>4 · RECORD</p><div style={s.timer}>{durationLabel(durationMs)}</div><p style={s.hint}>State: {recordingState}</p>
-        <div style={s.actions}><button style={s.record} disabled={working || recordingState === "RECORDING" || recordingState === "PAUSED"} onClick={startRecording}>● Record</button><button style={s.secondary} disabled={!['RECORDING','PAUSED'].includes(recordingState)} onClick={pauseOrResume}>{recordingState === "PAUSED" ? "Resume" : "Pause"}</button><button style={s.secondary} disabled={!['RECORDING','PAUSED'].includes(recordingState)} onClick={stopRecording}>Stop</button></div>
+      <section style={s.card}><p style={s.eyebrow}>4 · RECORD</p><div style={s.timer}>{countdown ? countdown : durationLabel(durationMs)}</div><p style={s.hint}>State: {countdown ? "COUNTING IN" : recordingState.replaceAll("_", " ")}</p>
+        <label style={s.check}><input type="checkbox" checked={countIn} onChange={(event) => setCountIn(event.target.checked)} /> 3-second count-in</label>
+        <div style={s.actions}><button style={s.record} disabled={working || ["COUNT_IN", "RECORDING", "PAUSED"].includes(recordingState) || (recordDestination === "MULTITRACK" && !targetTrack)} onClick={startRecording}>● Record</button><button style={s.secondary} disabled={!['RECORDING','PAUSED'].includes(recordingState)} onClick={pauseOrResume}>{recordingState === "PAUSED" ? "Resume" : "Pause"}</button><button style={s.secondary} disabled={!['RECORDING','PAUSED'].includes(recordingState)} onClick={stopRecording}>Stop</button>{recording ? <button style={s.secondary} disabled={working} onClick={retake}>Retake</button> : null}</div>
         <p style={s.hint}>One-second chunks are retained locally for recovery, including during an interrupted recording.</p>
       </section>
     </div>
@@ -345,7 +426,7 @@ export default function AudioLabClient({ requestedProjectId = "", experienceMode
       </section>
       <section style={s.card}><p style={s.eyebrow}>6 · PREVIEW & UPLOAD</p><h3 style={s.cardTitle}>Teacher preview</h3>
         {previewUrl ? <audio controls src={previewUrl} style={s.audio} /> : serverTake?.streamUrl ? <audio controls src={serverTake.streamUrl} style={s.audio} /> : <p style={s.hint}>Stop a recording to preview it here.</p>}
-        {recording ? <><button style={s.primary} disabled={working} onClick={uploadRecording}>Upload protected take</button><div style={s.progress}><div style={{ ...s.progressFill, width: `${progress}%` }} /></div><p style={s.hint}>{progress ? `${progress}% uploaded` : "Upload starts in resumable 5 MB parts."}</p></> : null}
+        {recording ? <><button style={s.primary} disabled={working || (recordDestination === "MULTITRACK" && !targetTrack)} onClick={uploadRecording}>{recordDestination === "MULTITRACK" ? `Upload and place on ${targetTrack?.name || "armed track"}` : "Upload protected take"}</button><div style={s.progress}><div style={{ ...s.progressFill, width: `${progress}%` }} /></div><p style={s.hint}>{progress ? `${progress}% uploaded` : "Upload starts in resumable 5 MB parts."}</p></> : null}
         {serverTake || selected.takes[0] ? <><p style={s.ready}>Protected take ready · audio review {(serverTake?.reviewStatus || selected.takes[0]?.promoVersion?.status || "PENDING").replaceAll("_", " ")}</p><button style={s.primary} disabled={working || !projectForm.episodeId} onClick={submitTake}>Submit to linked episode</button>{!projectForm.episodeId ? <p style={s.hint}>Link this project to a draft episode to submit it.</p> : null}</> : null}
       </section>
     </div></> : null}
@@ -357,6 +438,6 @@ const s = {
   panel: { border: "1px solid #3b4b66", borderRadius: 16, background: "#111d30", padding: 22, marginBottom: 22 }, heading: { display: "flex", justifyContent: "space-between", gap: 18, alignItems: "flex-start", marginBottom: 16 }, title: { margin: "0 0 8px", fontSize: 28 }, eyebrow: { color: "#f4b942", fontSize: 12, fontWeight: 900, letterSpacing: 1.1, margin: "0 0 7px" }, autosave: { color: "#93c5fd", fontSize: 12, whiteSpace: "nowrap" },
   grid: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: 16 }, two: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }, card: { border: "1px solid #34445f", borderRadius: 12, background: "#182235", padding: 18 }, cardTitle: { margin: "0 0 15px" }, label: { display: "grid", gap: 6, marginBottom: 12, color: "#dce5f3", fontWeight: 800, fontSize: 13 }, input: { width: "100%", boxSizing: "border-box", border: "1px solid #61708a", borderRadius: 7, background: "#fff", color: "#111827", padding: "10px 11px", font: "inherit" }, check: { display: "flex", gap: 8, alignItems: "center", marginBottom: 12, color: "#dce5f3", fontWeight: 800, fontSize: 13 },
   primary: { border: 0, borderRadius: 7, background: "#f4b942", color: "#101827", padding: "11px 14px", fontWeight: 900, cursor: "pointer" }, secondary: { border: "1px solid #94a3b8", borderRadius: 7, background: "transparent", color: "#e2e8f0", padding: "10px 12px", fontWeight: 800, cursor: "pointer" }, record: { border: 0, borderRadius: 7, background: "#ef4444", color: "white", padding: "10px 13px", fontWeight: 900, cursor: "pointer" }, actions: { display: "flex", flexWrap: "wrap", gap: 8 }, timer: { fontSize: 42, fontWeight: 900, letterSpacing: 2, fontVariantNumeric: "tabular-nums" }, meter: { height: 16, marginTop: 15, background: "#08111f", borderRadius: 999, overflow: "hidden" }, meterFill: { height: "100%", transition: "width 80ms linear" }, audio: { width: "100%", margin: "4px 0 14px" }, progress: { height: 7, background: "#08111f", borderRadius: 999, overflow: "hidden", marginTop: 13 }, progressFill: { height: "100%", background: "#22c55e", transition: "width 150ms" },
-  hint: { color: "#9facbf", lineHeight: 1.5, fontSize: 13, margin: "5px 0" }, ready: { color: "#bbf7d0", fontWeight: 800 }, error: { border: "1px solid #ef4444", background: "#451a1a", color: "#fecaca", borderRadius: 8, padding: 12, marginBottom: 14 }, notice: { border: "1px solid #22c55e", background: "#052e16", color: "#bbf7d0", borderRadius: 8, padding: 12, marginBottom: 14 }, safety: { color: "#8ea0b8", fontSize: 12, margin: "16px 0 0" }
+  hint: { color: "#9facbf", lineHeight: 1.5, fontSize: 13, margin: "5px 0" }, warning: { color: "#fecaca", lineHeight: 1.5, fontSize: 13, fontWeight: 800, margin: "5px 0" }, ready: { color: "#bbf7d0", fontWeight: 800 }, error: { border: "1px solid #ef4444", background: "#451a1a", color: "#fecaca", borderRadius: 8, padding: 12, marginBottom: 14 }, notice: { border: "1px solid #22c55e", background: "#052e16", color: "#bbf7d0", borderRadius: 8, padding: 12, marginBottom: 14 }, safety: { color: "#8ea0b8", fontSize: 12, margin: "16px 0 0" }
 };
 

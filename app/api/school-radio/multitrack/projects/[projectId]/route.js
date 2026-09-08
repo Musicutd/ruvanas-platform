@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { ORGANISATION_CONTENT_ROLES, ORGANISATION_MANAGER_ROLES, isOrganisationRoleAllowed } from "@/lib/permissions.mjs";
 import { requireActiveSchoolRadio } from "@/lib/school-radio-access";
 import { normalizeMultitrackState } from "@/lib/multitrack-studio.mjs";
+import { invalidateApprovedAudioOutputs } from "@/lib/audio-project-governance";
 
 export const dynamic = "force-dynamic";
 
@@ -49,21 +50,12 @@ async function validateSources(tx, organisationId, sourceIds) {
   if (new Set(valid.map((asset) => asset.id)).size !== sourceIds.length) throw new Error("One or more multitrack sources are unavailable or no longer licensed.");
 }
 
-async function invalidateApprovedOutputs(tx, projectId) {
-  const approved = await tx.audioRender.findMany({ where: { projectId, outputPromoVersion: { is: { status: "APPROVED" } } }, select: { outputPromoVersionId: true, outputPromoVersion: { select: { promoAssetId: true } } } });
-  const versionIds = approved.map((item) => item.outputPromoVersionId).filter(Boolean);
-  if (!versionIds.length) return 0;
-  await tx.promoVersion.updateMany({ where: { id: { in: versionIds } }, data: { status: "SUPERSEDED" } });
-  await tx.promoAsset.updateMany({ where: { currentApprovedVersionId: { in: versionIds } }, data: { currentApprovedVersionId: null } });
-  return versionIds.length;
-}
-
 async function saveSnapshot(tx, { project, userId, state, reason }) {
   const clean = normalizeMultitrackState(state);
   if (!clean.tracks.some((track) => track.clips.length)) throw new Error("Add at least one audio clip before saving the multitrack project.");
   const sourceIds = [...new Set(clean.tracks.flatMap((track) => track.clips.map((clip) => clip.mediaAssetId)))];
   await validateSources(tx, project.organisationId, sourceIds);
-  const invalidatedApprovals = await invalidateApprovedOutputs(tx, project.id);
+  const invalidatedApprovals = await invalidateApprovedAudioOutputs(tx, project.id);
   await tx.audioTrack.deleteMany({ where: { projectId: project.id } });
   for (const track of clean.tracks) {
     await tx.audioTrack.create({ data: { projectId: project.id, kind: track.kind, name: track.name, order: track.order, gainDb: track.gainDb, pan: track.pan, muted: track.muted, solo: track.solo, armed: track.armed, locked: track.locked, effectChainJson: { preset: track.preset, automation: track.automation }, clips: { create: track.clips.map((clip) => ({ kind: clip.kind, mediaAssetId: clip.mediaAssetId, sourceStartMs: clip.sourceStartMs, sourceEndMs: clip.sourceEndMs, timelineStartMs: clip.timelineStartMs, gainDb: clip.gainDb, fadeInMs: clip.fadeInMs, fadeOutMs: clip.fadeOutMs, fadeInCurve: clip.fadeInCurve, fadeOutCurve: clip.fadeOutCurve, locked: clip.locked })) } } });

@@ -41,6 +41,17 @@ function projectInclude() {
         mediaAsset: { select: { id: true, name: true, originalName: true, mimeType: true } },
         promoVersion: { select: { id: true, version: true, status: true, promoAsset: { select: { name: true } } } }
       }
+    },
+    tracks: {
+      orderBy: { order: "asc" },
+      select: {
+        id: true,
+        name: true,
+        order: true,
+        armed: true,
+        locked: true,
+        clips: { select: { timelineStartMs: true, sourceStartMs: true, sourceEndMs: true } }
+      }
     }
   };
 }
