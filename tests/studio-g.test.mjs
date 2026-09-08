@@ -5,7 +5,7 @@ import test from "node:test";
 import { buildMultitrackRenderGraph, buildRenderGraph } from "../lib/audio-worker.mjs";
 import { MAX_CLIPS_PER_TRACK, MAX_MULTITRACK_TRACKS, normalizeMultitrackState } from "../lib/multitrack-studio.mjs";
 import { inspectStudioBrowserSupport, studioBrowserSupportMessage } from "../lib/studio-browser-support.mjs";
-import { STUDIO_MASTERING_PRESETS, evaluateStudioMasteringQuality } from "../lib/studio-effects-mastering.mjs";
+import { STUDIO_MASTERING_PRESETS, buildStudioMasteringFilters, evaluateStudioMasteringQuality } from "../lib/studio-effects-mastering.mjs";
 
 function recorderFor(types) {
   class Recorder {}
@@ -96,6 +96,15 @@ test("Studio G validates the mastering targets and rejects out-of-range audio", 
   for (const preset of Object.values(STUDIO_MASTERING_PRESETS).filter((item) => item.enabled)) {
     assert.equal(evaluateStudioMasteringQuality({ integratedLufs: preset.targetLufs, truePeakDbfs: preset.truePeakDbfs, loudnessRangeLu: preset.maxLoudnessRangeLu }, preset).status, "READY");
     assert.equal(evaluateStudioMasteringQuality({ integratedLufs: preset.targetLufs + 3, truePeakDbfs: preset.truePeakDbfs + 1, loudnessRangeLu: preset.maxLoudnessRangeLu + 3 }, preset).status, "NEEDS_ATTENTION");
+  }
+});
+
+test("Studio G applies range control and a no-makeup limiter to every mastering preset", () => {
+  for (const preset of Object.values(STUDIO_MASTERING_PRESETS).filter((item) => item.enabled)) {
+    const filters = buildStudioMasteringFilters(preset);
+    assert.match(filters[0], /^acompressor=/);
+    assert.match(filters[1], new RegExp(`^loudnorm=I=${preset.targetLufs}:TP=${preset.truePeakDbfs}:LRA=${preset.maxLoudnessRangeLu}$`));
+    assert.match(filters[2], /^alimiter=limit=\d+\.\d{4}:level=false$/);
   }
 });
 
