@@ -113,14 +113,18 @@ test("subscriber command centre keeps shortcuts permission-filtered and accessib
   assert.match(layout, /buildSubscriberNavigation/);
   assert.match(shell, /aria-label="Subscriber portal"/);
   assert.match(shell, /aria-expanded=\{open\}/);
+  assert.match(shell, /ruvanas:subscriber-theme/);
+  assert.match(shell, /aria-label=\{`Switch to \$\{theme === "dark" \? "light" : "dark"\} appearance`\}/);
+  assert.match(shell, /data-theme=\{theme\}/);
   assert.match(dashboard, /<progress/);
   assert.match(dashboard, /SERVICE PULSE/);
   assert.match(dashboard, /QUICK ACTIONS/);
   assert.match(styles, /@media \(max-width: 520px\)/);
   assert.match(styles, /:focus-visible/);
   assert.match(shellStyles, /@media \(max-width: 980px\)/);
-  assert.match(shellStyles, /\.portal \{[^}]*background: #101827/);
-  assert.match(shellStyles, /\.sidebar \{[^}]*background: #111b2b/);
+  assert.match(shellStyles, /\.portal \{[^}]*--rv-page-bg: #101827/);
+  assert.match(shellStyles, /\.portal\[data-theme="light"\] \{[^}]*--rv-page-bg: #f3f6fa/);
+  assert.match(shellStyles, /\.sidebar \{[^}]*background: var\(--rv-surface-raised\)/);
   assert.match(shellStyles, /\.activeLink \{[^}]*#f4b942/);
 });
 

@@ -75,13 +75,13 @@ export default function SchoolPublicationOperationsClient() {
 }
 
 const styles = {
-  shell: { margin: "0 0 24px", border: "1px solid #2b3a54", borderRadius: 16, background: "#121d30", padding: 22 },
+  shell: { margin: "0 0 24px", border: "1px solid var(--rv-border)", borderRadius: 16, background: "var(--rv-surface)", padding: 22 },
   header: { display: "flex", justifyContent: "space-between", gap: 18, alignItems: "flex-start" },
   eyebrow: { color: "#f4b942", fontSize: 12, fontWeight: 900, letterSpacing: 1.1, margin: "0 0 7px" }, title: { margin: "0 0 8px", fontSize: 28 },
-  muted: { color: "#aebbd0", lineHeight: 1.5, margin: "6px 0" }, strong: { color: "#f8fafc" }, badge: { background: "#dbeafe", color: "#1e40af", borderRadius: 6, padding: "6px 9px", fontSize: 11, fontWeight: 900 },
-  filters: { display: "flex", flexWrap: "wrap", gap: 10, alignItems: "end", margin: "18px 0" }, label: { display: "grid", gap: 6, color: "#dce5f3", fontWeight: 800, fontSize: 12 }, input: { border: "1px solid #61708a", borderRadius: 8, padding: "9px 10px", font: "inherit" },
-  primary: { border: 0, borderRadius: 8, background: "#f4b942", color: "#101827", padding: "10px 13px", fontWeight: 900, cursor: "pointer" }, export: { border: "1px solid #60a5fa", borderRadius: 8, color: "#bfdbfe", padding: "9px 12px", fontWeight: 800, textDecoration: "none" },
-  metrics: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 12 }, operations: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 12, marginTop: 12 }, card: { border: "1px solid #34445f", borderRadius: 10, padding: 15, background: "#131e30" }, cardTitle: { margin: "0 0 8px" },
-  preview: { color: "#fde68a", fontSize: 12, margin: "10px 0 0" }, episodeList: { marginTop: 12, border: "1px solid #34445f", borderRadius: 10, padding: 15 }, episode: { display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", borderTop: "1px solid #34445f", padding: "12px 0" }, episodeCounts: { color: "#cbd5e1", fontSize: 13, textAlign: "right" },
-  notice: { color: "#93a4bb", fontSize: 12, lineHeight: 1.5, margin: "14px 0 0" }, error: { border: "1px solid #ef4444", background: "#451a1a", color: "#fecaca", borderRadius: 8, padding: 12, margin: "12px 0" }
+  muted: { color: "var(--rv-text-muted)", lineHeight: 1.5, margin: "6px 0" }, strong: { color: "var(--rv-text)" }, badge: { background: "var(--rv-info-bg)", color: "#1e40af", borderRadius: 6, padding: "6px 9px", fontSize: 11, fontWeight: 900 },
+  filters: { display: "flex", flexWrap: "wrap", gap: 10, alignItems: "end", margin: "18px 0" }, label: { display: "grid", gap: 6, color: "var(--rv-text)", fontWeight: 800, fontSize: 12 }, input: { border: "1px solid var(--rv-border)", borderRadius: 8, padding: "9px 10px", font: "inherit" },
+  primary: { border: 0, borderRadius: 8, background: "#f4b942", color: "#101827", padding: "10px 13px", fontWeight: 900, cursor: "pointer" }, export: { border: "1px solid #60a5fa", borderRadius: 8, color: "var(--rv-info-text)", padding: "9px 12px", fontWeight: 800, textDecoration: "none" },
+  metrics: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 12 }, operations: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 12, marginTop: 12 }, card: { border: "1px solid var(--rv-border)", borderRadius: 10, padding: 15, background: "var(--rv-surface)" }, cardTitle: { margin: "0 0 8px" },
+  preview: { color: "var(--rv-warning-text)", fontSize: 12, margin: "10px 0 0" }, episodeList: { marginTop: 12, border: "1px solid var(--rv-border)", borderRadius: 10, padding: 15 }, episode: { display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", borderTop: "1px solid #34445f", padding: "12px 0" }, episodeCounts: { color: "var(--rv-text)", fontSize: 13, textAlign: "right" },
+  notice: { color: "#93a4bb", fontSize: 12, lineHeight: 1.5, margin: "14px 0 0" }, error: { border: "1px solid #ef4444", background: "var(--rv-error-bg)", color: "var(--rv-error-text)", borderRadius: 8, padding: 12, margin: "12px 0" }
 };

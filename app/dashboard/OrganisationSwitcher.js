@@ -61,9 +61,9 @@ export default function OrganisationSwitcher({ organisations, activeOrganisation
 
 const styles = {
   wrapper: { display: "flex", alignItems: "end", gap: 12, flexWrap: "wrap", margin: "0 0 28px" },
-  label: { display: "grid", gap: 7, color: "#d8e0ec", fontSize: 13, fontWeight: 800 },
-  select: { minWidth: 260, border: "1px solid #485a76", borderRadius: 8, background: "#182235", color: "#fff", padding: "10px 12px", fontSize: 15 },
+  label: { display: "grid", gap: 7, color: "var(--rv-text)", fontSize: 13, fontWeight: 800 },
+  select: { minWidth: 260, border: "1px solid #485a76", borderRadius: 8, background: "var(--rv-surface)", color: "#fff", padding: "10px 12px", fontSize: 15 },
   status: { color: "#f4b942", paddingBottom: 10, fontWeight: 700 },
-  error: { color: "#fecdd3", paddingBottom: 10, fontWeight: 700 }
+  error: { color: "var(--rv-error-text)", paddingBottom: 10, fontWeight: 700 }
 };
 

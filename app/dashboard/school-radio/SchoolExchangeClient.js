@@ -114,24 +114,24 @@ export default function SchoolExchangeClient() {
 }
 
 const s = {
-  section: { border: "1px solid #0f766e", borderRadius: 14, background: "#102b2b", padding: 22, marginBottom: 20 },
+  section: { border: "1px solid #0f766e", borderRadius: 14, background: "var(--rv-success-bg)", padding: 22, marginBottom: 20 },
   heading: { display: "flex", justifyContent: "space-between", gap: 18, alignItems: "flex-start", marginBottom: 18 },
   eyebrow: { color: "#5eead4", fontSize: 12, fontWeight: 900, letterSpacing: 1.2, margin: "0 0 8px" },
   title: { margin: 0, fontSize: 26 }, hint: { color: "#a7c7c4", lineHeight: 1.5, fontSize: 13 },
   safety: { border: "1px solid #14b8a6", borderRadius: 6, padding: "5px 8px", color: "#99f6e4", fontSize: 11, fontWeight: 900, whiteSpace: "nowrap" },
   form: { display: "grid", gap: 12, border: "1px solid #285a58", borderRadius: 10, padding: 16, marginBottom: 18 },
-  label: { display: "grid", gap: 7, color: "#e2e8f0", fontWeight: 800, fontSize: 13 },
-  input: { width: "100%", boxSizing: "border-box", border: "1px solid #64748b", borderRadius: 8, padding: "10px 11px", background: "#fff", color: "#111827", font: "inherit" },
+  label: { display: "grid", gap: 7, color: "var(--rv-text)", fontWeight: 800, fontSize: 13 },
+  input: { width: "100%", boxSizing: "border-box", border: "1px solid var(--rv-border)", borderRadius: 8, padding: "10px 11px", background: "var(--rv-input-bg)", color: "var(--rv-input-text)", font: "inherit" },
   check: { display: "flex", gap: 9, alignItems: "flex-start", color: "#ccfbf1", fontSize: 13, lineHeight: 1.45 },
   primary: { border: 0, borderRadius: 8, padding: "11px 14px", background: "#14b8a6", color: "#042f2e", fontWeight: 900, cursor: "pointer" },
   secondary: { border: "1px solid #5eead4", borderRadius: 7, background: "transparent", color: "#ccfbf1", padding: "8px 10px", fontWeight: 800, cursor: "pointer" },
-  danger: { border: "1px solid #f87171", borderRadius: 7, background: "transparent", color: "#fecaca", padding: "8px 10px", fontWeight: 800, cursor: "pointer" },
+  danger: { border: "1px solid #f87171", borderRadius: 7, background: "transparent", color: "var(--rv-error-text)", padding: "8px 10px", fontWeight: 800, cursor: "pointer" },
   approve: { border: 0, borderRadius: 7, background: "#22c55e", color: "#052e16", padding: "8px 10px", fontWeight: 900, cursor: "pointer" },
-  library: { display: "grid", gap: 12 }, card: { border: "1px solid #285a58", borderRadius: 10, background: "#0d2225", padding: 16 },
+  library: { display: "grid", gap: 12 }, card: { border: "1px solid #285a58", borderRadius: 10, background: "var(--rv-success-bg)", padding: 16 },
   cardHeading: { display: "flex", justifyContent: "space-between", gap: 12 }, itemTitle: { margin: "0 0 5px" }, meta: { color: "#5eead4", fontSize: 12, fontWeight: 800 }, body: { color: "#d8eeee", lineHeight: 1.5 },
   badge: { display: "inline-block", borderRadius: 5, padding: "4px 8px", fontSize: 11, fontWeight: 900, whiteSpace: "nowrap", height: "fit-content" },
   actions: { display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }, requests: { display: "grid", gap: 9, marginTop: 14 }, request: { borderTop: "1px solid #285a58", paddingTop: 11, display: "flex", justifyContent: "space-between", gap: 12 }, requestControls: { display: "flex", gap: 7, flexWrap: "wrap", alignItems: "flex-start", justifyContent: "flex-end" },
-  requestForm: { display: "grid", gap: 10, marginTop: 12 }, requestSummary: { display: "grid", gap: 9, marginTop: 12 }, decision: { color: "#fdba74", fontSize: 13 }, imported: { color: "#86efac", fontWeight: 800, fontSize: 13 },
-  error: { border: "1px solid #ef4444", background: "#451a1a", color: "#fecaca", borderRadius: 8, padding: 12, marginBottom: 12 }, notice: { border: "1px solid #22c55e", background: "#052e16", color: "#bbf7d0", borderRadius: 8, padding: 12, marginBottom: 12 },
+  requestForm: { display: "grid", gap: 10, marginTop: 12 }, requestSummary: { display: "grid", gap: 9, marginTop: 12 }, decision: { color: "#fdba74", fontSize: 13 }, imported: { color: "var(--rv-success-text)", fontWeight: 800, fontSize: 13 },
+  error: { border: "1px solid #ef4444", background: "var(--rv-error-bg)", color: "var(--rv-error-text)", borderRadius: 8, padding: 12, marginBottom: 12 }, notice: { border: "1px solid #22c55e", background: "var(--rv-success-bg)", color: "var(--rv-success-text)", borderRadius: 8, padding: 12, marginBottom: 12 },
   privacy: { color: "#8fbab6", fontSize: 12, margin: "18px 0 0" }
 };

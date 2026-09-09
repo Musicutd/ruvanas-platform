@@ -133,19 +133,19 @@ export default function SchoolEditorialClient() {
 }
 
 const s = {
-  wrapper: { border: "1px solid #3b4b66", borderRadius: 16, background: "#111d30", padding: 22, marginBottom: 22 },
+  wrapper: { border: "1px solid var(--rv-border)", borderRadius: 16, background: "var(--rv-surface)", padding: 22, marginBottom: 22 },
   heading: { display: "flex", justifyContent: "space-between", gap: 18, alignItems: "flex-start", marginBottom: 16 },
   title: { margin: "0 0 8px", fontSize: 28 }, eyebrow: { color: "#f4b942", fontSize: 12, fontWeight: 900, letterSpacing: 1.1, margin: "0 0 7px" },
   grid: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 16 },
-  card: { border: "1px solid #34445f", borderRadius: 12, background: "#182235", padding: 18 }, cardTitle: { margin: "0 0 15px" },
-  label: { display: "grid", gap: 6, marginBottom: 12, color: "#dce5f3", fontWeight: 800, fontSize: 13 },
-  input: { width: "100%", boxSizing: "border-box", border: "1px solid #61708a", borderRadius: 7, background: "#fff", color: "#111827", padding: "10px 11px", font: "inherit" },
+  card: { border: "1px solid var(--rv-border)", borderRadius: 12, background: "var(--rv-surface)", padding: 18 }, cardTitle: { margin: "0 0 15px" },
+  label: { display: "grid", gap: 6, marginBottom: 12, color: "var(--rv-text)", fontWeight: 800, fontSize: 13 },
+  input: { width: "100%", boxSizing: "border-box", border: "1px solid var(--rv-border)", borderRadius: 7, background: "var(--rv-input-bg)", color: "var(--rv-input-text)", padding: "10px 11px", font: "inherit" },
   primary: { border: 0, borderRadius: 7, background: "#f4b942", color: "#101827", padding: "11px 14px", fontWeight: 900, cursor: "pointer" },
-  hint: { color: "#9facbf", lineHeight: 1.5, fontSize: 13, margin: "5px 0" }, body: { color: "#d4dceb", lineHeight: 1.5 },
-  list: { display: "grid", gap: 12 }, item: { border: "1px solid #34445f", borderRadius: 9, background: "#131e30", padding: 15 },
+  hint: { color: "var(--rv-text-muted)", lineHeight: 1.5, fontSize: 13, margin: "5px 0" }, body: { color: "var(--rv-text)", lineHeight: 1.5 },
+  list: { display: "grid", gap: 12 }, item: { border: "1px solid var(--rv-border)", borderRadius: 9, background: "var(--rv-surface)", padding: 15 },
   row: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }, badge: { display: "inline-block", borderRadius: 5, padding: "4px 8px", fontSize: 11, fontWeight: 900, whiteSpace: "nowrap" },
-  actions: { display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }, approve: { border: 0, borderRadius: 7, background: "#22c55e", color: "#052e16", padding: "8px 11px", fontWeight: 900, cursor: "pointer" }, secondary: { border: "1px solid #94a3b8", borderRadius: 7, background: "transparent", color: "#e2e8f0", padding: "8px 11px", fontWeight: 800, cursor: "pointer" }, danger: { border: "1px solid #f87171", borderRadius: 7, background: "transparent", color: "#fecaca", padding: "8px 11px", fontWeight: 800, cursor: "pointer" },
-  review: { color: "#fed7aa", borderLeft: "3px solid #fb923c", paddingLeft: 10, fontSize: 13 }, consent: { borderTop: "1px solid #34445f", marginTop: 12, paddingTop: 10, color: "#dce5f3" },
+  actions: { display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }, approve: { border: 0, borderRadius: 7, background: "#22c55e", color: "#052e16", padding: "8px 11px", fontWeight: 900, cursor: "pointer" }, secondary: { border: "1px solid var(--rv-border)", borderRadius: 7, background: "transparent", color: "var(--rv-text)", padding: "8px 11px", fontWeight: 800, cursor: "pointer" }, danger: { border: "1px solid #f87171", borderRadius: 7, background: "transparent", color: "var(--rv-error-text)", padding: "8px 11px", fontWeight: 800, cursor: "pointer" },
+  review: { color: "var(--rv-warning-text)", borderLeft: "3px solid #fb923c", paddingLeft: 10, fontSize: 13 }, consent: { borderTop: "1px solid var(--rv-border)", marginTop: 12, paddingTop: 10, color: "var(--rv-text)" },
   link: { color: "#f4b942" }, linkButton: { border: 0, background: "none", color: "#f4b942", cursor: "pointer", fontWeight: 800, marginLeft: 8 },
-  error: { border: "1px solid #ef4444", background: "#451a1a", color: "#fecaca", borderRadius: 8, padding: 12, marginBottom: 14 }, notice: { border: "1px solid #22c55e", background: "#052e16", color: "#bbf7d0", borderRadius: 8, padding: 12, marginBottom: 14 }, info: { border: "1px solid #60a5fa", color: "#bfdbfe", borderRadius: 8, padding: 12 }, safety: { color: "#8ea0b8", fontSize: 12, margin: "16px 0 0" }
+  error: { border: "1px solid #ef4444", background: "var(--rv-error-bg)", color: "var(--rv-error-text)", borderRadius: 8, padding: 12, marginBottom: 14 }, notice: { border: "1px solid #22c55e", background: "var(--rv-success-bg)", color: "var(--rv-success-text)", borderRadius: 8, padding: 12, marginBottom: 14 }, info: { border: "1px solid #60a5fa", color: "var(--rv-info-text)", borderRadius: 8, padding: 12 }, safety: { color: "var(--rv-text-muted)", fontSize: 12, margin: "16px 0 0" }
 };

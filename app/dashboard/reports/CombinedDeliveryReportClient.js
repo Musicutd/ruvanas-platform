@@ -60,18 +60,18 @@ export default function CombinedDeliveryReportClient({ retailMediaOrders = [] })
 }
 
 const styles = {
-  section: { marginTop: 36, padding: 24, border: "1px solid #cbd5e1", borderRadius: 14, background: "#fff" },
+  section: { marginTop: 36, padding: 24, border: "1px solid var(--rv-border)", borderRadius: 14, background: "var(--rv-surface)" },
   eyebrow: { margin: 0, color: "#9a6400", fontWeight: 900, fontSize: 12, letterSpacing: 1.2, textTransform: "uppercase" },
-  title: { margin: "7px 0", color: "#0f172a", fontSize: 28 },
-  copy: { maxWidth: 850, color: "#475569", lineHeight: 1.6 },
+  title: { margin: "7px 0", color: "var(--rv-text)", fontSize: 28 },
+  copy: { maxWidth: 850, color: "var(--rv-text-muted)", lineHeight: 1.6 },
   filters: { display: "flex", gap: 12, flexWrap: "wrap", alignItems: "end", marginTop: 18 },
-  label: { display: "grid", gap: 5, color: "#334155", fontSize: 13, fontWeight: 800 },
-  input: { minHeight: 40, border: "1px solid #94a3b8", borderRadius: 7, padding: "7px 9px" },
-  button: { minHeight: 40, border: 0, borderRadius: 7, padding: "8px 14px", background: "#0f172a", color: "#fff", fontWeight: 900 },
-  link: { minHeight: 40, display: "inline-flex", alignItems: "center", padding: "0 12px", border: "1px solid #0f172a", borderRadius: 7, color: "#0f172a", fontWeight: 800, textDecoration: "none" },
+  label: { display: "grid", gap: 5, color: "var(--rv-text)", fontSize: 13, fontWeight: 800 },
+  input: { minHeight: 40, border: "1px solid var(--rv-border)", borderRadius: 7, padding: "7px 9px" },
+  button: { minHeight: 40, border: 0, borderRadius: 7, padding: "8px 14px", background: "var(--rv-surface)", color: "var(--rv-text)", fontWeight: 900 },
+  link: { minHeight: 40, display: "inline-flex", alignItems: "center", padding: "0 12px", border: "1px solid #0f172a", borderRadius: 7, color: "var(--rv-text)", fontWeight: 800, textDecoration: "none" },
   cards: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 12, marginTop: 20 },
-  metric: { display: "grid", gap: 3, padding: 16, borderRadius: 10, background: "#f8fafc", color: "#475569" },
-  notice: { padding: 12, borderRadius: 8, background: "#fffbeb", color: "#78350f", fontSize: 13, fontWeight: 700 },
-  table: { width: "100%", borderCollapse: "collapse", fontSize: 12, color: "#334155" },
+  metric: { display: "grid", gap: 3, padding: 16, borderRadius: 10, background: "var(--rv-surface)", color: "var(--rv-text-muted)" },
+  notice: { padding: 12, borderRadius: 8, background: "var(--rv-warning-bg)", color: "#78350f", fontSize: 13, fontWeight: 700 },
+  table: { width: "100%", borderCollapse: "collapse", fontSize: 12, color: "var(--rv-text)" },
   error: { color: "#b91c1c", fontWeight: 800 }
 };

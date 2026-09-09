@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSubscriberTheme } from "@/app/dashboard/SubscriberThemeContext";
 
 const emptyData = { assets: [], layouts: [], devices: [], playlists: [], takeovers: [] };
 
 export default function DigitalSignageConsole({ organisations, showOrganisationSelector = true, locationsHref = "/admin/locations" }) {
-  const styles = showOrganisationSelector ? lightStyles : darkStyles;
+  const subscriberTheme = useSubscriberTheme();
+  const styles = showOrganisationSelector || subscriberTheme === "light" ? lightStyles : darkStyles;
   const enabledOrganisations = organisations.filter((item) => item.digitalSignageEnabled);
   const [organisationId, setOrganisationId] = useState(enabledOrganisations[0]?.id || "");
   const [data, setData] = useState(emptyData);
