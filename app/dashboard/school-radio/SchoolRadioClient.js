@@ -219,24 +219,24 @@ export default function SchoolRadioClient() {
 }
 
 const styles = {
-  page: { minHeight: "100vh", background: "#101827", color: "#fff", padding: "36px max(20px, calc((100vw - 1160px)/2)) 72px", fontFamily: "Arial, sans-serif" },
+  page: { minHeight: "100vh", background: "var(--rv-page-bg)", color: "var(--rv-text)", padding: "36px max(20px, calc((100vw - 1160px)/2)) 72px", fontFamily: "Arial, sans-serif" },
   tabStack: { display: "grid", gap: 20 },
   back: { color: "#f4b942", textDecoration: "none", fontWeight: 800 },
   header: { display: "flex", justifyContent: "space-between", gap: 20, alignItems: "flex-start", margin: "34px 0 24px" },
   eyebrow: { color: "#f4b942", fontSize: 12, fontWeight: 900, letterSpacing: 1.2, margin: "0 0 8px" },
-  title: { fontSize: "clamp(34px,5vw,52px)", margin: 0 }, subtitle: { color: "#b8c3d6", lineHeight: 1.6, maxWidth: 760 },
+  title: { fontSize: "clamp(34px,5vw,52px)", margin: 0 }, subtitle: { color: "var(--rv-text-muted)", lineHeight: 1.6, maxWidth: 760 },
   grid: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(320px,1fr))", gap: 20 },
-  card: { border: "1px solid #2b3a54", borderRadius: 14, background: "#182235", padding: 22 }, cardTitle: { margin: "0 0 18px" },
-  label: { display: "grid", gap: 7, marginBottom: 14, color: "#dce5f3", fontWeight: 800, fontSize: 13 },
-  input: { width: "100%", boxSizing: "border-box", border: "1px solid #61708a", borderRadius: 8, background: "#fff", color: "#111827", padding: "11px 12px", font: "inherit" },
+  card: { border: "1px solid var(--rv-border)", borderRadius: 14, background: "var(--rv-surface)", padding: 22 }, cardTitle: { margin: "0 0 18px" },
+  label: { display: "grid", gap: 7, marginBottom: 14, color: "var(--rv-text)", fontWeight: 800, fontSize: 13 },
+  input: { width: "100%", boxSizing: "border-box", border: "1px solid var(--rv-border)", borderRadius: 8, background: "var(--rv-input-bg)", color: "var(--rv-input-text)", padding: "11px 12px", font: "inherit" },
   twoColumns: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 12 },
   primary: { border: 0, borderRadius: 8, background: "#f4b942", color: "#101827", padding: "12px 16px", fontWeight: 900, cursor: "pointer" },
-  list: { display: "grid", gap: 14 }, item: { border: "1px solid #34445f", borderRadius: 10, padding: 16, background: "#131e30" },
+  list: { display: "grid", gap: 14 }, item: { border: "1px solid var(--rv-border)", borderRadius: 10, padding: 16, background: "var(--rv-surface)" },
   itemHeader: { display: "flex", justifyContent: "space-between", gap: 14 }, itemTitle: { margin: "0 0 5px" },
-  hint: { color: "#9facbf", lineHeight: 1.5, fontSize: 13 }, body: { color: "#d4dceb", lineHeight: 1.5 }, reviewNote: { color: "#fed7aa", borderLeft: "3px solid #fb923c", paddingLeft: 10 },
-  actions: { display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }, approve: { border: 0, borderRadius: 7, background: "#22c55e", color: "#052e16", padding: "8px 11px", fontWeight: 900, cursor: "pointer" }, secondary: { border: "1px solid #94a3b8", borderRadius: 7, background: "transparent", color: "#e2e8f0", padding: "8px 11px", fontWeight: 800, cursor: "pointer" }, danger: { border: "1px solid #f87171", borderRadius: 7, background: "transparent", color: "#fecaca", padding: "8px 11px", fontWeight: 800, cursor: "pointer" },
-  slots: { display: "grid", gap: 8, marginTop: 14 }, slot: { display: "flex", justifyContent: "space-between", gap: 12, borderTop: "1px solid #34445f", paddingTop: 10, color: "#cbd5e1", fontSize: 13 }, cancelLink: { display: "block", marginTop: 7, border: 0, background: "none", color: "#fca5a5", cursor: "pointer", fontWeight: 800 },
+  hint: { color: "var(--rv-text-muted)", lineHeight: 1.5, fontSize: 13 }, body: { color: "var(--rv-text)", lineHeight: 1.5 }, reviewNote: { color: "var(--rv-warning-text)", borderLeft: "3px solid #fb923c", paddingLeft: 10 },
+  actions: { display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }, approve: { border: 0, borderRadius: 7, background: "#22c55e", color: "#052e16", padding: "8px 11px", fontWeight: 900, cursor: "pointer" }, secondary: { border: "1px solid var(--rv-border)", borderRadius: 7, background: "transparent", color: "var(--rv-text)", padding: "8px 11px", fontWeight: 800, cursor: "pointer" }, danger: { border: "1px solid #f87171", borderRadius: 7, background: "transparent", color: "var(--rv-error-text)", padding: "8px 11px", fontWeight: 800, cursor: "pointer" },
+  slots: { display: "grid", gap: 8, marginTop: 14 }, slot: { display: "flex", justifyContent: "space-between", gap: 12, borderTop: "1px solid var(--rv-border)", paddingTop: 10, color: "var(--rv-text)", fontSize: 13 }, cancelLink: { display: "block", marginTop: 7, border: 0, background: "none", color: "var(--rv-error-text)", cursor: "pointer", fontWeight: 800 },
   badge: { display: "inline-block", borderRadius: 5, padding: "4px 8px", fontSize: 11, fontWeight: 900, whiteSpace: "nowrap" },
-  error: { border: "1px solid #ef4444", background: "#451a1a", color: "#fecaca", borderRadius: 8, padding: 12, marginBottom: 16 }, notice: { border: "1px solid #22c55e", background: "#052e16", color: "#bbf7d0", borderRadius: 8, padding: 12, marginBottom: 16 }, privacy: { color: "#8ea0b8", fontSize: 12, marginTop: 20 }
+  error: { border: "1px solid #ef4444", background: "var(--rv-error-bg)", color: "var(--rv-error-text)", borderRadius: 8, padding: 12, marginBottom: 16 }, notice: { border: "1px solid #22c55e", background: "var(--rv-success-bg)", color: "var(--rv-success-text)", borderRadius: 8, padding: 12, marginBottom: 16 }, privacy: { color: "var(--rv-text-muted)", fontSize: 12, marginTop: 20 }
 };
 

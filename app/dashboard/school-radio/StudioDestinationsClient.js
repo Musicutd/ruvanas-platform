@@ -43,12 +43,12 @@ export default function StudioDestinationsClient({ renderId }) {
 }
 
 const s = {
-  panel: { width: "100%", border: "1px solid #2f6f72", borderRadius: 10, background: "#0b2630", padding: 12, marginTop: 8 },
+  panel: { width: "100%", border: "1px solid #2f6f72", borderRadius: 10, background: "var(--rv-info-bg)", padding: 12, marginTop: 8 },
   title: { color: "#e6fffb" }, help: { color: "#a5c9cc", fontSize: 12, lineHeight: 1.45, margin: "4px 0 10px" },
   grid: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 8 },
-  card: { display: "grid", gap: 5, border: "1px solid #2f5961", borderRadius: 8, background: "#102e39", padding: 10 },
+  card: { display: "grid", gap: 5, border: "1px solid #2f5961", borderRadius: 8, background: "var(--rv-info-bg)", padding: 10 },
   product: { color: "#f4b942", fontWeight: 900, letterSpacing: 0.7 }, description: { color: "#b8cbd0", fontSize: 11, lineHeight: 1.35 },
   send: { border: 0, borderRadius: 6, background: "#f4b942", color: "#101827", padding: "8px 9px", fontWeight: 900, cursor: "pointer" },
   open: { borderRadius: 6, background: "#15803d", color: "#fff", padding: "8px 9px", fontWeight: 900, textDecoration: "none", textAlign: "center" },
-  reason: { color: "#fbcfe8", lineHeight: 1.35 }, error: { color: "#fecaca", fontSize: 12 }, loading: { color: "#9facbf", fontSize: 12 }
+  reason: { color: "#fbcfe8", lineHeight: 1.35 }, error: { color: "var(--rv-error-text)", fontSize: 12 }, loading: { color: "var(--rv-text-muted)", fontSize: 12 }
 };

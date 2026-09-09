@@ -64,13 +64,13 @@ export default async function SubscriberPlayersPage() {
 }
 
 const styles = {
-  page: { minHeight: "100vh", background: "#101827", color: "#fff", fontFamily: "Arial, sans-serif" },
-  header: { minHeight: 72, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 32px", borderBottom: "1px solid #26344d", background: "#141e2f" },
+  page: { minHeight: "100vh", background: "var(--rv-page-bg)", color: "var(--rv-text)", fontFamily: "Arial, sans-serif" },
+  header: { minHeight: 72, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 32px", borderBottom: "1px solid #26344d", background: "var(--rv-surface)" },
   brand: { color: "#f4b942", fontWeight: 900, letterSpacing: 2, textDecoration: "none" },
   back: { color: "#f4b942", fontWeight: 800, textDecoration: "none" },
   content: { width: "min(980px, calc(100% - 40px))", margin: "0 auto", padding: "56px 0 72px" },
   eyebrow: { color: "#f4b942", letterSpacing: 1.5, fontSize: 12, fontWeight: 800, margin: "0 0 12px" },
   heading: { fontSize: "clamp(34px, 6vw, 54px)", margin: 0 },
-  subtitle: { color: "#b8c3d6", lineHeight: 1.6, fontSize: 18, maxWidth: 740, margin: "16px 0 28px" },
-  warning: { padding: 14, borderRadius: 10, background: "#4a3513", color: "#fde68a", fontWeight: 800 }
+  subtitle: { color: "var(--rv-text-muted)", lineHeight: 1.6, fontSize: 18, maxWidth: 740, margin: "16px 0 28px" },
+  warning: { padding: 14, borderRadius: 10, background: "var(--rv-warning-bg)", color: "var(--rv-warning-text)", fontWeight: 800 }
 };

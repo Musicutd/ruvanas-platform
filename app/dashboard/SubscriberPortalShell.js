@@ -3,7 +3,10 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import { SubscriberThemeContext } from "./SubscriberThemeContext";
 import styles from "./subscriber-portal-shell.module.css";
+
+const THEME_STORAGE_KEY = "ruvanas:subscriber-theme";
 
 function matchesPath(pathname, href) {
   if (href === "/dashboard") return pathname === href;
@@ -13,6 +16,7 @@ function matchesPath(pathname, href) {
 export default function SubscriberPortalShell({ navigation, organisationName, userName, membershipRole, children }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const [theme, setTheme] = useState("dark");
   const activeSectionId = navigation.find((section) => section.items.some((item) => item.available !== false && matchesPath(pathname, item.href)))?.id;
   const [expandedSections, setExpandedSections] = useState(() => new Set([activeSectionId || navigation[0]?.id].filter(Boolean)));
 
@@ -20,6 +24,34 @@ export default function SubscriberPortalShell({ navigation, organisationName, us
     if (!activeSectionId) return;
     setExpandedSections((current) => new Set([...current, activeSectionId]));
   }, [activeSectionId]);
+
+  useEffect(() => {
+    let storedTheme = null;
+    try {
+      storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+    } catch {
+      // Browser privacy settings can disable storage; the theme still works for this visit.
+    }
+    const preferredTheme = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+    const initialTheme = storedTheme === "light" || storedTheme === "dark" ? storedTheme : preferredTheme;
+    setTheme(initialTheme);
+    document.documentElement.dataset.ruvanasTheme = initialTheme;
+
+    return () => {
+      delete document.documentElement.dataset.ruvanasTheme;
+    };
+  }, []);
+
+  function toggleTheme() {
+    const nextTheme = theme === "dark" ? "light" : "dark";
+    setTheme(nextTheme);
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+    } catch {
+      // Keep the in-page preference even when the browser blocks storage.
+    }
+    document.documentElement.dataset.ruvanasTheme = nextTheme;
+  }
 
   function toggleSection(sectionId) {
     setExpandedSections((current) => {
@@ -31,7 +63,8 @@ export default function SubscriberPortalShell({ navigation, organisationName, us
   }
 
   return (
-    <div className={styles.portal}>
+    <SubscriberThemeContext.Provider value={theme}>
+    <div className={styles.portal} data-theme={theme} data-ruvanas-subscriber-root>
       <header className={styles.topbar}>
         <Link href="/dashboard" className={styles.brand}>RUVANAS</Link>
         <button
@@ -47,6 +80,16 @@ export default function SubscriberPortalShell({ navigation, organisationName, us
           <span>{organisationName}</span>
           <small>{membershipRole.replaceAll("_", " ").toLowerCase()}</small>
         </div>
+        <button
+          type="button"
+          className={styles.themeToggle}
+          aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} appearance`}
+          aria-pressed={theme === "light"}
+          onClick={toggleTheme}
+        >
+          <span aria-hidden="true">{theme === "dark" ? "☀" : "☾"}</span>
+          {theme === "dark" ? "Light" : "Dark"}
+        </button>
         <form action="/api/auth/logout" method="post">
           <button type="submit" className={styles.signOut}>Sign out</button>
         </form>
@@ -109,5 +152,6 @@ export default function SubscriberPortalShell({ navigation, organisationName, us
         <div className={styles.content}>{children}</div>
       </div>
     </div>
+    </SubscriberThemeContext.Provider>
   );
 }

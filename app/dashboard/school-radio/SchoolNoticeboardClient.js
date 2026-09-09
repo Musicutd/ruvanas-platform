@@ -102,19 +102,19 @@ export default function SchoolNoticeboardClient({ announcements = [], locations 
 }
 
 const s = {
-  section: { border: "1px solid #7c3aed", borderRadius: 14, background: "#17172f", padding: 22, marginBottom: 20 },
+  section: { border: "1px solid #7c3aed", borderRadius: 14, background: "var(--rv-surface)", padding: 22, marginBottom: 20 },
   heading: { display: "flex", justifyContent: "space-between", gap: 18, alignItems: "flex-start", marginBottom: 18 },
   eyebrow: { color: "#c4b5fd", fontSize: 12, fontWeight: 900, letterSpacing: 1.2, margin: "0 0 8px" },
   title: { margin: 0, fontSize: 26 }, hint: { color: "#aab5ca", lineHeight: 1.5, fontSize: 13 },
   safety: { border: "1px solid #8b5cf6", borderRadius: 6, padding: "5px 8px", color: "#ddd6fe", fontSize: 11, fontWeight: 900, whiteSpace: "nowrap" },
   form: { display: "grid", gap: 12, border: "1px solid #3d3d67", borderRadius: 10, padding: 16, marginBottom: 18 },
   columns: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(190px,1fr))", gap: 12 },
-  label: { display: "grid", gap: 7, color: "#e2e8f0", fontWeight: 800, fontSize: 13 },
-  input: { width: "100%", boxSizing: "border-box", border: "1px solid #64748b", borderRadius: 8, padding: "10px 11px", background: "#fff", color: "#111827", font: "inherit" },
-  primary: { border: 0, borderRadius: 8, padding: "12px 16px", background: "#8b5cf6", color: "#fff", fontWeight: 900, cursor: "pointer" },
-  list: { display: "grid", gap: 10 }, item: { border: "1px solid #343f59", borderRadius: 10, padding: 15, background: "#111a2c" },
-  itemHeading: { display: "flex", justifyContent: "space-between", gap: 12 }, itemTitle: { margin: "0 0 4px" }, body: { color: "#e2e8f0", lineHeight: 1.5 }, meta: { color: "#c4b5fd", fontSize: 12, fontWeight: 800 },
-  badge: { borderRadius: 5, padding: "4px 8px", background: "#dbeafe", color: "#1e40af", height: "fit-content", fontSize: 11, fontWeight: 900 }, live: { background: "#dcfce7", color: "#166534" }, cancelled: { background: "#e2e8f0", color: "#475569" },
-  remove: { border: "1px solid #f87171", borderRadius: 7, background: "transparent", color: "#fecaca", padding: "8px 10px", fontWeight: 800, cursor: "pointer" }, cancelReason: { color: "#fca5a5", fontSize: 13 },
-  error: { border: "1px solid #ef4444", background: "#451a1a", color: "#fecaca", borderRadius: 8, padding: 12, marginBottom: 12 }, notice: { border: "1px solid #22c55e", background: "#052e16", color: "#bbf7d0", borderRadius: 8, padding: 12, marginBottom: 12 }
+  label: { display: "grid", gap: 7, color: "var(--rv-text)", fontWeight: 800, fontSize: 13 },
+  input: { width: "100%", boxSizing: "border-box", border: "1px solid var(--rv-border)", borderRadius: 8, padding: "10px 11px", background: "var(--rv-input-bg)", color: "var(--rv-input-text)", font: "inherit" },
+  primary: { border: 0, borderRadius: 8, padding: "12px 16px", background: "#8b5cf6", color: "var(--rv-text)", fontWeight: 900, cursor: "pointer" },
+  list: { display: "grid", gap: 10 }, item: { border: "1px solid #343f59", borderRadius: 10, padding: 15, background: "var(--rv-surface)" },
+  itemHeading: { display: "flex", justifyContent: "space-between", gap: 12 }, itemTitle: { margin: "0 0 4px" }, body: { color: "var(--rv-text)", lineHeight: 1.5 }, meta: { color: "#c4b5fd", fontSize: 12, fontWeight: 800 },
+  badge: { borderRadius: 5, padding: "4px 8px", background: "var(--rv-info-bg)", color: "#1e40af", height: "fit-content", fontSize: 11, fontWeight: 900 }, live: { background: "var(--rv-success-bg)", color: "#166534" }, cancelled: { background: "#e2e8f0", color: "var(--rv-text-muted)" },
+  remove: { border: "1px solid #f87171", borderRadius: 7, background: "transparent", color: "var(--rv-error-text)", padding: "8px 10px", fontWeight: 800, cursor: "pointer" }, cancelReason: { color: "var(--rv-error-text)", fontSize: 13 },
+  error: { border: "1px solid #ef4444", background: "var(--rv-error-bg)", color: "var(--rv-error-text)", borderRadius: 8, padding: 12, marginBottom: 12 }, notice: { border: "1px solid #22c55e", background: "var(--rv-success-bg)", color: "var(--rv-success-text)", borderRadius: 8, padding: 12, marginBottom: 12 }
 };
