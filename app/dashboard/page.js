@@ -9,6 +9,7 @@ import ContextHelp from "@/app/components/ContextHelp";
 import OnboardingChecklist from "@/app/components/OnboardingChecklist";
 import SkipLink from "@/app/components/SkipLink";
 import OrganisationSwitcher from "./OrganisationSwitcher";
+import DashboardHomeTabs from "./DashboardHomeTabs";
 import styles from "./dashboard.module.css";
 
 export const dynamic = "force-dynamic";
@@ -121,6 +122,9 @@ export default async function DashboardPage() {
           activeOrganisationId={organisation.id}
         />
 
+        <DashboardHomeTabs>
+          <div>
+
         <div className={styles.overviewGrid}>
           <section className={styles.nextAction} aria-labelledby="next-action-title">
             <div className={styles.nextActionCopy}>
@@ -158,6 +162,10 @@ export default async function DashboardPage() {
 
         <OnboardingChecklist onboarding={onboarding} />
 
+          </div>
+
+          <div>
+
         <section className={styles.productSection} aria-labelledby="product-dashboard-title">
           <div className={styles.sectionHeading}>
             <div>
@@ -179,6 +187,10 @@ export default async function DashboardPage() {
             ))}
           </div>
         </section>
+
+          </div>
+
+          <div>
 
         <section className={styles.quickSection} aria-labelledby="quick-actions-title">
           <div className={styles.sectionHeading}>
@@ -288,6 +300,8 @@ export default async function DashboardPage() {
             <span>Maximum quality <strong>{entitlements.maxBitrateKbps} kbps</strong></span>
           </div>
         </details>
+          </div>
+        </DashboardHomeTabs>
       </div>
     </main>
   );

@@ -22,8 +22,26 @@ export default function SubscriberPortalShell({ navigation, organisationName, us
 
   useEffect(() => {
     if (!activeSectionId) return;
-    setExpandedSections((current) => new Set([...current, activeSectionId]));
+    setExpandedSections(new Set([activeSectionId]));
   }, [activeSectionId]);
+
+  useEffect(() => {
+    setOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
 
   useEffect(() => {
     let storedTheme = null;
@@ -55,10 +73,8 @@ export default function SubscriberPortalShell({ navigation, organisationName, us
 
   function toggleSection(sectionId) {
     setExpandedSections((current) => {
-      const next = new Set(current);
-      if (next.has(sectionId)) next.delete(sectionId);
-      else next.add(sectionId);
-      return next;
+      if (current.has(sectionId)) return new Set();
+      return new Set([sectionId]);
     });
   }
 
