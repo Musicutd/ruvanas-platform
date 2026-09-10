@@ -124,6 +124,7 @@ test("subscriber command centre keeps shortcuts permission-filtered and accessib
   assert.match(shellStyles, /@media \(max-width: 980px\)/);
   assert.match(shellStyles, /\.portal \{[^}]*--rv-page-bg: #101827/);
   assert.match(shellStyles, /\.portal\[data-theme="light"\] \{[^}]*--rv-page-bg: #f3f6fa/);
+  assert.match(shellStyles, /\.portal\[data-theme="light"\] \{[^}]*--rv-accent-text: #925f00/);
   assert.match(shellStyles, /\.sidebar \{[^}]*background: var\(--rv-surface-raised\)/);
   assert.match(shellStyles, /\.activeLink \{[^}]*#f4b942/);
 });

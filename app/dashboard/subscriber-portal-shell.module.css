@@ -20,6 +20,7 @@
   --rv-error-text: #fecaca;
   --rv-info-bg: #0c1b28;
   --rv-info-text: #bae6fd;
+  --rv-accent-text: #f4b942;
   --rv-shadow: rgba(0, 0, 0, .16);
   min-height: 100vh;
   background: var(--rv-page-bg);
@@ -48,6 +49,7 @@
   --rv-error-text: #84283a;
   --rv-info-bg: #eaf1f8;
   --rv-info-text: #1e3a8a;
+  --rv-accent-text: #925f00;
   --rv-shadow: rgba(15, 32, 56, .10);
   color-scheme: light;
 }

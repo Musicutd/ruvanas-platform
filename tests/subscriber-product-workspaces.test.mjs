@@ -30,6 +30,10 @@ test("Retail, School and Online Radio have separate subscriber dashboards", asyn
   assert.match(shared, /Complimentary service · active until Ruvanas stops it/);
   assert.match(styles, /@media \(max-width: 660px\)/);
   assert.match(styles, /:focus-visible/);
+  assert.match(styles, /\.onboarding \{[^}]*background: linear-gradient\([^}]*var\(--rv-surface-muted\)[^}]*var\(--rv-surface-raised\)/);
+  assert.match(styles, /scroll-margin-block-start: 88px/);
+  assert.match(styles, /color: var\(--rv-accent-text\)/);
+  assert.doesNotMatch(styles, /background: linear-gradient\(135deg, #1a263a, #141e30\)/);
 });
 
 test("complimentary access is perpetual and controlled only by Super Admin", async () => {
