@@ -37,3 +37,24 @@ test("dense subscriber workspaces are split into task-focused tabs", async () =>
   assert.match(shell, /expandedSections/);
   assert.match(shell, /aria-controls=\{`subscriber-navigation-/);
 });
+
+test("subscriber dashboard uses progressive disclosure and a single-open navigation accordion", async () => {
+  const [dashboard, homeTabs, homeTabStyles, shell] = await Promise.all([
+    readFile(new URL("../app/dashboard/page.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/dashboard/DashboardHomeTabs.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/dashboard/dashboard-home-tabs.module.css", import.meta.url), "utf8"),
+    readFile(new URL("../app/dashboard/SubscriberPortalShell.js", import.meta.url), "utf8")
+  ]);
+
+  assert.match(dashboard, /<DashboardHomeTabs>/);
+  assert.match(homeTabs, /role="tablist"/);
+  assert.match(homeTabs, /role="tab"/);
+  assert.match(homeTabs, /role="tabpanel"/);
+  assert.match(homeTabs, /ArrowLeft/);
+  assert.match(homeTabs, /ArrowRight/);
+  assert.match(homeTabs, /dashboard-\$\{viewId\}/);
+  assert.match(homeTabStyles, /overflow-x: auto/);
+  assert.match(homeTabStyles, /prefers-reduced-motion/);
+  assert.match(shell, /return new Set\(\[sectionId\]\)/);
+  assert.match(shell, /event\.key === "Escape"/);
+});
