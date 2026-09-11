@@ -713,6 +713,7 @@ enum MusicModeStatus {
 enum MusicModeSource {
   MANUAL
   SMART_PLAYLIST
+  GENERATED_PLAYLIST
 }
 
 enum SmartPlaylistStatus {
@@ -793,6 +794,27 @@ enum MusicScheduleStatus {
 enum AutoDjPlaybackPolicy {
   FOLLOW_LOCATION_HOURS
   RUN_24_7
+}
+
+enum AutoDjState {
+  DRAFT
+  ACTIVE
+  PAUSED
+  BLOCKED
+}
+
+enum AutoDjTargetType {
+  LOCATION
+  ZONE
+  SCHOOL
+  CHANNEL
+}
+
+enum GeneratedPlaylistStatus {
+  DRAFT
+  PUBLISHED
+  INVALIDATED
+  ARCHIVED
 }
 
 enum ProofOfPlayEventType {
@@ -1522,6 +1544,8 @@ model User {
   approvedRadioAdvertisingPolicies       RadioAdvertisingPolicy[]         @relation("RadioAdvertisingPolicyApprovedBy")
   createdRadioDistributionDestinations   RadioDistributionDestination[]   @relation("RadioDistributionDestinationCreatedBy")
   activatedRadioDistributionDestinations RadioDistributionDestination[]   @relation("RadioDistributionDestinationActivatedBy")
+  createdGeneratedPlaylists              GeneratedPlaylist[]              @relation("GeneratedPlaylistCreatedBy")
+  publishedGeneratedPlaylists            GeneratedPlaylist[]              @relation("GeneratedPlaylistPublishedBy")
 }
 
 model Organisation {
@@ -1667,6 +1691,7 @@ model Organisation {
   targetRadioSyndicationAgreements   RadioSyndicationAgreement[]         @relation("RadioSyndicationTargetOrganisation")
   radioAdvertisingPolicies           RadioAdvertisingPolicy[]
   radioDistributionDestinations      RadioDistributionDestination[]
+  generatedPlaylists                 GeneratedPlaylist[]
 }
 
 model OrganisationMember {
@@ -2417,15 +2442,24 @@ model ChannelAssignment {
 }
 
 model AutoDjPolicy {
-  id                 String               @id @default(cuid())
+  id                 String                      @id @default(cuid())
   organisationId     String
   channelId          String
-  enabled            Boolean              @default(false)
+  enabled            Boolean                     @default(false)
   defaultMusicModeId String?
   backupMusicModeId  String?
-  playbackPolicy     AutoDjPlaybackPolicy @default(FOLLOW_LOCATION_HOURS)
-  createdAt          DateTime             @default(now())
-  updatedAt          DateTime             @updatedAt
+  playbackPolicy     AutoDjPlaybackPolicy        @default(FOLLOW_LOCATION_HOURS)
+  state              AutoDjState                 @default(DRAFT)
+  targetType         AutoDjTargetType            @default(CHANNEL)
+  targetId           String?
+  rightsUse          MusicRightsUse              @default(ONLINE_RADIO)
+  territory          String?
+  sourceScopes       Json                        @default("[\"RUVANAS_CORE\"]")
+  selectedGenreCodes Json                        @default("[]")
+  entitlementLevel   LicensedMusicCatalogueLevel @default(NONE)
+  blockedReason      String?
+  createdAt          DateTime                    @default(now())
+  updatedAt          DateTime                    @updatedAt
 
   organisation     Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   channel          Channel      @relation(fields: [channelId, organisationId], references: [id, organisationId], onDelete: Cascade)
@@ -2788,19 +2822,20 @@ model PlayoutEvent {
 }
 
 model MediaAsset {
-  id              String           @id @default(cuid())
-  organisationId  String?
-  libraryType     MediaLibraryType @default(ORGANISATION_PROMO)
-  name            String
-  originalName    String
-  storageKey      String           @unique
-  mimeType        String
-  sizeBytes       BigInt
-  durationSeconds Int?
-  mediaType       MediaType
-  status          MediaStatus      @default(UPLOADING)
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
+  id                String           @id @default(cuid())
+  organisationId    String?
+  libraryType       MediaLibraryType @default(ORGANISATION_PROMO)
+  name              String
+  originalName      String
+  storageKey        String           @unique
+  mimeType          String
+  sizeBytes         BigInt
+  durationSeconds   Int?
+  mediaType         MediaType
+  status            MediaStatus      @default(UPLOADING)
+  licensedCatalogue Boolean          @default(false)
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
 
   organisation          Organisation?          @relation("OrganisationMediaAssets", fields: [organisationId], references: [id], onDelete: Cascade)
   genres                MediaAssetGenre[]
@@ -3488,6 +3523,7 @@ model Track {
   incomingVoiceTrackSegues VoiceTrackSegue[]        @relation("VoiceTrackSegueIncomingTrack")
   rightsWorkMappings       RightsWorkMapping[]
   rightsUsageLedgerEvents  RightsUsageLedgerEvent[]
+  generatedPlaylistItems   GeneratedPlaylistItem[]
 
   @@index([status])
   @@index([artist, title])
@@ -3517,6 +3553,7 @@ model MusicMode {
   smartPlaylist            SmartPlaylist?          @relation("SmartPlaylistMusicMode")
   radioClockItems          RadioClockItem[]
   programmeScheduleItems   ProgrammeScheduleItem[]
+  generatedPlaylists       GeneratedPlaylist[]
 
   @@unique([organisationId, slug])
   @@unique([id, organisationId])
@@ -3767,6 +3804,7 @@ model MusicModeTrack {
   musicModeId String
   trackId     String
   weight      Int      @default(100)
+  position    Int?
   createdAt   DateTime @default(now())
 
   musicMode MusicMode @relation(fields: [musicModeId], references: [id], onDelete: Cascade)
@@ -3774,6 +3812,7 @@ model MusicModeTrack {
 
   @@id([musicModeId, trackId])
   @@index([trackId])
+  @@index([musicModeId, position])
 }
 
 model SchoolProfile {
@@ -5319,14 +5358,95 @@ model ScheduleSlot {
 }
 
 model MediaGenre {
-  id        String   @id @default(cuid())
-  name      String   @unique
-  slug      String   @unique
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                    String                      @id @default(cuid())
+  name                  String                      @unique
+  slug                  String                      @unique
+  active                Boolean                     @default(true)
+  minimumCatalogueLevel LicensedMusicCatalogueLevel @default(PREMIUM)
+  createdAt             DateTime                    @default(now())
+  updatedAt             DateTime                    @updatedAt
 
   mediaAssets MediaAssetGenre[]
+}
+
+model GeneratedPlaylist {
+  id                 String                      @id @default(cuid())
+  organisationId     String
+  musicModeId        String?
+  name               String
+  status             GeneratedPlaylistStatus     @default(DRAFT)
+  targetType         AutoDjTargetType
+  targetId           String
+  timezone           String
+  scheduledDate      DateTime                    @db.Date
+  startMinute        Int
+  endMinute          Int
+  rightsUse          MusicRightsUse
+  territory          String?
+  sourceScopes       Json                        @default("[]")
+  selectedGenreCodes Json                        @default("[]")
+  currentVersion     Int                         @default(1)
+  publishedVersion   Int                         @default(0)
+  entitlementLevel   LicensedMusicCatalogueLevel @default(NONE)
+  invalidReason      String?
+  createdByUserId    String
+  publishedByUserId  String?
+  publishedAt        DateTime?
+  createdAt          DateTime                    @default(now())
+  updatedAt          DateTime                    @updatedAt
+
+  organisation Organisation               @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  musicMode    MusicMode?                 @relation(fields: [musicModeId, organisationId], references: [id, organisationId], onDelete: Restrict)
+  createdBy    User                       @relation("GeneratedPlaylistCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  publishedBy  User?                      @relation("GeneratedPlaylistPublishedBy", fields: [publishedByUserId], references: [id], onDelete: SetNull)
+  versions     GeneratedPlaylistVersion[]
+
+  @@unique([id, organisationId])
+  @@index([organisationId, status, updatedAt])
+  @@index([targetType, targetId, scheduledDate])
+  @@index([musicModeId])
+  @@index([createdByUserId])
+  @@index([publishedByUserId])
+}
+
+model GeneratedPlaylistVersion {
+  id                       String                      @id @default(cuid())
+  generatedPlaylistId      String
+  version                  Int
+  seed                     String
+  requestedDurationSeconds Int
+  generatedDurationSeconds Int
+  toleranceSeconds         Int                         @default(180)
+  warnings                 Json                        @default("[]")
+  genreDistribution        Json                        @default("{}")
+  entitlementLevel         LicensedMusicCatalogueLevel @default(NONE)
+  publishedAt              DateTime?
+  generatedAt              DateTime                    @default(now())
+
+  generatedPlaylist GeneratedPlaylist       @relation(fields: [generatedPlaylistId], references: [id], onDelete: Cascade)
+  items             GeneratedPlaylistItem[]
+
+  @@unique([generatedPlaylistId, version])
+  @@index([generatedPlaylistId, generatedAt])
+}
+
+model GeneratedPlaylistItem {
+  id                         String  @id @default(cuid())
+  generatedPlaylistVersionId String
+  trackId                    String
+  position                   Int
+  startOffsetSeconds         Int
+  endOffsetSeconds           Int
+  durationSeconds            Int
+  genreCode                  String
+  sourceScope                String
+  explanation                String?
+
+  version GeneratedPlaylistVersion @relation(fields: [generatedPlaylistVersionId], references: [id], onDelete: Cascade)
+  track   Track                    @relation(fields: [trackId], references: [id], onDelete: Restrict)
+
+  @@unique([generatedPlaylistVersionId, position])
+  @@index([trackId])
 }
 
 model MediaAssetGenre {

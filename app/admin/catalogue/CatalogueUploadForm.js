@@ -119,6 +119,16 @@ export default function CatalogueUploadForm({ genres }) {
         </fieldset>
       ) : null}
 
+      <fieldset style={styles.fieldset} disabled={uploading}>
+        <legend style={styles.legend}>Licensed product use</legend>
+        <div style={styles.checkboxGrid}>
+          <label style={styles.checkLabel}><input type="checkbox" name="permittedUses" value="RETAIL_RADIO" defaultChecked />Retail Radio</label>
+          <label style={styles.checkLabel}><input type="checkbox" name="permittedUses" value="SCHOOL_RADIO" defaultChecked />School Radio</label>
+          <label style={styles.checkLabel}><input type="checkbox" name="permittedUses" value="ONLINE_RADIO" defaultChecked />Online Radio</label>
+        </div>
+        <p style={styles.hint}>Select only the Ruvanas services covered by the music licence.</p>
+      </fieldset>
+
       <div style={styles.confirmations}>
         <label style={styles.checkLabel}>
           <input type="checkbox" name="isExplicit" disabled={uploading} />
@@ -133,6 +143,10 @@ export default function CatalogueUploadForm({ genres }) {
         <label style={styles.checkLabel}>
           <input type="checkbox" name="publishNow" disabled={uploading} />
           Mark this track ready for programming immediately
+        </label>
+        <label style={styles.checkLabel}>
+          <input type="checkbox" name="licensedCatalogue" disabled={uploading} />
+          Apply Licensed Music Catalogue plan and genre controls
         </label>
         <p style={styles.hint}>
           Leave this unchecked to keep the track in Draft. Even a Ready track will not play until you add it to a Music Mode and publish a schedule.

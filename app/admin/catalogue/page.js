@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import CatalogueUploadForm from "./CatalogueUploadForm";
+import GenreTierControl from "./GenreTierControl";
+import { CANONICAL_AUTODJ_GENRES, normaliseGenreCode } from "@/lib/autodj-genre-entitlements.mjs";
 
 const plannedGenres = [
   {
@@ -68,8 +70,11 @@ export default async function AdminCataloguePage() {
   const visibleGenres =
     genres.length > 0
       ? genres.map((genre) => ({
+          id: genre.id,
           name: genre.name,
-          description: "Configured Ruvanas catalogue genre."
+          description: "Configured Ruvanas catalogue genre.",
+          minimumCatalogueLevel: genre.minimumCatalogueLevel,
+          fixedCatalogueLevel: CANONICAL_AUTODJ_GENRES.find((item) => item.code === normaliseGenreCode(genre.slug || genre.name))?.minimumLevel || null
         }))
       : plannedGenres;
 
@@ -140,6 +145,7 @@ export default async function AdminCataloguePage() {
             <article key={genre.name} style={styles.genreCard}>
               <h3 style={styles.genreName}>{genre.name}</h3>
               <p style={styles.genreDescription}>{genre.description}</p>
+              {genre.id ? <GenreTierControl genre={genre} /> : null}
             </article>
           ))}
         </div>
