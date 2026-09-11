@@ -11,6 +11,7 @@ import LiveFailoverWorkspace from "./LiveFailoverWorkspace";
 import BrowserLiveStudioWorkspace from "./BrowserLiveStudioWorkspace";
 import VoiceTrackingWorkspace from "./VoiceTrackingWorkspace";
 import AudioProcessingWorkspace from "./AudioProcessingWorkspace";
+import AutoDjExpansionWorkspace from "./AutoDjExpansionWorkspace";
 import WorkspaceTabs from "../WorkspaceTabs";
 import styles from "./programming.module.css";
 
@@ -53,7 +54,7 @@ export default async function SubscriberProgrammingPage() {
         </div>
         <WorkspaceTabs label="Programming tools" intro="Open only the part of radio programming you need right now." tabs={tabs}>
           <div className={styles.workspace}><ProgrammingWorkspace organisationName={context.membership.organisation.name} /></div>
-          <div className={styles.workspace}><SmartPlaylistsWorkspace /><RadioClocksWorkspace /><AdvancedSchedulerWorkspace /></div>
+          <div className={styles.workspace}><AutoDjExpansionWorkspace /><SmartPlaylistsWorkspace /><RadioClocksWorkspace /><AdvancedSchedulerWorkspace /></div>
           <div className={styles.workspace}><ExternalLiveWorkspace /><LiveFailoverWorkspace /><BrowserLiveStudioWorkspace /></div>
           <div className={styles.workspace}><VoiceTrackingWorkspace /><AudioProcessingWorkspace /></div>
           {canManage ? <div className={styles.workspace}><DjAccessWorkspace /></div> : null}

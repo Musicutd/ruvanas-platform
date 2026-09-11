@@ -6,6 +6,8 @@ import { resolveEntitlements } from "@/lib/entitlements.mjs";
 import { canManageSubscriberProgramming } from "@/lib/subscriber-programming.mjs";
 import { musicModeIsPlayable } from "@/lib/music-mode-playback.mjs";
 import { normalizeAutoDjPolicyInput } from "@/lib/autodj-policy.mjs";
+import { assertGenreSelection } from "@/lib/autodj-genre-entitlements.mjs";
+import { resolveAutoDjTarget } from "@/lib/autodj-targets";
 
 export const dynamic = "force-dynamic";
 
@@ -14,11 +16,18 @@ const policySchema = z.object({
   enabled: z.boolean(),
   defaultMusicModeId: z.string().cuid().optional().nullable(),
   backupMusicModeId: z.string().cuid().optional().nullable(),
-  playbackPolicy: z.enum(["FOLLOW_LOCATION_HOURS", "RUN_24_7"])
+  playbackPolicy: z.enum(["FOLLOW_LOCATION_HOURS", "RUN_24_7"]),
+  state: z.enum(["DRAFT", "ACTIVE", "PAUSED"]).optional(),
+  targetType: z.enum(["LOCATION", "ZONE", "SCHOOL", "CHANNEL"]).optional(),
+  targetId: z.string().max(120).optional().nullable(),
+  rightsUse: z.enum(["RETAIL_RADIO", "SCHOOL_RADIO", "ONLINE_RADIO"]).optional(),
+  territory: z.string().max(80).optional().nullable(),
+  sourceScopes: z.array(z.enum(["SUBSCRIBER_LIBRARY", "RUVANAS_CORE", "LICENSED_CATALOGUE"])).min(1).max(3).optional(),
+  selectedGenreCodes: z.array(z.string().max(80)).min(1).max(24).optional()
 });
 
 const playbackModeInclude = {
-  tracks: { include: { track: { include: { mediaAsset: true } } } }
+  tracks: { include: { track: { include: { mediaAsset: { include: { genres: { include: { mediaGenre: true } } } } } } } }
 };
 
 export async function PUT(request) {
@@ -26,7 +35,8 @@ export async function PUT(request) {
     const context = await getActiveOrganisationContext({ subscription: { include: { plan: true, billingContract: true } } });
     if (!context) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
     if (!context.membership) return NextResponse.json({ error: "No active organisation is available." }, { status: 403 });
-    if (!resolveEntitlements(context.membership.organisation.subscription).serviceEnabled) {
+    const entitlements = resolveEntitlements(context.membership.organisation.subscription);
+    if (!entitlements.serviceEnabled) {
       return NextResponse.json({ error: "Radio programming is unavailable while this service is inactive." }, { status: 403 });
     }
     if (!canManageSubscriberProgramming(context.membership.role)) {
@@ -43,6 +53,25 @@ export async function PUT(request) {
     }
 
     const organisationId = context.membership.organisationId;
+    const expansion = {};
+    if (parsed.data.targetType && parsed.data.targetId) {
+      const target = await resolveAutoDjTarget(organisationId, parsed.data.targetType, parsed.data.targetId, entitlements);
+      expansion.targetType = target.type;
+      expansion.targetId = target.id;
+      expansion.rightsUse = target.rightsUse;
+      expansion.territory = parsed.data.territory || target.territory || null;
+    }
+    if (parsed.data.sourceScopes || parsed.data.selectedGenreCodes) {
+      const genres = await prisma.mediaGenre.findMany({ where: { active: true }, select: { name: true, slug: true, active: true, minimumCatalogueLevel: true }, take: 250 });
+      try {
+        Object.assign(expansion, assertGenreSelection({ selectedGenreCodes: parsed.data.selectedGenreCodes, sourceScopes: parsed.data.sourceScopes, catalogueLevel: entitlements.licensedMusicCatalogueLevel, configuredGenres: genres }));
+      } catch (error) {
+        return NextResponse.json({ error: error.message, code: error.code || "INVALID_GENRE_SELECTION" }, { status: 403 });
+      }
+    }
+    expansion.state = parsed.data.state || (input.enabled ? "ACTIVE" : "DRAFT");
+    expansion.entitlementLevel = entitlements.licensedMusicCatalogueLevel;
+    expansion.blockedReason = null;
     const channel = await prisma.channel.findFirst({
       where: { id: parsed.data.channelId, organisationId, status: "ACTIVE" },
       select: { id: true, name: true }
@@ -58,10 +87,11 @@ export async function PUT(request) {
       return NextResponse.json({ error: "Choose only active music modes approved for your organisation." }, { status: 400 });
     }
     const modeById = new Map(modes.map((mode) => [mode.id, mode]));
-    if (input.enabled && !musicModeIsPlayable(modeById.get(input.defaultMusicModeId))) {
+    const eligibilityOptions = { organisationId, requiredUse: expansion.rightsUse || parsed.data.rightsUse || null, territory: expansion.territory || null, licensedCatalogueLevel: entitlements.licensedMusicCatalogueLevel, selectedGenreCodes: expansion.selectedGenreCodes || null };
+    if (input.enabled && !musicModeIsPlayable(modeById.get(input.defaultMusicModeId), new Date(), eligibilityOptions)) {
       return NextResponse.json({ error: "The default music mode needs at least one playable, rights-approved track." }, { status: 400 });
     }
-    if (input.backupMusicModeId && !musicModeIsPlayable(modeById.get(input.backupMusicModeId))) {
+    if (input.backupMusicModeId && !musicModeIsPlayable(modeById.get(input.backupMusicModeId), new Date(), eligibilityOptions)) {
       return NextResponse.json({ error: "The backup music mode needs at least one playable, rights-approved track." }, { status: 400 });
     }
 
@@ -72,8 +102,8 @@ export async function PUT(request) {
       });
       const policy = await tx.autoDjPolicy.upsert({
         where: { channelId_organisationId: policyKey },
-        create: { organisationId, channelId: channel.id, ...input },
-        update: input
+        create: { organisationId, channelId: channel.id, ...input, ...expansion },
+        update: { ...input, ...expansion }
       });
       await tx.auditLog.create({
         data: {
@@ -91,7 +121,7 @@ export async function PUT(request) {
               backupMusicModeId: previous.backupMusicModeId,
               playbackPolicy: previous.playbackPolicy
             } : null,
-            current: input
+            current: { ...input, ...expansion }
           }
         }
       });

@@ -19,6 +19,7 @@ const validMetadata = {
   licenceExpiresAt: "",
   rightsConfirmed: "true",
   publishNow: "false",
+  permittedUses: ["RETAIL_RADIO", "SCHOOL_RADIO", "ONLINE_RADIO"],
   genreIds: []
 };
 
@@ -40,6 +41,13 @@ test("catalogue metadata defaults a reviewed upload to draft", () => {
   assert.equal(parsed.data.releaseYear, 2026);
   assert.equal(parsed.data.durationSeconds, 180);
   assert.equal(parsed.data.licenceExpiresAt, null);
+  assert.deepEqual(parsed.data.permittedUses, ["RETAIL_RADIO", "SCHOOL_RADIO", "ONLINE_RADIO"]);
+});
+
+test("catalogue metadata requires at least one licensed product use", () => {
+  const parsed = parseCatalogueMetadata({ ...validMetadata, permittedUses: [] });
+  assert.equal(parsed.ok, false);
+  assert.match(parsed.error, /at least one Ruvanas service/i);
 });
 
 test("catalogue metadata only becomes ready through the explicit option", () => {

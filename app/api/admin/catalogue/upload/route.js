@@ -89,6 +89,8 @@ export async function POST(request) {
       licenceExpiresAt: formData.get("licenceExpiresAt"),
       rightsConfirmed: formData.get("rightsConfirmed"),
       publishNow: formData.get("publishNow"),
+      licensedCatalogue: formData.get("licensedCatalogue"),
+      permittedUses: formData.getAll("permittedUses").map(String),
       genreIds: formData.getAll("genreIds").map(String)
     });
 
@@ -165,6 +167,7 @@ export async function POST(request) {
             mimeType: audioValidation.contentType,
             sizeBytes,
             durationSeconds: metadata.data.durationSeconds,
+            licensedCatalogue: metadata.data.licensedCatalogue,
             status: needsStorageWrite ? "PROCESSING" : "READY"
           }
         })
@@ -179,7 +182,8 @@ export async function POST(request) {
             sizeBytes,
             durationSeconds: metadata.data.durationSeconds,
             mediaType: "MUSIC",
-            status: "PROCESSING"
+            status: "PROCESSING",
+            licensedCatalogue: metadata.data.licensedCatalogue
           }
         });
 
@@ -244,7 +248,7 @@ export async function POST(request) {
           rightsReference: metadata.data.rightsReference,
           rightsBasis: "OTHER",
           permittedTerritories: metadata.data.permittedTerritories,
-          permittedUses: ["RETAIL_RADIO", "SCHOOL_RADIO", "ONLINE_RADIO"],
+          permittedUses: metadata.data.permittedUses,
           licenceExpiresAt: metadata.data.licenceExpiresAt,
           rightsConfirmedAt: new Date(),
           rightsConfirmedById: access.user.id,
@@ -271,7 +275,9 @@ export async function POST(request) {
             licenceExpiresAt: created.licenceExpiresAt?.toISOString() || null,
             checksum,
             sizeBytes: sizeBytes.toString(),
-            genreIds: metadata.data.genreIds
+            genreIds: metadata.data.genreIds,
+            licensedCatalogue: metadata.data.licensedCatalogue,
+            permittedUses: metadata.data.permittedUses
           }
         }
       });
