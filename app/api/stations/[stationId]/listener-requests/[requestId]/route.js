@@ -3,15 +3,16 @@ import { prisma } from "@/lib/prisma";
 import { requireOrganisationProductAccess, ORGANISATION_CONTENT_ROLES, ORGANISATION_MANAGER_ROLES } from "@/lib/access-control";
 import { listenerRequestTransition, LISTENER_REQUEST_ACTIONS, safeListenerRequest } from "@/lib/listener-interaction.mjs";
 import { getRequestId } from "@/lib/security-log";
+import { subscriberProductForStationFamily } from "@/lib/product-access.mjs";
 
 export async function PATCH(request, { params }) {
   try {
     const body = await request.json().catch(() => null);
     const action = String(body?.action || "").toUpperCase();
     if (!LISTENER_REQUEST_ACTIONS.includes(action)) return NextResponse.json({ error: "Choose a supported moderation action." }, { status: 400 });
-    const requestRecord = await prisma.listenerRequest.findFirst({ where: { id: String(params.requestId || ""), stationId: String(params.stationId || "") } });
+    const requestRecord = await prisma.listenerRequest.findFirst({ where: { id: String(params.requestId || ""), stationId: String(params.stationId || "") }, include: { station: { select: { productFamily: true } } } });
     if (!requestRecord) return NextResponse.json({ error: "Listener request not found." }, { status: 404 });
-    const access = await requireOrganisationProductAccess(requestRecord.organisationId, "ONLINE", ["UNBLOCK"].includes(action) || body?.blockSession === true ? ORGANISATION_MANAGER_ROLES : ORGANISATION_CONTENT_ROLES);
+    const access = await requireOrganisationProductAccess(requestRecord.organisationId, subscriberProductForStationFamily(requestRecord.station.productFamily), ["UNBLOCK"].includes(action) || body?.blockSession === true ? ORGANISATION_MANAGER_ROLES : ORGANISATION_CONTENT_ROLES);
     if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
     const note = String(body?.note || "").trim();
     const instant = new Date();

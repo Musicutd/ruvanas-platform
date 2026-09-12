@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-test("Retail, School and Online Radio have separate subscriber dashboards", async () => {
+test("product dashboards stay separate while shared radio station tools accept entitled radio products", async () => {
   const [retail, school, radio, radioLayout, stationLayout, schoolSuiteLayout, shared, styles] = await Promise.all([
     readFile(new URL("../app/dashboard/retail/page.js", import.meta.url), "utf8"),
     readFile(new URL("../app/dashboard/school/page.js", import.meta.url), "utf8"),
@@ -24,7 +24,8 @@ test("Retail, School and Online Radio have separate subscriber dashboards", asyn
   assert.match(radio, /stationLimit/);
   assert.match(radio, /requireSubscriberProduct\("ONLINE"/);
   assert.match(radioLayout, /requireSubscriberProduct\("ONLINE"\)/);
-  assert.match(stationLayout, /requireSubscriberProduct\("ONLINE"\)/);
+  assert.match(stationLayout, /\["ONLINE", "HEALTH", "FAITH"\]/);
+  assert.match(stationLayout, /hasSubscriberProduct/);
   assert.match(schoolSuiteLayout, /requireSubscriberProduct\("SCHOOL"\)/);
   assert.match(shared, /Service status/);
   assert.match(shared, /Complimentary service · active until Ruvanas stops it/);

@@ -58,7 +58,7 @@ export default function HowItWorksClient({ organisationName, membershipRole, pub
       <SkipLink />
       <header className={styles.hero}>
         <div>
-          <p className={styles.eyebrow}>ONE GUIDE · THREE PRODUCTS</p>
+          <p className={styles.eyebrow}>ONE GUIDE · FIVE PRODUCTS</p>
           <h1>How Ruvanas works</h1>
           <p>Choose a product, then open only the information you need. This guide explains the complete journey from account setup to content, programming, delivery and evidence.</p>
         </div>
@@ -71,14 +71,14 @@ export default function HowItWorksClient({ organisationName, membershipRole, pub
 
       <section className={styles.startHere} aria-label="How to use this page">
         <strong>Start here</strong>
-        <span>1. Choose Retail, School or Radio.</span>
+        <span>1. Choose Retail, School, Radio, Health or Faith.</span>
         <span>2. Click a titled box to see the explanation.</span>
         <span>3. Use the links inside each box to open the correct workspace.</span>
       </section>
 
       <WorkspaceTabs
         label="Choose your Ruvanas product"
-        intro="All three guides stay together on this page."
+        intro="All five guides stay together on this page."
         defaultTab="retail"
         tabs={ruvanasProductGuides.map((product) => ({ id: product.id, label: product.tabLabel, description: product.tabDescription }))}
       >

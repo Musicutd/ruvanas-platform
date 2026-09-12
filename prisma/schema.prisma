@@ -251,6 +251,8 @@ enum PlanProductFamily {
   RETAIL
   SCHOOL
   ONLINE
+  HEALTH
+  FAITH
   MULTI
 }
 
@@ -301,6 +303,12 @@ enum StationStatus {
   PAUSED
   SUSPENDED
   CANCELLED
+}
+
+enum StationAudiencePolicy {
+  INTERNAL
+  RESTRICTED
+  PUBLIC
 }
 
 enum LocationStatus {
@@ -454,6 +462,8 @@ enum MusicRightsUse {
   RETAIL_RADIO
   SCHOOL_RADIO
   ONLINE_RADIO
+  HEALTH_RADIO
+  FAITH_RADIO
 }
 
 enum RightsReportFormat {
@@ -808,6 +818,8 @@ enum AutoDjTargetType {
   ZONE
   SCHOOL
   CHANNEL
+  HEALTH_CHANNEL
+  FAITH_CHANNEL
 }
 
 enum GeneratedPlaylistStatus {
@@ -979,6 +991,11 @@ enum StudioProductDestination {
   RETAIL_PROMOTION
   SCHOOL_EPISODE
   ONLINE_PODCAST
+  HEALTH_ANNOUNCEMENT
+  HEALTH_PODCAST
+  FAITH_SERMON
+  FAITH_ANNOUNCEMENT
+  FAITH_PODCAST
 }
 
 enum SchoolPublicationScope {
@@ -1161,6 +1178,8 @@ enum StationDomainStatus {
 enum PodcastProduct {
   ONLINE_RADIO
   SCHOOL_RADIO
+  HEALTH_RADIO
+  FAITH_RADIO
 }
 
 enum NewsroomProduct {
@@ -1224,6 +1243,8 @@ enum VoiceTrackSegueStatus {
 enum LiveStudioProduct {
   SCHOOL_RADIO
   ONLINE_RADIO
+  HEALTH_RADIO
+  FAITH_RADIO
 }
 
 enum ReportExportStatus {
@@ -2006,6 +2027,8 @@ model Plan {
   retailRadioEnabled            Boolean                     @default(false)
   schoolRadioEnabled            Boolean                     @default(false)
   onlineRadioEnabled            Boolean                     @default(false)
+  healthRadioEnabled            Boolean                     @default(false)
+  faithRadioEnabled             Boolean                     @default(false)
   schoolPublicPublishingEnabled Boolean                     @default(false)
   retailMediaEnabled            Boolean                     @default(false)
   digitalSignageEnabled         Boolean                     @default(false)
@@ -2028,6 +2051,8 @@ model Subscription {
   retailRadioEnabled                         Boolean?
   schoolRadioEnabled                         Boolean?
   onlineRadioEnabled                         Boolean?
+  healthRadioEnabled                         Boolean?
+  faithRadioEnabled                          Boolean?
   schoolPublicPublishingEnabled              Boolean?
   retailMediaEnabled                         Boolean?
   digitalSignageEnabled                      Boolean?
@@ -2046,6 +2071,8 @@ model Subscription {
   complimentaryRetailRadioEnabled            Boolean?
   complimentarySchoolRadioEnabled            Boolean?
   complimentaryOnlineRadioEnabled            Boolean?
+  complimentaryHealthRadioEnabled            Boolean?
+  complimentaryFaithRadioEnabled             Boolean?
   complimentarySchoolPublicPublishingEnabled Boolean?
   complimentaryRetailMediaEnabled            Boolean?
   complimentaryDigitalSignageEnabled         Boolean?
@@ -2473,35 +2500,37 @@ model AutoDjPolicy {
 }
 
 model Station {
-  id                           String              @id @default(cuid())
+  id                           String                @id @default(cuid())
   organisationId               String
+  productFamily                PlanProductFamily?
   name                         String
-  slug                         String              @unique
+  slug                         String                @unique
   description                  String?
   logoUrl                      String?
-  status                       StationStatus       @default(DRAFT)
-  storageUsedMb                Int                 @default(0)
+  status                       StationStatus         @default(DRAFT)
+  storageUsedMb                Int                   @default(0)
   listenerLimit                Int
   storageLimitGb               Int
   maxBitrateKbps               Int
   providerName                 String?
   providerAccountId            String?
-  publicPlayerEnabled          Boolean             @default(false)
+  publicPlayerEnabled          Boolean               @default(false)
+  audiencePolicy               StationAudiencePolicy @default(INTERNAL)
   publicPlayerTagline          String?
-  publicPlayerAccent           String              @default("#f4b942")
-  listenerRequestsEnabled      Boolean             @default(false)
+  publicPlayerAccent           String                @default("#f4b942")
+  listenerRequestsEnabled      Boolean               @default(false)
   listenerRequestInstructions  String?
-  stationWebsiteEnabled        Boolean             @default(false)
+  stationWebsiteEnabled        Boolean               @default(false)
   stationWebsiteHeadline       String?
   stationWebsiteAbout          String?
   stationWebsiteHeroImageUrl   String?
   stationWebsiteContactEmail   String?
-  stationWebsiteTheme          StationWebsiteTheme @default(MIDNIGHT)
+  stationWebsiteTheme          StationWebsiteTheme   @default(MIDNIGHT)
   stationWebsiteLinks          Json?
-  stationWebsiteShowNowPlaying Boolean             @default(true)
-  stationWebsiteShowPodcasts   Boolean             @default(true)
-  createdAt                    DateTime            @default(now())
-  updatedAt                    DateTime            @updatedAt
+  stationWebsiteShowNowPlaying Boolean               @default(true)
+  stationWebsiteShowPodcasts   Boolean               @default(true)
+  createdAt                    DateTime              @default(now())
+  updatedAt                    DateTime              @updatedAt
 
   organisation                  Organisation                   @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   streamConfig                  StationStreamConfig?
@@ -2525,6 +2554,7 @@ model Station {
   newsStories                   SchoolNewsStory[]
 
   @@unique([id, organisationId])
+  @@index([organisationId, productFamily, status])
   @@index([organisationId])
 }
 

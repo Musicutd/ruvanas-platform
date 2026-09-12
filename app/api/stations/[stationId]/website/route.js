@@ -2,12 +2,13 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireOrganisationProductAccess, ORGANISATION_MANAGER_ROLES } from "@/lib/access-control";
 import { normalizeStationWebsiteSettings } from "@/lib/station-website.mjs";
+import { subscriberProductForStationFamily } from "@/lib/product-access.mjs";
 
 export async function PATCH(request, { params }) {
   try {
-    const station = await prisma.station.findUnique({ where: { id: String(params.stationId || "") }, select: { id: true, organisationId: true, status: true, publicPlayerEnabled: true, slug: true } });
+    const station = await prisma.station.findUnique({ where: { id: String(params.stationId || "") }, select: { id: true, organisationId: true, status: true, publicPlayerEnabled: true, slug: true, productFamily: true } });
     if (!station) return NextResponse.json({ error: "Station not found." }, { status: 404 });
-    const access = await requireOrganisationProductAccess(station.organisationId, "ONLINE", ORGANISATION_MANAGER_ROLES);
+    const access = await requireOrganisationProductAccess(station.organisationId, subscriberProductForStationFamily(station.productFamily), ORGANISATION_MANAGER_ROLES);
     if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
     const text = await request.text();
     if (text.length > 16_384) return NextResponse.json({ error: "The station website settings are too large." }, { status: 413 });

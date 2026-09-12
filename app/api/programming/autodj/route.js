@@ -18,9 +18,9 @@ const policySchema = z.object({
   backupMusicModeId: z.string().cuid().optional().nullable(),
   playbackPolicy: z.enum(["FOLLOW_LOCATION_HOURS", "RUN_24_7"]),
   state: z.enum(["DRAFT", "ACTIVE", "PAUSED"]).optional(),
-  targetType: z.enum(["LOCATION", "ZONE", "SCHOOL", "CHANNEL"]).optional(),
+  targetType: z.enum(["LOCATION", "ZONE", "SCHOOL", "CHANNEL", "HEALTH_CHANNEL", "FAITH_CHANNEL"]).optional(),
   targetId: z.string().max(120).optional().nullable(),
-  rightsUse: z.enum(["RETAIL_RADIO", "SCHOOL_RADIO", "ONLINE_RADIO"]).optional(),
+  rightsUse: z.enum(["RETAIL_RADIO", "SCHOOL_RADIO", "ONLINE_RADIO", "HEALTH_RADIO", "FAITH_RADIO"]).optional(),
   territory: z.string().max(80).optional().nullable(),
   sourceScopes: z.array(z.enum(["SUBSCRIBER_LIBRARY", "RUVANAS_CORE", "LICENSED_CATALOGUE"])).min(1).max(3).optional(),
   selectedGenreCodes: z.array(z.string().max(80)).min(1).max(24).optional()
@@ -54,8 +54,10 @@ export async function PUT(request) {
 
     const organisationId = context.membership.organisationId;
     const expansion = {};
+    let resolvedTarget = null;
     if (parsed.data.targetType && parsed.data.targetId) {
       const target = await resolveAutoDjTarget(organisationId, parsed.data.targetType, parsed.data.targetId, entitlements);
+      resolvedTarget = target;
       expansion.targetType = target.type;
       expansion.targetId = target.id;
       expansion.rightsUse = target.rightsUse;
@@ -73,7 +75,7 @@ export async function PUT(request) {
     expansion.entitlementLevel = entitlements.licensedMusicCatalogueLevel;
     expansion.blockedReason = null;
     const channel = await prisma.channel.findFirst({
-      where: { id: parsed.data.channelId, organisationId, status: "ACTIVE" },
+      where: { id: parsed.data.channelId, organisationId, status: "ACTIVE", ...(resolvedTarget?.channelId ? { id: resolvedTarget.channelId } : {}) },
       select: { id: true, name: true }
     });
     if (!channel) return NextResponse.json({ error: "The selected channel is not available to your organisation." }, { status: 404 });

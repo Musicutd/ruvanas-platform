@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { ORGANISATION_CONTENT_ROLES } from "@/lib/permissions.mjs";
-import { requireActiveSchoolRadio } from "@/lib/school-radio-access";
+import { getActiveOrganisationContext } from "@/lib/auth";
+import { resolveEntitlements } from "@/lib/entitlements.mjs";
+import { ORGANISATION_CONTENT_ROLES, isOrganisationRoleAllowed } from "@/lib/permissions.mjs";
 import { transitionSchoolEpisode } from "@/lib/school-radio.mjs";
 import {
   STUDIO_PRODUCT_DESTINATIONS,
@@ -16,8 +17,18 @@ export const dynamic = "force-dynamic";
 
 const requestSchema = z.object({
   renderId: z.string().cuid(),
-  destination: z.enum(["RETAIL_PROMOTION", "SCHOOL_EPISODE", "ONLINE_PODCAST"])
+  destination: z.enum(["RETAIL_PROMOTION", "SCHOOL_EPISODE", "ONLINE_PODCAST", "HEALTH_ANNOUNCEMENT", "HEALTH_PODCAST", "FAITH_SERMON", "FAITH_ANNOUNCEMENT", "FAITH_PODCAST"])
 });
+
+async function requireActiveStudio() {
+  const context = await getActiveOrganisationContext({ subscription: { include: { plan: true, billingContract: true } } });
+  if (!context?.membership) return { ok: false, status: 401, error: "Sign in and choose your organisation." };
+  if (!isOrganisationRoleAllowed(context.membership.role, ORGANISATION_CONTENT_ROLES)) return { ok: false, status: 403, error: "You do not have permission to send Studio outputs." };
+  const organisation = context.membership.organisation;
+  const entitlements = resolveEntitlements(organisation.subscription);
+  if (!entitlements.serviceEnabled) return { ok: false, status: 403, error: "Studio is unavailable while this service is inactive." };
+  return { ok: true, user: context.user, membership: context.membership, organisation, entitlements };
+}
 
 const renderInclude = {
   project: { select: { id: true, title: true, episodeId: true, currentVersion: true } },
@@ -43,7 +54,7 @@ function publicHandoff(handoff) {
 }
 
 export async function GET(request) {
-  const access = await requireActiveSchoolRadio(ORGANISATION_CONTENT_ROLES);
+  const access = await requireActiveStudio();
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const renderId = new URL(request.url).searchParams.get("renderId");
   if (!renderId) return NextResponse.json({ error: "Choose a Studio output." }, { status: 400 });
@@ -57,7 +68,7 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
-  const access = await requireActiveSchoolRadio(ORGANISATION_CONTENT_ROLES);
+  const access = await requireActiveStudio();
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const parsed = requestSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Choose a Studio output and product destination." }, { status: 400 });

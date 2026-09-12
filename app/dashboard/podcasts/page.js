@@ -5,7 +5,9 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: "Podcasts | Ruvanas" };
 
 export default async function PodcastsPage({ searchParams }) {
-  await requireSubscriberProduct("ONLINE");
   const query = await searchParams;
-  return <PodcastWorkspace initialMediaAssetId={String(query?.mediaAssetId || "")} />;
+  const candidate = String(query?.product || "ONLINE").toUpperCase();
+  const product = ["ONLINE", "HEALTH", "FAITH"].includes(candidate) ? candidate : "ONLINE";
+  await requireSubscriberProduct(product);
+  return <PodcastWorkspace product={product} initialMediaAssetId={String(query?.mediaAssetId || "")} />;
 }

@@ -8,10 +8,16 @@ import {
   normalizePodcastChapters,
   normalizeTranscriptSegments,
   podcastSlug,
-  validateOnlinePodcastPublication
+  validatePodcastPublication
 } from "@/lib/podcast-core.mjs";
 
 export const dynamic = "force-dynamic";
+
+const PRODUCT_MAP = Object.freeze({ ONLINE: PODCAST_PRODUCTS.ONLINE_RADIO, HEALTH: PODCAST_PRODUCTS.HEALTH_RADIO, FAITH: PODCAST_PRODUCTS.FAITH_RADIO });
+function requestedProduct(request) {
+  const key = String(new URL(request.url).searchParams.get("product") || "ONLINE").toUpperCase();
+  return { key, podcast: PRODUCT_MAP[key] || null };
+}
 
 const editorFields = {
   title: z.string().trim().min(2).max(180),
@@ -54,7 +60,7 @@ const schema = z.discriminatedUnion("action", [
 ]);
 
 const seriesInclude = {
-  station: { select: { id: true, name: true, slug: true, status: true } },
+  station: { select: { id: true, name: true, slug: true, status: true, audiencePolicy: true } },
   channel: { select: { id: true, name: true, slug: true, status: true } },
   episodes: {
     orderBy: [{ publishedAt: "desc" }, { createdAt: "desc" }],
@@ -97,18 +103,20 @@ async function approvedAudio(organisationId, mediaAssetId) {
   return version?.mediaAsset || null;
 }
 
-export async function GET() {
-  const access = await requireActivePodcast(ORGANISATION_CONTENT_ROLES);
+export async function GET(request) {
+  const product = requestedProduct(request);
+  if (!product.podcast) return NextResponse.json({ error: "Choose Online, Health or Faith podcasts." }, { status: 400 });
+  const access = await requireActivePodcast(ORGANISATION_CONTENT_ROLES, product.key);
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const organisationId = access.organisation.id;
   const [series, stations, channels, approvedAssets] = await Promise.all([
     prisma.schoolPodcastSeries.findMany({
-      where: { organisationId, product: PODCAST_PRODUCTS.ONLINE_RADIO },
+      where: { organisationId, product: product.podcast },
       orderBy: { updatedAt: "desc" },
       include: seriesInclude
     }),
-    prisma.station.findMany({ where: { organisationId, status: { not: "CANCELLED" } }, orderBy: { name: "asc" }, select: { id: true, name: true, slug: true, status: true } }),
-    prisma.channel.findMany({ where: { organisationId, status: { not: "ARCHIVED" } }, orderBy: { name: "asc" }, select: { id: true, stationId: true, name: true, slug: true, status: true } }),
+    prisma.station.findMany({ where: { organisationId, status: { not: "CANCELLED" }, ...(product.key === "ONLINE" ? { OR: [{ productFamily: "ONLINE" }, { productFamily: null }] } : { productFamily: product.key }) }, orderBy: { name: "asc" }, select: { id: true, name: true, slug: true, status: true } }),
+    prisma.channel.findMany({ where: { organisationId, status: { not: "ARCHIVED" }, station: product.key === "ONLINE" ? { OR: [{ productFamily: "ONLINE" }, { productFamily: null }] } : { productFamily: product.key } }, orderBy: { name: "asc" }, select: { id: true, stationId: true, name: true, slug: true, status: true } }),
     prisma.promoAsset.findMany({
       where: { organisationId, status: "ACTIVE", currentApprovedVersionId: { not: null } },
       orderBy: { name: "asc" },
@@ -130,7 +138,9 @@ export async function GET() {
 }
 
 export async function POST(request) {
-  const access = await requireActivePodcast(ORGANISATION_CONTENT_ROLES);
+  const product = requestedProduct(request);
+  if (!product.podcast) return NextResponse.json({ error: "Choose Online, Health or Faith podcasts." }, { status: 400 });
+  const access = await requireActivePodcast(ORGANISATION_CONTENT_ROLES, product.key);
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Check the podcast details and try again." }, { status: 400 });
@@ -141,7 +151,7 @@ export async function POST(request) {
     let result;
     if (data.action === "CREATE_SERIES") {
       const [station, channel] = await Promise.all([
-        prisma.station.findFirst({ where: { id: data.stationId, organisationId, status: { not: "CANCELLED" } }, select: { id: true } }),
+        prisma.station.findFirst({ where: { id: data.stationId, organisationId, status: { not: "CANCELLED" }, ...(product.key === "ONLINE" ? { OR: [{ productFamily: "ONLINE" }, { productFamily: null }] } : { productFamily: product.key }) }, select: { id: true } }),
         data.channelId ? prisma.channel.findFirst({ where: { id: data.channelId, organisationId, stationId: data.stationId, status: { not: "ARCHIVED" } }, select: { id: true } }) : null
       ]);
       if (!station || (data.channelId && !channel)) return NextResponse.json({ error: "Choose a station and optional channel from this organisation." }, { status: 404 });
@@ -150,7 +160,7 @@ export async function POST(request) {
       const feedSlug = conflict ? `${baseSlug}-${Math.random().toString(36).slice(2, 7)}` : baseSlug;
       result = await prisma.schoolPodcastSeries.create({ data: {
         organisationId,
-        product: PODCAST_PRODUCTS.ONLINE_RADIO,
+        product: product.podcast,
         stationId: station.id,
         channelId: channel?.id || null,
         title: data.title,
@@ -164,7 +174,7 @@ export async function POST(request) {
       } });
     } else if (data.action === "CREATE_EPISODE") {
       const [series, audio] = await Promise.all([
-        prisma.schoolPodcastSeries.findFirst({ where: { id: data.seriesId, organisationId, product: PODCAST_PRODUCTS.ONLINE_RADIO }, select: { id: true } }),
+        prisma.schoolPodcastSeries.findFirst({ where: { id: data.seriesId, organisationId, product: product.podcast }, select: { id: true } }),
         approvedAudio(organisationId, data.mediaAssetId)
       ]);
       if (!series || !audio) return NextResponse.json({ error: "Choose a valid series and audio approved for this organisation." }, { status: 404 });
@@ -191,7 +201,7 @@ export async function POST(request) {
         return episode;
       });
     } else if (data.action === "SAVE_EDITOR") {
-      const podcast = await prisma.schoolPodcastEpisode.findFirst({ where: { id: data.podcastEpisodeId, organisationId, series: { product: PODCAST_PRODUCTS.ONLINE_RADIO } }, include: { transcript: true } });
+      const podcast = await prisma.schoolPodcastEpisode.findFirst({ where: { id: data.podcastEpisodeId, organisationId, series: { product: product.podcast } }, include: { transcript: true } });
       if (!podcast) return NextResponse.json({ error: "The podcast episode was not found." }, { status: 404 });
       const chapters = normalizePodcastChapters(data.chapters);
       const segments = normalizeTranscriptSegments(data.transcriptSegments);
@@ -219,20 +229,21 @@ export async function POST(request) {
       });
     } else if (data.action === "APPROVE_TRANSCRIPT") {
       const denied = managerRequired(access); if (denied) return denied;
-      const podcast = await prisma.schoolPodcastEpisode.findFirst({ where: { id: data.podcastEpisodeId, organisationId, series: { product: PODCAST_PRODUCTS.ONLINE_RADIO } }, include: { transcript: true } });
+      const podcast = await prisma.schoolPodcastEpisode.findFirst({ where: { id: data.podcastEpisodeId, organisationId, series: { product: product.podcast } }, include: { transcript: true } });
       if (!podcast) return NextResponse.json({ error: "The podcast episode was not found." }, { status: 404 });
       if (podcast.transcript?.status !== "NEEDS_REVIEW") return NextResponse.json({ error: "Only a submitted transcript can be approved." }, { status: 409 });
       result = await prisma.transcript.update({ where: { id: podcast.transcript.id }, data: { status: "APPROVED" } });
     } else {
       const denied = managerRequired(access); if (denied) return denied;
       const podcast = await prisma.schoolPodcastEpisode.findFirst({
-        where: { id: data.podcastEpisodeId, organisationId, series: { product: PODCAST_PRODUCTS.ONLINE_RADIO } },
+        where: { id: data.podcastEpisodeId, organisationId, series: { product: product.podcast } },
         include: { series: { include: { station: { select: { status: true } } } }, mediaAsset: true, transcript: true }
       });
       if (!podcast) return NextResponse.json({ error: "The podcast episode was not found." }, { status: 404 });
       if (data.action === "PUBLISH") {
+        if (product.key !== "ONLINE" && podcast.series.station?.audiencePolicy !== "PUBLIC") return NextResponse.json({ error: "Change this channel to Public before creating a public podcast and RSS feed. Internal and restricted audio stays private." }, { status: 409 });
         const audio = await approvedAudio(organisationId, podcast.mediaAssetId);
-        validateOnlinePodcastPublication({ series: podcast.series, episode: podcast, approvedAudio: audio, transcriptStatus: podcast.transcript?.status, stationStatus: podcast.series.station?.status });
+        validatePodcastPublication({ series: podcast.series, episode: podcast, approvedAudio: audio, transcriptStatus: podcast.transcript?.status, stationStatus: podcast.series.station?.status });
         result = await prisma.$transaction(async (tx) => {
           const updated = await tx.schoolPodcastEpisode.update({ where: { id: podcast.id }, data: { status: "PUBLISHED", publicationScope: "PUBLIC", reviewedByUserId: access.user.id, publishedAt: new Date(), unpublishedAt: null, unpublishReason: null } });
           await tx.schoolPodcastSeries.update({ where: { id: podcast.seriesId }, data: { publicationScope: "PUBLIC", rssEnabled: true } });
@@ -245,10 +256,10 @@ export async function POST(request) {
     await prisma.auditLog.create({ data: {
       organisationId,
       actorUserId: access.user.id,
-      action: `ONLINE_PODCAST_${data.action}`,
+      action: `${product.key}_PODCAST_${data.action}`,
       entityType: data.action === "CREATE_SERIES" ? "PodcastSeries" : data.action === "APPROVE_TRANSCRIPT" ? "Transcript" : "PodcastEpisode",
       entityId: result.id,
-      details: { product: PODCAST_PRODUCTS.ONLINE_RADIO }
+      details: { product: product.podcast }
     } });
     return NextResponse.json({ result }, { status: new Set(["CREATE_SERIES", "CREATE_EPISODE"]).has(data.action) ? 201 : 200 });
   } catch (error) {

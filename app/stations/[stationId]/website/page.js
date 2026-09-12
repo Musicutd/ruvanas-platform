@@ -3,6 +3,8 @@ import { getActiveOrganisationContext } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { stationDomainDnsName, stationDomainDnsValue } from "@/lib/station-website.mjs";
 import StationWebsiteSettings from "./StationWebsiteSettings";
+import { subscriberProductForStationFamily } from "@/lib/product-access.mjs";
+import { requireSubscriberProduct } from "@/lib/subscriber-product-access";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Station website | Ruvanas" };
@@ -13,7 +15,7 @@ export default async function StationWebsiteSettingsPage({ params }) {
   const station = await prisma.station.findFirst({
     where: { id: String(params.stationId || ""), organisationId: context.membership.organisationId },
     select: {
-      id: true, name: true, slug: true, stationWebsiteEnabled: true, stationWebsiteHeadline: true,
+      id: true, name: true, slug: true, productFamily: true, stationWebsiteEnabled: true, stationWebsiteHeadline: true,
       stationWebsiteAbout: true, stationWebsiteHeroImageUrl: true, stationWebsiteContactEmail: true,
       stationWebsiteTheme: true, stationWebsiteLinks: true, stationWebsiteShowNowPlaying: true,
       stationWebsiteShowPodcasts: true,
@@ -21,11 +23,14 @@ export default async function StationWebsiteSettingsPage({ params }) {
     }
   });
   if (!station) notFound();
+  const productKey = subscriberProductForStationFamily(station.productFamily);
+  await requireSubscriberProduct(productKey);
+  const productLabel = productKey === "HEALTH" ? "RUVANAS HEALTH" : productKey === "FAITH" ? "RUVANAS FAITH" : "ONLINE RADIO";
   const canManage = ["OWNER", "MANAGER"].includes(context.membership.role);
   const safeStation = { ...station, websiteDomains: station.websiteDomains.map((domain) => ({ ...domain, dnsName: stationDomainDnsName(domain.hostname), dnsValue: stationDomainDnsValue(domain.verificationToken) })) };
   return <main style={styles.page}><section style={styles.shell}>
     <a href={`/stations/${station.id}`} style={styles.back}>← Back to station</a>
-    <p style={styles.eyebrow}>STAGE 19.17 · ONLINE RADIO</p>
+    <p style={styles.eyebrow}>{productLabel}</p>
     <h1 style={styles.title}>Station website</h1>
     <p style={styles.copy}>Give listeners a polished public home for live radio, now-playing information, station stories and published podcasts—with optional verified custom-domain routing.</p>
     <StationWebsiteSettings station={safeStation} canManage={canManage} />

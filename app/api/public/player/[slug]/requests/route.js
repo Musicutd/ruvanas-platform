@@ -6,6 +6,7 @@ import { createListenerRequestDedupeKey, LISTENER_REQUEST_RATE_LIMIT, LISTENER_R
 import { consumeRateLimit, createRateLimitKey } from "@/lib/rate-limit";
 import { enqueueNotificationEvent } from "@/lib/job-notification-service";
 import { getRequestId } from "@/lib/security-log";
+import { assertNoSensitiveHealthFields } from "@/lib/health-faith-core.mjs";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -36,7 +37,11 @@ export async function POST(request, { params }) {
     const raw = await request.text();
     if (raw.length > 4_096) return response("The request is too large.", 413);
     let input;
-    try { input = normalizeListenerRequest(JSON.parse(raw)); }
+    try {
+      const payload = JSON.parse(raw);
+      if (station.productFamily === "HEALTH") assertNoSensitiveHealthFields(payload);
+      input = normalizeListenerRequest({ ...payload, message: station.productFamily === "HEALTH" ? null : payload.message });
+    }
     catch (error) { return response(error instanceof Error ? error.message : "Check the song request.", 400); }
     const dedupeKey = createListenerRequestDedupeKey({ stationId: station.id, sessionHash, ...input, instant, secret: process.env.SESSION_SECRET });
     const operationRequestId = getRequestId(request);
