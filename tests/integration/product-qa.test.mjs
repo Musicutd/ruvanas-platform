@@ -29,7 +29,7 @@ test.after(async () => {
   await prisma.$disconnect();
 });
 
-test("three isolated QA tenants can traverse Tier 1–5 without billing events", async () => {
+test("five isolated QA tenants can traverse Tier 1–5 without billing events", async () => {
   const suffix = randomUUID();
   const adminPassword = `Qa-${randomUUID()}-admin`;
   const admin = await prisma.user.create({
@@ -71,7 +71,7 @@ test("three isolated QA tenants can traverse Tier 1–5 without billing events",
     tenants.push({ profile, password, body, cookie: sessionCookie(registration), clientAddress: `198.51.100.${40 + index}` });
   }
 
-  assert.equal(new Set(tenants.map((tenant) => tenant.body.organisation.id)).size, 3);
+  assert.equal(new Set(tenants.map((tenant) => tenant.body.organisation.id)).size, PRODUCT_QA_PROFILES.length);
 
   for (const tenant of tenants) {
     const tiers = productQaTierMatrix().filter((row) => row.product === tenant.profile.product);
