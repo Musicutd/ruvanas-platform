@@ -39,7 +39,7 @@ test("beta insights aggregate product evidence without customer content", () => 
 
   const snapshot = betaReviewSnapshot(insights, programme);
   assert.equal(snapshot.schemaVersion, "stage-30b-v1");
-  assert.equal(snapshot.products.length, 3);
+  assert.equal(snapshot.products.length, 5);
   assert.doesNotMatch(JSON.stringify(snapshot), /organisation-1|Resolved\.|Investigating\./);
 });
 

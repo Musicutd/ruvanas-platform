@@ -26,12 +26,22 @@ const expectedPlans = [
   ["ONLINE_STARTER", "Online Starter", "ONLINE", 2, 3900, "NONE"],
   ["ONLINE_PROFESSIONAL", "Online Professional", "ONLINE", 3, 8900, "FOCUSED"],
   ["ONLINE_STATION_PRO", "Online Station Pro", "ONLINE", 4, 19900, "PROFESSIONAL"],
-  ["ONLINE_NETWORK", "Online Network", "ONLINE", 5, 49900, "PREMIUM"]
+  ["ONLINE_NETWORK", "Online Network", "ONLINE", 5, 49900, "PREMIUM"],
+  ["HEALTH_START", "Health Start", "HEALTH", 1, 2900, "NONE"],
+  ["HEALTH_CONNECT", "Health Connect", "HEALTH", 2, 7900, "NONE"],
+  ["HEALTH_PRO", "Health Pro", "HEALTH", 3, 17900, "FOCUSED"],
+  ["HEALTH_NETWORK", "Health Network", "HEALTH", 4, 44900, "PROFESSIONAL"],
+  ["HEALTH_ENTERPRISE", "Health Enterprise", "HEALTH", 5, 99900, "PREMIUM"],
+  ["FAITH_START", "Faith Start", "FAITH", 1, 1990, "NONE"],
+  ["FAITH_CONNECT", "Faith Connect", "FAITH", 2, 4900, "NONE"],
+  ["FAITH_PRO", "Faith Pro", "FAITH", 3, 9900, "FOCUSED"],
+  ["FAITH_MINISTRY", "Faith Ministry", "FAITH", 4, 19900, "PROFESSIONAL"],
+  ["FAITH_NETWORK", "Faith Network", "FAITH", 5, 49900, "PREMIUM"]
 ];
 
-test("the authoritative public catalogue contains the fifteen approved product tiers", () => {
+test("the authoritative public catalogue contains the twenty-five approved product tiers", () => {
   assert.equal(validatePublicPlanCatalogue(), true);
-  assert.equal(PUBLIC_PLAN_CATALOGUE.length, 15);
+  assert.equal(PUBLIC_PLAN_CATALOGUE.length, 25);
   assert.deepEqual(
     PUBLIC_PLAN_CATALOGUE.map((plan) => [
       plan.code,
@@ -43,8 +53,8 @@ test("the authoritative public catalogue contains the fifteen approved product t
     ]),
     expectedPlans
   );
-  assert.equal(new Set(PUBLIC_PLAN_CATALOGUE.map((plan) => plan.code)).size, 15);
-  assert.equal(new Set(PUBLIC_PLAN_CATALOGUE.map((plan) => plan.publicSlug)).size, 15);
+  assert.equal(new Set(PUBLIC_PLAN_CATALOGUE.map((plan) => plan.code)).size, 25);
+  assert.equal(new Set(PUBLIC_PLAN_CATALOGUE.map((plan) => plan.publicSlug)).size, 25);
 });
 
 test("every product has five ordered tiers and exactly one product capability", () => {
@@ -57,7 +67,7 @@ test("every product has five ordered tiers and exactly one product capability", 
       assert.equal(plan.active, true);
       assert.equal(plan.includesRuvanasCatalogue, true);
       assert.equal(
-        [plan.retailRadioEnabled, plan.schoolRadioEnabled, plan.onlineRadioEnabled].filter(Boolean).length,
+        [plan.retailRadioEnabled, plan.schoolRadioEnabled, plan.onlineRadioEnabled, plan.healthRadioEnabled, plan.faithRadioEnabled].filter(Boolean).length,
         1
       );
       assert.equal(plan.enterpriseContactRequired, plan.tierNumber === 5);
@@ -86,17 +96,18 @@ test("catalogue validation rejects cross-product access and malformed tier sets"
 });
 
 test("the database migration and Super Admin controls expose the authoritative catalogue safely", async () => {
-  const [migration, adminPage, organisationRoute] = await Promise.all([
+  const [baseMigration, expansionMigration, adminPage, organisationRoute] = await Promise.all([
     readFile(new URL("../prisma/migrations/20261027000000_stage_29r_2_product_capabilities/migration.sql", import.meta.url), "utf8"),
+    readFile(new URL("../prisma/migrations/20261112010000_health_faith_expansion/migration.sql", import.meta.url), "utf8"),
     readFile(new URL("../app/admin/plans/page.js", import.meta.url), "utf8"),
     readFile(new URL("../app/api/admin/organisations/route.js", import.meta.url), "utf8")
   ]);
 
   for (const plan of PUBLIC_PLAN_CATALOGUE) {
-    assert.match(migration, new RegExp(`'${plan.code}'`));
+    assert.match(`${baseMigration}\n${expansionMigration}`, new RegExp(`'${plan.code}'`));
   }
-  assert.match(migration, /ON CONFLICT \("code"\) DO UPDATE/);
-  assert.match(migration, /Existing legacy plans remain non-public/);
+  assert.match(expansionMigration, /ON CONFLICT \("code"\) DO UPDATE/);
+  assert.match(baseMigration, /Existing legacy plans remain non-public/);
   assert.match(adminPage, /Licensed Music Catalogue/);
   assert.match(adminPage, /adminUser\?\.role !== "SUPER_ADMIN"/);
   assert.doesNotMatch(adminPage, /supplier/i);

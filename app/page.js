@@ -4,7 +4,7 @@ import { registrationProducts } from "@/lib/registration-experience.mjs";
 export const metadata = {
   title: "Ruvanas | Professional Radio Platforms by 21-Three",
   description:
-    "Ruvanas, part of 21-Three, provides professional in-house radio, School Radio and complete online radio platforms with high-quality sound.",
+    "Ruvanas, part of 21-Three, provides professional Retail, School, Online, Health and Faith radio platforms with high-quality sound.",
 };
 
 const platforms = [
@@ -28,6 +28,20 @@ const platforms = [
     text: "Build a full online station with live and automated programming, public listening, a growing music database and operational tools in one place.",
     features: ["Live & AutoDJ", "Public web player", "Music database ready"],
     icon: "broadcast",
+  },
+  {
+    number: "04",
+    title: "Ruvanas Health",
+    text: "Help hospitals, health organisations and wellbeing teams operate their own privacy-aware audio, podcasts and digital displays.",
+    features: ["Hospital and ward channels", "Moderated requests", "Restricted listening"],
+    icon: "health",
+  },
+  {
+    number: "05",
+    title: "Ruvanas Faith",
+    text: "Give churches and ministries one subscriber-operated home for continuous radio, live services, teachings and campus media.",
+    features: ["24/7 AutoDJ", "Live-service handoff", "Sermon archives"],
+    icon: "faith",
   },
 ];
 
@@ -66,6 +80,20 @@ const pricingFamilies = [
     title: "Launch a station built to reach listeners everywhere.",
     text: "Live and automated broadcasting, public listening and professional station operations in one complete platform."
   },
+  {
+    id: "health",
+    productId: "HEALTH",
+    eyebrow: "Ruvanas Health",
+    title: "Support every health space with calm, controlled audio.",
+    text: "Hospital and wellbeing radio, moderated requests, podcasts, players and displays with non-clinical privacy boundaries."
+  },
+  {
+    id: "faith",
+    productId: "FAITH",
+    eyebrow: "Ruvanas Faith",
+    title: "Keep ministry media connected throughout the week.",
+    text: "Continuous radio, live-service handoff, teachings, podcasts and multi-campus delivery under subscriber control."
+  },
 ].map((family) => ({
   ...family,
   tiers: approvedProductPlans.find((product) => product.id === family.productId)?.plans || []
@@ -73,7 +101,7 @@ const pricingFamilies = [
 
 function planFeatures(plan) {
   return [
-    `Up to ${plan.stationLimit} ${plan.productFamily === "RETAIL" ? "location or station" : "station"}${plan.stationLimit === 1 ? "" : "s"}`,
+    `Up to ${plan.stationLimit} ${["RETAIL", "HEALTH", "FAITH"].includes(plan.productFamily) ? "site or station" : "station"}${plan.stationLimit === 1 ? "" : "s"}`,
     `${plan.storageLimitGb} GB media storage`,
     `Up to ${plan.listenerLimit.toLocaleString("en-GB")} active listeners`,
     `High-quality audio up to ${plan.maxBitrateKbps} kbps`,
@@ -92,6 +120,12 @@ function BrandMark() {
 }
 
 function PlatformIcon({ type }) {
+  if (type === "health") {
+    return <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M18 7h12v11h11v12H30v11H18V30H7V18h11V7Z" /></svg>;
+  }
+  if (type === "faith") {
+    return <svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="4" /><path d="M16 16a11 11 0 0 0 0 16M32 16a11 11 0 0 1 0 16M10 10a20 20 0 0 0 0 28M38 10a20 20 0 0 1 0 28" /></svg>;
+  }
   if (type === "school") {
     return (
       <svg viewBox="0 0 48 48" aria-hidden="true">
@@ -163,7 +197,7 @@ export default function HomePage() {
             <p className={styles.eyebrow}><span /> Audio platforms by 21-Three</p>
             <h1>Every space deserves its <em>own sound.</em></h1>
             <p className={styles.heroLead}>
-              Ruvanas brings professional radio within reach—from in-house and retail audio to School Radio and complete online broadcasting.
+              Ruvanas brings professional radio within reach—from retail and schools to online stations, health organisations and faith communities.
             </p>
             <div className={styles.heroActions}>
               <a className={styles.primaryButton} href="/register">Create your account <ArrowIcon /></a>
@@ -219,13 +253,13 @@ export default function HomePage() {
 
       <section className={styles.introStrip} aria-label="Ruvanas introduction">
         <p>One professional foundation.</p>
-        <div><span>Retail radio</span><i /><span>School Radio</span><i /><span>Online radio</span></div>
+        <div><span>Retail</span><i /><span>School</span><i /><span>Online</span><i /><span>Health</span><i /><span>Faith</span></div>
       </section>
 
       <section className={styles.section} id="platforms">
         <div className={styles.sectionHeader}>
           <div>
-            <p className={styles.sectionEyebrow}>Three platforms. One standard.</p>
+            <p className={styles.sectionEyebrow}>Five platforms. One standard.</p>
             <h2>Built around the way you broadcast.</h2>
           </div>
           <p>Choose the platform that fits today, then bring every channel, location and audience together as your ambitions grow.</p>
@@ -291,7 +325,7 @@ export default function HomePage() {
         <div className={styles.pricingHeader}>
           <p className={styles.sectionEyebrow}>Plans shaped around your platform</p>
           <h2>Choose the service you need. Grow when you are ready.</h2>
-          <p>Retail, School Radio and complete online broadcasting each have their own tiers, limits and specialist tools.</p>
+          <p>Retail, School, Online, Health and Faith each have five clear tiers, shared foundations and purpose-built workflows.</p>
         </div>
 
         <div className={styles.pricingFamilies}>
@@ -359,7 +393,7 @@ export default function HomePage() {
           <a className={styles.logo} href="#top" aria-label="Ruvanas home">
             <BrandMark /><span className={styles.logoText}>RUVANAS</span>
           </a>
-          <p>Professional radio platforms for brands, schools and online broadcasters.</p>
+          <p>Professional radio platforms for brands, schools, online broadcasters, health organisations and faith communities.</p>
           <nav aria-label="Footer navigation">
             <a href="#platforms">Platforms</a><a href="#services">Services</a><a href="#pricing">Pricing</a><a href="/login">Log in</a>
           </nav>

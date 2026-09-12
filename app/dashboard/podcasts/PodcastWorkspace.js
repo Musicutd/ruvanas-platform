@@ -55,7 +55,7 @@ function requestBody(form) {
   };
 }
 
-export default function PodcastWorkspace({ initialMediaAssetId = "" }) {
+export default function PodcastWorkspace({ product = "ONLINE", initialMediaAssetId = "" }) {
   const [data, setData] = useState(null);
   const [seriesForm, setSeriesForm] = useState(emptySeries);
   const [episodeForm, setEpisodeForm] = useState(emptyEpisode);
@@ -65,7 +65,7 @@ export default function PodcastWorkspace({ initialMediaAssetId = "" }) {
   const [notice, setNotice] = useState("");
 
   async function load() {
-    const response = await fetch("/api/podcasts", { cache: "no-store" });
+    const response = await fetch(`/api/podcasts?product=${encodeURIComponent(product)}`, { cache: "no-store" });
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || "Podcasts could not be loaded.");
     setData(payload);
@@ -73,12 +73,12 @@ export default function PodcastWorkspace({ initialMediaAssetId = "" }) {
     setEpisodeForm((current) => ({ ...current, seriesId: current.seriesId || payload.series[0]?.id || "", mediaAssetId: current.mediaAssetId || (payload.approvedAudio.some((item) => item.id === initialMediaAssetId) ? initialMediaAssetId : payload.approvedAudio[0]?.id || "") }));
   }
 
-  useEffect(() => { load().catch((loadError) => setError(loadError.message)); }, []);
+  useEffect(() => { load().catch((loadError) => setError(loadError.message)); }, [product]);
 
   async function act(body, message) {
     setWorking(true); setError(""); setNotice("");
     try {
-      const response = await fetch("/api/podcasts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const response = await fetch(`/api/podcasts?product=${encodeURIComponent(product)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "The podcast action could not be completed.");
       setNotice(message); await load(); return true;
@@ -109,8 +109,13 @@ export default function PodcastWorkspace({ initialMediaAssetId = "" }) {
 
   if (!data) return <main className={styles.page}><p className={styles.loading}>{error || "Loading Podcasts…"}</p></main>;
   const eligibleChannels = data.channels.filter((channel) => !seriesForm.stationId || channel.stationId === seriesForm.stationId);
+  const productCopy = product === "HEALTH"
+    ? { eyebrow: "RUVANAS HEALTH · PODCASTS", title: "Health listen-again", description: "Prepare accessible, reviewed wellbeing and hospital-radio programmes. Public release is available only for channels explicitly marked public.", href: "/dashboard/health", back: "Health dashboard" }
+    : product === "FAITH"
+      ? { eyebrow: "RUVANAS FAITH · PODCASTS", title: "Sermons, teachings & podcasts", description: "Prepare reviewed listen-again audio and publish it only to the audience selected by your organisation.", href: "/dashboard/faith", back: "Faith dashboard" }
+      : { eyebrow: "ONLINE RADIO · PODCASTS", title: "Podcast studio", description: "Create station-branded series, prepare accessible episodes and publish protected audio with a standards-based RSS feed.", href: "/dashboard/radio", back: "Online Radio dashboard" };
   return <main className={styles.page}>
-    <header className={styles.hero}><div><p className={styles.eyebrow}>ONLINE RADIO · PODCASTS</p><h1>Podcast studio</h1><p>Create station-branded series, prepare accessible episodes and publish protected audio with a standards-based RSS feed.</p></div><Link href="/dashboard/radio" className={styles.back}>Online Radio dashboard</Link></header>
+    <header className={styles.hero}><div><p className={styles.eyebrow}>{productCopy.eyebrow}</p><h1>{productCopy.title}</h1><p>{productCopy.description}</p></div><Link href={productCopy.href} className={styles.back}>{productCopy.back}</Link></header>
     {error ? <div className={styles.error} role="alert">{error}</div> : null}{notice ? <div className={styles.notice} role="status">{notice}</div> : null}
     <section className={styles.metrics}><article><strong>{data.series.length}</strong><span>Series</span></article><article><strong>{allEpisodes.length}</strong><span>Episodes</span></article><article><strong>{allEpisodes.filter((item) => item.status === "PUBLISHED").length}</strong><span>Published</span></article><article><strong>{data.approvedAudio.length}</strong><span>Approved audio</span></article></section>
     <section className={styles.setup}>

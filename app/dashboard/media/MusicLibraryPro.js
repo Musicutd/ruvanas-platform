@@ -6,7 +6,9 @@ import styles from "./media-library.module.css";
 const USE_LABELS = {
   RETAIL_RADIO: "In-house / Retail Radio",
   SCHOOL_RADIO: "School Radio",
-  ONLINE_RADIO: "Online Radio"
+  ONLINE_RADIO: "Online Radio",
+  HEALTH_RADIO: "Health Radio",
+  FAITH_RADIO: "Faith Radio"
 };
 
 const STATUS_LABELS = {

@@ -2,6 +2,8 @@ import { notFound, redirect } from "next/navigation";
 import { getActiveOrganisationContext } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import PublicPlayerSettings from "./PublicPlayerSettings";
+import { subscriberProductForStationFamily } from "@/lib/product-access.mjs";
+import { requireSubscriberProduct } from "@/lib/subscriber-product-access";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Public player | Ruvanas" };
@@ -9,12 +11,15 @@ export const metadata = { title: "Public player | Ruvanas" };
 export default async function PublicPlayerSettingsPage({ params }) {
   const context = await getActiveOrganisationContext();
   if (!context?.membership) redirect("/login");
-  const station = await prisma.station.findFirst({ where: { id: params.stationId, organisationId: context.membership.organisationId }, select: { id: true, name: true, slug: true, status: true, publicPlayerEnabled: true, publicPlayerTagline: true, publicPlayerAccent: true, listenerRequestsEnabled: true, listenerRequestInstructions: true, listenerLimit: true } });
+  const station = await prisma.station.findFirst({ where: { id: params.stationId, organisationId: context.membership.organisationId }, select: { id: true, name: true, slug: true, status: true, productFamily: true, publicPlayerEnabled: true, publicPlayerTagline: true, publicPlayerAccent: true, listenerRequestsEnabled: true, listenerRequestInstructions: true, listenerLimit: true } });
   if (!station) notFound();
+  const productKey = subscriberProductForStationFamily(station.productFamily);
+  await requireSubscriberProduct(productKey);
+  const productLabel = productKey === "HEALTH" ? "RUVANAS HEALTH" : productKey === "FAITH" ? "RUVANAS FAITH" : "ONLINE RADIO";
   const canManage = ["OWNER", "MANAGER"].includes(context.membership.role);
   return <main style={styles.page}><section style={styles.shell}>
     <a href={`/stations/${station.id}`} style={styles.back}>← Back to station</a>
-    <p style={styles.eyebrow}>ONLINE RADIO</p>
+    <p style={styles.eyebrow}>{productLabel}</p>
     <h1 style={styles.heading}>Public player</h1>
     <p style={styles.copy}>Publish a professional, anonymous listening page and an embeddable player without exposing private station controls or source credentials.</p>
     <PublicPlayerSettings station={station} canManage={canManage} />

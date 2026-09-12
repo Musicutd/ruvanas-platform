@@ -50,7 +50,7 @@ test("Studio F route keeps organisation, entitlement, approval and audit gates",
     readFile(new URL("../app/dashboard/podcasts/page.js", import.meta.url), "utf8"),
     readFile(new URL("../prisma/migrations/20261030000000_studio_f_product_handoffs/migration.sql", import.meta.url), "utf8")
   ]);
-  assert.match(route, /requireActiveSchoolRadio/);
+  assert.match(route, /requireActiveStudio/);
   assert.match(route, /organisationId: access\.organisation\.id/);
   assert.match(route, /assertStudioRenderReady/);
   assert.match(route, /definition\.entitlement/);

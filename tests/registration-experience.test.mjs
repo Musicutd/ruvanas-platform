@@ -9,10 +9,10 @@ import {
   resolveRegistrationDeepLink
 } from "../lib/registration-experience.mjs";
 
-test("the registration journey exposes all fifteen approved plans from one catalogue", () => {
+test("the registration journey exposes all twenty-five approved plans from one catalogue", () => {
   const products = registrationProducts();
-  assert.deepEqual(products.map((product) => product.id), ["RETAIL", "SCHOOL", "ONLINE"]);
-  assert.deepEqual(products.map((product) => product.plans.length), [5, 5, 5]);
+  assert.deepEqual(products.map((product) => product.id), ["RETAIL", "SCHOOL", "ONLINE", "HEALTH", "FAITH"]);
+  assert.deepEqual(products.map((product) => product.plans.length), [5, 5, 5, 5, 5]);
   assert.deepEqual(
     products.flatMap((product) => product.plans.map((plan) => [plan.code, plan.name, plan.priceLabel])),
     PUBLIC_PLAN_CATALOGUE.map((plan) => [
@@ -44,6 +44,8 @@ test("valid pricing links preselect only a matching self-service product and tie
     selectedFromPricing: true,
     enterpriseRequested: false
   });
+  assert.equal(resolveRegistrationDeepLink({ platform: "health", tier: "health-pro" }).product, "HEALTH");
+  assert.equal(resolveRegistrationDeepLink({ platform: "faith", tier: "faith-pro" }).product, "FAITH");
 });
 
 test("mismatched, invented and Enterprise links cannot create implicit plan authority", () => {
@@ -70,7 +72,7 @@ test("mismatched, invented and Enterprise links cannot create implicit plan auth
 });
 
 test("plan presentation uses customer-safe Licensed Music Catalogue wording", () => {
-  for (const product of ["RETAIL", "SCHOOL", "ONLINE"]) {
+  for (const product of ["RETAIL", "SCHOOL", "ONLINE", "HEALTH", "FAITH"]) {
     const plans = registrationPlanOptions(product);
     assert.deepEqual(plans.map((plan) => plan.tierNumber), [1, 2, 3, 4, 5]);
     assert.match(plans[0].catalogueDescription, /not included/i);

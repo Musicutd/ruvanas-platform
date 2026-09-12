@@ -2,12 +2,14 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireOrganisationProductAccess, ORGANISATION_MANAGER_ROLES } from "@/lib/access-control";
 import { normalizePublicPlayerSettings } from "@/lib/public-player.mjs";
+import { subscriberProductForStationFamily } from "@/lib/product-access.mjs";
 
 export async function PATCH(request, { params }) {
   try {
-    const station = await prisma.station.findUnique({ where: { id: String(params.stationId || "") }, select: { id: true, organisationId: true, status: true, slug: true } });
+    const station = await prisma.station.findUnique({ where: { id: String(params.stationId || "") }, select: { id: true, organisationId: true, status: true, slug: true, productFamily: true } });
     if (!station) return NextResponse.json({ error: "Station not found." }, { status: 404 });
-    const access = await requireOrganisationProductAccess(station.organisationId, "ONLINE", ORGANISATION_MANAGER_ROLES);
+    const product = subscriberProductForStationFamily(station.productFamily);
+    const access = await requireOrganisationProductAccess(station.organisationId, product, ORGANISATION_MANAGER_ROLES);
     if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
     const text = await request.text();
     if (text.length > 4_096) return NextResponse.json({ error: "The public-player settings are too large." }, { status: 413 });
@@ -15,13 +17,14 @@ export async function PATCH(request, { params }) {
     try { body = JSON.parse(text); }
     catch { return NextResponse.json({ error: "Send valid public-player settings." }, { status: 400 }); }
     const settings = normalizePublicPlayerSettings(body);
+    if (product === "HEALTH" && body.listenerRequestMessage) return NextResponse.json({ error: "Health requests accept song and artist only; do not configure clinical or patient-message fields." }, { status: 400 });
     if (settings.enabled) {
       if (station.status !== "ACTIVE") return NextResponse.json({ error: "Activate the station before publishing its player." }, { status: 409 });
       const channel = await prisma.channel.findFirst({ where: { organisationId: station.organisationId, stationId: station.id, status: "ACTIVE", zoneAssignments: { some: { OR: [{ activeTo: null }, { activeTo: { gt: new Date() } }] } } }, select: { id: true } });
       if (!channel) return NextResponse.json({ error: "Assign an active channel to a listening zone before publishing the player." }, { status: 409 });
     }
     const updated = await prisma.$transaction(async (tx) => {
-      const value = await tx.station.update({ where: { id: station.id }, data: { publicPlayerEnabled: settings.enabled, publicPlayerTagline: settings.tagline, publicPlayerAccent: settings.accent, listenerRequestsEnabled: settings.listenerRequestsEnabled, listenerRequestInstructions: settings.listenerRequestInstructions }, select: { id: true, slug: true, publicPlayerEnabled: true, publicPlayerTagline: true, publicPlayerAccent: true, listenerRequestsEnabled: true, listenerRequestInstructions: true } });
+      const value = await tx.station.update({ where: { id: station.id }, data: { publicPlayerEnabled: settings.enabled, audiencePolicy: settings.enabled ? "PUBLIC" : undefined, publicPlayerTagline: settings.tagline, publicPlayerAccent: settings.accent, listenerRequestsEnabled: settings.listenerRequestsEnabled, listenerRequestInstructions: settings.listenerRequestInstructions }, select: { id: true, slug: true, publicPlayerEnabled: true, publicPlayerTagline: true, publicPlayerAccent: true, listenerRequestsEnabled: true, listenerRequestInstructions: true } });
       await tx.auditLog.create({ data: { organisationId: station.organisationId, actorUserId: access.user.id, action: settings.enabled ? "PUBLIC_PLAYER_PUBLISHED" : "PUBLIC_PLAYER_UNPUBLISHED", entityType: "Station", entityId: station.id, details: { taglineConfigured: Boolean(settings.tagline), accent: settings.accent, listenerRequestsEnabled: settings.listenerRequestsEnabled } } });
       return value;
     });

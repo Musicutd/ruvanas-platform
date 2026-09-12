@@ -9,6 +9,8 @@ const STEPS = ["Service", "Plan", "Details", "Review"];
 function ProductIcon({ product }) {
   if (product === "SCHOOL") return <span aria-hidden="true">S</span>;
   if (product === "ONLINE") return <span aria-hidden="true">O</span>;
+  if (product === "HEALTH") return <span aria-hidden="true">H</span>;
+  if (product === "FAITH") return <span aria-hidden="true">F</span>;
   return <span aria-hidden="true">R</span>;
 }
 

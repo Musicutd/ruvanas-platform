@@ -68,11 +68,11 @@ test("Stage 19.16 shares podcast primitives, preserves school policy and protect
   assert.match(schema, /@@unique\(\[organisationId, feedSlug\]\)/);
   assert.match(migration, /FOREIGN KEY \("stationId", "organisationId"\)/);
   assert.match(migration, /FOREIGN KEY \("mediaAssetId", "organisationId"\)/);
-  assert.match(route, /requireActivePodcast\(ORGANISATION_CONTENT_ROLES\)/);
+  assert.match(route, /requireActivePodcast\(ORGANISATION_CONTENT_ROLES, product\.key\)/);
   assert.match(route, /managerRequired/);
   assert.match(route, /approvedForPromo/);
   assert.doesNotMatch(route, /data\.organisationId|body\.organisationId/);
-  assert.match(publicLoader, /validateOnlinePodcastPublication/);
+  assert.match(publicLoader, /validatePodcastPublication/);
   assert.match(audioDelivery, /Accept-Ranges/);
   assert.match(schoolCore, /from "\.\/podcast-core\.mjs"/);
   assert.match(schoolRoute, /product: "SCHOOL_RADIO"/);

@@ -89,7 +89,7 @@ test("an organisation subscription can override the shared School Radio plan def
   );
 });
 
-test("Retail, School and Online Radio access resolve independently", () => {
+test("all five product capabilities resolve independently", () => {
   const entitlements = resolveEntitlements({
     status: "ACTIVE",
     retailRadioEnabled: false,
@@ -105,6 +105,8 @@ test("Retail, School and Online Radio access resolve independently", () => {
     retail: "SUBSCRIPTION_OVERRIDE",
     school: "SUBSCRIPTION_OVERRIDE",
     online: "SUBSCRIPTION_OVERRIDE",
+    health: "PLAN",
+    faith: "PLAN",
     licensedMusicCatalogue: "PLAN"
   });
 });

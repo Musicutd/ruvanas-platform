@@ -19,7 +19,7 @@ const firstSession = "11111111-1111-4111-8111-111111111111";
 function station(limit = 2) {
   return {
     id: "station-1", organisationId: "org-1", status: "ACTIVE", publicPlayerEnabled: true, listenerLimit: limit,
-    organisation: { subscription: { status: "ACTIVE", plan: { active: true, code: "RADIO", stationLimit: 1, listenerLimit: limit, storageLimitGb: 20, maxBitrateKbps: 320 } } }
+    organisation: { subscription: { status: "ACTIVE", plan: { active: true, code: "RADIO", onlineRadioEnabled: true, stationLimit: 1, listenerLimit: limit, storageLimitGb: 20, maxBitrateKbps: 320 } } }
   };
 }
 

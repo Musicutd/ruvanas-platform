@@ -60,7 +60,7 @@ export default function ProductQaControlCentre({ initialProfiles }) {
         </div>
         <div className={styles.boundary}>
           <strong>Super Admin only</strong>
-          <span>Only the three named QA organisations with a non-billed trial subscription can be changed here.</span>
+          <span>Only the five named QA organisations with a non-billed trial subscription can be changed here.</span>
         </div>
       </header>
 
@@ -69,7 +69,7 @@ export default function ProductQaControlCentre({ initialProfiles }) {
       <section className={styles.summary} aria-label="QA readiness summary">
         <div><strong>{profiles.filter((item) => item.organisation).length} / 3</strong><span>QA organisations found</span></div>
         <div><strong>{profiles.filter((item) => item.organisation?.acceptancePassed).length} / 3</strong><span>Current plans verified</span></div>
-        <div><strong>15</strong><span>Tier combinations covered</span></div>
+        <div><strong>25</strong><span>Tier combinations covered</span></div>
         <div><strong>0</strong><span>Billing events permitted</span></div>
       </section>
 

@@ -10,6 +10,8 @@ import EmptyState from "@/app/components/EmptyState";
 import { interfaceMessages } from "@/lib/interface-guidance.mjs";
 import { resolveEntitlements } from "@/lib/entitlements.mjs";
 import {
+  buildFaithProductOnboarding,
+  buildHealthProductOnboarding,
   buildOnlineRadioProductOnboarding,
   buildRetailProductOnboarding,
   buildSchoolProductOnboarding
@@ -61,6 +63,32 @@ function ProductReadinessSummary({ organisation }) {
         activeMusicModeCount: organisation.musicModes.length,
         publishedScheduleCount: organisation.musicSchedules.length
       })
+    },
+    {
+      label: "Health",
+      enabled: entitlements.healthRadioEnabled,
+      readiness: buildHealthProductOnboarding({
+        ...common,
+        serviceEnabled: entitlements.healthRadioEnabled,
+        activeLocationCount: organisation.locations.length,
+        stationActive: firstStation?.status === "ACTIVE",
+        programmeReady: organisation.musicModes.length > 0 && organisation.musicSchedules.length > 0,
+        configuredPlayerCount: organisation.players.length,
+        requestModerationReady: Boolean(firstStation?.listenerRequestsEnabled)
+      })
+    },
+    {
+      label: "Faith",
+      enabled: entitlements.faithRadioEnabled,
+      readiness: buildFaithProductOnboarding({
+        ...common,
+        serviceEnabled: entitlements.faithRadioEnabled,
+        activeLocationCount: organisation.locations.length,
+        stationActive: firstStation?.status === "ACTIVE",
+        programmeReady: organisation.musicModes.length > 0 && organisation.musicSchedules.length > 0,
+        liveServiceReady: false,
+        publishedPodcastCount: organisation._count.schoolPodcastEpisodes
+      })
     }
   ];
 
@@ -88,7 +116,9 @@ function ProductAccessSummary({ subscription }) {
   const products = [
     ["Retail", entitlements.retailRadioEnabled],
     ["School", entitlements.schoolRadioEnabled],
-    ["Online", entitlements.onlineRadioEnabled]
+    ["Online", entitlements.onlineRadioEnabled],
+    ["Health", entitlements.healthRadioEnabled],
+    ["Faith", entitlements.faithRadioEnabled]
   ];
 
   return (
@@ -119,7 +149,7 @@ export default async function AdminOrganisationsPage() {
           billingContract: true
         }
       },
-      stations: { select: { id: true, status: true, streamConfig: { select: { streamUrl: true } } }, orderBy: { createdAt: "asc" } },
+      stations: { select: { id: true, status: true, listenerRequestsEnabled: true, streamConfig: { select: { streamUrl: true } } }, orderBy: { createdAt: "asc" } },
       locations: { where: { status: "ACTIVE" }, select: { id: true } },
       players: { where: { status: { not: "DISABLED" } }, select: { id: true } },
       musicModes: { where: { status: "ACTIVE" }, select: { id: true } },
@@ -136,7 +166,8 @@ export default async function AdminOrganisationsPage() {
           brands: true,
           locations: true,
           channels: true,
-          stations: true
+          stations: true,
+          schoolPodcastEpisodes: true
         }
       }
     },

@@ -75,6 +75,7 @@ export async function POST(request) {
     const createdStation = await tx.station.create({
       data: {
         organisationId: org.id,
+        productFamily: "ONLINE",
         name,
         description: description || null,
         slug: slugify(name) + "-" + Math.random().toString(36).slice(2, 7),

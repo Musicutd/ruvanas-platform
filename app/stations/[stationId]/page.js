@@ -3,6 +3,8 @@ import { getActiveOrganisationContext } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import ContextHelp from "@/app/components/ContextHelp";
 import SkipLink from "@/app/components/SkipLink";
+import { subscriberProductForStationFamily } from "@/lib/product-access.mjs";
+import { requireSubscriberProduct } from "@/lib/subscriber-product-access";
 
 export default async function StationDetailsPage({ params }) {
   const context = await getActiveOrganisationContext();
@@ -31,6 +33,10 @@ export default async function StationDetailsPage({ params }) {
     notFound();
   }
 
+  const productKey = subscriberProductForStationFamily(station.productFamily);
+  await requireSubscriberProduct(productKey);
+  const productLabel = productKey === "HEALTH" ? "Ruvanas Health" : productKey === "FAITH" ? "Ruvanas Faith" : "Online Radio";
+
   const needsSetup = station.status === "PENDING_SETUP";
 
   return (
@@ -42,10 +48,10 @@ export default async function StationDetailsPage({ params }) {
       </header>
 
       <section style={styles.content} id="main-content">
-        <p style={styles.eyebrow}>STATION MANAGEMENT</p>
+        <p style={styles.eyebrow}>{productLabel.toUpperCase()} · CHANNEL MANAGEMENT</p>
         <h1 style={styles.title}>{station.name}</h1>
         <p style={styles.subtitle}>
-          {station.description || "Your online radio station workspace."}
+          {station.description || `Your ${productLabel} channel workspace.`}
         </p>
 
         <section style={styles.statusCard}>

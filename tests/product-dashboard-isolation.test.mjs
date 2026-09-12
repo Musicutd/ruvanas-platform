@@ -14,6 +14,8 @@ import {
 const onlineOnly = { serviceEnabled: true, retailRadioEnabled: false, schoolRadioEnabled: false, onlineRadioEnabled: true };
 const retailOnly = { serviceEnabled: true, retailRadioEnabled: true, schoolRadioEnabled: false, onlineRadioEnabled: false };
 const schoolOnly = { serviceEnabled: true, retailRadioEnabled: false, schoolRadioEnabled: true, onlineRadioEnabled: false };
+const healthOnly = { serviceEnabled: true, retailRadioEnabled: false, schoolRadioEnabled: false, onlineRadioEnabled: false, healthRadioEnabled: true, faithRadioEnabled: false };
+const faithOnly = { serviceEnabled: true, retailRadioEnabled: false, schoolRadioEnabled: false, onlineRadioEnabled: false, healthRadioEnabled: false, faithRadioEnabled: true };
 
 function itemIds(entitlements) {
   return buildSubscriberNavigation({ entitlements, firstStationId: "station-1" })
@@ -26,6 +28,8 @@ test("serviceEnabled alone never grants a product dashboard", () => {
   assert.equal(hasSubscriberProduct(activeService, "RETAIL"), false);
   assert.equal(hasSubscriberProduct(activeService, "SCHOOL"), false);
   assert.equal(hasSubscriberProduct(activeService, "ONLINE"), false);
+  assert.equal(hasSubscriberProduct(activeService, "HEALTH"), false);
+  assert.equal(hasSubscriberProduct(activeService, "FAITH"), false);
   assert.deepEqual(enabledSubscriberProducts(activeService), []);
 });
 
@@ -39,6 +43,8 @@ test("single-product accounts receive only their owned product card", () => {
   assert.deepEqual(buildSubscriberProductCards({ entitlements: retailOnly }).map((item) => item.id), ["retailHome"]);
   assert.deepEqual(buildSubscriberProductCards({ entitlements: schoolOnly }).map((item) => item.id), ["schoolHome"]);
   assert.deepEqual(buildSubscriberProductCards({ entitlements: onlineOnly }).map((item) => item.id), ["radioHome"]);
+  assert.deepEqual(buildSubscriberProductCards({ entitlements: healthOnly }).map((item) => item.id), ["healthHome"]);
+  assert.deepEqual(buildSubscriberProductCards({ entitlements: faithOnly }).map((item) => item.id), ["faithHome"]);
 });
 
 test("a multi-product account receives each explicitly assigned product", () => {
@@ -79,16 +85,19 @@ test("Online navigation excludes Retail and School product language", () => {
   }
 });
 
-test("product routes and Online APIs enforce explicit capabilities", async () => {
-  const [guard, organisationAccess, retail, school, radio, stationsLayout, schoolSuiteLayout, stationApi, podcastAccess, analyticsAccess, publicPlayerApi, websiteApi, requestApi] = await Promise.all([
+test("product routes and product APIs enforce explicit capabilities", async () => {
+  const [guard, organisationAccess, retail, school, radio, health, faith, stationsLayout, schoolSuiteLayout, stationApi, productChannelApi, podcastAccess, analyticsAccess, publicPlayerApi, websiteApi, requestApi] = await Promise.all([
     readFile(new URL("../lib/subscriber-product-access.js", import.meta.url), "utf8"),
     readFile(new URL("../lib/access-control.js", import.meta.url), "utf8"),
     readFile(new URL("../app/dashboard/retail/page.js", import.meta.url), "utf8"),
     readFile(new URL("../app/dashboard/school/page.js", import.meta.url), "utf8"),
     readFile(new URL("../app/dashboard/radio/layout.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/dashboard/health/page.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/dashboard/faith/page.js", import.meta.url), "utf8"),
     readFile(new URL("../app/stations/layout.js", import.meta.url), "utf8"),
     readFile(new URL("../app/dashboard/school-radio/layout.js", import.meta.url), "utf8"),
     readFile(new URL("../app/api/stations/route.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/product-channels/route.js", import.meta.url), "utf8"),
     readFile(new URL("../lib/podcast-access.js", import.meta.url), "utf8"),
     readFile(new URL("../lib/listener-analytics-access.js", import.meta.url), "utf8"),
     readFile(new URL("../app/api/stations/[stationId]/public-player/route.js", import.meta.url), "utf8"),
@@ -100,14 +109,17 @@ test("product routes and Online APIs enforce explicit capabilities", async () =>
   assert.match(retail, /requireSubscriberProduct\("RETAIL"\)/);
   assert.match(school, /requireSubscriberProduct\("SCHOOL"/);
   assert.match(radio, /requireSubscriberProduct\("ONLINE"\)/);
-  assert.match(stationsLayout, /requireSubscriberProduct\("ONLINE"\)/);
+  assert.match(health, /requireSubscriberProduct\("HEALTH"/);
+  assert.match(faith, /requireSubscriberProduct\("FAITH"/);
+  assert.match(stationsLayout, /\["ONLINE", "HEALTH", "FAITH"\]/);
   assert.match(schoolSuiteLayout, /requireSubscriberProduct\("SCHOOL"\)/);
   assert.match(stationApi, /entitlements\.onlineRadioEnabled/);
-  assert.match(podcastAccess, /entitlements\.onlineRadioEnabled/);
+  assert.match(productChannelApi, /entitlements\[product\.capability\]/);
+  assert.match(podcastAccess, /PODCAST_ACCESS/);
   assert.match(analyticsAccess, /entitlements\.onlineRadioEnabled/);
-  assert.match(publicPlayerApi, /requireOrganisationProductAccess\(station\.organisationId, "ONLINE"/);
-  assert.match(websiteApi, /requireOrganisationProductAccess\(station\.organisationId, "ONLINE"/);
-  assert.match(requestApi, /requireOrganisationProductAccess\(station\.organisationId, "ONLINE"/);
+  assert.match(publicPlayerApi, /requireOrganisationProductAccess\(station\.organisationId, product/);
+  assert.match(websiteApi, /subscriberProductForStationFamily\(station\.productFamily\)/);
+  assert.match(requestApi, /subscriberProductForStationFamily\(station\.productFamily\)/);
 });
 
 test("blocked product access leads to a clear account explanation", async () => {
