@@ -8,9 +8,12 @@
 .content > h1 { margin: 0; font-size: clamp(36px, 6vw, 54px); }
 .subtitle { max-width: 720px; margin: 13px 0 24px; color: var(--rv-text-muted); font-size: 17px; line-height: 1.6; }
 .roleGuidance { display: grid; gap: 5px; margin: 20px 0; border-left: 4px solid #f4b942; border-radius: 9px; background: var(--rv-surface); color: var(--rv-text); padding: 14px 16px; line-height: 1.5; }
+.howItWorksPrompt { display: flex; justify-content: space-between; align-items: center; gap: 18px; margin: 20px 0; border: 1px solid var(--rv-border); border-radius: 12px; background: var(--rv-info-bg); color: var(--rv-info-text); padding: 16px; }
+.howItWorksPrompt div { display: grid; gap: 5px; }
+.howItWorksPrompt a { flex: 0 0 auto; border-radius: 8px; background: #f4b942; color: #172033; font-weight: 900; padding: 10px 14px; text-decoration: none; }
 .search { display: grid; gap: 8px; margin-top: 24px; color: var(--rv-text); font-weight: 900; }
 .search input { min-height: 48px; box-sizing: border-box; border: 1px solid var(--rv-border); border-radius: 9px; background: var(--rv-input-bg); color: var(--rv-input-text); font: inherit; padding: 10px 13px; }
-.search input:focus-visible, .article summary:focus-visible, .noResults button:focus-visible, .header a:focus-visible { outline: 3px solid #60a5fa; outline-offset: 3px; }
+.search input:focus-visible, .article summary:focus-visible, .noResults button:focus-visible, .header a:focus-visible, .howItWorksPrompt a:focus-visible { outline: 3px solid #60a5fa; outline-offset: 3px; }
 .resultCount { color: var(--rv-text-muted); font-size: 13px; font-weight: 800; }
 .supportPrompt { display: flex; justify-content: space-between; gap: 16px; align-items: center; margin: 16px 0; padding: 16px; border: 1px solid #6b5729; border-radius: 12px; background: var(--rv-warning-bg); color: var(--rv-warning-text); }
 .supportPrompt div { display: grid; gap: 5px; }
@@ -33,6 +36,7 @@
 @media (max-width: 720px) {
   .articleList { grid-template-columns: 1fr; }
   .supportPrompt { align-items: flex-start; flex-direction: column; }
+  .howItWorksPrompt { align-items: flex-start; flex-direction: column; }
   .content { width: min(100% - 28px, 980px); padding-top: 34px; }
   .header { padding-block: 14px; }
 }
