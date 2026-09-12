@@ -27,6 +27,14 @@ export default function HelpCentreClient({ organisationName, help }) {
           <span>{help.guidance}</span>
         </aside>
 
+        <aside className={styles.howItWorksPrompt}>
+          <div>
+            <strong>New to Ruvanas?</strong>
+            <span>See the complete Retail, School and Online Radio journey on one guided page.</span>
+          </div>
+          <Link href="/dashboard/how-it-works">Open how Ruvanas works</Link>
+        </aside>
+
         <label className={styles.search}>
           <span>Search help</span>
           <input
