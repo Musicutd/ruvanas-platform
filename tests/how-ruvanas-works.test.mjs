@@ -19,6 +19,19 @@ test("the How it works link is rendered without opening a menu section", async (
   assert.match(shell, /section\.items\.filter\(\(item\) => !item\.topLevel\)/);
 });
 
+test("the public homepage links to a no-login How it works guide", async () => {
+  const [home, publicPage, client] = await Promise.all([
+    readFile(new URL("../app/page.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/how-it-works/page.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/dashboard/how-it-works/HowItWorksClient.js", import.meta.url), "utf8")
+  ]);
+  assert.match(home, /href="\/how-it-works">How it works/);
+  assert.match(home, /href="\/how-it-works">See how it works/);
+  assert.match(publicPage, /<HowItWorksClient publicView \/>/);
+  assert.doesNotMatch(publicPage, /getActiveOrganisationContext|redirect\(/);
+  assert.match(client, /publicView \? "\/register" : product\.startHref/);
+});
+
 test("the guide separates Retail, School and Radio into three product tabs", () => {
   assert.deepEqual(ruvanasProductGuides.map((product) => product.tabLabel), ["Retail", "School", "Radio"]);
   assert.deepEqual(ruvanasProductGuides.map((product) => product.id), ["retail", "school", "radio"]);

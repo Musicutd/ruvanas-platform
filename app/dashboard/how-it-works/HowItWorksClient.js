@@ -6,7 +6,7 @@ import WorkspaceTabs from "@/app/dashboard/WorkspaceTabs";
 import { ruvanasProductGuides } from "@/lib/how-ruvanas-works.mjs";
 import styles from "./how-it-works.module.css";
 
-function ProductGuide({ product }) {
+function ProductGuide({ product, publicView = false }) {
   return (
     <section className={styles.productGuide} aria-labelledby={`${product.id}-guide-title`}>
       <div className={styles.productIntro}>
@@ -22,7 +22,9 @@ function ProductGuide({ product }) {
       </div>
 
       <div className={styles.guideActions}>
-        <Link href={product.startHref} className={styles.primaryAction}>{product.startLabel}</Link>
+        <Link href={publicView ? "/register" : product.startHref} className={styles.primaryAction}>
+          {publicView ? `Start with ${product.tabLabel}` : product.startLabel}
+        </Link>
         <span>Open each box below for the detailed explanation and next actions.</span>
       </div>
 
@@ -50,7 +52,7 @@ function ProductGuide({ product }) {
   );
 }
 
-export default function HowItWorksClient({ organisationName, membershipRole }) {
+export default function HowItWorksClient({ organisationName, membershipRole, publicView = false }) {
   return (
     <main className={styles.page} id="main-content">
       <SkipLink />
@@ -61,9 +63,9 @@ export default function HowItWorksClient({ organisationName, membershipRole }) {
           <p>Choose a product, then open only the information you need. This guide explains the complete journey from account setup to content, programming, delivery and evidence.</p>
         </div>
         <aside className={styles.contextCard}>
-          <span>YOU ARE VIEWING</span>
-          <strong>{organisationName}</strong>
-          <small>{String(membershipRole || "member").replaceAll("_", " ").toLowerCase()} access</small>
+          <span>{publicView ? "EXPLORE BEFORE REGISTERING" : "YOU ARE VIEWING"}</span>
+          <strong>{publicView ? "No account needed" : organisationName}</strong>
+          <small>{publicView ? "See how each Ruvanas product works" : `${String(membershipRole || "member").replaceAll("_", " ").toLowerCase()} access`}</small>
         </aside>
       </header>
 
@@ -80,12 +82,14 @@ export default function HowItWorksClient({ organisationName, membershipRole }) {
         defaultTab="retail"
         tabs={ruvanasProductGuides.map((product) => ({ id: product.id, label: product.tabLabel, description: product.tabDescription }))}
       >
-        {ruvanasProductGuides.map((product) => <ProductGuide key={product.id} product={product} />)}
+        {ruvanasProductGuides.map((product) => <ProductGuide key={product.id} product={product} publicView={publicView} />)}
       </WorkspaceTabs>
 
       <footer className={styles.footerHelp}>
-        <div><strong>Need help with a specific problem?</strong><span>Search short answers or send a secure request to the Ruvanas team.</span></div>
-        <nav aria-label="Additional help"><Link href="/dashboard/help">Help centre</Link><Link href="/dashboard/support">Support requests</Link></nav>
+        <div><strong>{publicView ? "Ready to choose your Ruvanas service?" : "Need help with a specific problem?"}</strong><span>{publicView ? "Create an account or sign in to continue with your organisation." : "Search short answers or send a secure request to the Ruvanas team."}</span></div>
+        <nav aria-label="Additional help">
+          {publicView ? <><Link href="/register">Create account</Link><Link href="/login">Log in</Link></> : <><Link href="/dashboard/help">Help centre</Link><Link href="/dashboard/support">Support requests</Link></>}
+        </nav>
       </footer>
     </main>
   );

@@ -143,6 +143,7 @@ export default function HomePage() {
 
           <nav className={styles.navLinks} aria-label="Main navigation">
             <a href="#platforms">Platforms</a>
+            <a href="/how-it-works">How it works</a>
             <a href="#services">Services</a>
             <a href="#pricing">Pricing</a>
             <a href="#story">Our story</a>
@@ -166,7 +167,7 @@ export default function HomePage() {
             </p>
             <div className={styles.heroActions}>
               <a className={styles.primaryButton} href="/register">Create your account <ArrowIcon /></a>
-              <a className={styles.secondaryButton} href="#platforms">Explore the platforms</a>
+              <a className={styles.secondaryButton} href="/how-it-works">See how it works</a>
             </div>
             <div className={styles.heroProof} aria-label="Ruvanas platform highlights">
               <div><strong>320</strong><span>kbps high-quality audio</span></div>
