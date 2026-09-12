@@ -17,7 +17,8 @@ export default function SubscriberPortalShell({ navigation, organisationName, us
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [theme, setTheme] = useState("dark");
-  const activeSectionId = navigation.find((section) => section.items.some((item) => item.available !== false && matchesPath(pathname, item.href)))?.id;
+  const topLevelItems = navigation.flatMap((section) => section.items.filter((item) => item.topLevel));
+  const activeSectionId = navigation.find((section) => section.items.some((item) => !item.topLevel && item.available !== false && matchesPath(pathname, item.href)))?.id;
   const [expandedSections, setExpandedSections] = useState(() => new Set([activeSectionId || navigation[0]?.id].filter(Boolean)));
 
   useEffect(() => {
@@ -126,6 +127,20 @@ export default function SubscriberPortalShell({ navigation, organisationName, us
             >
               <span>Overview</span><b aria-hidden="true">⌂</b>
             </Link>
+            {topLevelItems.map((item) => {
+              const active = item.available !== false && matchesPath(pathname, item.href);
+              return (
+                <Link
+                  href={item.href}
+                  key={item.id || item.href}
+                  className={active ? styles.activeHome : styles.home}
+                  aria-current={active ? "page" : undefined}
+                  onClick={() => setOpen(false)}
+                >
+                  <span>{item.label}</span><b aria-hidden="true">?</b>
+                </Link>
+              );
+            })}
             {navigation.map((section) => {
               const expanded = expandedSections.has(section.id);
               return (
@@ -144,7 +159,7 @@ export default function SubscriberPortalShell({ navigation, organisationName, us
                     <b aria-hidden="true">{expanded ? "−" : "+"}</b>
                   </button>
                   <ul id={`subscriber-navigation-${section.id}`} hidden={!expanded}>
-                    {section.items.map((item) => {
+                    {section.items.filter((item) => !item.topLevel).map((item) => {
                       const active = item.available !== false && matchesPath(pathname, item.href);
                       return <li key={item.id || item.href}>
                         <Link

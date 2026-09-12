@@ -4,11 +4,19 @@ import test from "node:test";
 import { ruvanasProductGuides } from "../lib/how-ruvanas-works.mjs";
 import { buildSubscriberNavigation } from "../lib/user-experience-navigation.mjs";
 
-test("one How Ruvanas works page is linked from subscriber navigation", () => {
+test("one How it works page is linked prominently from subscriber navigation", () => {
   const navigation = buildSubscriberNavigation({ entitlements: {}, firstStationId: null });
   const item = navigation.flatMap((section) => section.items).find((entry) => entry.id === "howItWorks");
   assert.equal(item.href, "/dashboard/how-it-works");
-  assert.equal(item.label, "How Ruvanas works");
+  assert.equal(item.label, "How it works");
+  assert.equal(item.topLevel, true);
+});
+
+test("the How it works link is rendered without opening a menu section", async () => {
+  const shell = await readFile(new URL("../app/dashboard/SubscriberPortalShell.js", import.meta.url), "utf8");
+  assert.match(shell, /const topLevelItems =/);
+  assert.match(shell, /topLevelItems\.map/);
+  assert.match(shell, /section\.items\.filter\(\(item\) => !item\.topLevel\)/);
 });
 
 test("the guide separates Retail, School and Radio into three product tabs", () => {
