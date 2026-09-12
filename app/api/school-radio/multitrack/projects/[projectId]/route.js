@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { ORGANISATION_CONTENT_ROLES, ORGANISATION_MANAGER_ROLES, isOrganisationRoleAllowed } from "@/lib/permissions.mjs";
-import { requireActiveSchoolRadio } from "@/lib/school-radio-access";
-import { normalizeMultitrackState, studioMultitrackTrackLimit } from "@/lib/multitrack-studio.mjs";
+import { requireActiveStudio } from "@/lib/studio-access";
+import { assertStudioMultitrackWriteAllowed, normalizeMultitrackState, studioMultitrackTrackLimit } from "@/lib/multitrack-studio.mjs";
 import { invalidateApprovedAudioOutputs } from "@/lib/audio-project-governance";
 
 export const dynamic = "force-dynamic";
@@ -23,10 +23,12 @@ async function findProject(projectId, organisationId) {
   return prisma.audioProject.findFirst({ where: { id: projectId, organisationId, type: "MULTITRACK", status: { not: "ARCHIVED" } }, include });
 }
 
-function serialize(project, canApprove, trackLimit) {
+function serialize(project, canApprove, trackLimit, entitlements) {
   return {
     id: project.id, title: project.title, status: project.status, currentVersion: project.currentVersion,
     programmeId: project.programmeId, episodeId: project.episodeId, studentGroupId: project.studentGroupId, canApprove, trackLimit,
+    studioLevel: entitlements.studioLevel, studioProEnabled: entitlements.studioProEnabled,
+    restrictedReadOnly: entitlements.studioLevel !== "PRO" && (project.tracks.length > trackLimit || project.tracks.some((track) => Number(track.gainDb) !== 0 || Number(track.pan) !== 0 || track.solo || track.armed || track.locked || (track.effectChainJson?.automation || []).length || track.clips.some((clip) => Number(clip.gainDb) !== 0))),
     state: {
       mode: project.editDecision?.multitrack?.mode || "BEGINNER",
       ducking: project.editDecision?.multitrack?.ducking || { enabled: true, musicReductionDb: -12, attackMs: 120, releaseMs: 700 },
@@ -42,20 +44,20 @@ function serialize(project, canApprove, trackLimit) {
   };
 }
 
-async function validateSources(tx, organisationId, sourceIds) {
+async function validateSources(tx, organisationId, sourceIds, entitlements) {
   if (!sourceIds.length) return;
   const assets = await tx.mediaAsset.findMany({ where: { id: { in: sourceIds }, status: "READY", OR: [{ organisationId }, { organisationId: null, libraryType: "RUVANAS_CATALOGUE" }] }, include: { track: { select: { status: true, licenceExpiresAt: true } } } });
   const now = Date.now();
-  const valid = assets.filter((asset) => asset.organisationId === organisationId || (asset.track?.status === "READY" && (!asset.track.licenceExpiresAt || asset.track.licenceExpiresAt.getTime() >= now)));
+  const valid = assets.filter((asset) => asset.organisationId === organisationId || (entitlements.licensedMusicCatalogueEnabled && asset.track?.status === "READY" && (!asset.track.licenceExpiresAt || asset.track.licenceExpiresAt.getTime() >= now)));
   if (new Set(valid.map((asset) => asset.id)).size !== sourceIds.length) throw new Error("One or more multitrack sources are unavailable or no longer licensed.");
 }
 
-async function saveSnapshot(tx, { project, userId, state, reason, trackLimit }) {
+async function saveSnapshot(tx, { project, userId, state, reason, trackLimit, entitlements }) {
   if (Array.isArray(state?.tracks) && state.tracks.length > trackLimit) throw new Error(`Your current plan supports up to ${trackLimit} multitrack tracks.`);
   const clean = normalizeMultitrackState(state, { maxTracks: trackLimit });
   if (!clean.tracks.some((track) => track.clips.length)) throw new Error("Add at least one audio clip before saving the multitrack project.");
   const sourceIds = [...new Set(clean.tracks.flatMap((track) => track.clips.map((clip) => clip.mediaAssetId)))];
-  await validateSources(tx, project.organisationId, sourceIds);
+  await validateSources(tx, project.organisationId, sourceIds, entitlements);
   const invalidatedApprovals = await invalidateApprovedAudioOutputs(tx, project.id);
   await tx.audioTrack.deleteMany({ where: { projectId: project.id } });
   for (const track of clean.tracks) {
@@ -69,15 +71,15 @@ async function saveSnapshot(tx, { project, userId, state, reason, trackLimit }) 
 }
 
 export async function GET(_request, { params }) {
-  const access = await requireActiveSchoolRadio(ORGANISATION_CONTENT_ROLES);
+  const access = await requireActiveStudio(ORGANISATION_CONTENT_ROLES);
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const project = await findProject((await params).projectId, access.organisation.id);
   if (!project) return NextResponse.json({ error: "The multitrack project was not found." }, { status: 404 });
-  return NextResponse.json(serialize(project, isOrganisationRoleAllowed(access.membership.role, ORGANISATION_MANAGER_ROLES), studioMultitrackTrackLimit(access.entitlements)));
+  return NextResponse.json(serialize(project, isOrganisationRoleAllowed(access.membership.role, ORGANISATION_MANAGER_ROLES), studioMultitrackTrackLimit(access.entitlements), access.entitlements));
 }
 
 export async function POST(request, { params }) {
-  const access = await requireActiveSchoolRadio(ORGANISATION_CONTENT_ROLES);
+  const access = await requireActiveStudio(ORGANISATION_CONTENT_ROLES);
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const parsed = requestSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "The multitrack studio request is invalid." }, { status: 400 });
@@ -98,7 +100,8 @@ export async function POST(request, { params }) {
         await tx.auditLog.create({ data: { organisationId: access.organisation.id, actorUserId: access.user.id, action: "MULTITRACK_OUTPUT_APPROVED", entityType: "AudioRender", entityId: render.id, details: { projectId, version: render.outputPromoVersion.version } } });
       });
     } else {
-      const saved = await prisma.$transaction((tx) => saveSnapshot(tx, { project, userId: access.user.id, state: parsed.data.state, reason: parsed.data.action === "QUEUE_RENDER" ? "Multitrack final render requested" : parsed.data.reason || "Multitrack autosave", trackLimit }));
+      assertStudioMultitrackWriteAllowed(parsed.data.state, access.entitlements);
+      const saved = await prisma.$transaction((tx) => saveSnapshot(tx, { project, userId: access.user.id, state: parsed.data.state, reason: parsed.data.action === "QUEUE_RENDER" ? "Multitrack final render requested" : parsed.data.reason || "Multitrack autosave", trackLimit, entitlements: access.entitlements }));
       if (parsed.data.action === "QUEUE_RENDER") {
         await prisma.$transaction([
           prisma.audioRender.create({ data: { organisationId: access.organisation.id, projectId, versionId: saved.version.id, requestedByUserId: access.user.id, preset: parsed.data.preset } }),
@@ -107,7 +110,7 @@ export async function POST(request, { params }) {
       }
     }
     const updated = await findProject(projectId, access.organisation.id);
-    return NextResponse.json(serialize(updated, isOrganisationRoleAllowed(access.membership.role, ORGANISATION_MANAGER_ROLES), trackLimit));
+    return NextResponse.json(serialize(updated, isOrganisationRoleAllowed(access.membership.role, ORGANISATION_MANAGER_ROLES), trackLimit, access.entitlements));
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "The multitrack project could not be saved." }, { status: 409 });
   }

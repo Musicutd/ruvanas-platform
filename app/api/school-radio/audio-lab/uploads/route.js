@@ -5,7 +5,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getR2Storage } from "@/lib/r2";
 import { ORGANISATION_CONTENT_ROLES } from "@/lib/permissions.mjs";
-import { requireActiveSchoolRadio } from "@/lib/school-radio-access";
+import { requireActiveStudio } from "@/lib/studio-access";
 import { AUDIO_LAB_UPLOAD_TTL_MS, validateAudioLabUpload } from "@/lib/audio-lab.mjs";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +19,7 @@ const schema = z.object({
 });
 
 export async function POST(request) {
-  const access = await requireActiveSchoolRadio(ORGANISATION_CONTENT_ROLES);
+  const access = await requireActiveStudio(ORGANISATION_CONTENT_ROLES);
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "The recording upload details are invalid." }, { status: 400 });

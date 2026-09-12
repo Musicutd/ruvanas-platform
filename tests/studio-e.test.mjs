@@ -19,9 +19,10 @@ const project = {
 };
 
 test("Studio E enforces plan-aware 8 and 16 track limits", () => {
-  assert.equal(studioMultitrackTrackLimit({ planCode: "SCHOOL_PRO", stationLimit: 3 }), 8);
-  assert.equal(studioMultitrackTrackLimit({ planCode: "SCHOOL_ACADEMY", stationLimit: 10 }), 16);
-  assert.equal(studioMultitrackTrackLimit({ planCode: "SCHOOL_ENTERPRISE", stationLimit: 50 }), 16);
+  assert.equal(studioMultitrackTrackLimit({ planTierNumber: 1, studioLevel: "BASIC" }), 8);
+  assert.equal(studioMultitrackTrackLimit({ planTierNumber: 2, studioLevel: "BASIC" }), 8);
+  assert.equal(studioMultitrackTrackLimit({ planTierNumber: 3, studioLevel: "PRO" }), 16);
+  assert.equal(studioMultitrackTrackLimit({ planTierNumber: 5, studioLevel: "PRO" }), 16);
   const tracks = Array.from({ length: 16 }, (_, index) => ({ clientId: `track-${index}`, clips: [] }));
   assert.equal(normalizeMultitrackState({ tracks }, { maxTracks: 8 }).tracks.length, 8);
 });

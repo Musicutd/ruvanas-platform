@@ -377,7 +377,7 @@ export default function AudioLabClient({ requestedProjectId = "", experienceMode
       const completed = await fetch(`/api/school-radio/audio-lab/uploads/${upload.uploadId}/complete`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ durationMs, deviceLabel: devices.find((item) => item.deviceId === deviceId)?.label || null, checksumSha256, targetTrackId: targetTrack?.id || null, editDecision: { ...edits, trimEndMs: edits.trimEndMs === "" ? null : Number(edits.trimEndMs) } }) });
       const result = await completed.json().catch(() => ({}));
       if (!completed.ok) throw new Error(result.error || "The recording could not be finalised.");
-      setProgress(100); setServerTake(result); await recoveryDelete(captureKey).catch(() => {}); setRecording(null); setNotice(result.placement ? `Recording placed safely on ${result.placement.trackName}. The source take remains immutable.` : "Take uploaded safely. It is ready for teacher preview and audio approval."); await load();
+      setProgress(100); setServerTake(result); await recoveryDelete(captureKey).catch(() => {}); setRecording(null); setNotice(result.placement ? `Recording placed safely on ${result.placement.trackName}. The source take remains immutable.` : "Take uploaded safely. It is ready for protected preview and audio approval."); await load();
       window.dispatchEvent(new CustomEvent("ruvanas:studio-projects-refresh"));
       window.dispatchEvent(new CustomEvent("ruvanas:multitrack-refresh", { detail: { projectId: captureProject.id } }));
     } catch (uploadError) { setError(uploadError.message); } finally { setWorking(false); }
@@ -398,11 +398,11 @@ export default function AudioLabClient({ requestedProjectId = "", experienceMode
 
   if (!data) return <section style={s.panel}><p style={s.hint}>{error || "Loading AudioLab…"}</p></section>;
   return <section id="audio-lab-quick-record" style={s.panel}>
-    <div style={s.heading}><div><p style={s.eyebrow}>RECORD</p><h2 style={s.title}>Record safely in the browser</h2><p style={s.hint}>Immutable source takes, local recovery, resumable protected uploads, non-destructive edits, and teacher preview.</p></div><span style={s.autosave}>{experienceMode === "ADVANCED" ? "Advanced" : "Beginner"} · {autosave}</span></div>
+    <div style={s.heading}><div><p style={s.eyebrow}>RECORD</p><h2 style={s.title}>Record safely in the browser</h2><p style={s.hint}>Immutable source takes, local recovery, resumable protected uploads, non-destructive edits, and controlled preview.</p></div><span style={s.autosave}>{experienceMode === "ADVANCED" ? "Advanced" : "Beginner"} · {autosave}</span></div>
     {error ? <div style={s.error}>{error}</div> : null}{notice ? <div style={s.notice}>{notice}</div> : null}
     <div style={s.grid}>
       <form style={s.card} onSubmit={createProject}><p style={s.eyebrow}>1 · PROJECT</p><h3 style={s.cardTitle}>New Quick Record</h3>
-        <label style={s.label}>Project title<input style={s.input} value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} placeholder="Monday student bulletin" required /></label>
+        <label style={s.label}>Project title<input style={s.input} value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} placeholder="Monday morning bulletin" required /></label>
         <label style={s.label}>Programme<select style={s.input} value={draft.programmeId} onChange={(event) => setDraft({ ...draft, programmeId: event.target.value, episodeId: "" })}><option value="">No programme link</option>{data.programmes.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>
         <label style={s.label}>Episode<select style={s.input} value={draft.episodeId} onChange={(event) => setDraft({ ...draft, episodeId: event.target.value })}><option value="">No episode link</option>{data.episodes.filter((item) => !draft.programmeId || item.programmeId === draft.programmeId).map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>
         <button style={s.primary} disabled={working}>Create project</button>

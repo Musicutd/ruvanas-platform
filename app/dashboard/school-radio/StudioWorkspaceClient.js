@@ -62,6 +62,7 @@ export default function StudioWorkspaceClient() {
   }
 
   function changeMode(mode) {
+    if (!data?.studioProEnabled && mode === "ADVANCED") return;
     const nextMode = normalizeStudioExperienceMode(mode);
     setExperienceMode(nextMode);
     window.localStorage.setItem("ruvanas:studio-experience", nextMode);
@@ -97,7 +98,7 @@ export default function StudioWorkspaceClient() {
           <span>Experience</span>
           <div>
             <button type="button" aria-pressed={experienceMode === "BEGINNER"} onClick={() => changeMode("BEGINNER")}>Beginner</button>
-            <button type="button" aria-pressed={experienceMode === "ADVANCED"} onClick={() => changeMode("ADVANCED")}>Advanced</button>
+            <button type="button" aria-pressed={experienceMode === "ADVANCED" && data?.studioProEnabled} disabled={!data?.studioProEnabled} title={!data?.studioProEnabled ? "Studio Pro is included with Tiers 3–5." : undefined} onClick={() => changeMode("ADVANCED")}>Advanced{!data?.studioProEnabled ? " · Pro" : ""}</button>
           </div>
         </div>
       </header>
@@ -140,7 +141,7 @@ export default function StudioWorkspaceClient() {
         </div>
 
         <div className={styles.projectHeading}>
-          <div><h3>Recent projects</h3><p>Open the right tool without searching through the full School Radio page.</p></div>
+          <div><h3>Recent projects</h3><p>Open the right tool without searching through the full product dashboard.</p></div>
           <button type="button" className={styles.primaryButton} onClick={() => selectTool("record")}>New recording</button>
         </div>
 
@@ -161,10 +162,10 @@ export default function StudioWorkspaceClient() {
         <AudioLabClient requestedProjectId={requestedProjectId} experienceMode={experienceMode} onExperienceModeChange={changeMode} />
       </div> : null}
       {visited.has("waveform") ? <div id="studio-waveform-panel" role="tabpanel" aria-labelledby="studio-waveform-tab" hidden={activeTool !== "waveform"} className={styles.panel}>
-        <WaveformEditorClient requestedProjectId={requestedProjectId} experienceMode={experienceMode} onExperienceModeChange={changeMode} />
+        <WaveformEditorClient requestedProjectId={requestedProjectId} experienceMode={data?.studioProEnabled ? experienceMode : "BEGINNER"} onExperienceModeChange={changeMode} />
       </div> : null}
       {visited.has("multitrack") ? <div id="studio-multitrack-panel" role="tabpanel" aria-labelledby="studio-multitrack-tab" hidden={activeTool !== "multitrack"} className={styles.panel}>
-        <MultitrackStudioClient requestedProjectId={requestedProjectId} experienceMode={experienceMode} onExperienceModeChange={changeMode} />
+        <MultitrackStudioClient requestedProjectId={requestedProjectId} experienceMode={data?.studioProEnabled ? experienceMode : "BEGINNER"} onExperienceModeChange={changeMode} />
       </div> : null}
     </section>
   );

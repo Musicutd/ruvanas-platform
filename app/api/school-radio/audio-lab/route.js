@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { ORGANISATION_CONTENT_ROLES } from "@/lib/permissions.mjs";
-import { requireActiveSchoolRadio } from "@/lib/school-radio-access";
+import { requireActiveStudio } from "@/lib/studio-access";
 import { createDefaultEditDecision, normalizeEditDecision } from "@/lib/audio-lab.mjs";
 
 export const dynamic = "force-dynamic";
@@ -68,16 +68,16 @@ async function validateLinks(organisationId, values) {
       ? prisma.studentGroup.findFirst({ where: { id: values.studentGroupId, organisationId }, select: { id: true } })
       : null
   ]);
-  if (values.programmeId && !programme) throw new Error("Choose an active programme from this school.");
-  if (values.episodeId && !episode) throw new Error("Choose a draft or returned episode from this school.");
-  if (values.studentGroupId && !group) throw new Error("Choose a student group from this school.");
+  if (values.programmeId && !programme) throw new Error("Choose an active programme from this organisation.");
+  if (values.episodeId && !episode) throw new Error("Choose a draft or returned episode from this organisation.");
+  if (values.studentGroupId && !group) throw new Error("Choose a student group from this organisation.");
   if (episode && values.programmeId && episode.programmeId !== values.programmeId) {
     throw new Error("The episode does not belong to the selected programme.");
   }
 }
 
 export async function GET() {
-  const access = await requireActiveSchoolRadio(ORGANISATION_CONTENT_ROLES);
+  const access = await requireActiveStudio(ORGANISATION_CONTENT_ROLES);
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const organisationId = access.organisation.id;
   const [projects, programmes, episodes, groups] = await Promise.all([
@@ -91,11 +91,11 @@ export async function GET() {
     prisma.schoolEpisode.findMany({ where: { organisationId, status: { in: ["DRAFT", "CHANGES_REQUESTED"] } }, orderBy: { createdAt: "desc" }, select: { id: true, title: true, programmeId: true, status: true } }),
     prisma.studentGroup.findMany({ where: { organisationId }, orderBy: { name: "asc" }, select: { id: true, name: true } })
   ]);
-  return NextResponse.json({ projects, programmes, episodes, groups, limits: { maxRecordingMb: 250, uploadPartMb: 5 } });
+  return NextResponse.json({ projects, programmes, episodes, groups, studioLevel: access.entitlements.studioLevel, studioProEnabled: access.entitlements.studioProEnabled, limits: { maxRecordingMb: 250, uploadPartMb: 5 } });
 }
 
 export async function POST(request) {
-  const access = await requireActiveSchoolRadio(ORGANISATION_CONTENT_ROLES);
+  const access = await requireActiveStudio(ORGANISATION_CONTENT_ROLES);
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const parsed = createSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Enter a project title and check its optional programme details." }, { status: 400 });
@@ -125,7 +125,7 @@ export async function POST(request) {
 }
 
 export async function PATCH(request) {
-  const access = await requireActiveSchoolRadio(ORGANISATION_CONTENT_ROLES);
+  const access = await requireActiveStudio(ORGANISATION_CONTENT_ROLES);
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const parsed = autosaveSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "The AudioLab autosave details are invalid." }, { status: 400 });

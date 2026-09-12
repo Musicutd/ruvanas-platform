@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { ORGANISATION_CONTENT_ROLES } from "@/lib/permissions.mjs";
-import { requireActiveSchoolRadio } from "@/lib/school-radio-access";
-import { normalizeEditorState } from "@/lib/waveform-editor.mjs";
+import { requireActiveStudio } from "@/lib/studio-access";
+import { assertStudioWaveformWriteAllowed, normalizeEditorState, waveformUsesProFeatures } from "@/lib/waveform-editor.mjs";
 import { normalizeVoiceCleanup } from "@/lib/voice-cleanup.mjs";
 import { applyStudioMasteringPreset, normalizeStudioEffects, normalizeStudioMastering } from "@/lib/studio-effects-mastering.mjs";
 
@@ -45,12 +45,15 @@ async function findProject(projectId, organisationId) {
   });
 }
 
-function serialize(project) {
+function serialize(project, entitlements) {
   return {
     id: project.id,
     title: project.title,
     currentVersion: project.currentVersion,
     status: project.status,
+    studioLevel: entitlements.studioLevel,
+    studioProEnabled: entitlements.studioProEnabled,
+    restrictedReadOnly: !entitlements.studioProEnabled && waveformUsesProFeatures({ clips: project.tracks.flatMap((track) => track.clips), markers: project.markers }),
     takes: project.takes,
     state: {
       clips: project.tracks.flatMap((track) => track.clips.map((clip) => ({
@@ -77,18 +80,18 @@ function serialize(project) {
 }
 
 export async function GET(_request, { params }) {
-  const access = await requireActiveSchoolRadio(ORGANISATION_CONTENT_ROLES);
+  const access = await requireActiveStudio(ORGANISATION_CONTENT_ROLES);
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const project = await findProject((await params).projectId, access.organisation.id);
   if (!project) return NextResponse.json({ error: "The AudioLab project was not found." }, { status: 404 });
-  return NextResponse.json(serialize(project));
+  return NextResponse.json(serialize(project, access.entitlements));
 }
 
 async function saveSnapshot(tx, { project, userId, state, reason }) {
   const clean = normalizeEditorState(state);
   const sourceIds = [...new Set(clean.clips.filter((clip) => clip.kind === "SOURCE").map((clip) => clip.mediaAssetId))];
   const owned = sourceIds.length ? await tx.mediaAsset.count({ where: { id: { in: sourceIds }, organisationId: project.organisationId, status: { in: ["READY", "PROCESSING"] } } }) : 0;
-  if (owned !== sourceIds.length) throw new Error("One or more clip sources are unavailable to this school.");
+  if (owned !== sourceIds.length) throw new Error("One or more clip sources are unavailable to this organisation.");
 
   await tx.audioTrack.deleteMany({ where: { projectId: project.id } });
   await tx.audioMarker.deleteMany({ where: { projectId: project.id } });
@@ -116,7 +119,7 @@ async function saveSnapshot(tx, { project, userId, state, reason }) {
 }
 
 export async function POST(request, { params }) {
-  const access = await requireActiveSchoolRadio(ORGANISATION_CONTENT_ROLES);
+  const access = await requireActiveStudio(ORGANISATION_CONTENT_ROLES);
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const parsed = requestSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "The waveform editor request is invalid." }, { status: 400 });
@@ -136,6 +139,7 @@ export async function POST(request, { params }) {
       const cleanupPreviewRequested = parsed.data.action === "QUEUE_CLEANUP_PREVIEW";
       const masterPreviewRequested = parsed.data.action === "QUEUE_MASTER_PREVIEW";
       const requestedState = normalizeEditorState(parsed.data.state);
+      assertStudioWaveformWriteAllowed(requestedState, access.entitlements);
       if (cleanupPreviewRequested && !requestedState.voiceCleanup.enabled) {
         return NextResponse.json({ error: "Choose a Voice Cleanup preset before creating a comparison." }, { status: 409 });
       }
@@ -162,7 +166,7 @@ export async function POST(request, { params }) {
       }
     }
     const updated = await findProject(projectId, access.organisation.id);
-    return NextResponse.json(serialize(updated));
+    return NextResponse.json(serialize(updated, access.entitlements));
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "The waveform project could not be saved." }, { status: 409 });
   }
