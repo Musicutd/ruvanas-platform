@@ -371,9 +371,62 @@ export default function HomePage() {
         <div className={styles.storyLabel}><span>Our story</span><i /></div>
         <div className={styles.storyContent}>
           <p className={styles.storyKicker}>Ruvanas · A 21-Three platform</p>
-          <h2>The Ruvanas story is still being written.</h2>
-          <p>This space is reserved for the people, purpose and ideas behind Ruvanas. We will share how the platform began, what drives the team and the worldwide future we are working toward.</p>
-          <div className={styles.placeholderNote}><span>Story placeholder</span>Full company story and timeline to be added.</div>
+          <h2>Built from radio experience. Shaped by retail. Designed for what comes next.</h2>
+
+          <div className={styles.storyIntro}>
+            <p>The idea behind <strong>Ruvanas</strong> began with <strong>Manuel Chircop</strong>, whose connection with radio dates back to <strong>1993</strong>. Over more than three decades in broadcasting, Manuel experienced first-hand how radio evolved from traditional studios and scheduled programming into a world of streaming, automation, digital distribution and on-demand content.</p>
+            <p>Alongside that broadcasting experience, more than a decade working within the <strong>retail environment</strong> gave him a different perspective: businesses increasingly needed better ways to manage music, promotions, customer communication and digital media across their physical locations.</p>
+            <p>Those two worlds — <strong>broadcasting and retail</strong> — eventually came together.</p>
+            <p>Manuel&apos;s objective was not simply to recreate traditional radio software or build another background-music service. He wanted to develop something relevant to the way organisations communicate today: a modern platform capable of bringing professional audio, broadcasting, content management and digital display technology together in one connected environment.</p>
+            <p>Working with a team of professional engineers, that idea developed into <strong>Ruvanas</strong>.</p>
+          </div>
+
+          <section className={styles.storyChapter} aria-labelledby="story-five-worlds">
+            <p className={styles.storyChapterNumber}>01</p>
+            <div>
+              <h3 id="story-five-worlds">One platform. Five specialised worlds.</h3>
+              <p>Ruvanas has been designed around a shared technology core, but with dedicated experiences for very different types of organisations.</p>
+              <div className={styles.storyProducts}>
+                <article><span>Retail</span><p><strong>Ruvanas Retail</strong> gives retailers, hospitality businesses and other commercial organisations the tools to manage their own in-store audio, promotions, scheduling, digital displays and multi-location media.</p></article>
+                <article><span>School</span><p><strong>Ruvanas School</strong> provides schools and educational organisations with a structured environment for school radio, podcasting, media production and supervised student participation.</p></article>
+                <article><span>Radio</span><p><strong>Ruvanas Radio</strong> provides broadcasters and organisations with the technology to create and operate their own online radio services, including automation, live broadcasting, scheduling, podcasts and listener-facing experiences.</p></article>
+                <article><span>Faith</span><p><strong>Ruvanas Faith</strong> brings the traditional concept of Church Radio into a modern digital environment, giving churches, ministries and faith organisations the technology to operate their own radio channels, live services, sermons, podcasts and media networks.</p></article>
+                <article><span>Health</span><p><strong>Ruvanas Health</strong> modernises the concept of Hospital Radio, giving hospitals and health-related organisations the tools to operate their own radio, audio and information services for patients, staff and wider communities.</p></article>
+              </div>
+              <p className={styles.storyPrinciple}>In every case, <strong>Ruvanas provides the platform — the subscriber operates the service.</strong></p>
+            </div>
+          </section>
+
+          <section className={styles.storyChapter} aria-labelledby="story-more-than-radio">
+            <p className={styles.storyChapterNumber}>02</p>
+            <div>
+              <h3 id="story-more-than-radio">More than radio</h3>
+              <p>The long-term vision for Ruvanas goes beyond simply playing audio.</p>
+              <p>The platform is being developed as a complete media environment combining technologies such as <strong>24/7 AutoDJ, intelligent scheduling, live broadcasting, Ruvanas Studio, podcasts, promotions, digital signage, device management, analytics, proof-of-play, multi-location control and rights-aware media management</strong>.</p>
+              <p>By sharing these capabilities across one core platform, Ruvanas can give each sector its own specialised experience without forcing organisations to work with several disconnected systems.</p>
+            </div>
+          </section>
+
+          <section className={styles.storyChapter} aria-labelledby="story-international">
+            <p className={styles.storyChapterNumber}>03</p>
+            <div>
+              <h3 id="story-international">Built in Malta. Designed for an international market.</h3>
+              <p>Ruvanas is being developed with an international outlook from the beginning.</p>
+              <p>While Malta provides an important foundation for development, testing and early partnerships, the ambition is to build a platform capable of serving organisations across <strong>Europe, the United Kingdom, the United States and beyond</strong>.</p>
+              <p>The goal is not simply to follow the way media technology works today, but to build a platform capable of evolving with the organisations that use it.</p>
+            </div>
+          </section>
+
+          <section className={`${styles.storyChapter} ${styles.storyClosing}`} aria-labelledby="story-still-writing">
+            <p className={styles.storyChapterNumber}>04</p>
+            <div>
+              <h3 id="story-still-writing">The story is still being written.</h3>
+              <p>Ruvanas started with a simple question:</p>
+              <blockquote>Can decades of broadcasting experience and real-world business experience be transformed into one modern platform that helps organisations create, manage and control their own media?</blockquote>
+              <p>That question became Ruvanas.</p>
+              <p><strong>And this is only the beginning.</strong></p>
+            </div>
+          </section>
         </div>
       </section>
 
