@@ -38,7 +38,7 @@ const requestSchema = z.discriminatedUnion("action", [
     action: z.literal("ADD_PARTICIPANT"),
     programmeId: z.string(),
     organisationId: z.string(),
-    product: z.enum(["RETAIL", "SCHOOL", "ONLINE", "HEALTH", "FAITH"]),
+    product: z.enum(["RETAIL", "SCHOOL", "ONLINE", "HEALTH", "FAITH", "ORGANISATIONS"]),
     internalNote: z.string().optional().nullable()
   }).strict(),
   z.object({

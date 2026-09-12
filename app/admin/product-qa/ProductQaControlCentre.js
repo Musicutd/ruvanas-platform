@@ -7,7 +7,10 @@ import styles from "./product-qa.module.css";
 const PRODUCT_LABELS = {
   RETAIL: "Retail Radio",
   SCHOOL: "School Radio",
-  ONLINE: "Online Radio"
+  ONLINE: "Online Radio",
+  HEALTH: "Ruvanas Health",
+  FAITH: "Ruvanas Faith",
+  ORGANISATIONS: "Ruvanas Organisations"
 };
 
 export default function ProductQaControlCentre({ initialProfiles }) {
@@ -56,20 +59,20 @@ export default function ProductQaControlCentre({ initialProfiles }) {
         <div>
           <p className={styles.eyebrow}>CONTROLLED ACCEPTANCE</p>
           <h1>Product QA control centre</h1>
-          <p>Exercise Retail, School and Online Radio through every public tier without creating a billing event or weakening product isolation.</p>
+          <p>Exercise all six Ruvanas products through every public tier without creating a billing event or weakening product isolation.</p>
         </div>
         <div className={styles.boundary}>
           <strong>Super Admin only</strong>
-          <span>Only the five named QA organisations with a non-billed trial subscription can be changed here.</span>
+          <span>Only the six named QA organisations with a non-billed trial subscription can be changed here.</span>
         </div>
       </header>
 
       {notice ? <div className={styles.notice} role="status">{notice}</div> : null}
 
       <section className={styles.summary} aria-label="QA readiness summary">
-        <div><strong>{profiles.filter((item) => item.organisation).length} / 3</strong><span>QA organisations found</span></div>
-        <div><strong>{profiles.filter((item) => item.organisation?.acceptancePassed).length} / 3</strong><span>Current plans verified</span></div>
-        <div><strong>25</strong><span>Tier combinations covered</span></div>
+        <div><strong>{profiles.filter((item) => item.organisation).length} / 6</strong><span>QA organisations found</span></div>
+        <div><strong>{profiles.filter((item) => item.organisation?.acceptancePassed).length} / 6</strong><span>Current plans verified</span></div>
+        <div><strong>30</strong><span>Tier combinations covered</span></div>
         <div><strong>0</strong><span>Billing events permitted</span></div>
       </section>
 
@@ -128,7 +131,7 @@ export default function ProductQaControlCentre({ initialProfiles }) {
       </section>
 
       <footer className={styles.footer}>
-        <div><strong>Acceptance discipline</strong><span>After each switch, sign in as the QA account, confirm the recommended dashboard and ensure the other two product dashboards remain blocked.</span></div>
+        <div><strong>Acceptance discipline</strong><span>After each switch, sign in as the QA account, confirm the recommended dashboard and ensure the other five product dashboards remain blocked.</span></div>
         <Link href="/admin/organisations">Review all organisations</Link>
       </footer>
     </div>

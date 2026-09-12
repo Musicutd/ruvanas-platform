@@ -29,22 +29,23 @@ function qaOrganisation(profile, overrides = {}) {
 
 test("controlled QA policy covers one Tier 3 starting tenant per Ruvanas product", () => {
   assert.equal(validateProductQaPolicy(), true);
-  assert.equal(PRODUCT_QA_PROFILES.length, 5);
-  assert.deepEqual(PRODUCT_QA_PROFILES.map((profile) => profile.product), ["RETAIL", "SCHOOL", "ONLINE", "HEALTH", "FAITH"]);
+  assert.equal(PRODUCT_QA_PROFILES.length, 6);
+  assert.deepEqual(PRODUCT_QA_PROFILES.map((profile) => profile.product), ["RETAIL", "SCHOOL", "ONLINE", "HEALTH", "FAITH", "ORGANISATIONS"]);
   assert.deepEqual(PRODUCT_QA_PROFILES.map((profile) => profile.organisationName), [
     "Ruvanas Retail QA",
     "Ruvanas School QA",
     "Ruvanas Online Radio QA",
     "Ruvanas Health QA",
-    "Ruvanas Faith QA"
+    "Ruvanas Faith QA",
+    "Ruvanas Organisations QA"
   ]);
   assert.ok(PRODUCT_QA_PROFILES.every((profile) => !Object.hasOwn(profile, "email") && !Object.hasOwn(profile, "password")));
   assert.equal(productQaProfile("Customer organisation"), null);
 });
 
-test("the QA matrix proves product isolation, login routing, limits and Licensed Music Catalogue policy across all 25 tiers", () => {
+test("the QA matrix proves product isolation, login routing, limits and Licensed Music Catalogue policy across all 30 tiers", () => {
   const matrix = productQaTierMatrix();
-  assert.equal(matrix.length, 25);
+  assert.equal(matrix.length, 30);
 
   for (const profile of PRODUCT_QA_PROFILES) {
     const rows = matrix.filter((row) => row.product === profile.product);
@@ -91,6 +92,7 @@ test("a QA tier change clears capability overrides so the chosen product plan re
     onlineRadioEnabled: null,
     healthRadioEnabled: null,
     faithRadioEnabled: null,
+    organisationsEnabled: null,
     schoolPublicPublishingEnabled: null,
     retailMediaEnabled: null,
     digitalSignageEnabled: null

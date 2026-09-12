@@ -36,12 +36,17 @@ const expectedPlans = [
   ["FAITH_CONNECT", "Faith Connect", "FAITH", 2, 4900, "NONE"],
   ["FAITH_PRO", "Faith Pro", "FAITH", 3, 9900, "FOCUSED"],
   ["FAITH_MINISTRY", "Faith Ministry", "FAITH", 4, 19900, "PROFESSIONAL"],
-  ["FAITH_NETWORK", "Faith Network", "FAITH", 5, 49900, "PREMIUM"]
+  ["FAITH_NETWORK", "Faith Network", "FAITH", 5, 49900, "PREMIUM"],
+  ["ORGANISATIONS_START", "Organisations Start", "ORGANISATIONS", 1, 2490, "NONE"],
+  ["ORGANISATIONS_CONNECT", "Organisations Connect", "ORGANISATIONS", 2, 5900, "NONE"],
+  ["ORGANISATIONS_PRO", "Organisations Pro", "ORGANISATIONS", 3, 12900, "FOCUSED"],
+  ["ORGANISATIONS_NETWORK", "Organisations Network", "ORGANISATIONS", 4, 29900, "PROFESSIONAL"],
+  ["ORGANISATIONS_ENTERPRISE", "Organisations Enterprise", "ORGANISATIONS", 5, 69900, "PREMIUM"]
 ];
 
-test("the authoritative public catalogue contains the twenty-five approved product tiers", () => {
+test("the authoritative public catalogue contains the thirty approved product tiers", () => {
   assert.equal(validatePublicPlanCatalogue(), true);
-  assert.equal(PUBLIC_PLAN_CATALOGUE.length, 25);
+  assert.equal(PUBLIC_PLAN_CATALOGUE.length, 30);
   assert.deepEqual(
     PUBLIC_PLAN_CATALOGUE.map((plan) => [
       plan.code,
@@ -53,8 +58,8 @@ test("the authoritative public catalogue contains the twenty-five approved produ
     ]),
     expectedPlans
   );
-  assert.equal(new Set(PUBLIC_PLAN_CATALOGUE.map((plan) => plan.code)).size, 25);
-  assert.equal(new Set(PUBLIC_PLAN_CATALOGUE.map((plan) => plan.publicSlug)).size, 25);
+  assert.equal(new Set(PUBLIC_PLAN_CATALOGUE.map((plan) => plan.code)).size, 30);
+  assert.equal(new Set(PUBLIC_PLAN_CATALOGUE.map((plan) => plan.publicSlug)).size, 30);
 });
 
 test("every product has five ordered tiers and exactly one product capability", () => {
@@ -67,7 +72,7 @@ test("every product has five ordered tiers and exactly one product capability", 
       assert.equal(plan.active, true);
       assert.equal(plan.includesRuvanasCatalogue, true);
       assert.equal(
-        [plan.retailRadioEnabled, plan.schoolRadioEnabled, plan.onlineRadioEnabled, plan.healthRadioEnabled, plan.faithRadioEnabled].filter(Boolean).length,
+        [plan.retailRadioEnabled, plan.schoolRadioEnabled, plan.onlineRadioEnabled, plan.healthRadioEnabled, plan.faithRadioEnabled, plan.organisationsEnabled].filter(Boolean).length,
         1
       );
       assert.equal(plan.enterpriseContactRequired, plan.tierNumber === 5);
@@ -96,17 +101,18 @@ test("catalogue validation rejects cross-product access and malformed tier sets"
 });
 
 test("the database migration and Super Admin controls expose the authoritative catalogue safely", async () => {
-  const [baseMigration, expansionMigration, adminPage, organisationRoute] = await Promise.all([
+  const [baseMigration, healthFaithMigration, organisationsMigration, adminPage, organisationRoute] = await Promise.all([
     readFile(new URL("../prisma/migrations/20261027000000_stage_29r_2_product_capabilities/migration.sql", import.meta.url), "utf8"),
     readFile(new URL("../prisma/migrations/20261112010000_health_faith_expansion/migration.sql", import.meta.url), "utf8"),
+    readFile(new URL("../prisma/migrations/20261113010000_organisations_expansion/migration.sql", import.meta.url), "utf8"),
     readFile(new URL("../app/admin/plans/page.js", import.meta.url), "utf8"),
     readFile(new URL("../app/api/admin/organisations/route.js", import.meta.url), "utf8")
   ]);
 
   for (const plan of PUBLIC_PLAN_CATALOGUE) {
-    assert.match(`${baseMigration}\n${expansionMigration}`, new RegExp(`'${plan.code}'`));
+    assert.match(`${baseMigration}\n${healthFaithMigration}\n${organisationsMigration}`, new RegExp(`'${plan.code}'`));
   }
-  assert.match(expansionMigration, /ON CONFLICT \("code"\) DO UPDATE/);
+  assert.match(organisationsMigration, /ON CONFLICT \("code"\) DO UPDATE/);
   assert.match(baseMigration, /Existing legacy plans remain non-public/);
   assert.match(adminPage, /Licensed Music Catalogue/);
   assert.match(adminPage, /adminUser\?\.role !== "SUPER_ADMIN"/);

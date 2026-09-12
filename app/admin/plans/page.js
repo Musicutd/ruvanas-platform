@@ -10,6 +10,7 @@ const PRODUCT_LABELS = Object.freeze({
   ONLINE: "Online Radio",
   HEALTH: "Ruvanas Health",
   FAITH: "Ruvanas Faith",
+  ORGANISATIONS: "Ruvanas Organisations",
   MULTI: "Custom multi-product"
 });
 
@@ -18,7 +19,8 @@ const PRODUCT_FIELDS = Object.freeze([
   ["School", "schoolRadioEnabled"],
   ["Online", "onlineRadioEnabled"],
   ["Health", "healthRadioEnabled"],
-  ["Faith", "faithRadioEnabled"]
+  ["Faith", "faithRadioEnabled"],
+  ["Organisations", "organisationsEnabled"]
 ]);
 
 function planOrder(plan) {
@@ -67,7 +69,7 @@ export default async function AdminPlanCataloguePage() {
       <PageHeader
         eyebrow="Commercial control"
         title="Plan catalogue"
-        description="Review all 25 server-owned Retail, School, Online, Health and Faith tiers, their product authority and Licensed Music Catalogue level. Changes remain code-controlled and auditable."
+        description="Review all 30 server-owned tiers across six Ruvanas product families, their product authority and Licensed Music Catalogue level. Changes remain code-controlled and auditable."
       />
 
       <section style={styles.summaryGrid} aria-label="Plan catalogue summary">

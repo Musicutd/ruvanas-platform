@@ -113,7 +113,9 @@ export default function PodcastWorkspace({ product = "ONLINE", initialMediaAsset
     ? { eyebrow: "RUVANAS HEALTH · PODCASTS", title: "Health listen-again", description: "Prepare accessible, reviewed wellbeing and hospital-radio programmes. Public release is available only for channels explicitly marked public.", href: "/dashboard/health", back: "Health dashboard" }
     : product === "FAITH"
       ? { eyebrow: "RUVANAS FAITH · PODCASTS", title: "Sermons, teachings & podcasts", description: "Prepare reviewed listen-again audio and publish it only to the audience selected by your organisation.", href: "/dashboard/faith", back: "Faith dashboard" }
-      : { eyebrow: "ONLINE RADIO · PODCASTS", title: "Podcast studio", description: "Create station-branded series, prepare accessible episodes and publish protected audio with a standards-based RSS feed.", href: "/dashboard/radio", back: "Online Radio dashboard" };
+      : product === "ORGANISATIONS"
+        ? { eyebrow: "RUVANAS ORGANISATIONS · PODCASTS", title: "Organisation podcasts", description: "Prepare subscriber-owned programmes with review, accessible metadata and deliberate public release.", href: "/dashboard/organisations", back: "Organisations dashboard" }
+        : { eyebrow: "ONLINE RADIO · PODCASTS", title: "Podcast studio", description: "Create station-branded series, prepare accessible episodes and publish protected audio with a standards-based RSS feed.", href: "/dashboard/radio", back: "Online Radio dashboard" };
   return <main className={styles.page}>
     <header className={styles.hero}><div><p className={styles.eyebrow}>{productCopy.eyebrow}</p><h1>{productCopy.title}</h1><p>{productCopy.description}</p></div><Link href={productCopy.href} className={styles.back}>{productCopy.back}</Link></header>
     {error ? <div className={styles.error} role="alert">{error}</div> : null}{notice ? <div className={styles.notice} role="status">{notice}</div> : null}

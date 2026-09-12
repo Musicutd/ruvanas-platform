@@ -9,7 +9,7 @@ import slugify from "@/lib/slugify";
 
 async function access(productKey) {
   const product = healthFaithProduct(productKey);
-  if (!product) return { error: "Choose Health or Faith.", status: 400 };
+  if (!product) return { error: "Choose Health, Faith or Organisations.", status: 400 };
   const context = await getActiveOrganisationContext({
     subscription: { include: { plan: true, billingContract: true } },
     stations: { where: { productFamily: product.key }, include: { channels: true }, orderBy: { createdAt: "asc" } }

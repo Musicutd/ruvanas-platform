@@ -13,7 +13,7 @@ import {
 
 export const dynamic = "force-dynamic";
 
-const PRODUCT_MAP = Object.freeze({ ONLINE: PODCAST_PRODUCTS.ONLINE_RADIO, HEALTH: PODCAST_PRODUCTS.HEALTH_RADIO, FAITH: PODCAST_PRODUCTS.FAITH_RADIO });
+const PRODUCT_MAP = Object.freeze({ ONLINE: PODCAST_PRODUCTS.ONLINE_RADIO, HEALTH: PODCAST_PRODUCTS.HEALTH_RADIO, FAITH: PODCAST_PRODUCTS.FAITH_RADIO, ORGANISATIONS: PODCAST_PRODUCTS.ORGANISATIONS_RADIO });
 function requestedProduct(request) {
   const key = String(new URL(request.url).searchParams.get("product") || "ONLINE").toUpperCase();
   return { key, podcast: PRODUCT_MAP[key] || null };
@@ -105,7 +105,7 @@ async function approvedAudio(organisationId, mediaAssetId) {
 
 export async function GET(request) {
   const product = requestedProduct(request);
-  if (!product.podcast) return NextResponse.json({ error: "Choose Online, Health or Faith podcasts." }, { status: 400 });
+  if (!product.podcast) return NextResponse.json({ error: "Choose a supported Ruvanas podcast product." }, { status: 400 });
   const access = await requireActivePodcast(ORGANISATION_CONTENT_ROLES, product.key);
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const organisationId = access.organisation.id;
@@ -139,7 +139,7 @@ export async function GET(request) {
 
 export async function POST(request) {
   const product = requestedProduct(request);
-  if (!product.podcast) return NextResponse.json({ error: "Choose Online, Health or Faith podcasts." }, { status: 400 });
+  if (!product.podcast) return NextResponse.json({ error: "Choose a supported Ruvanas podcast product." }, { status: 400 });
   const access = await requireActivePodcast(ORGANISATION_CONTENT_ROLES, product.key);
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const parsed = schema.safeParse(await request.json().catch(() => null));

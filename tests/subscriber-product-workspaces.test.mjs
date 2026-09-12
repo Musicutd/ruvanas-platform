@@ -24,7 +24,7 @@ test("product dashboards stay separate while shared radio station tools accept e
   assert.match(radio, /stationLimit/);
   assert.match(radio, /requireSubscriberProduct\("ONLINE"/);
   assert.match(radioLayout, /requireSubscriberProduct\("ONLINE"\)/);
-  assert.match(stationLayout, /\["ONLINE", "HEALTH", "FAITH"\]/);
+  assert.match(stationLayout, /\["ONLINE", "HEALTH", "FAITH", "ORGANISATIONS"\]/);
   assert.match(stationLayout, /hasSubscriberProduct/);
   assert.match(schoolSuiteLayout, /requireSubscriberProduct\("SCHOOL"\)/);
   assert.match(shared, /Service status/);

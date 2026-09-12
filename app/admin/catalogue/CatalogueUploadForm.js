@@ -127,6 +127,7 @@ export default function CatalogueUploadForm({ genres }) {
           <label style={styles.checkLabel}><input type="checkbox" name="permittedUses" value="ONLINE_RADIO" defaultChecked />Online Radio</label>
           <label style={styles.checkLabel}><input type="checkbox" name="permittedUses" value="HEALTH_RADIO" />Health Radio</label>
           <label style={styles.checkLabel}><input type="checkbox" name="permittedUses" value="FAITH_RADIO" />Faith Radio</label>
+          <label style={styles.checkLabel}><input type="checkbox" name="permittedUses" value="ORGANISATIONS_RADIO" />Ruvanas Organisations</label>
         </div>
         <p style={styles.hint}>Select only the Ruvanas services covered by the music licence.</p>
       </fieldset>

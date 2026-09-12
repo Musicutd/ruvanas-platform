@@ -9,7 +9,8 @@ const active = {
   schoolRadioEnabled: false,
   onlineRadioEnabled: false,
   healthRadioEnabled: false,
-  faithRadioEnabled: false
+  faithRadioEnabled: false,
+  organisationsEnabled: false
 };
 
 test("single-product subscribers land directly in their owned product", () => {
@@ -18,6 +19,7 @@ test("single-product subscribers land directly in their owned product", () => {
   assert.equal(loginLandingRoute({ role: "VIEWER", hasMembership: true, entitlements: { ...active, onlineRadioEnabled: true } }), "/dashboard/radio");
   assert.equal(loginLandingRoute({ role: "OWNER", hasMembership: true, entitlements: { ...active, healthRadioEnabled: true } }), "/dashboard/health");
   assert.equal(loginLandingRoute({ role: "OWNER", hasMembership: true, entitlements: { ...active, faithRadioEnabled: true } }), "/dashboard/faith");
+  assert.equal(loginLandingRoute({ role: "OWNER", hasMembership: true, entitlements: { ...active, organisationsEnabled: true } }), "/dashboard/organisations");
 });
 
 test("multi-product subscribers retain the shared product chooser", () => {

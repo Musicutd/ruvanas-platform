@@ -35,10 +35,11 @@ test("final acceptance is restricted to a local application and disposable datab
   }), /RUN_DATABASE_TESTS=1/);
 });
 
-test("final acceptance requires product registration, three-product integration, regression, capacity, and scale evidence", () => {
+test("final acceptance requires product registration, integration, Organisations, regression, capacity, and scale evidence", () => {
   assert.deepEqual(FINAL_PLATFORM_ACCEPTANCE_STEPS.map((step) => step.id), [
     "product-registration-policy",
     "three-product-integration",
+    "organisations-release-policy",
     "release-regression",
     "capacity-baseline",
     "enterprise-scale-policy"

@@ -11,6 +11,7 @@ function ProductIcon({ product }) {
   if (product === "ONLINE") return <span aria-hidden="true">O</span>;
   if (product === "HEALTH") return <span aria-hidden="true">H</span>;
   if (product === "FAITH") return <span aria-hidden="true">F</span>;
+  if (product === "ORGANISATIONS") return <span aria-hidden="true">G</span>;
   return <span aria-hidden="true">R</span>;
 }
 
@@ -22,7 +23,7 @@ export default function RegisterJourney({ products, initialSelection }) {
   const [product, setProduct] = useState(initialSelection.product || "");
   const [tier, setTier] = useState(initialSelection.tier || "");
   const [selectedFromPricing, setSelectedFromPricing] = useState(initialSelection.selectedFromPricing);
-  const [form, setForm] = useState({ name: "", organisationName: "", email: "", password: "" });
+  const [form, setForm] = useState({ name: "", organisationName: "", email: "", password: "", organisationTemplate: "GENERAL" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -101,7 +102,7 @@ export default function RegisterJourney({ products, initialSelection }) {
           <p>Set up the right workspace for your organisation. Your service and plan determine the tools you receive.</p>
           <div className={styles.promiseList}>
             <span><strong>One secure account</strong> for your organisation and team</span>
-            <span><strong>Product-aware setup</strong> for Retail, School or Online Radio</span>
+            <span><strong>Product-aware setup</strong> for all six specialised Ruvanas services</span>
             <span><strong>Clear plan authority</strong> with no hidden product access</span>
           </div>
         </aside>
@@ -144,6 +145,7 @@ export default function RegisterJourney({ products, initialSelection }) {
                 <label>Organisation name<input type="text" name="organisationName" value={form.organisationName} onChange={updateField} autoComplete="organization" maxLength="160" required /></label>
                 <label>Email address<input type="email" name="email" value={form.email} onChange={updateField} autoComplete="email" maxLength="320" required /></label>
                 <label>Password<input type="password" name="password" value={form.password} onChange={updateField} autoComplete="new-password" minLength="8" maxLength="200" aria-describedby="password-help" required /><small id="password-help">Use at least 8 characters.</small></label>
+                {product === "ORGANISATIONS" ? <label>Organisation type<select name="organisationTemplate" value={form.organisationTemplate} onChange={updateField}><option value="GENERAL">General organisation</option><option value="NGO_CHARITY">NGO or charity</option><option value="SPORTS_CLUB">Sports club</option><option value="ASSOCIATION">Association</option><option value="COMMUNITY_CULTURAL">Community or cultural organisation</option><option value="POLITICAL_CIVIC">Political or civic organisation</option><option value="FEDERATION_NETWORK">Federation or network</option></select><small>This changes helpful labels only—not product authority.</small></label> : null}
               </div>
             </div>
           ) : null}

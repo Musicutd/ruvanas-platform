@@ -16,8 +16,9 @@ export default function ProductChannelSetupClient({ product, initialStations = [
     setStations((current) => [...current, payload.station]); event.currentTarget.reset(); setMessage("Channel created and ready for programming.");
   }
   const health = product === "HEALTH";
+  const heading = health ? "Health channels" : product === "ORGANISATIONS" ? "Organisation channels" : "Faith channels";
   return <div className={styles.grid}>
-    <section className={styles.card}><p className={styles.eyebrow}>EXISTING CHANNELS</p><h2>{health ? "Health channels" : "Faith channels"}</h2>
+    <section className={styles.card}><p className={styles.eyebrow}>EXISTING CHANNELS</p><h2>{heading}</h2>
       {stations.length ? <ul>{stations.map((station) => <li key={station.id}><strong>{station.name}</strong><span>{station.audiencePolicy.toLowerCase()} listening · {station.status.toLowerCase()}</span><a href={`/stations/${station.id}`}>Manage channel, player and listening page →</a></li>)}</ul> : <p>No channel yet. Create the first one beside this list.</p>}
     </section>
     <form className={styles.card} onSubmit={submit}><p className={styles.eyebrow}>GUIDED SETUP</p><h2>Create a channel</h2>

@@ -71,7 +71,7 @@ export default function HowItWorksClient({ organisationName, membershipRole, pub
 
       <section className={styles.startHere} aria-label="How to use this page">
         <strong>Start here</strong>
-        <span>1. Choose Retail, School, Radio, Health or Faith.</span>
+        <span>1. Choose Retail, School, Radio, Health, Faith or Organisations.</span>
         <span>2. Click a titled box to see the explanation.</span>
         <span>3. Use the links inside each box to open the correct workspace.</span>
       </section>

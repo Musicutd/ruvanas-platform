@@ -8,7 +8,8 @@ const USE_LABELS = {
   SCHOOL_RADIO: "School Radio",
   ONLINE_RADIO: "Online Radio",
   HEALTH_RADIO: "Health Radio",
-  FAITH_RADIO: "Faith Radio"
+  FAITH_RADIO: "Faith Radio",
+  ORGANISATIONS_RADIO: "Ruvanas Organisations"
 };
 
 const STATUS_LABELS = {

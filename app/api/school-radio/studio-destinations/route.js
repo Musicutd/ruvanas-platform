@@ -17,7 +17,7 @@ export const dynamic = "force-dynamic";
 
 const requestSchema = z.object({
   renderId: z.string().cuid(),
-  destination: z.enum(["RETAIL_PROMOTION", "SCHOOL_EPISODE", "ONLINE_PODCAST", "HEALTH_ANNOUNCEMENT", "HEALTH_PODCAST", "FAITH_SERMON", "FAITH_ANNOUNCEMENT", "FAITH_PODCAST"])
+  destination: z.enum(["RETAIL_PROMOTION", "SCHOOL_EPISODE", "ONLINE_PODCAST", "HEALTH_ANNOUNCEMENT", "HEALTH_PODCAST", "FAITH_SERMON", "FAITH_ANNOUNCEMENT", "FAITH_PODCAST", "ORGANISATIONS_ANNOUNCEMENT", "ORGANISATIONS_PODCAST", "ORGANISATIONS_EVENT"])
 });
 
 async function requireActiveStudio() {
