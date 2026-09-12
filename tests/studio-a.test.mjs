@@ -55,8 +55,8 @@ test("Studio A integrates one accessible workspace without duplicating protected
   assert.match(audioLab, /project\.type !== "MULTITRACK"/);
   assert.match(waveform, /project\.type !== "MULTITRACK"/);
   assert.match(multitrack, /trackLimit/);
-  assert.match(audioRoute, /requireActiveSchoolRadio/);
-  assert.match(multitrackRoute, /requireActiveSchoolRadio/);
+  assert.match(audioRoute, /requireActiveStudio/);
+  assert.match(multitrackRoute, /requireActiveStudio/);
   assert.match(styles, /@media \(max-width: 560px\)/);
   assert.doesNotMatch(workspace, /\/api\/studio\/audio|\/api\/studio\/projects/);
 });

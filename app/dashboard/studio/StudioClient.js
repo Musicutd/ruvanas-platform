@@ -36,7 +36,7 @@ function hasCurrentMasterHandoff(order) {
   return Boolean(order.promoAsset?.versions.some((version) => version.sourceReference === `production-order:${order.id}:file:${finalMaster.id}`));
 }
 
-export default function StudioClient() {
+export default function StudioClient({ embedded = false }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -181,10 +181,11 @@ export default function StudioClient() {
     return items.length ? <div style={styles.actions}>{items.map(([action, label, style]) => <button key={action} type="button" disabled={working} style={style} onClick={() => changeStatus(order, action)}>{label}</button>)}</div> : null;
   }
 
-  if (!data) return <main style={styles.page}><a href="/dashboard" style={styles.back}>← Dashboard</a><p>{error || "Loading Ruvanas Studio…"}</p></main>;
+  if (!data) return <section style={embedded ? styles.embedded : styles.page}><p>{error || "Loading Ruvanas Studio…"}</p></section>;
 
-  return <main style={styles.page}>
-    <a href="/dashboard" style={styles.back}>← Dashboard</a>
+  const Root = embedded ? "section" : "main";
+  return <Root style={embedded ? styles.embedded : styles.page}>
+    {!embedded ? <a href="/dashboard" style={styles.back}>← Dashboard</a> : null}
     <header style={styles.header}><div><p style={styles.eyebrow}>RUVANAS STUDIO · RETAIL PRODUCTION</p><h1 style={styles.title}>{data.organisation.name}</h1><p style={styles.subtitle}>Submit a clear audio-production brief and follow its controlled journey from request to delivery.</p></div><span style={styles.privateLabel}>ORGANISATION PRIVATE</span></header>
     {error ? <div style={styles.error}>{error}</div> : null}{notice ? <div style={styles.notice}>{notice}</div> : null}
 
@@ -280,10 +281,11 @@ export default function StudioClient() {
       </article>)}</div>}
     </section>
     <p style={styles.footerNote}>Studio files remain private and never expose storage addresses. Credit entries are immutable, and Studio masters must pass the existing promotional review before Campaign Builder can schedule them.</p>
-  </main>;
+  </Root>;
 }
 
 const styles = {
+  embedded: { padding: "24px 0 72px" },
   page: { minHeight: "100vh", background: "var(--rv-page-bg)", color: "var(--rv-text)", padding: "36px max(20px, calc((100vw - 1160px)/2)) 72px", fontFamily: "Arial, sans-serif" },
   back: { color: "#f4b942", textDecoration: "none", fontWeight: 800 }, header: { display: "flex", justifyContent: "space-between", gap: 20, alignItems: "flex-start", margin: "34px 0 24px" },
   eyebrow: { color: "#f4b942", fontSize: 12, fontWeight: 900, letterSpacing: 1.2, margin: "0 0 8px" }, title: { fontSize: "clamp(34px,5vw,52px)", margin: 0 },

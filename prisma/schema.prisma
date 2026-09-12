@@ -264,6 +264,63 @@ enum LicensedMusicCatalogueLevel {
   PREMIUM
 }
 
+enum StudioPlayoutMode {
+  AUTO
+  ASSIST
+  MANUAL
+}
+
+enum StudioPlayoutStatus {
+  ACTIVE
+  FALLBACK
+  ENDED
+}
+
+enum StudioQueueArea {
+  PREPARE
+  LIVE
+  PLAYED
+}
+
+enum StudioQueueItemStatus {
+  READY
+  ON_AIR
+  PLAYED
+  SKIPPED
+  BLOCKED
+}
+
+enum StudioProgrammeRole {
+  INTRO
+  OUTRO
+  JINGLE
+  BED
+  PROMO
+  PRERECORDED_SEGMENT
+  INTERVIEW
+  RECURRING_FEATURE
+}
+
+enum StudioBroadcastDestinationType {
+  RUVANAS_MANAGED
+  ICECAST
+  SHOUTCAST
+}
+
+enum StudioBroadcastConnectionState {
+  STANDBY
+  CONNECTED
+  RECONNECTING
+  FAILED
+  DISABLED
+}
+
+enum StudioBroadcastSessionStatus {
+  ACTIVE
+  STOPPING
+  ENDED
+}
+
 enum OrganisationMediaTemplate {
   NGO_CHARITY
   SPORTS_CLUB
@@ -2169,33 +2226,34 @@ model OrganisationBranchAssignment {
 }
 
 model Plan {
-  id                            String                      @id @default(cuid())
-  name                          String                      @unique
-  code                          String                      @unique
-  publicSlug                    String?                     @unique
-  productFamily                 PlanProductFamily?
-  tierNumber                    Int?
-  publiclyAvailable             Boolean                     @default(false)
-  monthlyPriceCents             Int
-  stationLimit                  Int                         @default(1)
-  storageLimitGb                Int
-  listenerLimit                 Int
-  maxBitrateKbps                Int
-  includesRuvanasCatalogue      Boolean                     @default(false)
-  licensedMusicCatalogueLevel   LicensedMusicCatalogueLevel @default(NONE)
-  promoUploadEnabled            Boolean                     @default(true)
-  retailRadioEnabled            Boolean                     @default(false)
-  schoolRadioEnabled            Boolean                     @default(false)
-  onlineRadioEnabled            Boolean                     @default(false)
-  healthRadioEnabled            Boolean                     @default(false)
-  faithRadioEnabled             Boolean                     @default(false)
-  organisationsEnabled          Boolean                     @default(false)
-  schoolPublicPublishingEnabled Boolean                     @default(false)
-  retailMediaEnabled            Boolean                     @default(false)
-  digitalSignageEnabled         Boolean                     @default(false)
-  active                        Boolean                     @default(true)
-  createdAt                     DateTime                    @default(now())
-  updatedAt                     DateTime                    @updatedAt
+  id                             String                      @id @default(cuid())
+  name                           String                      @unique
+  code                           String                      @unique
+  publicSlug                     String?                     @unique
+  productFamily                  PlanProductFamily?
+  tierNumber                     Int?
+  publiclyAvailable              Boolean                     @default(false)
+  monthlyPriceCents              Int
+  stationLimit                   Int                         @default(1)
+  storageLimitGb                 Int
+  listenerLimit                  Int
+  maxBitrateKbps                 Int
+  studioExternalDestinationLimit Int?
+  includesRuvanasCatalogue       Boolean                     @default(false)
+  licensedMusicCatalogueLevel    LicensedMusicCatalogueLevel @default(NONE)
+  promoUploadEnabled             Boolean                     @default(true)
+  retailRadioEnabled             Boolean                     @default(false)
+  schoolRadioEnabled             Boolean                     @default(false)
+  onlineRadioEnabled             Boolean                     @default(false)
+  healthRadioEnabled             Boolean                     @default(false)
+  faithRadioEnabled              Boolean                     @default(false)
+  organisationsEnabled           Boolean                     @default(false)
+  schoolPublicPublishingEnabled  Boolean                     @default(false)
+  retailMediaEnabled             Boolean                     @default(false)
+  digitalSignageEnabled          Boolean                     @default(false)
+  active                         Boolean                     @default(true)
+  createdAt                      DateTime                    @default(now())
+  updatedAt                      DateTime                    @updatedAt
 
   subscriptions            Subscription[]
   complimentaryAccessCodes ComplimentaryAccessCode[]
@@ -6990,4 +7048,206 @@ model ListenerAnalyticsAggregationCursor {
   updatedAt           DateTime  @updatedAt
 
   organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+}
+
+model StudioPlayoutSession {
+  id               String              @id @default(cuid())
+  organisationId   String
+  channelId        String
+  productFamily    PlanProductFamily
+  title            String
+  mode             StudioPlayoutMode   @default(AUTO)
+  status           StudioPlayoutStatus @default(ACTIVE)
+  revision         Int                 @default(0)
+  currentItemId    String?
+  fallbackAutoDjId String?
+  outputHealth     String              @default("FALLBACK_READY")
+  lastCommandAt    DateTime?
+  endedAt          DateTime?
+  endedReason      String?
+  createdByUserId  String
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  items    StudioPlayoutItem[]
+  commands StudioPlayoutCommand[]
+
+  @@index([organisationId, status, updatedAt])
+  @@index([channelId, status])
+}
+
+model StudioPlayoutItem {
+  id                String                @id @default(cuid())
+  sessionId         String
+  organisationId    String
+  mediaAssetId      String
+  area              StudioQueueArea       @default(PREPARE)
+  status            StudioQueueItemStatus @default(READY)
+  position          Int                   @default(0)
+  title             String
+  artistOrProgramme String?
+  itemType          String                @default("AUDIO")
+  durationMs        Int?
+  cueInMs           Int                   @default(0)
+  cueOutMs          Int?
+  fadeInMs          Int                   @default(0)
+  fadeOutMs         Int                   @default(0)
+  gainDb            Float                 @default(0)
+  locked            Boolean               @default(false)
+  rightsReady       Boolean               @default(false)
+  readinessReason   String?
+  estimatedStartAt  DateTime?
+  startedAt         DateTime?
+  endedAt           DateTime?
+  createdByUserId   String
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  session StudioPlayoutSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, area, position])
+  @@index([organisationId, status])
+  @@index([mediaAssetId])
+}
+
+model StudioPlayoutCommand {
+  id               String   @id @default(cuid())
+  sessionId        String
+  organisationId   String
+  idempotencyKey   String
+  action           String
+  expectedRevision Int
+  result           Json?
+  actorUserId      String
+  createdAt        DateTime @default(now())
+
+  session StudioPlayoutSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([organisationId, idempotencyKey])
+  @@index([sessionId, createdAt])
+}
+
+model StudioProgrammePack {
+  id              String            @id @default(cuid())
+  organisationId  String
+  name            String
+  description     String?
+  productFamily   PlanProductFamily
+  createdByUserId String
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  items StudioProgrammePackItem[]
+
+  @@unique([organisationId, name])
+  @@index([organisationId, updatedAt])
+}
+
+model StudioProgrammePackItem {
+  id             String              @id @default(cuid())
+  packId         String
+  organisationId String
+  mediaAssetId   String
+  role           StudioProgrammeRole
+  position       Int
+  label          String?
+  createdAt      DateTime            @default(now())
+
+  pack StudioProgrammePack @relation(fields: [packId], references: [id], onDelete: Cascade)
+
+  @@unique([packId, position])
+  @@index([organisationId, mediaAssetId])
+}
+
+model StudioBroadcastDestination {
+  id                  String                         @id @default(cuid())
+  organisationId      String
+  stationId           String?
+  name                String
+  type                StudioBroadcastDestinationType
+  host                String?
+  port                Int?
+  mountOrService      String?
+  codec               AudioCodec                     @default(MP3)
+  bitrateKbps         Int?
+  credentialEncrypted String?
+  enabled             Boolean                        @default(false)
+  primaryGroup        String?
+  isBackup            Boolean                        @default(false)
+  connectionState     StudioBroadcastConnectionState @default(STANDBY)
+  reconnectAttempt    Int                            @default(0)
+  nextReconnectAt     DateTime?
+  lastConnectedAt     DateTime?
+  lastDisconnectedAt  DateTime?
+  lastSafeError       String?
+  listenerCount       Int?
+  listenerTelemetryAt DateTime?
+  createdByUserId     String
+  createdAt           DateTime                       @default(now())
+  updatedAt           DateTime                       @updatedAt
+
+  sessionLinks StudioBroadcastSessionDestination[]
+
+  @@unique([organisationId, name])
+  @@index([organisationId, enabled, connectionState])
+  @@index([stationId])
+}
+
+model StudioBroadcastSession {
+  id                     String                       @id @default(cuid())
+  organisationId         String
+  playoutSessionId       String
+  status                 StudioBroadcastSessionStatus @default(ACTIVE)
+  revision               Int                          @default(0)
+  automaticMetadata      String?
+  metadataOverride       String?
+  metadataOverrideItemId String?
+  createdByUserId        String
+  startedAt              DateTime                     @default(now())
+  endedAt                DateTime?
+  endedReason            String?
+  createdAt              DateTime                     @default(now())
+  updatedAt              DateTime                     @updatedAt
+
+  destinations StudioBroadcastSessionDestination[]
+  commands     StudioBroadcastCommand[]
+
+  @@index([organisationId, status, updatedAt])
+  @@index([playoutSessionId])
+}
+
+model StudioBroadcastCommand {
+  id               String   @id @default(cuid())
+  organisationId   String
+  sessionId        String?
+  idempotencyKey   String
+  action           String
+  expectedRevision Int?
+  result           Json?
+  actorUserId      String
+  createdAt        DateTime @default(now())
+
+  session StudioBroadcastSession? @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([organisationId, idempotencyKey])
+  @@index([sessionId, createdAt])
+}
+
+model StudioBroadcastSessionDestination {
+  sessionId          String
+  destinationId      String
+  state              StudioBroadcastConnectionState @default(STANDBY)
+  reconnectAttempt   Int                            @default(0)
+  nextReconnectAt    DateTime?
+  lastConnectedAt    DateTime?
+  lastDisconnectedAt DateTime?
+  lastSafeError      String?
+  createdAt          DateTime                       @default(now())
+  updatedAt          DateTime                       @updatedAt
+
+  session     StudioBroadcastSession     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  destination StudioBroadcastDestination @relation(fields: [destinationId], references: [id], onDelete: Restrict)
+
+  @@id([sessionId, destinationId])
+  @@index([destinationId, state])
 }

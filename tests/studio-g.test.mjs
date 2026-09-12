@@ -117,7 +117,7 @@ test("Studio G keeps source, approval, permission, tenant and product gates in p
     readFile(new URL("../app/dashboard/school-radio/StudioWorkspaceClient.js", import.meta.url), "utf8")
   ]);
   for (const route of [audioLab, upload, multitrack]) {
-    assert.match(route, /requireActiveSchoolRadio/);
+    assert.match(route, /requireActiveStudio/);
     assert.match(route, /organisationId/);
   }
   assert.match(destinations, /requireActiveStudio/);

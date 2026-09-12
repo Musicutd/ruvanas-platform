@@ -37,7 +37,7 @@ test("Studio B connects recording and precision editing to protected existing sy
   assert.match(waveform, /Paste at cursor/);
   assert.match(waveform, /Add named region/);
   assert.match(waveform, /Edit history:/);
-  assert.match(completeRoute, /requireActiveSchoolRadio/);
+  assert.match(completeRoute, /requireActiveStudio/);
   assert.match(completeRoute, /invalidateApprovedAudioOutputs/);
   assert.match(completeRoute, /STUDIO_RECORDING_PLACED_ON_TRACK/);
   assert.match(multitrackRoute, /invalidateApprovedAudioOutputs/);

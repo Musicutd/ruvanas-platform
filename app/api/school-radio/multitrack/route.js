@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { ORGANISATION_CONTENT_ROLES, ORGANISATION_MANAGER_ROLES, isOrganisationRoleAllowed } from "@/lib/permissions.mjs";
-import { requireActiveSchoolRadio } from "@/lib/school-radio-access";
+import { requireActiveStudio } from "@/lib/studio-access";
 import { defaultMultitrackState, studioMultitrackTrackLimit } from "@/lib/multitrack-studio.mjs";
 
 export const dynamic = "force-dynamic";
@@ -22,14 +22,14 @@ async function validateLinks(organisationId, values) {
     values.episodeId ? prisma.schoolEpisode.findFirst({ where: { id: values.episodeId, organisationId, status: { in: ["DRAFT", "CHANGES_REQUESTED"] } }, select: { id: true, programmeId: true } }) : null,
     values.studentGroupId ? prisma.studentGroup.findFirst({ where: { id: values.studentGroupId, organisationId }, select: { id: true } }) : null
   ]);
-  if (values.programmeId && !programme) throw new Error("Choose an active programme from this school.");
-  if (values.episodeId && !episode) throw new Error("Choose a draft or returned episode from this school.");
-  if (values.studentGroupId && !group) throw new Error("Choose a student group from this school.");
+  if (values.programmeId && !programme) throw new Error("Choose an active programme from this organisation.");
+  if (values.episodeId && !episode) throw new Error("Choose a draft or returned episode from this organisation.");
+  if (values.studentGroupId && !group) throw new Error("Choose a student group from this organisation.");
   if (episode && values.programmeId && episode.programmeId !== values.programmeId) throw new Error("The episode does not belong to the selected programme.");
 }
 
 export async function GET() {
-  const access = await requireActiveSchoolRadio(ORGANISATION_CONTENT_ROLES);
+  const access = await requireActiveStudio(ORGANISATION_CONTENT_ROLES);
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const organisationId = access.organisation.id;
   const rightsDate = new Date();
@@ -39,7 +39,9 @@ export async function GET() {
     prisma.schoolEpisode.findMany({ where: { organisationId, status: { in: ["DRAFT", "CHANGES_REQUESTED"] } }, orderBy: { createdAt: "desc" }, select: { id: true, title: true, programmeId: true } }),
     prisma.studentGroup.findMany({ where: { organisationId }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
     prisma.audioTake.findMany({ where: { organisationId, status: "READY", mediaAsset: { status: "READY" } }, orderBy: { createdAt: "desc" }, take: 100, select: { id: true, durationMs: true, mediaAsset: { select: mediaSelect } } }),
-    prisma.track.findMany({ where: { status: "READY", OR: [{ licenceExpiresAt: null }, { licenceExpiresAt: { gte: rightsDate } }], mediaAsset: { organisationId: null, libraryType: "RUVANAS_CATALOGUE", status: "READY" } }, orderBy: [{ artist: "asc" }, { title: "asc" }], take: 250, select: { id: true, title: true, artist: true, mediaAsset: { select: mediaSelect } } }),
+    access.entitlements.licensedMusicCatalogueEnabled
+      ? prisma.track.findMany({ where: { status: "READY", OR: [{ licenceExpiresAt: null }, { licenceExpiresAt: { gte: rightsDate } }], mediaAsset: { organisationId: null, libraryType: "RUVANAS_CATALOGUE", status: "READY" } }, orderBy: [{ artist: "asc" }, { title: "asc" }], take: 250, select: { id: true, title: true, artist: true, mediaAsset: { select: mediaSelect } } })
+      : Promise.resolve([]),
     prisma.mediaAsset.findMany({ where: { organisationId, status: "READY", mimeType: { startsWith: "audio/" } }, orderBy: { createdAt: "desc" }, take: 150, select: mediaSelect })
   ]);
   const sources = new Map();
@@ -49,13 +51,15 @@ export async function GET() {
   return NextResponse.json({
     projects, programmes, episodes, groups, sources: [...sources.values()],
     canApprove: isOrganisationRoleAllowed(access.membership.role, ORGANISATION_MANAGER_ROLES),
+    studioLevel: access.entitlements.studioLevel,
+    studioProEnabled: access.entitlements.studioProEnabled,
     trackLimit: studioMultitrackTrackLimit(access.entitlements),
     planName: access.entitlements.planName
   });
 }
 
 export async function POST(request) {
-  const access = await requireActiveSchoolRadio(ORGANISATION_CONTENT_ROLES);
+  const access = await requireActiveStudio(ORGANISATION_CONTENT_ROLES);
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const parsed = createSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Enter a multitrack project title and check its optional programme details." }, { status: 400 });

@@ -11,7 +11,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getR2Storage } from "@/lib/r2";
 import { ORGANISATION_CONTENT_ROLES } from "@/lib/permissions.mjs";
-import { requireActiveSchoolRadio } from "@/lib/school-radio-access";
+import { requireActiveStudio } from "@/lib/studio-access";
 import { normalizeEditDecision, validateAudioLabUpload } from "@/lib/audio-lab.mjs";
 import { validateAudioUpload } from "@/lib/audio-validation.mjs";
 import { buildPromoProcessingJobs } from "@/lib/promo-versioning.mjs";
@@ -78,7 +78,7 @@ async function bodyToBuffer(body) {
 }
 
 export async function POST(request, { params }) {
-  const access = await requireActiveSchoolRadio(ORGANISATION_CONTENT_ROLES);
+  const access = await requireActiveStudio(ORGANISATION_CONTENT_ROLES);
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const parsed = schema.safeParse(await request.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: "The recording details are invalid." }, { status: 400 });

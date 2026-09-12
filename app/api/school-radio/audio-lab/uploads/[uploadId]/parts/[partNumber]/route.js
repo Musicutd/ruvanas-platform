@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getR2Storage } from "@/lib/r2";
 import { ORGANISATION_CONTENT_ROLES } from "@/lib/permissions.mjs";
-import { requireActiveSchoolRadio } from "@/lib/school-radio-access";
+import { requireActiveStudio } from "@/lib/studio-access";
 import { validateUploadPart } from "@/lib/audio-lab.mjs";
 
 export const dynamic = "force-dynamic";
@@ -30,7 +30,7 @@ async function readBoundedBody(request, maximumBytes) {
 }
 
 export async function PUT(request, { params }) {
-  const access = await requireActiveSchoolRadio(ORGANISATION_CONTENT_ROLES);
+  const access = await requireActiveStudio(ORGANISATION_CONTENT_ROLES);
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const session = await prisma.schoolAudioUploadSession.findFirst({ where: { id: String(params.uploadId || ""), organisationId: access.organisation.id, createdByUserId: access.user.id, status: { in: ["INITIATED", "UPLOADING"] }, expiresAt: { gt: new Date() } } });
   if (!session) return NextResponse.json({ error: "The upload session has expired or is unavailable." }, { status: 404 });

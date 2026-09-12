@@ -9,6 +9,8 @@ import { scanStationStreamHealth } from "../lib/stream-source-health-service.js"
 import { scanExternalLiveHealth } from "../lib/external-live-service.js";
 import { scanLiveFailoverPolicies } from "../lib/live-failover-service.js";
 import { scanStaleBrowserStudioSessions } from "../lib/browser-live-studio-service.js";
+import { refreshStudioBroadcastMetadata, scanStudioBroadcastConnections } from "../lib/studio-broadcast-service.js";
+import { reconcileStudioProEntitlements } from "../lib/studio-entitlement-service.js";
 import { applyListenerAnalyticsRetention, refreshPendingListenerAnalytics } from "../lib/listener-analytics-service.js";
 import { expirePublicListenerLeases } from "../lib/public-player.mjs";
 import { deploymentIdentity, safeOperationalErrorCode, structuredServiceLog } from "../lib/operational-observability.mjs";
@@ -43,6 +45,12 @@ while (!stopping) {
     if (failover.scanned > 0) writeLog(failover.onScheduledFallback > 0 ? "warn" : "info", "live_failover_policies_scanned", failover);
     const browserStudios = await scanStaleBrowserStudioSessions(prisma);
     if (browserStudios.scanned > 0) writeLog(browserStudios.fallback > 0 ? "warn" : "info", "browser_live_studios_scanned", browserStudios);
+    const studioEntitlements = await reconcileStudioProEntitlements(prisma);
+    if (studioEntitlements.playoutFallbacks > 0 || studioEntitlements.broadcastsEnded > 0) writeLog("warn", "studio_pro_entitlements_reconciled", studioEntitlements);
+    const studioBroadcast = await scanStudioBroadcastConnections(prisma);
+    if (studioBroadcast.scanned > 0) writeLog(studioBroadcast.reconnecting > 0 ? "warn" : "info", "studio_broadcast_destinations_scanned", studioBroadcast);
+    const studioMetadata = await refreshStudioBroadcastMetadata(prisma);
+    if (studioMetadata.updated > 0) writeLog("info", "studio_broadcast_metadata_refreshed", studioMetadata);
     const listenerAnalytics = await refreshPendingListenerAnalytics(prisma);
     if (listenerAnalytics.processed > 0) writeLog("info", "listener_analytics_aggregated", listenerAnalytics);
     const publicListeners = await expirePublicListenerLeases(prisma);
