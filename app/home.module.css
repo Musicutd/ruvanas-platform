@@ -335,11 +335,22 @@
 .storySection { width: min(1200px, calc(100% - 40px)); margin: 0 auto; display: grid; grid-template-columns: .5fr 1.5fr; gap: 70px; padding: 125px 0; }
 .storyLabel { display: flex; align-items: flex-start; gap: 17px; padding-top: 8px; color: #7b8794; font-size: 10px; font-weight: 900; letter-spacing: .15em; text-transform: uppercase; }
 .storyLabel i { flex: 1; height: 1px; margin-top: 6px; background: #cfd5dc; }
-.storyContent { max-width: 790px; }
+.storyContent { max-width: 900px; }
 .storyKicker { margin: 0 0 22px; color: var(--gold-deep); font-size: 11px; font-weight: 900; letter-spacing: .16em; text-transform: uppercase; }
-.storyContent > p:not(.storyKicker) { max-width: 700px; margin: 27px 0 0; color: var(--slate); font-size: 17px; line-height: 1.75; }
-.placeholderNote { margin-top: 36px; padding: 19px 22px; border-left: 3px solid var(--gold); background: #eee9dc; color: #616b76; font-size: 12px; }
-.placeholderNote span { display: block; margin-bottom: 5px; color: var(--ink); font-weight: 900; text-transform: uppercase; }
+.storyIntro { max-width: 760px; margin-top: 35px; }
+.storyIntro p, .storyChapter > div > p { margin: 0 0 18px; color: var(--slate); font-size: 16px; line-height: 1.78; }
+.storyIntro strong, .storyChapter strong { color: var(--ink); }
+.storyChapter { display: grid; grid-template-columns: 48px 1fr; gap: 22px; margin-top: 72px; padding-top: 34px; border-top: 1px solid #d5d9dd; }
+.storyChapterNumber { margin: 3px 0 0; color: var(--gold-deep); font-size: 11px; font-weight: 900; letter-spacing: .15em; }
+.storyChapter h3 { max-width: 720px; margin: 0 0 22px; font-family: Georgia, "Times New Roman", serif; color: var(--ink); font-size: clamp(31px, 4vw, 43px); font-weight: 500; letter-spacing: -.035em; line-height: 1.08; }
+.storyProducts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 30px 0; }
+.storyProducts article { min-height: 180px; padding: 23px; border: 1px solid #d4d9df; border-radius: 12px; background: rgba(255,255,255,.55); }
+.storyProducts article:last-child { grid-column: 1 / -1; min-height: 0; }
+.storyProducts span { display: block; margin-bottom: 12px; color: var(--gold-deep); font-size: 10px; font-weight: 900; letter-spacing: .15em; text-transform: uppercase; }
+.storyProducts p { margin: 0; color: var(--slate); font-size: 13px; line-height: 1.68; }
+.storyPrinciple { margin-top: 28px !important; padding: 22px 25px; border-left: 3px solid var(--gold); background: #eee9dc; }
+.storyClosing { margin-bottom: 5px; padding-bottom: 34px; border-bottom: 1px solid #d5d9dd; }
+.storyClosing blockquote { max-width: 720px; margin: 25px 0; padding: 0 0 0 24px; border-left: 3px solid var(--gold); font-family: Georgia, "Times New Roman", serif; color: var(--ink); font-size: clamp(22px, 3vw, 30px); line-height: 1.35; }
 
 .finalCta { width: min(1200px, calc(100% - 40px)); min-height: 390px; margin: 0 auto 90px; display: grid; grid-template-columns: 1.3fr .7fr; gap: 50px; align-items: center; padding: 65px 70px; border-radius: 22px; background: radial-gradient(circle at 88% 15%, rgba(244,185,66,.19), transparent 28%), var(--ink); color: #fff; }
 .finalCta h2 { max-width: 760px; }
@@ -392,6 +403,8 @@
   .familyHeader > p { grid-column: 2; }
   .priceCard:last-child { grid-column: 1 / -1; }
   .storySection { grid-template-columns: 1fr; gap: 30px; }
+  .storyProducts { grid-template-columns: 1fr; }
+  .storyProducts article:last-child { grid-column: auto; }
   .finalCta { grid-template-columns: 1fr; }
   .footerTop { grid-template-columns: 1fr; gap: 20px; padding: 55px 0; }
   .footerTop nav { justify-content: flex-start; flex-wrap: wrap; }
@@ -441,6 +454,8 @@
   .enterprisePlan { grid-template-columns: 1fr; gap: 22px; padding: 31px 25px; }
   .enterprisePlan > a { grid-column: auto; justify-self: stretch; }
   .storySection { padding: 85px 0; }
+  .storyChapter { grid-template-columns: 1fr; gap: 12px; margin-top: 55px; }
+  .storyProducts article { min-height: 0; }
   .finalCta { min-height: 0; margin-bottom: 40px; padding: 48px 25px; }
   .footerBottom { min-height: 95px; flex-direction: column; justify-content: center; gap: 10px; text-align: center; }
 }
