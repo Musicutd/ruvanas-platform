@@ -15,7 +15,7 @@ export default async function PublicPlayerSettingsPage({ params }) {
   if (!station) notFound();
   const productKey = subscriberProductForStationFamily(station.productFamily);
   await requireSubscriberProduct(productKey);
-  const productLabel = productKey === "HEALTH" ? "RUVANAS HEALTH" : productKey === "FAITH" ? "RUVANAS FAITH" : "ONLINE RADIO";
+  const productLabel = productKey === "HEALTH" ? "RUVANAS HEALTH" : productKey === "FAITH" ? "RUVANAS FAITH" : productKey === "ORGANISATIONS" ? "RUVANAS ORGANISATIONS" : "ONLINE RADIO";
   const canManage = ["OWNER", "MANAGER"].includes(context.membership.role);
   return <main style={styles.page}><section style={styles.shell}>
     <a href={`/stations/${station.id}`} style={styles.back}>← Back to station</a>

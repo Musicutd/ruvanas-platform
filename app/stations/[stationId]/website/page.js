@@ -25,7 +25,7 @@ export default async function StationWebsiteSettingsPage({ params }) {
   if (!station) notFound();
   const productKey = subscriberProductForStationFamily(station.productFamily);
   await requireSubscriberProduct(productKey);
-  const productLabel = productKey === "HEALTH" ? "RUVANAS HEALTH" : productKey === "FAITH" ? "RUVANAS FAITH" : "ONLINE RADIO";
+  const productLabel = productKey === "HEALTH" ? "RUVANAS HEALTH" : productKey === "FAITH" ? "RUVANAS FAITH" : productKey === "ORGANISATIONS" ? "RUVANAS ORGANISATIONS" : "ONLINE RADIO";
   const canManage = ["OWNER", "MANAGER"].includes(context.membership.role);
   const safeStation = { ...station, websiteDomains: station.websiteDomains.map((domain) => ({ ...domain, dnsName: stationDomainDnsName(domain.hostname), dnsValue: stationDomainDnsValue(domain.verificationToken) })) };
   return <main style={styles.page}><section style={styles.shell}>

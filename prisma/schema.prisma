@@ -253,6 +253,7 @@ enum PlanProductFamily {
   ONLINE
   HEALTH
   FAITH
+  ORGANISATIONS
   MULTI
 }
 
@@ -261,6 +262,52 @@ enum LicensedMusicCatalogueLevel {
   FOCUSED
   PROFESSIONAL
   PREMIUM
+}
+
+enum OrganisationMediaTemplate {
+  NGO_CHARITY
+  SPORTS_CLUB
+  ASSOCIATION
+  COMMUNITY_CULTURAL
+  POLITICAL_CIVIC
+  FEDERATION_NETWORK
+  GENERAL
+}
+
+enum OrganisationAnnouncementStatus {
+  DRAFT
+  APPROVED
+  PUBLISHED
+  ARCHIVED
+}
+
+enum OrganisationAnnouncementSurface {
+  RADIO
+  PODCAST
+  DISPLAY
+  WEB_PLAYER
+  MOBILE_PLAYER
+}
+
+enum OrganisationEventStatus {
+  DRAFT
+  READY
+  LIVE
+  ENDED
+  CANCELLED
+}
+
+enum OrganisationSponsorStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum OrganisationBranchPermission {
+  MANAGER
+  CONTENT
+  DISPLAY
+  VIEWER
 }
 
 enum ComplimentaryAccessStatus {
@@ -464,6 +511,7 @@ enum MusicRightsUse {
   ONLINE_RADIO
   HEALTH_RADIO
   FAITH_RADIO
+  ORGANISATIONS_RADIO
 }
 
 enum RightsReportFormat {
@@ -820,6 +868,7 @@ enum AutoDjTargetType {
   CHANNEL
   HEALTH_CHANNEL
   FAITH_CHANNEL
+  ORGANISATIONS_CHANNEL
 }
 
 enum GeneratedPlaylistStatus {
@@ -996,6 +1045,9 @@ enum StudioProductDestination {
   FAITH_SERMON
   FAITH_ANNOUNCEMENT
   FAITH_PODCAST
+  ORGANISATIONS_ANNOUNCEMENT
+  ORGANISATIONS_PODCAST
+  ORGANISATIONS_EVENT
 }
 
 enum SchoolPublicationScope {
@@ -1180,6 +1232,7 @@ enum PodcastProduct {
   SCHOOL_RADIO
   HEALTH_RADIO
   FAITH_RADIO
+  ORGANISATIONS_RADIO
 }
 
 enum NewsroomProduct {
@@ -1245,6 +1298,7 @@ enum LiveStudioProduct {
   ONLINE_RADIO
   HEALTH_RADIO
   FAITH_RADIO
+  ORGANISATIONS_RADIO
 }
 
 enum ReportExportStatus {
@@ -1678,6 +1732,11 @@ model Organisation {
   playerHealthIncidents              PlayerHealthIncident[]
   playerCommands                     PlayerCommand[]
   playerListenerLeases               PlayerListenerLease[]
+  organisationMediaProfile           OrganisationMediaProfile?
+  organisationAnnouncements          OrganisationAnnouncement[]
+  organisationEvents                 OrganisationEvent[]
+  organisationSponsors               OrganisationSponsorProfile[]
+  organisationBranchAssignments      OrganisationBranchAssignment[]
   streamHealthSamples                StationStreamHealthSample[]
   streamHealthIncidents              StationStreamHealthIncident[]
   jobs                               Job[]
@@ -1722,9 +1781,10 @@ model OrganisationMember {
   role           UserRole @default(OWNER)
   createdAt      DateTime @default(now())
 
-  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  organisation   Organisation    @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  djAccessGrants DjAccessGrant[]
+  user                          User                           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organisation                  Organisation                   @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  djAccessGrants                DjAccessGrant[]
+  organisationBranchAssignments OrganisationBranchAssignment[]
 
   @@unique([userId, organisationId])
   @@index([organisationId])
@@ -2008,6 +2068,106 @@ model SchoolEpisodeExchangeRequest {
   @@index([importedByUserId])
 }
 
+model OrganisationMediaProfile {
+  id                        String                    @id @default(cuid())
+  organisationId            String                    @unique
+  template                  OrganisationMediaTemplate @default(GENERAL)
+  locale                    String                    @default("en-MT")
+  timezone                  String                    @default("Europe/Malta")
+  regionalPriceBookCurrency String                    @default("EUR")
+  terminology               Json?
+  disclosureText            String?
+  createdAt                 DateTime                  @default(now())
+  updatedAt                 DateTime                  @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+
+  @@index([template])
+}
+
+model OrganisationAnnouncement {
+  id                String                            @id @default(cuid())
+  organisationId    String
+  title             String
+  body              String
+  status            OrganisationAnnouncementStatus    @default(DRAFT)
+  surfaces          OrganisationAnnouncementSurface[]
+  targetLocationIds Json?
+  targetStationIds  Json?
+  startsAt          DateTime?
+  endsAt            DateTime?
+  createdByUserId   String
+  approvedByUserId  String?
+  publishedByUserId String?
+  approvedAt        DateTime?
+  publishedAt       DateTime?
+  createdAt         DateTime                          @default(now())
+  updatedAt         DateTime                          @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+
+  @@index([organisationId, status, startsAt, endsAt])
+}
+
+model OrganisationEvent {
+  id                     String                  @id @default(cuid())
+  organisationId         String
+  title                  String
+  description            String?
+  status                 OrganisationEventStatus @default(DRAFT)
+  startsAt               DateTime
+  endsAt                 DateTime
+  timezone               String
+  stationId              String?
+  channelId              String?
+  fallbackAutoDjPolicyId String?
+  createdByUserId        String
+  lastTransitionByUserId String?
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+
+  @@index([organisationId, status, startsAt, endsAt])
+  @@index([organisationId, stationId])
+  @@index([organisationId, channelId])
+}
+
+model OrganisationSponsorProfile {
+  id              String                    @id @default(cuid())
+  organisationId  String
+  name            String
+  legalName       String?
+  disclosureText  String?
+  status          OrganisationSponsorStatus @default(DRAFT)
+  createdByUserId String
+  createdAt       DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+
+  @@unique([organisationId, name])
+  @@index([organisationId, status])
+}
+
+model OrganisationBranchAssignment {
+  id                   String                       @id @default(cuid())
+  organisationId       String
+  organisationMemberId String
+  locationId           String
+  permission           OrganisationBranchPermission
+  createdByUserId      String
+  createdAt            DateTime                     @default(now())
+  updatedAt            DateTime                     @updatedAt
+
+  organisation       Organisation       @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  organisationMember OrganisationMember @relation(fields: [organisationMemberId], references: [id], onDelete: Cascade)
+  location           Location           @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@unique([organisationMemberId, locationId])
+  @@index([organisationId, locationId, permission])
+}
+
 model Plan {
   id                            String                      @id @default(cuid())
   name                          String                      @unique
@@ -2029,6 +2189,7 @@ model Plan {
   onlineRadioEnabled            Boolean                     @default(false)
   healthRadioEnabled            Boolean                     @default(false)
   faithRadioEnabled             Boolean                     @default(false)
+  organisationsEnabled          Boolean                     @default(false)
   schoolPublicPublishingEnabled Boolean                     @default(false)
   retailMediaEnabled            Boolean                     @default(false)
   digitalSignageEnabled         Boolean                     @default(false)
@@ -2053,6 +2214,7 @@ model Subscription {
   onlineRadioEnabled                         Boolean?
   healthRadioEnabled                         Boolean?
   faithRadioEnabled                          Boolean?
+  organisationsEnabled                       Boolean?
   schoolPublicPublishingEnabled              Boolean?
   retailMediaEnabled                         Boolean?
   digitalSignageEnabled                      Boolean?
@@ -2073,6 +2235,7 @@ model Subscription {
   complimentaryOnlineRadioEnabled            Boolean?
   complimentaryHealthRadioEnabled            Boolean?
   complimentaryFaithRadioEnabled             Boolean?
+  complimentaryOrganisationsEnabled          Boolean?
   complimentarySchoolPublicPublishingEnabled Boolean?
   complimentaryRetailMediaEnabled            Boolean?
   complimentaryDigitalSignageEnabled         Boolean?
@@ -2265,17 +2428,18 @@ model Location {
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 
-  organisation               Organisation               @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  brand                      Brand?                     @relation(fields: [brandId], references: [id], onDelete: SetNull)
-  zones                      Zone[]
-  groupMemberships           LocationGroupMember[]
-  openingHours               LocationOpeningHour[]
-  openingExceptions          LocationOpeningException[]
-  musicSchedules             MusicSchedule[]
-  campaignTargets            CampaignTarget[]
-  schoolBroadcastSlots       SchoolBroadcastSlot[]
-  schoolNoticeboardPosts     SchoolNoticeboardPost[]
-  integrationMetricSummaries IntegrationMetricSummary[]
+  organisation                  Organisation                   @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  brand                         Brand?                         @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  zones                         Zone[]
+  groupMemberships              LocationGroupMember[]
+  openingHours                  LocationOpeningHour[]
+  openingExceptions             LocationOpeningException[]
+  musicSchedules                MusicSchedule[]
+  campaignTargets               CampaignTarget[]
+  schoolBroadcastSlots          SchoolBroadcastSlot[]
+  schoolNoticeboardPosts        SchoolNoticeboardPost[]
+  integrationMetricSummaries    IntegrationMetricSummary[]
+  organisationBranchAssignments OrganisationBranchAssignment[]
 
   @@unique([organisationId, slug])
   @@index([organisationId])

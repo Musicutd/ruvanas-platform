@@ -118,7 +118,8 @@ function ProductAccessSummary({ subscription }) {
     ["School", entitlements.schoolRadioEnabled],
     ["Online", entitlements.onlineRadioEnabled],
     ["Health", entitlements.healthRadioEnabled],
-    ["Faith", entitlements.faithRadioEnabled]
+    ["Faith", entitlements.faithRadioEnabled],
+    ["Organisations", entitlements.organisationsEnabled]
   ];
 
   return (

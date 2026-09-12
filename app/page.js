@@ -4,7 +4,7 @@ import { registrationProducts } from "@/lib/registration-experience.mjs";
 export const metadata = {
   title: "Ruvanas | Professional Radio Platforms by 21-Three",
   description:
-    "Ruvanas, part of 21-Three, provides professional Retail, School, Online, Health and Faith radio platforms with high-quality sound.",
+    "Ruvanas, part of 21-Three, provides professional Retail, School, Online, Health, Faith and Organisations media platforms.",
 };
 
 const platforms = [
@@ -42,6 +42,13 @@ const platforms = [
     text: "Give churches and ministries one subscriber-operated home for continuous radio, live services, teachings and campus media.",
     features: ["24/7 AutoDJ", "Live-service handoff", "Sermon archives"],
     icon: "faith",
+  },
+  {
+    number: "06",
+    title: "Ruvanas Organisations",
+    text: "Give NGOs, clubs, associations, civic groups and networks one governed home for their own media, events, announcements and displays.",
+    features: ["Governed announcements", "Event Mode", "Branch controls"],
+    icon: "organisations",
   },
 ];
 
@@ -94,6 +101,13 @@ const pricingFamilies = [
     title: "Keep ministry media connected throughout the week.",
     text: "Continuous radio, live-service handoff, teachings, podcasts and multi-campus delivery under subscriber control."
   },
+  {
+    id: "organisations",
+    productId: "ORGANISATIONS",
+    eyebrow: "Ruvanas Organisations",
+    title: "Bring your organisation’s media into one governed workspace.",
+    text: "Subscriber-operated channels, announcements, events, podcasts, sponsors, displays and branch controls."
+  },
 ].map((family) => ({
   ...family,
   tiers: approvedProductPlans.find((product) => product.id === family.productId)?.plans || []
@@ -101,7 +115,7 @@ const pricingFamilies = [
 
 function planFeatures(plan) {
   return [
-    `Up to ${plan.stationLimit} ${["RETAIL", "HEALTH", "FAITH"].includes(plan.productFamily) ? "site or station" : "station"}${plan.stationLimit === 1 ? "" : "s"}`,
+    `Up to ${plan.stationLimit} ${["RETAIL", "HEALTH", "FAITH", "ORGANISATIONS"].includes(plan.productFamily) ? "site or station" : "station"}${plan.stationLimit === 1 ? "" : "s"}`,
     `${plan.storageLimitGb} GB media storage`,
     `Up to ${plan.listenerLimit.toLocaleString("en-GB")} active listeners`,
     `High-quality audio up to ${plan.maxBitrateKbps} kbps`,
@@ -125,6 +139,9 @@ function PlatformIcon({ type }) {
   }
   if (type === "faith") {
     return <svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="4" /><path d="M16 16a11 11 0 0 0 0 16M32 16a11 11 0 0 1 0 16M10 10a20 20 0 0 0 0 28M38 10a20 20 0 0 1 0 28" /></svg>;
+  }
+  if (type === "organisations") {
+    return <svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="11" r="5"/><circle cx="11" cy="35" r="5"/><circle cx="37" cy="35" r="5"/><path d="M24 16v8M14 32l7-6M34 32l-7-6"/></svg>;
   }
   if (type === "school") {
     return (
@@ -197,7 +214,7 @@ export default function HomePage() {
             <p className={styles.eyebrow}><span /> Audio platforms by 21-Three</p>
             <h1>Every space deserves its <em>own sound.</em></h1>
             <p className={styles.heroLead}>
-              Ruvanas brings professional radio within reach—from retail and schools to online stations, health organisations and faith communities.
+              Ruvanas brings professional media within reach—from retail and schools to online stations, health, faith and other organisations.
             </p>
             <div className={styles.heroActions}>
               <a className={styles.primaryButton} href="/register">Create your account <ArrowIcon /></a>
@@ -253,13 +270,13 @@ export default function HomePage() {
 
       <section className={styles.introStrip} aria-label="Ruvanas introduction">
         <p>One professional foundation.</p>
-        <div><span>Retail</span><i /><span>School</span><i /><span>Online</span><i /><span>Health</span><i /><span>Faith</span></div>
+        <div><span>Retail</span><i /><span>School</span><i /><span>Online</span><i /><span>Health</span><i /><span>Faith</span><i /><span>Organisations</span></div>
       </section>
 
       <section className={styles.section} id="platforms">
         <div className={styles.sectionHeader}>
           <div>
-            <p className={styles.sectionEyebrow}>Five platforms. One standard.</p>
+            <p className={styles.sectionEyebrow}>Six platforms. One standard.</p>
             <h2>Built around the way you broadcast.</h2>
           </div>
           <p>Choose the platform that fits today, then bring every channel, location and audience together as your ambitions grow.</p>
@@ -325,7 +342,7 @@ export default function HomePage() {
         <div className={styles.pricingHeader}>
           <p className={styles.sectionEyebrow}>Plans shaped around your platform</p>
           <h2>Choose the service you need. Grow when you are ready.</h2>
-          <p>Retail, School, Online, Health and Faith each have five clear tiers, shared foundations and purpose-built workflows.</p>
+          <p>Six specialised product families each have five clear tiers, shared foundations and purpose-built workflows.</p>
         </div>
 
         <div className={styles.pricingFamilies}>
@@ -384,13 +401,14 @@ export default function HomePage() {
           <section className={styles.storyChapter} aria-labelledby="story-five-worlds">
             <p className={styles.storyChapterNumber}>01</p>
             <div>
-              <h3 id="story-five-worlds">One platform. Five specialised worlds.</h3>
+              <h3 id="story-five-worlds">One platform. Six specialised worlds.</h3>
               <p>Ruvanas has been designed around a shared technology core, but with dedicated experiences for very different types of organisations.</p>
               <div className={styles.storyProducts}>
                 <article><span>Retail</span><p><strong>Ruvanas Retail</strong> gives retailers, hospitality businesses and other commercial organisations the tools to manage their own in-store audio, promotions, scheduling, digital displays and multi-location media.</p></article>
                 <article><span>School</span><p><strong>Ruvanas School</strong> provides schools and educational organisations with a structured environment for school radio, podcasting, media production and supervised student participation.</p></article>
                 <article><span>Radio</span><p><strong>Ruvanas Radio</strong> provides broadcasters and organisations with the technology to create and operate their own online radio services, including automation, live broadcasting, scheduling, podcasts and listener-facing experiences.</p></article>
                 <article><span>Faith</span><p><strong>Ruvanas Faith</strong> brings the traditional concept of Church Radio into a modern digital environment, giving churches, ministries and faith organisations the technology to operate their own radio channels, live services, sermons, podcasts and media networks.</p></article>
+                <article><span>Organisations</span><p><strong>Ruvanas Organisations</strong> gives NGOs, clubs, associations, community groups, civic organisations and networks technology for their own channels, announcements, events, podcasts, sponsors and displays—without becoming a CRM or administration system.</p></article>
                 <article><span>Health</span><p><strong>Ruvanas Health</strong> modernises the concept of Hospital Radio, giving hospitals and health-related organisations the tools to operate their own radio, audio and information services for patients, staff and wider communities.</p></article>
               </div>
               <p className={styles.storyPrinciple}>In every case, <strong>Ruvanas provides the platform — the subscriber operates the service.</strong></p>
@@ -446,7 +464,7 @@ export default function HomePage() {
           <a className={styles.logo} href="#top" aria-label="Ruvanas home">
             <BrandMark /><span className={styles.logoText}>RUVANAS</span>
           </a>
-          <p>Professional radio platforms for brands, schools, online broadcasters, health organisations and faith communities.</p>
+          <p>Professional media platforms for brands, schools, broadcasters, health, faith and other organisations.</p>
           <nav aria-label="Footer navigation">
             <a href="#platforms">Platforms</a><a href="#services">Services</a><a href="#pricing">Pricing</a><a href="/login">Log in</a>
           </nav>

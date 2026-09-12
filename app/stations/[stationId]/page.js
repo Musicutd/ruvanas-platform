@@ -35,7 +35,7 @@ export default async function StationDetailsPage({ params }) {
 
   const productKey = subscriberProductForStationFamily(station.productFamily);
   await requireSubscriberProduct(productKey);
-  const productLabel = productKey === "HEALTH" ? "Ruvanas Health" : productKey === "FAITH" ? "Ruvanas Faith" : "Online Radio";
+  const productLabel = productKey === "HEALTH" ? "Ruvanas Health" : productKey === "FAITH" ? "Ruvanas Faith" : productKey === "ORGANISATIONS" ? "Ruvanas Organisations" : "Online Radio";
 
   const needsSetup = station.status === "PENDING_SETUP";
 

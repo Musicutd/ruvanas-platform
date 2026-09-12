@@ -9,7 +9,7 @@ import { BETA_PRODUCTS } from "../lib/beta-operations.mjs";
 import { subscriberProductForStationFamily } from "../lib/product-access.mjs";
 
 test("Health and Faith add exactly ten plans to the authoritative 25-plan catalogue", () => {
-  assert.equal(PUBLIC_PLAN_CATALOGUE.length, 25);
+  assert.equal(PUBLIC_PLAN_CATALOGUE.length, 30);
   assert.deepEqual(publicPlansForProduct("HEALTH").map((plan) => [plan.code, plan.monthlyPriceCents, plan.licensedMusicCatalogueLevel]), [
     ["HEALTH_START", 2900, "NONE"], ["HEALTH_CONNECT", 7900, "NONE"], ["HEALTH_PRO", 17900, "FOCUSED"], ["HEALTH_NETWORK", 44900, "PROFESSIONAL"], ["HEALTH_ENTERPRISE", 99900, "PREMIUM"]
   ]);
@@ -52,12 +52,12 @@ test("catalogue music remains product-use, approval, tier, genre, territory and 
   assert.equal(musicTrackEligibility(track, { ...options, territory: "GB" }).reason, "RIGHTS_NOT_APPROVED");
 });
 
-test("Studio and Beta expose Health and Faith without automatic publication or billing mutation", () => {
+test("Studio and Beta preserve Health and Faith while exposing the sixth product", () => {
   const destinations = studioDestinationAvailability({ entitlements: { healthRadioEnabled: true, faithRadioEnabled: true }, project: {} });
   assert.equal(destinations.find((item) => item.key === "HEALTH_PODCAST").available, true);
   assert.equal(destinations.find((item) => item.key === "FAITH_SERMON").available, true);
   assert.equal(studioWorkflowPath({ destination: "FAITH_SERMON", promoVersionId: "promo", mediaAssetId: "asset 1" }), "/dashboard/podcasts?product=FAITH&mediaAssetId=asset%201");
-  assert.deepEqual(BETA_PRODUCTS.map((item) => item.value), ["RETAIL", "SCHOOL", "ONLINE", "HEALTH", "FAITH"]);
+  assert.deepEqual(BETA_PRODUCTS.map((item) => item.value), ["RETAIL", "SCHOOL", "ONLINE", "HEALTH", "FAITH", "ORGANISATIONS"]);
 });
 
 test("new routes derive tenant access server-side and keep unsafe domains out of scope", async () => {
@@ -79,7 +79,7 @@ test("new routes derive tenant access server-side and keep unsafe domains out of
   assert.match(podcastRoute, /audiencePolicy !== "PUBLIC"/);
   assert.match(requestQueueRoute, /subscriberProductForStationFamily\(station\.productFamily\)/);
   assert.match(websiteRoute, /subscriberProductForStationFamily\(station\.productFamily\)/);
-  assert.match(stationLayout, /"ONLINE", "HEALTH", "FAITH"/);
+  assert.match(stationLayout, /"ONLINE", "HEALTH", "FAITH", "ORGANISATIONS"/);
   assert.match(migration, /Ruvanas Health QA/);
   assert.match(migration, /Ruvanas Faith QA/);
   assert.doesNotMatch(`${healthPage}\n${faithPage}\n${channelRoute}`, /diagnosis field|prayer record/i);

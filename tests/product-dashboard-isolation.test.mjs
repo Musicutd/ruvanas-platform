@@ -16,6 +16,7 @@ const retailOnly = { serviceEnabled: true, retailRadioEnabled: true, schoolRadio
 const schoolOnly = { serviceEnabled: true, retailRadioEnabled: false, schoolRadioEnabled: true, onlineRadioEnabled: false };
 const healthOnly = { serviceEnabled: true, retailRadioEnabled: false, schoolRadioEnabled: false, onlineRadioEnabled: false, healthRadioEnabled: true, faithRadioEnabled: false };
 const faithOnly = { serviceEnabled: true, retailRadioEnabled: false, schoolRadioEnabled: false, onlineRadioEnabled: false, healthRadioEnabled: false, faithRadioEnabled: true };
+const organisationsOnly = { serviceEnabled: true, retailRadioEnabled: false, schoolRadioEnabled: false, onlineRadioEnabled: false, healthRadioEnabled: false, faithRadioEnabled: false, organisationsEnabled: true };
 
 function itemIds(entitlements) {
   return buildSubscriberNavigation({ entitlements, firstStationId: "station-1" })
@@ -30,6 +31,7 @@ test("serviceEnabled alone never grants a product dashboard", () => {
   assert.equal(hasSubscriberProduct(activeService, "ONLINE"), false);
   assert.equal(hasSubscriberProduct(activeService, "HEALTH"), false);
   assert.equal(hasSubscriberProduct(activeService, "FAITH"), false);
+  assert.equal(hasSubscriberProduct(activeService, "ORGANISATIONS"), false);
   assert.deepEqual(enabledSubscriberProducts(activeService), []);
 });
 
@@ -45,6 +47,7 @@ test("single-product accounts receive only their owned product card", () => {
   assert.deepEqual(buildSubscriberProductCards({ entitlements: onlineOnly }).map((item) => item.id), ["radioHome"]);
   assert.deepEqual(buildSubscriberProductCards({ entitlements: healthOnly }).map((item) => item.id), ["healthHome"]);
   assert.deepEqual(buildSubscriberProductCards({ entitlements: faithOnly }).map((item) => item.id), ["faithHome"]);
+  assert.deepEqual(buildSubscriberProductCards({ entitlements: organisationsOnly }).map((item) => item.id), ["organisationsHome"]);
 });
 
 test("a multi-product account receives each explicitly assigned product", () => {
@@ -86,7 +89,7 @@ test("Online navigation excludes Retail and School product language", () => {
 });
 
 test("product routes and product APIs enforce explicit capabilities", async () => {
-  const [guard, organisationAccess, retail, school, radio, health, faith, stationsLayout, schoolSuiteLayout, stationApi, productChannelApi, podcastAccess, analyticsAccess, publicPlayerApi, websiteApi, requestApi] = await Promise.all([
+  const [guard, organisationAccess, retail, school, radio, health, faith, organisations, stationsLayout, schoolSuiteLayout, stationApi, productChannelApi, podcastAccess, analyticsAccess, publicPlayerApi, websiteApi, requestApi] = await Promise.all([
     readFile(new URL("../lib/subscriber-product-access.js", import.meta.url), "utf8"),
     readFile(new URL("../lib/access-control.js", import.meta.url), "utf8"),
     readFile(new URL("../app/dashboard/retail/page.js", import.meta.url), "utf8"),
@@ -94,6 +97,7 @@ test("product routes and product APIs enforce explicit capabilities", async () =
     readFile(new URL("../app/dashboard/radio/layout.js", import.meta.url), "utf8"),
     readFile(new URL("../app/dashboard/health/page.js", import.meta.url), "utf8"),
     readFile(new URL("../app/dashboard/faith/page.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/dashboard/organisations/page.js", import.meta.url), "utf8"),
     readFile(new URL("../app/stations/layout.js", import.meta.url), "utf8"),
     readFile(new URL("../app/dashboard/school-radio/layout.js", import.meta.url), "utf8"),
     readFile(new URL("../app/api/stations/route.js", import.meta.url), "utf8"),
@@ -111,7 +115,8 @@ test("product routes and product APIs enforce explicit capabilities", async () =
   assert.match(radio, /requireSubscriberProduct\("ONLINE"\)/);
   assert.match(health, /requireSubscriberProduct\("HEALTH"/);
   assert.match(faith, /requireSubscriberProduct\("FAITH"/);
-  assert.match(stationsLayout, /\["ONLINE", "HEALTH", "FAITH"\]/);
+  assert.match(organisations, /requireSubscriberProduct\("ORGANISATIONS"/);
+  assert.match(stationsLayout, /\["ONLINE", "HEALTH", "FAITH", "ORGANISATIONS"\]/);
   assert.match(schoolSuiteLayout, /requireSubscriberProduct\("SCHOOL"\)/);
   assert.match(stationApi, /entitlements\.onlineRadioEnabled/);
   assert.match(productChannelApi, /entitlements\[product\.capability\]/);

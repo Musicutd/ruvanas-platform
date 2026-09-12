@@ -32,9 +32,9 @@ test("the public homepage links to a no-login How it works guide", async () => {
   assert.match(client, /publicView \? "\/register" : product\.startHref/);
 });
 
-test("the guide separates all five products into dedicated tabs", () => {
-  assert.deepEqual(ruvanasProductGuides.map((product) => product.tabLabel), ["Retail", "School", "Radio", "Health", "Faith"]);
-  assert.deepEqual(ruvanasProductGuides.map((product) => product.id), ["retail", "school", "radio", "health", "faith"]);
+test("the guide separates all six products into dedicated tabs", () => {
+  assert.deepEqual(ruvanasProductGuides.map((product) => product.tabLabel), ["Retail", "School", "Radio", "Health", "Faith", "Organisations"]);
+  assert.deepEqual(ruvanasProductGuides.map((product) => product.id), ["retail", "school", "radio", "health", "faith", "organisations"]);
   for (const product of ruvanasProductGuides) {
     assert.ok(product.chapters.length >= 4);
     assert.match(product.startHref, /^\/dashboard\//);

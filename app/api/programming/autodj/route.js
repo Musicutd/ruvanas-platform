@@ -18,9 +18,9 @@ const policySchema = z.object({
   backupMusicModeId: z.string().cuid().optional().nullable(),
   playbackPolicy: z.enum(["FOLLOW_LOCATION_HOURS", "RUN_24_7"]),
   state: z.enum(["DRAFT", "ACTIVE", "PAUSED"]).optional(),
-  targetType: z.enum(["LOCATION", "ZONE", "SCHOOL", "CHANNEL", "HEALTH_CHANNEL", "FAITH_CHANNEL"]).optional(),
+  targetType: z.enum(["LOCATION", "ZONE", "SCHOOL", "CHANNEL", "HEALTH_CHANNEL", "FAITH_CHANNEL", "ORGANISATIONS_CHANNEL"]).optional(),
   targetId: z.string().max(120).optional().nullable(),
-  rightsUse: z.enum(["RETAIL_RADIO", "SCHOOL_RADIO", "ONLINE_RADIO", "HEALTH_RADIO", "FAITH_RADIO"]).optional(),
+  rightsUse: z.enum(["RETAIL_RADIO", "SCHOOL_RADIO", "ONLINE_RADIO", "HEALTH_RADIO", "FAITH_RADIO", "ORGANISATIONS_RADIO"]).optional(),
   territory: z.string().max(80).optional().nullable(),
   sourceScopes: z.array(z.enum(["SUBSCRIBER_LIBRARY", "RUVANAS_CORE", "LICENSED_CATALOGUE"])).min(1).max(3).optional(),
   selectedGenreCodes: z.array(z.string().max(80)).min(1).max(24).optional()
