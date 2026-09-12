@@ -48,14 +48,14 @@ INSERT INTO "Organisation" ("id", "name", "slug", "createdAt", "updatedAt") VALU
   ('qa-faith-organisation', 'Ruvanas Faith QA', 'ruvanas-faith-qa', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 ON CONFLICT ("slug") DO NOTHING;
 
-INSERT INTO "Subscription" ("id", "organisationId", "planId", "status", "currentPeriodEnd")
-SELECT 'qa-health-subscription', organisation."id", plan."id", 'TRIAL', CURRENT_TIMESTAMP + INTERVAL '10 years'
+INSERT INTO "Subscription" ("id", "organisationId", "planId", "status", "currentPeriodEnd", "createdAt", "updatedAt")
+SELECT 'qa-health-subscription', organisation."id", plan."id", 'TRIAL', CURRENT_TIMESTAMP + INTERVAL '10 years', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
 FROM "Organisation" organisation, "Plan" plan
 WHERE organisation."slug" = 'ruvanas-health-qa' AND plan."code" = 'HEALTH_PRO'
 ON CONFLICT ("organisationId") DO NOTHING;
 
-INSERT INTO "Subscription" ("id", "organisationId", "planId", "status", "currentPeriodEnd")
-SELECT 'qa-faith-subscription', organisation."id", plan."id", 'TRIAL', CURRENT_TIMESTAMP + INTERVAL '10 years'
+INSERT INTO "Subscription" ("id", "organisationId", "planId", "status", "currentPeriodEnd", "createdAt", "updatedAt")
+SELECT 'qa-faith-subscription', organisation."id", plan."id", 'TRIAL', CURRENT_TIMESTAMP + INTERVAL '10 years', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
 FROM "Organisation" organisation, "Plan" plan
 WHERE organisation."slug" = 'ruvanas-faith-qa' AND plan."code" = 'FAITH_PRO'
 ON CONFLICT ("organisationId") DO NOTHING;
