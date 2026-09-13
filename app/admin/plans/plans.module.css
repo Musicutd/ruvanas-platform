@@ -1,4 +1,5 @@
 .editor { display: grid; gap: 18px; }
+.editorHint { margin: 0; padding: 10px 12px; border-left: 4px solid #d99a1c; border-radius: 7px; background: var(--surface-muted, #f1f5f9); color: var(--text-secondary, #475569); font-size: 13px; line-height: 1.45; }
 .tableWrapper { overflow-x: auto; border: 1px solid var(--border-color, #cbd5e1); border-radius: 10px; background: var(--surface, #fff); }
 .table { width: 100%; min-width: 1370px; border-collapse: collapse; }
 .table th { padding: 12px 11px; border-bottom: 2px solid #94a3b8; background: var(--surface-muted, #e2e8f0); color: var(--text-primary, #172033); font-size: 12px; font-weight: 900; text-align: left; white-space: nowrap; }
@@ -17,6 +18,8 @@
 .activeBadge { background: #dcfce7; color: #166534; }
 .inactiveBadge { background: #fee2e2; color: #991b1b; }
 .allowances { min-width: 160px; line-height: 1.55; }
+.table th.actionHeader { position: sticky; right: 0; z-index: 3; background: var(--surface-muted, #e2e8f0); box-shadow: -8px 0 12px -12px #172033; }
+.actionCell { position: sticky; right: 0; z-index: 2; min-width: 92px; background: var(--surface, #fff); box-shadow: -8px 0 12px -12px #172033; }
 .editButton { border: 1px solid #9a6400; border-radius: 7px; background: var(--surface, #fff); color: #8a5700; padding: 7px 10px; font-weight: 900; cursor: pointer; white-space: nowrap; }
 .form { display: grid; gap: 16px; scroll-margin-top: 24px; padding: 22px; border: 2px solid #d99a1c; border-radius: 14px; background: var(--surface, #fff); color: var(--text-primary, #172033); }
 .formHeader { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }

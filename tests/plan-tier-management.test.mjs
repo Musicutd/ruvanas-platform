@@ -62,6 +62,8 @@ test("Super Admin plan editing locks stable authority and audits commercial chan
   assert.match(editor, /Plan code and product family stay fixed/);
   assert.match(editor, /Licensed Music Catalogue and tools/);
   assert.match(editor, /Save tier changes/);
+  assert.match(editor, /className=\{styles\.actionCell\}/);
+  assert.match(editor, /scrollIntoView\(\{ behavior: "smooth", block: "start" \}\)/);
   assert.match(page, /PlanCatalogueEditor/);
   assert.match(home, /registrationProductsFromDatabasePlans/);
   assert.match(register, /registrationProductsFromDatabasePlans/);
