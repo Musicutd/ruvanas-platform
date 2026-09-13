@@ -49,7 +49,7 @@ test("valid pricing links preselect only a matching self-service product and tie
   assert.equal(resolveRegistrationDeepLink({ platform: "organisations", tier: "organisations-pro" }).product, "ORGANISATIONS");
 });
 
-test("mismatched, invented and Enterprise links cannot create implicit plan authority", () => {
+test("mismatched and invented links fail closed while Tier 5 links remain selectable", () => {
   assert.deepEqual(resolveRegistrationDeepLink({ platform: "school", tier: "retail-start" }), {
     product: "SCHOOL",
     tier: null,
@@ -64,8 +64,8 @@ test("mismatched, invented and Enterprise links cannot create implicit plan auth
   });
   assert.deepEqual(resolveRegistrationDeepLink({ platform: "retail", tier: "retail-enterprise" }), {
     product: "RETAIL",
-    tier: null,
-    selectedFromPricing: false,
+    tier: "retail-enterprise",
+    selectedFromPricing: true,
     enterpriseRequested: true
   });
   assert.equal(resolveRegistrationDeepLink({ platform: "enterprise" }).enterpriseRequested, true);
@@ -103,6 +103,7 @@ test("registration UI preserves a guided, accessible and product-aware submissio
   assert.match(journey, /tabIndex="-1"/);
   assert.match(journey, /recommendedDashboardRoute/);
   assert.match(journey, /product, tier, source:/);
+  assert.match(journey, /Tailored paid terms confirmed before post-trial activation/);
   assert.match(journey, /previousStep/);
   assert.match(styles, /:focus-visible|:focus-within/);
   assert.match(styles, /@media \(max-width: 680px\)/);

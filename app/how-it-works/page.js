@@ -15,7 +15,7 @@ export default function PublicHowItWorksPage() {
         <nav aria-label="Public navigation">
           <Link href="/">Home</Link>
           <Link href="/login">Log in</Link>
-          <Link href="/register" className={styles.register}>Create account</Link>
+          <Link href="/register/free-access" className={styles.register}>Use access code</Link>
         </nav>
       </header>
       <HowItWorksClient publicView />

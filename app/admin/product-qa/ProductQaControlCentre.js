@@ -93,7 +93,7 @@ export default function ProductQaControlCentre({ initialProfiles }) {
                 <div className={styles.empty}>
                   <strong>Create “{profile.organisationName}”</strong>
                   <p>Use a controlled Ruvanas email alias and select the Tier 3 plan. Keep the password outside source control.</p>
-                  <Link href={`/register?product=${profile.product.toLowerCase()}&tier=${profile.startingPlanCode.toLowerCase().replaceAll("_", "-")}`}>Open secure registration</Link>
+                  <Link href="/admin/complimentary-access">Create a controlled free-access code</Link>
                 </div>
               ) : (
                 <>

@@ -52,15 +52,21 @@ function ProductGuide({ product, publicView = false }) {
   );
 }
 
-export default function HowItWorksClient({ organisationName, membershipRole, publicView = false }) {
+export default function HowItWorksClient({ organisationName, membershipRole, publicView = false, visibleProductIds = [] }) {
+  const visibleGuides = publicView
+    ? ruvanasProductGuides
+    : ruvanasProductGuides.filter((product) => visibleProductIds.includes(product.id));
+  const guides = visibleGuides.length ? visibleGuides : ruvanasProductGuides.slice(0, 1);
+  const singleGuide = !publicView && guides.length === 1 ? guides[0] : null;
+
   return (
     <main className={styles.page} id="main-content">
       <SkipLink />
       <header className={styles.hero}>
         <div>
-          <p className={styles.eyebrow}>ONE GUIDE · FIVE PRODUCTS</p>
-          <h1>How Ruvanas works</h1>
-          <p>Choose a product, then open only the information you need. This guide explains the complete journey from account setup to content, programming, delivery and evidence.</p>
+          <p className={styles.eyebrow}>{singleGuide ? `${singleGuide.eyebrow} · YOUR GUIDE` : "ONE GUIDE · SIX PRODUCTS"}</p>
+          <h1>{singleGuide ? `How ${singleGuide.tabLabel} works` : "How Ruvanas works"}</h1>
+          <p>{singleGuide ? `This page shows only the ${singleGuide.tabLabel} guidance included with your current organisation service.` : "Choose a product, then open only the information you need. This guide explains the complete journey from account setup to content, programming, delivery and evidence."}</p>
         </div>
         <aside className={styles.contextCard}>
           <span>{publicView ? "EXPLORE BEFORE REGISTERING" : "YOU ARE VIEWING"}</span>
@@ -71,24 +77,24 @@ export default function HowItWorksClient({ organisationName, membershipRole, pub
 
       <section className={styles.startHere} aria-label="How to use this page">
         <strong>Start here</strong>
-        <span>1. Choose Retail, School, Radio, Health, Faith or Organisations.</span>
+        <span>{singleGuide ? `1. Review the ${singleGuide.tabLabel} journey for your active service.` : "1. Choose Retail, School, Radio, Health, Faith or Organisations."}</span>
         <span>2. Click a titled box to see the explanation.</span>
         <span>3. Use the links inside each box to open the correct workspace.</span>
       </section>
 
       <WorkspaceTabs
         label="Choose your Ruvanas product"
-        intro="All five guides stay together on this page."
-        defaultTab="retail"
-        tabs={ruvanasProductGuides.map((product) => ({ id: product.id, label: product.tabLabel, description: product.tabDescription }))}
+        intro={singleGuide ? `Only ${singleGuide.tabLabel} is shown for this organisation.` : "All six guides stay together on this page."}
+        defaultTab={guides[0].id}
+        tabs={guides.map((product) => ({ id: product.id, label: product.tabLabel, description: product.tabDescription }))}
       >
-        {ruvanasProductGuides.map((product) => <ProductGuide key={product.id} product={product} publicView={publicView} />)}
+        {guides.map((product) => <ProductGuide key={product.id} product={product} publicView={publicView} />)}
       </WorkspaceTabs>
 
       <footer className={styles.footerHelp}>
         <div><strong>{publicView ? "Ready to choose your Ruvanas service?" : "Need help with a specific problem?"}</strong><span>{publicView ? "Create an account or sign in to continue with your organisation." : "Search short answers or send a secure request to the Ruvanas team."}</span></div>
         <nav aria-label="Additional help">
-          {publicView ? <><Link href="/register">Create account</Link><Link href="/login">Log in</Link></> : <><Link href="/dashboard/help">Help centre</Link><Link href="/dashboard/support">Support requests</Link></>}
+          {publicView ? <><Link href="/register/free-access">Use access code</Link><Link href="/login">Log in</Link></> : <><Link href="/dashboard/help">Help centre</Link><Link href="/dashboard/support">Support requests</Link></>}
         </nav>
       </footer>
     </main>
