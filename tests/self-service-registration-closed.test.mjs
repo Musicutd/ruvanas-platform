@@ -17,14 +17,17 @@ test("paid and trial self-service registration is disabled until payments are re
   ]);
 
   assert.equal(SELF_SERVICE_REGISTRATION_ENABLED, false);
-  const internalRequest = { headers: { get: () => "a".repeat(32) } };
+  const internalRequest = {
+    url: "http://127.0.0.1:3100/api/auth/register",
+    headers: { get: () => "a".repeat(32) }
+  };
   const safeTestEnvironment = {
     RUN_DATABASE_TESTS: "1",
     INTERNAL_REGISTRATION_TEST_KEY: "a".repeat(32),
-    INTEGRATION_BASE_URL: "http://127.0.0.1:3100",
     DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/ruvanas"
   };
   assert.equal(isInternalRegistrationTestRequest(internalRequest, safeTestEnvironment), true);
+  assert.equal(isInternalRegistrationTestRequest({ ...internalRequest, url: "https://ruvanas.example/api/auth/register" }, safeTestEnvironment), false);
   assert.equal(isInternalRegistrationTestRequest(internalRequest, { ...safeTestEnvironment, DATABASE_URL: "postgresql://db.example/ruvanas" }), false);
   assert.equal(isInternalRegistrationTestRequest({ headers: { get: () => "wrong" } }, safeTestEnvironment), false);
   assert.match(SELF_SERVICE_REGISTRATION_MESSAGE, /payment setup/i);
