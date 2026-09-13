@@ -41,6 +41,7 @@ test("active and trial subscriptions receive plan entitlements", () => {
     assert.equal(entitlements.schoolPublicPublishingEnabled, false);
     assert.equal(entitlements.retailMediaEnabled, true);
     assert.equal(entitlements.digitalSignageEnabled, true);
+    assert.equal(entitlements.digitalSignageDisplayLimit, 5);
   }
 });
 

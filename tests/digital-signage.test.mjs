@@ -18,9 +18,10 @@ test("display enrolment accepts either a code or the copied confirmation sentenc
   assert.equal(normaliseDigitalSignageEnrolmentCode(""), "");
 });
 
-test("the Digital Signage interface separates tasks and makes display enrolment explicit", async () => {
+test("the Digital Signage interface separates tasks, explains enrolment and enforces Retail display allowances", async () => {
   const consoleSource = await readFile(new URL("../app/admin/digital-signage/DigitalSignageConsole.js", import.meta.url), "utf8");
   const displaySource = await readFile(new URL("../app/signage/page.js", import.meta.url), "utf8");
+  const deviceRoute = await readFile(new URL("../app/api/admin/digital-signage/devices/route.js", import.meta.url), "utf8");
   for (const label of ["Displays", "Visuals & layouts", "Playlists", "Takeovers", "Copy code", "Open display screen"]) {
     assert.ok(consoleSource.includes(label));
   }
@@ -29,6 +30,11 @@ test("the Digital Signage interface separates tasks and makes display enrolment 
   assert.match(consoleSource, /useSubscriberTheme/);
   assert.match(consoleSource, /const darkStyles =/);
   assert.match(consoleSource, /background: "radial-gradient\([^\n]+#101827"/);
+  assert.match(consoleSource, /Display allowance reached/);
+  assert.match(consoleSource, /connected digital display/);
+  assert.match(deviceRoute, /runSerializableTransaction/);
+  assert.match(deviceRoute, /activeDisplayCount >= displayLimit/);
+  assert.match(deviceRoute, /status: \{ not: "DISABLED" \}/);
 });
 
 function pngHeader(width, height) {

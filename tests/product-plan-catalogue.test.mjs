@@ -12,7 +12,7 @@ import {
 } from "../lib/product-plan-catalogue.mjs";
 
 const expectedPlans = [
-  ["RETAIL_START", "Retail Start", "RETAIL", 1, 1490, "NONE"],
+  ["RETAIL_START", "Retail Start", "RETAIL", 1, 1900, "NONE"],
   ["RETAIL_BUSINESS", "Retail Business", "RETAIL", 2, 4900, "NONE"],
   ["RETAIL_PROFESSIONAL", "Retail Professional", "RETAIL", 3, 14900, "FOCUSED"],
   ["RETAIL_ADVANCED", "Retail Advanced", "RETAIL", 4, 39900, "PROFESSIONAL"],
@@ -80,6 +80,16 @@ test("every product has five ordered tiers and exactly one product capability", 
   }
 });
 
+test("Retail packs expose the approved sites, storage, audio, Studio, catalogue and display progression", () => {
+  const retail = publicPlansForProduct("RETAIL");
+  assert.deepEqual(retail.map((plan) => plan.monthlyPriceCents), [1900, 4900, 14900, 39900, 99900]);
+  assert.deepEqual(retail.map((plan) => plan.stationLimit), [1, 3, 10, 30, 100]);
+  assert.deepEqual(retail.map((plan) => plan.storageLimitGb), [5, 15, 100, 200, 2000]);
+  assert.deepEqual(retail.map((plan) => plan.maxBitrateKbps), [128, 256, 320, 320, 320]);
+  assert.deepEqual(retail.map((plan) => plan.digitalSignageEnabled), [true, true, true, true, true]);
+  assert.deepEqual(retail.map((plan) => plan.licensedMusicCatalogueLevel), ["NONE", "NONE", "FOCUSED", "PROFESSIONAL", "PREMIUM"]);
+});
+
 test("public plans resolve by stable code or slug and map safely to database data", () => {
   const plan = findPublicPlan("online-station-pro");
   assert.equal(plan?.code, "ONLINE_STATION_PRO");
@@ -100,11 +110,12 @@ test("catalogue validation rejects cross-product access and malformed tier sets"
   assert.throws(() => validatePublicPlanCatalogue(malformed), /exactly one product family/i);
 });
 
-test("the database migration and Super Admin controls expose the authoritative catalogue safely", async () => {
-  const [baseMigration, healthFaithMigration, organisationsMigration, adminPage, organisationRoute] = await Promise.all([
+test("the database migrations and Super Admin controls expose the authoritative catalogue safely", async () => {
+  const [baseMigration, healthFaithMigration, organisationsMigration, retailPackMigration, adminPage, organisationRoute] = await Promise.all([
     readFile(new URL("../prisma/migrations/20261027000000_stage_29r_2_product_capabilities/migration.sql", import.meta.url), "utf8"),
     readFile(new URL("../prisma/migrations/20261112010000_health_faith_expansion/migration.sql", import.meta.url), "utf8"),
     readFile(new URL("../prisma/migrations/20261113010000_organisations_expansion/migration.sql", import.meta.url), "utf8"),
+    readFile(new URL("../prisma/migrations/20261116000000_retail_plan_pack_update/migration.sql", import.meta.url), "utf8"),
     readFile(new URL("../app/admin/plans/page.js", import.meta.url), "utf8"),
     readFile(new URL("../app/api/admin/organisations/route.js", import.meta.url), "utf8")
   ]);
@@ -113,6 +124,9 @@ test("the database migration and Super Admin controls expose the authoritative c
     assert.match(`${baseMigration}\n${healthFaithMigration}\n${organisationsMigration}`, new RegExp(`'${plan.code}'`));
   }
   assert.match(organisationsMigration, /ON CONFLICT \("code"\) DO UPDATE/);
+  assert.match(retailPackMigration, /WHEN 'RETAIL_START' THEN 1900/);
+  assert.match(retailPackMigration, /WHEN 'RETAIL_BUSINESS' THEN 15/);
+  assert.match(retailPackMigration, /"digitalSignageEnabled" = true/);
   assert.match(baseMigration, /Existing legacy plans remain non-public/);
   assert.match(adminPage, /Licensed Music Catalogue/);
   assert.match(adminPage, /adminUser\?\.role !== "SUPER_ADMIN"/);

@@ -21,7 +21,7 @@ test("the registration journey exposes all thirty approved plans from one catalo
       formatMonthlyPlanPrice(plan.monthlyPriceCents, { from: plan.enterpriseContactRequired })
     ])
   );
-  assert.equal(formatMonthlyPlanPrice(1490), "€14.90 / month");
+  assert.equal(formatMonthlyPlanPrice(1900), "€19 / month");
   assert.equal(formatMonthlyPlanPrice(99900, { from: true }), "From €999 / month");
 });
 
@@ -82,6 +82,12 @@ test("plan presentation uses customer-safe Licensed Music Catalogue wording", ()
     assert.match(plans[4].catalogueDescription, /Premium Licensed Music Catalogue/);
     assert.doesNotMatch(JSON.stringify(plans), /supplier|provider credential|wholesale/i);
   }
+});
+
+test("Retail registration options include Studio and connected display allowances", () => {
+  const plans = registrationPlanOptions("RETAIL");
+  assert.deepEqual(plans.map((plan) => plan.studioLevel), ["Basic", "Basic", "Pro", "Pro", "Pro"]);
+  assert.deepEqual(plans.map((plan) => plan.digitalSignageDisplayLimit), [1, 3, 10, 30, 100]);
 });
 
 test("registration UI preserves a guided, accessible and product-aware submission", async () => {

@@ -325,6 +325,8 @@
 .priceCard li { display: grid; grid-template-columns: 17px 1fr; gap: 6px; color: #586577; font-size: 10px; line-height: 1.4; }
 .featuredTier li { color: #aeb9c6; }
 .priceCard li span { color: var(--gold-deep); font-weight: 900; }
+.priceCard li.unavailableFeature { color: #778396; }
+.priceCard li.unavailableFeature span { color: #8a94a3; }
 .enterprisePlan { display: grid; grid-template-columns: 1.1fr 1fr auto; gap: 42px; align-items: center; margin-top: 72px; padding: 38px 42px; border-radius: 16px; background: var(--ink); color: #fff; }
 .enterprisePlan div > p { margin: 0 0 8px; color: var(--gold); font-size: 10px; font-weight: 900; letter-spacing: .15em; text-transform: uppercase; }
 .enterprisePlan h3 { margin: 0; font-family: Georgia, serif; font-size: 27px; font-weight: 500; line-height: 1.16; }

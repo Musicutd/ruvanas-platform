@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSubscriberTheme } from "@/app/dashboard/SubscriberThemeContext";
 
-const emptyData = { assets: [], layouts: [], devices: [], playlists: [], takeovers: [] };
+const emptyData = { assets: [], layouts: [], devices: [], playlists: [], takeovers: [], displayLimit: null };
 
 export default function DigitalSignageConsole({ organisations, showOrganisationSelector = true, locationsHref = "/admin/locations" }) {
   const subscriberTheme = useSubscriberTheme();
@@ -21,6 +21,8 @@ export default function DigitalSignageConsole({ organisations, showOrganisationS
   const selected = useMemo(() => organisations.find((item) => item.id === organisationId), [organisationId, organisations]);
   const zones = selected?.locations.flatMap((location) => location.zones.map((zone) => ({ ...zone, locationName: location.name }))) || [];
   const readyAssets = data.assets.filter((asset) => asset.status === "READY");
+  const activeDisplayCount = data.devices.filter((device) => device.status !== "DISABLED").length;
+  const displayLimitReached = Number.isInteger(data.displayLimit) && activeDisplayCount >= data.displayLimit;
   const playlistBlocker = !readyAssets.length
     ? "Add a ready visual first"
     : !data.layouts.length
@@ -44,7 +46,7 @@ export default function DigitalSignageConsole({ organisations, showOrganisationS
       const [assets, layouts, devices, playlists, takeovers] = await Promise.all([assetsResponse.json(), layoutsResponse.json(), devicesResponse.json(), playlistsResponse.json(), takeoversResponse.json()]);
       const failed = [[assetsResponse, assets], [layoutsResponse, layouts], [devicesResponse, devices], [playlistsResponse, playlists], [takeoversResponse, takeovers]].find(([response]) => !response.ok);
       if (failed) throw new Error(failed[1].error || "Unable to load the signage workspace.");
-      setData({ assets: assets.assets, layouts: layouts.layouts, devices: devices.devices, playlists: playlists.playlists, takeovers: takeovers.takeovers });
+      setData({ assets: assets.assets, layouts: layouts.layouts, devices: devices.devices, playlists: playlists.playlists, takeovers: takeovers.takeovers, displayLimit: devices.displayLimit });
     } catch (error) { setMessage(error instanceof Error ? error.message : "Unable to load the signage workspace."); }
     finally { setLoading(false); }
   }
@@ -246,7 +248,7 @@ export default function DigitalSignageConsole({ organisations, showOrganisationS
             <label style={styles.label}>Device name<input name="name" required maxLength={200} style={styles.input} /></label>
             <label style={styles.label}>Location and zone<select name="zoneId" required defaultValue={zones.length === 1 ? zones[0].id : ""} style={styles.input}><option value="">Select a zone</option>{zones.map((zone) => <option key={zone.id} value={zone.id}>{zone.locationName} — {zone.name}</option>)}</select>{zones.length === 1 ? <span style={styles.choiceHint}>Your only location and area is selected automatically.</span> : null}</label>
             <div style={styles.two}><label style={styles.label}>Screen width<input name="viewportWidth" type="number" min="320" max="8192" defaultValue="1920" required style={styles.input} /></label><label style={styles.label}>Screen height<input name="viewportHeight" type="number" min="240" max="8192" defaultValue="1080" required style={styles.input} /></label></div>
-            <button disabled={busy === "device"} style={styles.button}>{busy === "device" ? "Creating…" : "Create device enrolment"}</button>
+            <button disabled={busy === "device" || displayLimitReached} style={styles.button}>{busy === "device" ? "Creating…" : displayLimitReached ? "Display allowance reached" : "Create device enrolment"}</button>
           </>}
           {deviceFeedback ? <div role={deviceFeedback.tone === "error" ? "alert" : "status"} style={deviceFeedback.tone === "error" ? styles.localError : styles.enrolmentResult}>
             {deviceFeedback.title ? <strong style={styles.resultTitle}>{deviceFeedback.title}</strong> : null}
@@ -262,7 +264,7 @@ export default function DigitalSignageConsole({ organisations, showOrganisationS
               <small style={styles.resultHint}>Paste only the code shown above. It expires after 24 hours and can be used once.</small>
             </> : null}
           </div> : null}
-          <p style={styles.count}>{data.devices.length} registered device{data.devices.length === 1 ? "" : "s"}</p>
+          <p style={styles.count}>{activeDisplayCount}{Number.isInteger(data.displayLimit) ? ` / ${data.displayLimit}` : ""} connected digital display{activeDisplayCount === 1 ? "" : "s"}</p>
           {data.devices.slice(0, 5).map((device) => <div key={device.id} style={styles.row}><strong>{device.name}</strong><span>{device.zone.location.name} · {device.status}</span></div>)}
         </form>
         : null}
