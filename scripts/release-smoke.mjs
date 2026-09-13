@@ -42,10 +42,11 @@ async function expectProtectedApi(path, { method = "GET", body } = {}) {
 
 await expectPublicPage("/", "Every space deserves its");
 await expectPublicPage("/login", "Welcome back");
-await expectPublicPage("/register", "Create your account");
-await expectPublicPage("/register?platform=retail&tier=retail-professional", "Retail Professional");
-await expectPublicPage("/register?platform=school&tier=school-create", "School Create");
-await expectPublicPage("/register?platform=online&tier=online-professional", "Online Professional");
+await expectPublicPage("/register", "Plan registration is temporarily paused");
+await expectPublicPage("/register?platform=retail&tier=retail-professional", "Plan registration is temporarily paused");
+await expectPublicPage("/register?platform=school&tier=school-create", "Plan registration is temporarily paused");
+await expectPublicPage("/register?platform=online&tier=online-professional", "Plan registration is temporarily paused");
+await expectPublicPage("/register/free-access", "Create your free account");
 await expectPublicPage("/player", "Connecting player...");
 await expectProtectedPage("/dashboard");
 await expectProtectedPage("/dashboard/retail");
