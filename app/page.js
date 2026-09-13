@@ -115,12 +115,29 @@ const pricingFamilies = [
 }));
 
 function planFeatures(plan) {
+  if (plan.productFamily === "RETAIL") {
+    const siteLabel = plan.stationLimit === 1 ? "1 site" : `Up to ${plan.stationLimit} sites`;
+    const displayLabel = plan.digitalSignageDisplayLimit === 1
+      ? "1 connected digital display"
+      : `Up to ${plan.digitalSignageDisplayLimit} connected digital displays`;
+    const catalogueLabel = plan.licensedMusicCatalogueLevel === "NONE"
+      ? "Focused Licensed Music Catalogue, subject to product-use and territory rights"
+      : plan.catalogueDescription;
+    return [
+      { label: siteLabel, included: true },
+      { label: `${plan.storageLimitGb} GB media storage`, included: true },
+      { label: `High-quality audio up to ${plan.maxBitrateKbps} kbps`, included: true },
+      { label: `Ruvanas Studio ${plan.studioLevel}`, included: true },
+      { label: catalogueLabel, included: plan.licensedMusicCatalogueLevel !== "NONE" },
+      { label: displayLabel, included: true }
+    ];
+  }
   return [
-    `Up to ${plan.stationLimit} ${["RETAIL", "HEALTH", "FAITH", "ORGANISATIONS"].includes(plan.productFamily) ? "site or station" : "station"}${plan.stationLimit === 1 ? "" : "s"}`,
-    `${plan.storageLimitGb} GB media storage`,
-    `Up to ${plan.listenerLimit.toLocaleString("en-GB")} active listeners`,
-    `High-quality audio up to ${plan.maxBitrateKbps} kbps`,
-    plan.catalogueDescription
+    { label: `Up to ${plan.stationLimit} ${["HEALTH", "FAITH", "ORGANISATIONS"].includes(plan.productFamily) ? "site or station" : "station"}${plan.stationLimit === 1 ? "" : "s"}`, included: true },
+    { label: `${plan.storageLimitGb} GB media storage`, included: true },
+    { label: `Up to ${plan.listenerLimit.toLocaleString("en-GB")} active listeners`, included: true },
+    { label: `High-quality audio up to ${plan.maxBitrateKbps} kbps`, included: true },
+    { label: plan.catalogueDescription, included: plan.licensedMusicCatalogueLevel !== "NONE" }
   ];
 }
 
@@ -370,7 +387,7 @@ export default function HomePage() {
                       </a>
                     ) : <span className={styles.priceCtaDisabled} aria-disabled="true">Registration paused</span>}
                     <ul>
-                      {planFeatures(tier).map((feature) => <li key={feature}><span>✓</span>{feature}</li>)}
+                      {planFeatures(tier).map((feature) => <li className={feature.included ? undefined : styles.unavailableFeature} key={feature.label}><span aria-hidden="true">{feature.included ? "✓" : "⮽"}</span>{feature.label}</li>)}
                     </ul>
                   </article>
                 ))}

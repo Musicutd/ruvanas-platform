@@ -123,6 +123,7 @@ export default async function AdminPlanCataloguePage() {
                     </td>
                     <td style={styles.allowances}>
                       {plan.stationLimit} station{plan.stationLimit === 1 ? "" : "s"}<br />
+                      {plan.productFamily === "RETAIL" ? <>{plan.stationLimit} connected digital display{plan.stationLimit === 1 ? "" : "s"}<br /></> : null}
                       {plan.listenerLimit.toLocaleString()} listeners<br />
                       {plan.storageLimitGb.toLocaleString()} GB · {plan.maxBitrateKbps} kbps
                     </td>

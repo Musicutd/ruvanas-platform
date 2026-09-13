@@ -7,6 +7,7 @@ import { normaliseDigitalSignageDevice } from "@/lib/digital-signage.mjs";
 import { createPlayerToken } from "@/lib/player-tokens.mjs";
 import { playerTokenHash } from "@/lib/player-auth";
 import { getCurrentUser } from "@/lib/auth";
+import { runSerializableTransaction } from "@/lib/transaction-retry.mjs";
 
 const ENROLMENT_HOURS = 24;
 
@@ -20,7 +21,10 @@ export async function GET(request) {
       include: { zone: { include: { location: { select: { id: true, name: true } } } } },
       orderBy: { createdAt: "desc" }
     });
-    return NextResponse.json({ devices: devices.map(({ enrolmentTokenHash, sessionTokenHash, ...device }) => device) });
+    return NextResponse.json({
+      devices: devices.map(({ enrolmentTokenHash, sessionTokenHash, ...device }) => device),
+      displayLimit: access.entitlements.digitalSignageDisplayLimit
+    });
   } catch (error) {
     console.error("List digital signage devices error:", error);
     return NextResponse.json({ error: "Unable to load signage devices." }, { status: 500 });
@@ -42,7 +46,16 @@ export async function POST(request) {
 
     const enrolmentCode = createPlayerToken();
     const enrolmentExpiresAt = new Date(Date.now() + ENROLMENT_HOURS * 60 * 60 * 1000);
-    const device = await prisma.$transaction(async (tx) => {
+    const device = await runSerializableTransaction(prisma, async (tx) => {
+      const displayLimit = access.entitlements.digitalSignageDisplayLimit;
+      if (Number.isInteger(displayLimit) && displayLimit > 0) {
+        const activeDisplayCount = await tx.digitalSignageDevice.count({
+          where: { organisationId: input.organisationId, status: { not: "DISABLED" } }
+        });
+        if (activeDisplayCount >= displayLimit) {
+          throw Object.assign(new Error(`Your Retail plan supports ${displayLimit} connected digital display${displayLimit === 1 ? "" : "s"}. Disable an existing display or change plan before adding another.`), { status: 403 });
+        }
+      }
       const created = await tx.digitalSignageDevice.create({ data: {
         ...input,
         createdByUserId: access.user.id,
@@ -62,6 +75,7 @@ export async function POST(request) {
     return NextResponse.json({ device: { id: device.id, name: device.name, enrolmentCode, enrolmentExpiresAt, status: device.status } }, { status: 201 });
   } catch (error) {
     console.error("Create digital signage device error:", error);
-    return NextResponse.json({ error: "Unable to create the signage device." }, { status: 500 });
+    const status = error?.status === 403 ? 403 : 500;
+    return NextResponse.json({ error: status === 403 ? error.message : "Unable to create the signage device." }, { status });
   }
 }
