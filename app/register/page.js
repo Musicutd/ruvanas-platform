@@ -1,13 +1,17 @@
 import RegisterJourney from "./RegisterJourney";
 import {
   registrationProducts,
+  registrationProductsFromDatabasePlans,
   resolveRegistrationDeepLink
 } from "@/lib/registration-experience.mjs";
+import { prisma } from "@/lib/prisma";
 import {
   SELF_SERVICE_REGISTRATION_ENABLED,
   SELF_SERVICE_REGISTRATION_MESSAGE
 } from "@/lib/registration-availability.mjs";
 import styles from "./register.module.css";
+
+export const dynamic = "force-dynamic";
 
 export const metadata = {
   title: SELF_SERVICE_REGISTRATION_ENABLED ? "Create your account" : "Registration by code only",
@@ -36,10 +40,21 @@ export default async function RegisterPage({ searchParams }) {
   }
 
   const query = await Promise.resolve(searchParams);
-  const initialSelection = resolveRegistrationDeepLink({
+  let products = registrationProducts();
+  try {
+    products = registrationProductsFromDatabasePlans(await prisma.plan.findMany({ where: { publiclyAvailable: true } }));
+  } catch (error) {
+    console.error("Unable to load live registration tiers; using the verified catalogue defaults:", error);
+  }
+  const requestedSelection = resolveRegistrationDeepLink({
     platform: query?.platform,
     tier: query?.tier
   });
+  const selectedProduct = products.find((product) => product.id === requestedSelection.product);
+  const selectedTier = selectedProduct?.plans.find((plan) => plan.publicSlug === requestedSelection.tier);
+  const initialSelection = selectedTier
+    ? requestedSelection
+    : { ...requestedSelection, tier: null, selectedFromPricing: false, enterpriseRequested: false };
 
-  return <RegisterJourney products={registrationProducts()} initialSelection={initialSelection} />;
+  return <RegisterJourney products={products} initialSelection={initialSelection} />;
 }
