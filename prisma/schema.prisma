@@ -2312,9 +2312,10 @@ model ComplimentaryAccessCode {
   id               String                    @id @default(cuid())
   codeHash         String                    @unique
   codeSuffix       String
-  organisationId   String
+  organisationId   String?
   planId           String
   status           ComplimentaryAccessStatus @default(ISSUED)
+  recipientEmail   String?
   note             String?
   createdByUserId  String
   redeemedByUserId String?
@@ -2324,7 +2325,7 @@ model ComplimentaryAccessCode {
   createdAt        DateTime                  @default(now())
   updatedAt        DateTime                  @updatedAt
 
-  organisation       Organisation  @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  organisation       Organisation? @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   plan               Plan          @relation(fields: [planId], references: [id], onDelete: Restrict)
   createdBy          User          @relation("ComplimentaryAccessCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
   redeemedBy         User?         @relation("ComplimentaryAccessRedeemedBy", fields: [redeemedByUserId], references: [id], onDelete: SetNull)
@@ -2332,6 +2333,7 @@ model ComplimentaryAccessCode {
   activeSubscription Subscription? @relation("ActiveComplimentaryAccess")
 
   @@index([organisationId, status, createdAt])
+  @@index([recipientEmail, status, createdAt])
   @@index([planId, status])
 }
 

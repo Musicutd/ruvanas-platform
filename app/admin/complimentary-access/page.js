@@ -11,7 +11,7 @@ export default async function ComplimentaryAccessPage() {
   if (adminUser?.role !== "SUPER_ADMIN") redirect("/admin/organisations");
 
   const [plans, organisations, accessCodes] = await Promise.all([
-    prisma.plan.findMany({ where: { active: true }, orderBy: [{ monthlyPriceCents: "asc" }, { name: "asc" }] }),
+    prisma.plan.findMany({ where: { active: true, publiclyAvailable: true }, orderBy: [{ productFamily: "asc" }, { tierNumber: "asc" }] }),
     prisma.organisation.findMany({ where: { subscription: { isNot: null } }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
     prisma.complimentaryAccessCode.findMany({
       orderBy: { createdAt: "desc" },
@@ -38,7 +38,8 @@ export default async function ComplimentaryAccessPage() {
       organisations={organisations}
       accessCodes={accessCodes.map((item) => ({
         id: item.id,
-        organisationName: item.organisation.name,
+        organisationName: item.organisation?.name || null,
+        recipientEmail: item.recipientEmail,
         planName: item.plan.name,
         planCode: item.plan.code,
         status: item.status,

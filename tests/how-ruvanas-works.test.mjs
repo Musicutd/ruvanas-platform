@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { ruvanasProductGuides } from "../lib/how-ruvanas-works.mjs";
+import { guideIdsForEntitlements, ruvanasProductGuides } from "../lib/how-ruvanas-works.mjs";
 import { buildSubscriberNavigation } from "../lib/user-experience-navigation.mjs";
 
 test("one How it works page is linked prominently from subscriber navigation", () => {
@@ -41,10 +41,18 @@ test("the guide separates all six products into dedicated tabs", () => {
   }
 });
 
+test("signed-in product guides are limited to the organisation's active product", () => {
+  assert.deepEqual(guideIdsForEntitlements({ planProductFamily: "HEALTH" }), ["health"]);
+  assert.deepEqual(guideIdsForEntitlements({ planProductFamily: "FAITH" }), ["faith"]);
+  assert.deepEqual(guideIdsForEntitlements({ planProductFamily: "ONLINE" }), ["radio"]);
+  assert.deepEqual(guideIdsForEntitlements({ organisationsEnabled: true }), ["organisations"]);
+});
+
 test("the guide uses accessible tabs and click-to-open information boxes", async () => {
   const source = await readFile(new URL("../app/dashboard/how-it-works/HowItWorksClient.js", import.meta.url), "utf8");
   assert.match(source, /<WorkspaceTabs/);
-  assert.match(source, /defaultTab="retail"/);
+  assert.match(source, /defaultTab=\{guides\[0\]\.id\}/);
+  assert.match(source, /visibleProductIds\.includes\(product\.id\)/);
   assert.match(source, /<details/);
   assert.match(source, /<summary>/);
   assert.match(source, /Open each box below/);

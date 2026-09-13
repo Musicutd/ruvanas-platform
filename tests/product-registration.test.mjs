@@ -139,10 +139,12 @@ test("registration plans resolve only from active matching public database rows"
     resolveRegistrationPlan(database, { product: "RETAIL", tier: "invented-tier" }),
     (error) => error.code === "INVALID_PLAN"
   );
-  await assert.rejects(
-    resolveRegistrationPlan(database, { product: "RETAIL", tier: "retail-enterprise" }),
-    (error) => error.code === "ENTERPRISE_CONTACT_REQUIRED" && error.status === 422
+  const enterpriseRetail = databasePlan("RETAIL_ENTERPRISE");
+  const enterprise = await resolveRegistrationPlan(
+    { plan: { findUnique: async () => enterpriseRetail } },
+    { product: "RETAIL", tier: "retail-enterprise" }
   );
+  assert.equal(enterprise.cataloguePlan.tierNumber, 5);
   await assert.rejects(
     resolveRegistrationPlan(
       { plan: { findUnique: async () => ({ ...activeRetail, active: false }) } },

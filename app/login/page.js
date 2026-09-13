@@ -109,6 +109,11 @@ export default function LoginPage() {
         <p style={styles.footer}>
           New to Ruvanas? <a href="/register" style={styles.link}>Create an account</a>
         </p>
+
+        <section style={styles.freeAccess} aria-labelledby="free-access-title">
+          <div><strong id="free-access-title">Have a free-access code?</strong><span style={styles.freeAccessText}>Create the eligible account linked to the code. No payment details are required.</span></div>
+          <a href="/register/free-access" style={styles.freeAccessLink}>Create free account with code</a>
+        </section>
       </section>
     </main>
   );
@@ -214,6 +219,32 @@ const styles = {
     margin: "24px 0 0",
     color: "#b8c3d6",
     textAlign: "center"
+  },
+  freeAccess: {
+    display: "grid",
+    gap: 14,
+    marginTop: 22,
+    padding: 18,
+    border: "1px solid #42526b",
+    borderRadius: 10,
+    background: "#101827"
+  },
+  freeAccessLink: {
+    display: "inline-flex",
+    justifyContent: "center",
+    borderRadius: 7,
+    background: "#eef2f7",
+    color: "#101827",
+    padding: "11px 14px",
+    fontWeight: 800,
+    textDecoration: "none"
+  },
+  freeAccessText: {
+    display: "block",
+    marginTop: 6,
+    color: "#aeb9c8",
+    fontSize: 13,
+    lineHeight: 1.5
   },
   link: {
     color: "#f4b942",

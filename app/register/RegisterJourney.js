@@ -115,7 +115,7 @@ export default function RegisterJourney({ products, initialSelection }) {
             })}
           </ol>
 
-          {initialSelection.enterpriseRequested ? <p className={styles.enterpriseNotice} role="status">Enterprise services need a tailored setup. Choose a service to review its plans; Ruvanas will confirm Enterprise access directly with your organisation.</p> : null}
+          {initialSelection.enterpriseRequested ? <p className={styles.enterpriseNotice} role="status">Tier 5 is selected. You can create the account and start the trial; Ruvanas will confirm the tailored paid terms before activation after the trial.</p> : null}
           {error ? <p className={styles.error} role="alert" tabIndex="-1" ref={errorRef}>{error}</p> : null}
 
           {step === 1 ? (
@@ -132,7 +132,7 @@ export default function RegisterJourney({ products, initialSelection }) {
               <p className={styles.stepLabel}>Step 2 of 4</p><h2 tabIndex="-1" ref={headingRef}>Choose your {selectedProduct?.shortLabel} plan</h2><p className={styles.stepIntro}>Every plan below is verified for {selectedProduct?.label}. You can change it before creating your account.</p>
               {selectedFromPricing ? <p className={styles.pricingBadge}>✓ Selected from pricing</p> : null}
               <fieldset className={styles.planGrid}><legend className={styles.srOnly}>Available plans</legend>
-                {selectedProduct?.plans.map((plan) => plan.enterpriseContactRequired ? <div className={styles.enterprisePlan} key={plan.code}><div><span>Tier {plan.tierNumber}</span><strong>{plan.name}</strong><small>{plan.priceLabel}</small></div><p>{plan.description}</p><span className={styles.contactRequired}>Tailored setup required</span></div> : <label className={`${styles.planOption} ${tier === plan.publicSlug ? styles.selectedOption : ""}`} key={plan.code}><input type="radio" name="tier" value={plan.publicSlug} checked={tier === plan.publicSlug} onChange={() => selectTier(plan.publicSlug)} /><span className={styles.planTop}><span>Tier {plan.tierNumber}</span><strong>{plan.name}</strong><small>{plan.priceLabel}</small></span><span className={styles.planDescription}>{plan.description}</span><span className={styles.planFacts}>{plan.storageLimitGb} GB storage · up to {plan.maxBitrateKbps} kbps</span><span className={styles.catalogueNote}>{plan.catalogueDescription}</span><span className={styles.selectionText}>{tier === plan.publicSlug ? "Selected" : "Choose plan"}</span></label>)}
+                {selectedProduct?.plans.map((plan) => <label className={`${styles.planOption} ${plan.enterpriseContactRequired ? styles.enterprisePlanOption : ""} ${tier === plan.publicSlug ? styles.selectedOption : ""}`} key={plan.code}><input type="radio" name="tier" value={plan.publicSlug} checked={tier === plan.publicSlug} onChange={() => selectTier(plan.publicSlug)} /><span className={styles.planTop}><span>Tier {plan.tierNumber}</span><strong>{plan.name}</strong><small>{plan.priceLabel}</small></span><span className={styles.planDescription}>{plan.description}</span><span className={styles.planFacts}>{plan.storageLimitGb} GB storage · up to {plan.maxBitrateKbps} kbps</span><span className={styles.catalogueNote}>{plan.catalogueDescription}</span>{plan.enterpriseContactRequired ? <span className={styles.enterpriseTerms}>Tailored paid terms confirmed before post-trial activation</span> : null}<span className={styles.selectionText}>{tier === plan.publicSlug ? "Selected" : "Choose plan"}</span></label>)}
               </fieldset>
             </div>
           ) : null}
