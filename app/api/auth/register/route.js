@@ -11,14 +11,15 @@ import {
 import { securityLog } from "@/lib/security-log";
 import {
   SELF_SERVICE_REGISTRATION_ENABLED,
-  SELF_SERVICE_REGISTRATION_MESSAGE
+  SELF_SERVICE_REGISTRATION_MESSAGE,
+  isInternalRegistrationTestRequest
 } from "@/lib/registration-availability.mjs";
 
 const REGISTRATION_LIMIT = 5;
 const REGISTRATION_WINDOW_MS = 60 * 60 * 1000;
 
 export async function POST(request) {
-  if (!SELF_SERVICE_REGISTRATION_ENABLED) {
+  if (!SELF_SERVICE_REGISTRATION_ENABLED && !isInternalRegistrationTestRequest(request)) {
     return NextResponse.json(
       {
         error: SELF_SERVICE_REGISTRATION_MESSAGE,

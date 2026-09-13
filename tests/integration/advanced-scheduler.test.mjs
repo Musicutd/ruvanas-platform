@@ -8,6 +8,7 @@ const db = new PrismaClient();
 
 async function api(path, { method = "GET", body, cookie, clientAddress } = {}) {
   const headers = { origin: baseUrl };
+  if (process.env.INTERNAL_REGISTRATION_TEST_KEY) headers["x-ruvanas-registration-test-key"] = process.env.INTERNAL_REGISTRATION_TEST_KEY;
   if (cookie) headers.cookie = cookie;
   if (clientAddress) headers["x-forwarded-for"] = clientAddress;
   if (body !== undefined) headers["content-type"] = "application/json";

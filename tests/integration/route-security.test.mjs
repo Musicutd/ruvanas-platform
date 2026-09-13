@@ -9,6 +9,7 @@ const baseUrl = process.env.INTEGRATION_BASE_URL || "http://127.0.0.1:3100";
 
 async function api(path, { method = "GET", body, cookie, origin = baseUrl, headers: extraHeaders = {} } = {}) {
   const headers = { ...extraHeaders };
+  if (process.env.INTERNAL_REGISTRATION_TEST_KEY) headers["x-ruvanas-registration-test-key"] = process.env.INTERNAL_REGISTRATION_TEST_KEY;
   if (origin !== null) headers.origin = origin;
   if (cookie) headers.cookie = cookie;
   if (body !== undefined) headers["content-type"] = "application/json";
