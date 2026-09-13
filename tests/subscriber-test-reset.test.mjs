@@ -50,14 +50,21 @@ test("reset removes tenant records atomically before non-retained users", async 
     auditLog: { ...deleting("auditLogs"), create: async () => { calls.push("resetAudit"); return { id: "audit-1" }; } }, rightsReportAttestation: deleting("rightsAttestations"), auditExportSeal: deleting("auditExportSeals"),
     rightsUsageLedgerEvent: deleting("rightsLedger"), radioSyndicationAgreement: deleting("syndicationAgreements"),
     radioSyndicationOffer: deleting("syndicationOffers"), stationNetworkAgreement: deleting("stationNetworkAgreements"),
+    studioBroadcastCommand: deleting("studioBroadcastCommands"), studioBroadcastSession: deleting("studioBroadcastSessions"),
+    studioBroadcastDestination: deleting("studioBroadcastDestinations"), studioPlayoutSession: deleting("studioPlayoutSessions"),
+    studioProgrammePack: deleting("studioProgrammePacks"), betaProgrammeReview: deleting("betaProgrammeReviews"),
     supportTicket: deleting("supportTickets"), betaProgramme: deleting("betaProgrammes"), complimentaryAccessCode: deleting("accessCodes"),
     billingInvoice: { count: async () => 0 }, billingContract: { count: async () => 0 },
     recoveryControl: { updateMany: async () => ({ count: 0 }) }, recoveryEvidence: { updateMany: async () => ({ count: 0 }) }
   };
-  const database = { $transaction: async (callback) => callback(tx) };
+  let transactionOptions;
+  const database = { $transaction: async (callback, options) => { transactionOptions = options; return callback(tx); } };
   const result = await resetSubscriberTestData(database, { actor: retainedUser, retainedEmail: retainedUser.email, confirmation: SUBSCRIBER_TEST_RESET_CONFIRMATION });
   assert.equal(result.deletedUsers, 1);
   assert.equal(result.deletedOrganisations, 1);
+  assert.deepEqual(transactionOptions, { maxWait: 10_000, timeout: 120_000 });
+  assert.ok(calls.indexOf("studioBroadcastCommands") < calls.indexOf("organisations"));
+  assert.ok(calls.indexOf("betaProgrammeReviews") < calls.indexOf("users"));
   assert.ok(calls.indexOf("organisations") < calls.indexOf("users"));
   assert.equal(calls.at(-1), "resetAudit");
 });
