@@ -94,7 +94,7 @@ export default function HowItWorksClient({ organisationName, membershipRole, pub
       <footer className={styles.footerHelp}>
         <div><strong>{publicView ? "Ready to choose your Ruvanas service?" : "Need help with a specific problem?"}</strong><span>{publicView ? "Create an account or sign in to continue with your organisation." : "Search short answers or send a secure request to the Ruvanas team."}</span></div>
         <nav aria-label="Additional help">
-          {publicView ? <><Link href="/register">Create account</Link><Link href="/login">Log in</Link></> : <><Link href="/dashboard/help">Help centre</Link><Link href="/dashboard/support">Support requests</Link></>}
+          {publicView ? <><Link href="/register/free-access">Use access code</Link><Link href="/login">Log in</Link></> : <><Link href="/dashboard/help">Help centre</Link><Link href="/dashboard/support">Support requests</Link></>}
         </nav>
       </footer>
     </main>

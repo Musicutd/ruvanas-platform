@@ -106,10 +106,6 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <p style={styles.footer}>
-          New to Ruvanas? <a href="/register" style={styles.link}>Create an account</a>
-        </p>
-
         <section style={styles.freeAccess} aria-labelledby="free-access-title">
           <div><strong id="free-access-title">Have a free-access code?</strong><span style={styles.freeAccessText}>Create the eligible account linked to the code. No payment details are required.</span></div>
           <a href="/register/free-access" style={styles.freeAccessLink}>Create free account with code</a>

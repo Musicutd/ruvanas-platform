@@ -1,5 +1,6 @@
 import styles from "./home.module.css";
 import { registrationProducts } from "@/lib/registration-experience.mjs";
+import { SELF_SERVICE_REGISTRATION_ENABLED } from "@/lib/registration-availability.mjs";
 
 export const metadata = {
   title: "Ruvanas | Professional Radio Platforms by 21-Three",
@@ -202,7 +203,7 @@ export default function HomePage() {
 
           <div className={styles.navActions}>
             <a className={styles.loginLink} href="/login">Log in</a>
-            <a className={styles.navCta} href="/register">Sign up <ArrowIcon /></a>
+            <a className={styles.navCta} href="/register/free-access">Use access code <ArrowIcon /></a>
           </div>
         </div>
       </header>
@@ -217,7 +218,7 @@ export default function HomePage() {
               Ruvanas brings professional media within reach—from retail and schools to online stations, health, faith and other organisations.
             </p>
             <div className={styles.heroActions}>
-              <a className={styles.primaryButton} href="/register">Create your account <ArrowIcon /></a>
+              <a className={styles.primaryButton} href="/register/free-access">Create account with code <ArrowIcon /></a>
               <a className={styles.secondaryButton} href="/how-it-works">See how it works</a>
             </div>
             <div className={styles.heroProof} aria-label="Ruvanas platform highlights">
@@ -363,9 +364,11 @@ export default function HomePage() {
                     <h4>{tier.name}</h4>
                     <p className={styles.tierDescription}>{tier.description}</p>
                     <div className={`${styles.price} ${styles.priceLabel}`}><strong>{tier.priceLabel}</strong></div>
-                    <a className={tier.tierNumber === 3 ? styles.priceCtaFeatured : styles.priceCta} href={`/register?platform=${family.id}&tier=${tier.publicSlug}`}>
-                      {tier.enterpriseContactRequired ? "Discuss " : "Choose "}{tier.name} <ArrowIcon />
-                    </a>
+                    {SELF_SERVICE_REGISTRATION_ENABLED ? (
+                      <a className={tier.tierNumber === 3 ? styles.priceCtaFeatured : styles.priceCta} href={`/register?platform=${family.id}&tier=${tier.publicSlug}`}>
+                        {tier.enterpriseContactRequired ? "Discuss " : "Choose "}{tier.name} <ArrowIcon />
+                      </a>
+                    ) : <span className={styles.priceCtaDisabled} aria-disabled="true">Registration paused</span>}
                     <ul>
                       {planFeatures(tier).map((feature) => <li key={feature}><span>✓</span>{feature}</li>)}
                     </ul>
@@ -379,7 +382,9 @@ export default function HomePage() {
         <div className={styles.enterprisePlan}>
           <div><p>Enterprise</p><h3>Need a larger or specially configured service?</h3></div>
           <p>We can tailor streams, listeners, schools, storage, identity, governance, onboarding and support around your organisation.</p>
-          <a href="/register?platform=enterprise">Talk to Ruvanas <ArrowIcon /></a>
+          {SELF_SERVICE_REGISTRATION_ENABLED
+            ? <a href="/register?platform=enterprise">Talk to Ruvanas <ArrowIcon /></a>
+            : <span className={styles.enterpriseRegistrationPaused} aria-disabled="true">Registration paused</span>}
         </div>
         <p className={styles.pricingNote}>Prices are shown in euro and exclude applicable tax. Music licensing, production, media, unusually high delivery volumes and bespoke services may be agreed separately. Final eligibility and service configuration are confirmed during onboarding.</p>
       </section>
@@ -454,7 +459,7 @@ export default function HomePage() {
           <h2>Give your audience a sound worth remembering.</h2>
         </div>
         <div className={styles.finalActions}>
-          <a className={styles.primaryButton} href="/register">Sign up to Ruvanas <ArrowIcon /></a>
+          <a className={styles.primaryButton} href="/register/free-access">Use your free-access code <ArrowIcon /></a>
           <a className={styles.finalLogin} href="/login">Already a member? Log in</a>
         </div>
       </section>

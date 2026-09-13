@@ -320,6 +320,7 @@
 .priceCta, .priceCtaFeatured { min-height: 43px; display: flex; align-items: center; justify-content: center; gap: 6px; margin: 16px 0 23px; border: 1px solid #bbc2ca; border-radius: 7px; color: var(--ink); font-size: 11px; font-weight: 900; text-decoration: none; }
 .priceCta:hover { border-color: var(--ink); background: #fff; }
 .priceCtaFeatured { border-color: var(--gold); }
+.priceCtaDisabled { min-height: 43px; display: flex; align-items: center; justify-content: center; margin: 16px 0 23px; border: 1px dashed #bbc2ca; border-radius: 7px; background: #e9edf1; color: #687483; font-size: 11px; font-weight: 900; cursor: not-allowed; }
 .priceCard ul { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
 .priceCard li { display: grid; grid-template-columns: 17px 1fr; gap: 6px; color: #586577; font-size: 10px; line-height: 1.4; }
 .featuredTier li { color: #aeb9c6; }
@@ -330,6 +331,7 @@
 .enterprisePlan > p { margin: 0; color: #9eabb9; font-size: 12px; line-height: 1.65; }
 .enterprisePlan > a { min-height: 46px; display: flex; align-items: center; justify-content: center; gap: 7px; padding: 0 20px; border-radius: 7px; background: var(--gold); color: var(--ink); font-size: 11px; font-weight: 900; text-decoration: none; white-space: nowrap; }
 .enterprisePlan > a:hover { background: #ffd16f; }
+.enterpriseRegistrationPaused { min-height: 46px; display: flex; align-items: center; justify-content: center; padding: 0 20px; border: 1px dashed #68758a; border-radius: 7px; color: #aeb9c7; font-size: 11px; font-weight: 900; white-space: nowrap; cursor: not-allowed; }
 .pricingNote { max-width: 920px; margin: 30px auto 0; color: #707c8a; font-size: 10px; line-height: 1.6; text-align: center; }
 
 .storySection { width: min(1200px, calc(100% - 40px)); margin: 0 auto; display: grid; grid-template-columns: .5fr 1.5fr; gap: 70px; padding: 125px 0; }
