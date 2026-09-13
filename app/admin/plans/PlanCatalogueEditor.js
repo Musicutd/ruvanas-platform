@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import styles from "./plans.module.css";
 
 const PRODUCT_FIELDS = [
@@ -39,6 +39,12 @@ export default function PlanCatalogueEditor({ initialPlans, productLabels }) {
   const [draft, setDraft] = useState(null);
   const [working, setWorking] = useState(false);
   const [status, setStatus] = useState({ tone: "", message: "" });
+  const formRef = useRef(null);
+
+  useEffect(() => {
+    if (!draft || !formRef.current) return;
+    formRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [draft]);
 
   function beginEdit(plan) {
     setEditingId(plan.id);
@@ -106,9 +112,10 @@ export default function PlanCatalogueEditor({ initialPlans, productLabels }) {
   return (
     <div className={styles.editor}>
       {status.message ? <p className={status.tone === "success" ? styles.success : styles.error} role="status">{status.message}</p> : null}
+      <p className={styles.editorHint}>Choose <strong>Edit tier</strong> on any row. The action stays visible while the plan table scrolls.</p>
       <div className={styles.tableWrapper}>
         <table className={styles.table}>
-          <thead><tr>{["Plan", "Product", "Tier", "Price / month", "Product access", "Licensed Music Catalogue", "Allowances", "Status", "Action"].map((label) => <th key={label}>{label}</th>)}</tr></thead>
+          <thead><tr>{["Plan", "Product", "Tier", "Price / month", "Product access", "Licensed Music Catalogue", "Allowances", "Status", "Action"].map((label) => <th key={label} className={label === "Action" ? styles.actionHeader : undefined}>{label}</th>)}</tr></thead>
           <tbody>{plans.map((plan) => (
             <tr key={plan.id}>
               <td className={styles.planCell}><strong>{plan.name}</strong><code>{plan.code}</code>{plan.description ? <small>{plan.description}</small> : null}</td>
@@ -119,14 +126,14 @@ export default function PlanCatalogueEditor({ initialPlans, productLabels }) {
               <td><span className={plan.licensedMusicCatalogueLevel === "NONE" ? styles.noneBadge : styles.catalogueBadge}>{plan.licensedMusicCatalogueLevel}</span></td>
               <td className={styles.allowances}>{plan.stationLimit} site/station{plan.stationLimit === 1 ? "" : "s"}<br />{plan.listenerLimit.toLocaleString()} listeners<br />{plan.storageLimitGb.toLocaleString()} GB · {plan.maxBitrateKbps} kbps{plan.digitalSignageEnabled ? <><br />Digital signage on</> : null}</td>
               <td><span className={plan.active ? styles.activeBadge : styles.inactiveBadge}>{plan.active ? "Active" : "Inactive"}</span></td>
-              <td><button type="button" className={styles.editButton} onClick={() => beginEdit(plan)}>Edit tier</button></td>
+              <td className={styles.actionCell}><button type="button" className={styles.editButton} onClick={() => beginEdit(plan)}>Edit tier</button></td>
             </tr>
           ))}</tbody>
         </table>
       </div>
 
       {draft && editingId ? (
-        <form className={styles.form} onSubmit={save}>
+        <form ref={formRef} className={styles.form} onSubmit={save}>
           <div className={styles.formHeader}><div><p>Editing {draft.code}</p><h3>{draft.name}</h3></div><button type="button" onClick={() => { setEditingId(null); setDraft(null); setStatus({ tone: "", message: "" }); }}>Close</button></div>
           <p className={styles.formNotice}>Plan code and product family stay fixed. Saved changes affect every regular subscription using this tier; complimentary-access grants already activated retain their original snapshot.</p>
           <fieldset><legend>Plan and price</legend><div className={styles.fields}>
