@@ -1,6 +1,9 @@
 import styles from "./home.module.css";
-import { registrationProducts } from "@/lib/registration-experience.mjs";
+import { prisma } from "@/lib/prisma";
+import { registrationProducts, registrationProductsFromDatabasePlans } from "@/lib/registration-experience.mjs";
 import { SELF_SERVICE_REGISTRATION_ENABLED } from "@/lib/registration-availability.mjs";
+
+export const dynamic = "force-dynamic";
 
 export const metadata = {
   title: "Ruvanas | Professional Radio Platforms by 21-Three",
@@ -64,9 +67,7 @@ const services = [
   ["Room to grow", "Start with one location or station, then add streams, schools, signage and campaigns as you expand."],
 ];
 
-const approvedProductPlans = registrationProducts();
-
-const pricingFamilies = [
+const pricingFamilyDefinitions = [
   {
     id: "retail",
     productId: "RETAIL",
@@ -109,10 +110,7 @@ const pricingFamilies = [
     title: "Bring your organisation’s media into one governed workspace.",
     text: "Subscriber-operated channels, announcements, events, podcasts, sponsors, displays and branch controls."
   },
-].map((family) => ({
-  ...family,
-  tiers: approvedProductPlans.find((product) => product.id === family.productId)?.plans || []
-}));
+];
 
 function planFeatures(plan) {
   if (plan.productFamily === "RETAIL") {
@@ -195,7 +193,18 @@ function ArrowIcon() {
   );
 }
 
-export default function HomePage() {
+export default async function HomePage() {
+  let approvedProductPlans = registrationProducts();
+  try {
+    const databasePlans = await prisma.plan.findMany({ where: { publiclyAvailable: true } });
+    approvedProductPlans = registrationProductsFromDatabasePlans(databasePlans);
+  } catch (error) {
+    console.error("Unable to load live pricing; using the verified catalogue defaults:", error);
+  }
+  const pricingFamilies = pricingFamilyDefinitions.map((family) => ({
+    ...family,
+    tiers: approvedProductPlans.find((product) => product.id === family.productId)?.plans || []
+  }));
   const waveform = [28, 45, 68, 38, 82, 54, 92, 62, 35, 74, 48, 88, 58, 32, 67, 44, 78, 52, 90, 40, 64, 30, 55, 36];
 
   return (

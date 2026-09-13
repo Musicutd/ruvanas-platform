@@ -3,6 +3,7 @@ import PageHeader from "@/app/components/PageHeader";
 import { prisma } from "@/lib/prisma";
 import { findPublicPlan, RUVANAS_PRODUCTS } from "@/lib/product-plan-catalogue.mjs";
 import { getAdminUser } from "@/lib/requireAdmin";
+import PlanCatalogueEditor from "./PlanCatalogueEditor";
 
 const PRODUCT_LABELS = Object.freeze({
   RETAIL: "Retail Radio",
@@ -69,7 +70,7 @@ export default async function AdminPlanCataloguePage() {
       <PageHeader
         eyebrow="Commercial control"
         title="Plan catalogue"
-        description="Review all 30 server-owned tiers across six Ruvanas product families, their product authority and Licensed Music Catalogue level. Changes remain code-controlled and auditable."
+        description="Review and edit the 30 tiers across six Ruvanas product families, including product access, Licensed Music Catalogue level, allowances and status. Stable plan codes and product-family authority remain protected; every commercial change is audited."
       />
 
       <section style={styles.summaryGrid} aria-label="Plan catalogue summary">
@@ -91,49 +92,17 @@ export default async function AdminPlanCataloguePage() {
             <p style={styles.kicker}>Authoritative commercial offer</p>
             <h2 style={styles.sectionTitle}>Public plans</h2>
           </div>
-          <span style={styles.readOnly}>Read-only</span>
+          <span style={styles.editable}>Super Admin editable</span>
         </div>
-        <div style={styles.tableWrapper}>
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                {["Plan", "Product", "Tier", "Price / month", "Product access", "Licensed Music Catalogue", "Allowances", "Status"].map((label) => (
-                  <th key={label} scope="col" style={styles.th}>{label}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {publicPlans.map((plan) => {
-                const cataloguePlan = findPublicPlan(plan.code);
-                return (
-                  <tr key={plan.id} style={styles.tr}>
-                    <td style={styles.strongCell}>
-                      <div>{plan.name}</div>
-                      <div style={styles.code}>{plan.code}</div>
-                      {cataloguePlan?.description ? <p style={styles.planDescription}>{cataloguePlan.description}</p> : null}
-                    </td>
-                    <td style={styles.td}>{PRODUCT_LABELS[plan.productFamily] || "Unclassified"}</td>
-                    <td style={styles.td}>Tier {plan.tierNumber}</td>
-                    <td style={styles.priceCell}>{formatPrice(plan)}</td>
-                    <td style={styles.td}><ProductBadges plan={plan} /></td>
-                    <td style={styles.td}>
-                      <span style={plan.licensedMusicCatalogueLevel === "NONE" ? styles.noneBadge : styles.catalogueBadge}>
-                        {plan.licensedMusicCatalogueLevel}
-                      </span>
-                    </td>
-                    <td style={styles.allowances}>
-                      {plan.stationLimit} station{plan.stationLimit === 1 ? "" : "s"}<br />
-                      {plan.productFamily === "RETAIL" ? <>{plan.stationLimit} connected digital display{plan.stationLimit === 1 ? "" : "s"}<br /></> : null}
-                      {plan.listenerLimit.toLocaleString()} listeners<br />
-                      {plan.storageLimitGb.toLocaleString()} GB · {plan.maxBitrateKbps} kbps
-                    </td>
-                    <td style={styles.td}><span style={plan.active ? styles.activeBadge : styles.inactiveBadge}>{plan.active ? "Active" : "Inactive"}</span></td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <PlanCatalogueEditor
+          productLabels={PRODUCT_LABELS}
+          initialPlans={publicPlans.map((plan) => ({
+            ...plan,
+            createdAt: plan.createdAt.toISOString(),
+            updatedAt: plan.updatedAt.toISOString(),
+            description: findPublicPlan(plan.code)?.description || ""
+          }))}
+        />
       </section>
 
       {legacyPlans.length > 0 ? (
@@ -170,7 +139,7 @@ const styles = {
   sectionHeading: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 16 },
   kicker: { margin: "0 0 5px", color: "#9a6400", fontSize: 11, fontWeight: 900, letterSpacing: ".8px", textTransform: "uppercase" },
   sectionTitle: { margin: 0, color: "#111827", fontSize: 21, fontWeight: 900 },
-  readOnly: { borderRadius: 999, background: "#e2e8f0", color: "#334155", padding: "6px 10px", fontSize: 11, fontWeight: 850 },
+  editable: { borderRadius: 999, background: "#dcfce7", color: "#166534", padding: "6px 10px", fontSize: 11, fontWeight: 850 },
   tableWrapper: { overflowX: "auto", border: "1px solid #cbd5e1", borderRadius: 10, background: "#fff" },
   table: { width: "100%", minWidth: 1260, borderCollapse: "collapse" },
   th: { padding: "12px 11px", borderBottom: "2px solid #94a3b8", background: "#e2e8f0", color: "#172033", fontSize: 12, fontWeight: 900, textAlign: "left", whiteSpace: "nowrap" },

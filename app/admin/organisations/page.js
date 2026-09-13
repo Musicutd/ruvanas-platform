@@ -5,6 +5,7 @@ import SchoolRadioEntitlementControl from "./SchoolRadioEntitlementControl";
 import SchoolPublicPublishingEntitlementControl from "./SchoolPublicPublishingEntitlementControl";
 import RetailMediaEntitlementControl from "./RetailMediaEntitlementControl";
 import DigitalSignageEntitlementControl from "./DigitalSignageEntitlementControl";
+import TrialOrganisationDeleteControl from "./TrialOrganisationDeleteControl";
 import PageHeader from "@/app/components/PageHeader";
 import EmptyState from "@/app/components/EmptyState";
 import { interfaceMessages } from "@/lib/interface-guidance.mjs";
@@ -184,9 +185,10 @@ export default async function AdminOrganisationsPage() {
         title={interfaceMessages.organisations.title}
         description="Customer accounts contain their brands, locations, stations, channels and team members."
       >
-        <Link href="/admin/organisations/new" style={styles.addButton}>
-          Add organisation
-        </Link>
+        <div style={styles.headerActions}>
+          {canManageEntitlements ? <Link href="/admin/test-data-reset" style={styles.resetButton}>Reset all test data</Link> : null}
+          <Link href="/admin/organisations/new" style={styles.addButton}>Add organisation</Link>
+        </div>
       </PageHeader>
 
       <section style={styles.section}>
@@ -219,6 +221,7 @@ export default async function AdminOrganisationsPage() {
                   <th scope="col" style={styles.tableHeader}>Channels</th>
                   <th scope="col" style={styles.tableHeader}>Stations</th>
                   <th scope="col" style={styles.tableHeader}>Created</th>
+                  <th scope="col" style={styles.tableHeader}>Actions</th>
                 </tr>
               </thead>
 
@@ -339,6 +342,16 @@ export default async function AdminOrganisationsPage() {
                         organisation.createdAt
                       ).toLocaleDateString()}
                     </td>
+
+                    <td style={styles.tableCellFeature}>
+                      <TrialOrganisationDeleteControl
+                        organisationId={organisation.id}
+                        organisationName={organisation.name}
+                        organisationSlug={organisation.slug}
+                        subscriptionStatus={organisation.subscription?.status || null}
+                        canManage={canManageEntitlements}
+                      />
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -394,6 +407,23 @@ const styles = {
     padding: "10px 14px",
     fontSize: 14,
     fontWeight: 900,
+    textDecoration: "none"
+  },
+  headerActions: {
+    display: "flex",
+    alignItems: "center",
+    gap: 9,
+    flexWrap: "wrap"
+  },
+  resetButton: {
+    display: "inline-block",
+    border: "1px solid #dc6b62",
+    borderRadius: 7,
+    background: "#ffffff",
+    color: "#9f1d16",
+    padding: "9px 12px",
+    fontSize: 13,
+    fontWeight: 850,
     textDecoration: "none"
   },
   section: {

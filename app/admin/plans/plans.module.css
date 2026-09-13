@@ -1,0 +1,45 @@
+.editor { display: grid; gap: 18px; }
+.tableWrapper { overflow-x: auto; border: 1px solid var(--border-color, #cbd5e1); border-radius: 10px; background: var(--surface, #fff); }
+.table { width: 100%; min-width: 1370px; border-collapse: collapse; }
+.table th { padding: 12px 11px; border-bottom: 2px solid #94a3b8; background: var(--surface-muted, #e2e8f0); color: var(--text-primary, #172033); font-size: 12px; font-weight: 900; text-align: left; white-space: nowrap; }
+.table td { padding: 14px 11px; border-bottom: 1px solid var(--border-color, #e2e8f0); color: var(--text-secondary, #334155); font-size: 13px; font-weight: 650; vertical-align: top; }
+.planCell { min-width: 245px; }
+.planCell strong, .planCell code, .planCell small { display: block; }
+.planCell strong { color: var(--text-primary, #111827); font-size: 14px; }
+.planCell code { margin-top: 3px; color: var(--text-secondary, #64748b); font-size: 10px; }
+.planCell small { max-width: 290px; margin-top: 7px; color: var(--text-secondary, #64748b); font-size: 11px; font-weight: 550; line-height: 1.45; }
+.price { color: #9a6400 !important; font-weight: 900 !important; white-space: nowrap; }
+.badges { display: flex; min-width: 150px; flex-wrap: wrap; gap: 4px; }
+.badges span { border-radius: 999px; background: #dcfce7; color: #166534; padding: 4px 7px; font-size: 10px; font-weight: 850; }
+.catalogueBadge, .noneBadge, .activeBadge, .inactiveBadge { display: inline-block; border-radius: 999px; padding: 5px 8px; font-size: 10px; font-weight: 900; }
+.catalogueBadge { background: #fef3c7; color: #854d0e; }
+.noneBadge { background: #f1f5f9; color: #64748b; }
+.activeBadge { background: #dcfce7; color: #166534; }
+.inactiveBadge { background: #fee2e2; color: #991b1b; }
+.allowances { min-width: 160px; line-height: 1.55; }
+.editButton { border: 1px solid #9a6400; border-radius: 7px; background: var(--surface, #fff); color: #8a5700; padding: 7px 10px; font-weight: 900; cursor: pointer; white-space: nowrap; }
+.form { display: grid; gap: 16px; scroll-margin-top: 24px; padding: 22px; border: 2px solid #d99a1c; border-radius: 14px; background: var(--surface, #fff); color: var(--text-primary, #172033); }
+.formHeader { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.formHeader p, .formHeader h3 { margin: 0; }
+.formHeader p { color: #9a6400; font-size: 11px; font-weight: 900; letter-spacing: .08em; }
+.formHeader h3 { margin-top: 4px; font-size: 24px; }
+.formHeader button { border: 1px solid var(--border-color, #94a3b8); border-radius: 7px; background: transparent; color: inherit; padding: 7px 10px; cursor: pointer; }
+.formNotice { margin: 0; padding: 12px; border-radius: 9px; background: var(--surface-muted, #eef2f7); color: var(--text-secondary, #475569); font-size: 13px; line-height: 1.5; }
+.form fieldset { min-width: 0; margin: 0; padding: 16px; border: 1px solid var(--border-color, #cbd5e1); border-radius: 10px; }
+.form legend { padding: 0 7px; font-weight: 900; }
+.fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+.form label { display: grid; gap: 6px; color: var(--text-secondary, #334155); font-size: 12px; font-weight: 850; }
+.form input:not([type="checkbox"]), .form select { width: 100%; min-height: 42px; box-sizing: border-box; border: 1px solid var(--border-color, #aab6c8); border-radius: 7px; background: var(--input-bg, #fff); color: var(--text-primary, #172033); padding: 8px 10px; font: inherit; }
+.form input:disabled { opacity: .65; }
+.checkGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(185px, 1fr)); gap: 10px; margin-top: 12px; }
+.check { display: flex !important; align-items: center; gap: 8px !important; min-height: 32px; }
+.check input { width: 17px; height: 17px; accent-color: #b77900; }
+.formActions { display: flex; gap: 9px; flex-wrap: wrap; }
+.saveButton, .cancelButton { min-height: 44px; border-radius: 8px; padding: 9px 15px; font-weight: 900; cursor: pointer; }
+.saveButton { border: 0; background: #f4b942; color: #172033; }
+.cancelButton { border: 1px solid var(--border-color, #94a3b8); background: transparent; color: inherit; }
+.saveButton:disabled, .cancelButton:disabled { cursor: not-allowed; opacity: .5; }
+.success, .error { margin: 0; padding: 12px 14px; border-radius: 9px; font-size: 13px; font-weight: 850; }
+.success { background: #dcfce7; color: #166534; }
+.error { background: #fee2e2; color: #991b1b; }
+@media (max-width: 700px) { .form { padding: 16px; } .fields, .checkGrid { grid-template-columns: 1fr; } }
