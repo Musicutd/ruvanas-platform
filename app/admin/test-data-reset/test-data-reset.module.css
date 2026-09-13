@@ -1,0 +1,25 @@
+.page { max-width: 980px; margin: 0 auto; padding: 40px 20px 72px; color: var(--text-primary, #172033); }
+.eyebrow { margin: 0 0 8px; color: #b77900; font-size: 12px; font-weight: 900; letter-spacing: .11em; }
+.page h1 { margin: 0; font-size: clamp(30px, 4vw, 46px); line-height: 1.05; }
+.intro { max-width: 760px; color: var(--text-secondary, #536078); font-size: 16px; line-height: 1.6; }
+.keepCard, .warning, .form { margin-top: 22px; padding: 22px; border: 1px solid var(--border-color, #cbd5e1); border-radius: 16px; background: var(--surface, #fff); }
+.keepCard { display: grid; gap: 5px; }
+.keepCard span, .keepCard small { color: var(--text-secondary, #64748b); }
+.keepCard strong { font-size: 20px; }
+.grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 18px; }
+.grid article { display: grid; gap: 6px; min-height: 104px; padding: 18px; border: 1px solid var(--border-color, #d7dee8); border-radius: 14px; background: var(--surface, #fff); }
+.grid strong { font-size: 30px; }
+.grid span { color: var(--text-secondary, #64748b); font-size: 13px; }
+.warning { border-color: #dc6b62; background: color-mix(in srgb, #dc2626 8%, var(--surface, #fff)); }
+.warning h2 { margin: 0 0 8px; font-size: 20px; }
+.warning p { margin: 0; line-height: 1.55; }
+.form { display: grid; gap: 16px; }
+.form label { display: grid; gap: 9px; font-weight: 800; }
+.form code { width: fit-content; padding: 3px 7px; border-radius: 6px; background: var(--surface-muted, #eef2f7); }
+.form input { min-height: 46px; padding: 0 13px; border: 1px solid var(--border-color, #aab6c8); border-radius: 9px; background: var(--input-bg, #fff); color: inherit; font: inherit; }
+.form button { min-height: 48px; border: 0; border-radius: 9px; background: #b42318; color: #fff; font-weight: 900; cursor: pointer; }
+.form button:disabled { cursor: not-allowed; opacity: .45; }
+.success, .error { margin-top: 16px; padding: 14px; border-radius: 10px; font-weight: 800; }
+.success { background: #dcfce7; color: #166534; }
+.error { background: #fee2e2; color: #991b1b; }
+@media (max-width: 720px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
