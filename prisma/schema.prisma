@@ -6692,6 +6692,20 @@ model RightsReportAttestation {
   @@index([authorityId, periodFrom, periodTo])
 }
 
+model RightsEvidenceResetArchive {
+  sourceTable          String
+  sourceId             String
+  tenantOrganisationId String
+  archivedByUserId     String
+  reason               String   @default("SUBSCRIBER_TEST_DATA_RESET")
+  payload              Json
+  archivedAt           DateTime @default(now())
+
+  @@id([sourceTable, sourceId])
+  @@index([tenantOrganisationId, archivedAt])
+  @@index([archivedByUserId, archivedAt])
+}
+
 model ReportExportJob {
   id                String             @id @default(cuid())
   organisationId    String

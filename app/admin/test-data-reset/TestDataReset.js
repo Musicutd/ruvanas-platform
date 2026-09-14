@@ -37,11 +37,11 @@ export default function TestDataReset({ retainedEmail }) {
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || "The reset could not be completed.");
-      setPreview({ retainedUser: body.result.retainedUser, usersToDelete: 0, superAdminsToDelete: 0, organisationsToDelete: 0, codesToDelete: 0 });
+      setPreview({ retainedUser: body.result.retainedUser, usersToDelete: 0, superAdminsToDelete: 0, organisationsToDelete: 0, codesToDelete: 0, rightsEvidenceToArchive: 0 });
       setPhrase("");
       setStatus({
         tone: "success",
-        message: `Reset complete: ${body.result.deletedUsers} profiles and ${body.result.deletedOrganisations} organisations were removed. ${body.result.retainedUser.email} remains Super Admin.`
+        message: `Reset complete: ${body.result.deletedUsers} profiles and ${body.result.deletedOrganisations} organisations were removed. ${body.result.archivedRightsEvidence} protected rights-evidence record(s) remain in the immutable archive. ${body.result.retainedUser.email} remains Super Admin.`
       });
     } catch (error) {
       setStatus({ tone: "error", message: error.message });
@@ -66,6 +66,7 @@ export default function TestDataReset({ retainedEmail }) {
         <article><strong>{preview?.usersToDelete ?? "—"}</strong><span>profiles to delete</span></article>
         <article><strong>{preview?.organisationsToDelete ?? "—"}</strong><span>organisations to delete</span></article>
         <article><strong>{preview?.codesToDelete ?? "—"}</strong><span>access codes to clear</span></article>
+        <article><strong>{preview?.rightsEvidenceToArchive ?? "—"}</strong><span>rights-evidence records to archive</span></article>
         <article><strong>{preview?.superAdminsToDelete ?? "—"}</strong><span>other Super Admins to delete</span></article>
       </section>
 
@@ -73,7 +74,7 @@ export default function TestDataReset({ retainedEmail }) {
 
       <section className={styles.warning}>
         <h2>Permanent action</h2>
-        <p>This removes database records in one transaction. It does not remove the plan catalogue or shared Ruvanas platform configuration. Protected media retained by infrastructure policies may require a separate storage-retention cleanup.</p>
+        <p>This removes database records in one transaction. It does not remove the plan catalogue or shared Ruvanas platform configuration. Rights evidence is copied into an immutable archive before its live tenant links are removed. Protected media retained by infrastructure policies may require a separate storage-retention cleanup.</p>
       </section>
 
       <form onSubmit={reset} className={styles.form}>
