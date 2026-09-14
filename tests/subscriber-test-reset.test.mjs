@@ -41,6 +41,7 @@ test("preview reports bounded counts without exposing subscriber identities", as
 
 test("reset removes tenant records atomically before non-retained users", async () => {
   const calls = [];
+  const deletionArgs = new Map();
   const deleting = (name, count = 1) => ({ deleteMany: async () => { calls.push(name); return { count }; } });
   const tx = new Proxy({
     user: {
@@ -58,6 +59,8 @@ test("reset removes tenant records atomically before non-retained users", async 
     studioBroadcastDestination: deleting("studioBroadcastDestinations"), studioPlayoutSession: deleting("studioPlayoutSessions"),
     studioProgrammePack: deleting("studioProgrammePacks"), betaProgrammeReview: deleting("betaProgrammeReviews"),
     supportTicket: deleting("supportTickets"), betaProgramme: deleting("betaProgrammes"), complimentaryAccessCode: deleting("accessCodes"),
+    digitalSignagePlaylistItem: { deleteMany: async (args) => { calls.push("digitalSignagePlaylistItem"); deletionArgs.set("playlistItems", args); return { count: 1 }; } },
+    retailMediaOrderVisualCreative: { deleteMany: async (args) => { calls.push("retailMediaOrderVisualCreative"); deletionArgs.set("retailVisualCreatives", args); return { count: 1 }; } },
     billingInvoice: { count: async () => 0, ...deleting("billingInvoice", 0) }, billingContract: { count: async () => 0 },
     recoveryControl: { updateMany: async () => ({ count: 0 }) }, recoveryEvidence: { updateMany: async () => ({ count: 0 }) },
     $executeRaw: async () => { calls.push("rightsArchive"); return 1; }
@@ -78,6 +81,19 @@ test("reset removes tenant records atomically before non-retained users", async 
   assert.ok(calls.indexOf("rightsArchive") < calls.indexOf("rightsLedger"));
   assert.ok(calls.indexOf("studioBroadcastCommands") < calls.indexOf("organisations"));
   assert.ok(calls.indexOf("betaProgrammeReviews") < calls.indexOf("users"));
+  assert.ok(calls.indexOf("digitalSignagePlaylistItem") < calls.indexOf("digitalSignageAsset"));
+  assert.ok(calls.indexOf("retailMediaOrderVisualCreative") < calls.indexOf("digitalSignageAsset"));
+  assert.deepEqual(deletionArgs.get("playlistItems"), {
+    where: { playlist: { organisationId: { in: ["org-1"] } } }
+  });
+  assert.deepEqual(deletionArgs.get("retailVisualCreatives"), {
+    where: {
+      OR: [
+        { order: { organisationId: { in: ["org-1"] } } },
+        { signageAsset: { organisationId: { in: ["org-1"] } } }
+      ]
+    }
+  });
   assert.ok(calls.indexOf("digitalSignageDeliveryProof") < calls.indexOf("digitalSignagePlaylist"));
   assert.ok(calls.indexOf("digitalSignagePlaylist") < calls.indexOf("digitalSignageLayout"));
   assert.ok(calls.indexOf("voiceTrackSegue") < calls.indexOf("audioProject"));
