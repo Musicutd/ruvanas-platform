@@ -59,6 +59,7 @@ test("reset removes tenant records atomically before non-retained users", async 
     studioBroadcastDestination: deleting("studioBroadcastDestinations"), studioPlayoutSession: deleting("studioPlayoutSessions"),
     studioProgrammePack: deleting("studioProgrammePacks"), betaProgrammeReview: deleting("betaProgrammeReviews"),
     supportTicket: deleting("supportTickets"), betaProgramme: deleting("betaProgrammes"), complimentaryAccessCode: deleting("accessCodes"),
+    digitalSignageDeliveryProof: { deleteMany: async (args) => { calls.push("digitalSignageDeliveryProof"); deletionArgs.set("deliveryProofs", args); return { count: 1 }; } },
     digitalSignagePlaylistItem: { deleteMany: async (args) => { calls.push("digitalSignagePlaylistItem"); deletionArgs.set("playlistItems", args); return { count: 1 }; } },
     retailMediaOrderVisualCreative: { deleteMany: async (args) => { calls.push("retailMediaOrderVisualCreative"); deletionArgs.set("retailVisualCreatives", args); return { count: 1 }; } },
     billingInvoice: { count: async () => 0, ...deleting("billingInvoice", 0) }, billingContract: { count: async () => 0 },
@@ -81,8 +82,12 @@ test("reset removes tenant records atomically before non-retained users", async 
   assert.ok(calls.indexOf("rightsArchive") < calls.indexOf("rightsLedger"));
   assert.ok(calls.indexOf("studioBroadcastCommands") < calls.indexOf("organisations"));
   assert.ok(calls.indexOf("betaProgrammeReviews") < calls.indexOf("users"));
+  assert.ok(calls.indexOf("digitalSignageDeliveryProof") < calls.indexOf("digitalSignagePlaylistItem"));
   assert.ok(calls.indexOf("digitalSignagePlaylistItem") < calls.indexOf("digitalSignageAsset"));
   assert.ok(calls.indexOf("retailMediaOrderVisualCreative") < calls.indexOf("digitalSignageAsset"));
+  assert.deepEqual(deletionArgs.get("deliveryProofs"), {
+    where: { organisationId: { in: ["org-1"] } }
+  });
   assert.deepEqual(deletionArgs.get("playlistItems"), {
     where: { playlist: { organisationId: { in: ["org-1"] } } }
   });
