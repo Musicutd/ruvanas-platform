@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import {
   resetSubscriberTestData,
   subscriberTestResetPreview,
+  ORGANISATION_SCOPED_RESET_MODELS,
   SUBSCRIBER_TEST_RESET_CONFIRMATION,
   validateSubscriberTestReset
 } from "../lib/subscriber-test-reset.mjs";
@@ -38,7 +39,7 @@ test("preview reports bounded counts without exposing subscriber identities", as
 test("reset removes tenant records atomically before non-retained users", async () => {
   const calls = [];
   const deleting = (name, count = 1) => ({ deleteMany: async () => { calls.push(name); return { count }; } });
-  const tx = {
+  const tx = new Proxy({
     user: {
       findUnique: async () => retainedUser,
       findMany: async () => [{ id: "user-2" }],
@@ -54,19 +55,37 @@ test("reset removes tenant records atomically before non-retained users", async 
     studioBroadcastDestination: deleting("studioBroadcastDestinations"), studioPlayoutSession: deleting("studioPlayoutSessions"),
     studioProgrammePack: deleting("studioProgrammePacks"), betaProgrammeReview: deleting("betaProgrammeReviews"),
     supportTicket: deleting("supportTickets"), betaProgramme: deleting("betaProgrammes"), complimentaryAccessCode: deleting("accessCodes"),
-    billingInvoice: { count: async () => 0 }, billingContract: { count: async () => 0 },
+    billingInvoice: { count: async () => 0, ...deleting("billingInvoice", 0) }, billingContract: { count: async () => 0 },
     recoveryControl: { updateMany: async () => ({ count: 0 }) }, recoveryEvidence: { updateMany: async () => ({ count: 0 }) }
-  };
+  }, {
+    get(target, property) {
+      if (property in target) return target[property];
+      return deleting(String(property), 0);
+    }
+  });
   let transactionOptions;
   const database = { $transaction: async (callback, options) => { transactionOptions = options; return callback(tx); } };
   const result = await resetSubscriberTestData(database, { actor: retainedUser, retainedEmail: retainedUser.email, confirmation: SUBSCRIBER_TEST_RESET_CONFIRMATION });
   assert.equal(result.deletedUsers, 1);
   assert.equal(result.deletedOrganisations, 1);
-  assert.deepEqual(transactionOptions, { maxWait: 10_000, timeout: 120_000 });
+  assert.deepEqual(transactionOptions, { maxWait: 10_000, timeout: 300_000 });
   assert.ok(calls.indexOf("studioBroadcastCommands") < calls.indexOf("organisations"));
   assert.ok(calls.indexOf("betaProgrammeReviews") < calls.indexOf("users"));
+  assert.ok(calls.indexOf("digitalSignageDeliveryProof") < calls.indexOf("digitalSignagePlaylist"));
+  assert.ok(calls.indexOf("digitalSignagePlaylist") < calls.indexOf("digitalSignageLayout"));
+  assert.ok(calls.indexOf("voiceTrackSegue") < calls.indexOf("audioProject"));
   assert.ok(calls.indexOf("organisations") < calls.indexOf("users"));
   assert.equal(calls.at(-1), "resetAudit");
+});
+
+test("organisation reset order covers every tenant model and places children before parents", () => {
+  const names = ORGANISATION_SCOPED_RESET_MODELS.map(({ modelName }) => modelName);
+  assert.equal(new Set(names).size, names.length);
+  assert.ok(names.length > 100);
+  assert.ok(names.indexOf("DigitalSignageDeliveryProof") < names.indexOf("DigitalSignagePlaylist"));
+  assert.ok(names.indexOf("DigitalSignagePlaylist") < names.indexOf("DigitalSignageLayout"));
+  assert.ok(names.indexOf("VoiceTrackSegue") < names.indexOf("AudioProject"));
+  assert.ok(names.indexOf("StudioProductHandoff") < names.indexOf("AudioRender"));
 });
 
 test("reset stops before deletion when external billing evidence exists", async () => {
