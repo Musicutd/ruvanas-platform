@@ -94,6 +94,8 @@ test("reset removes tenant records atomically before non-retained users", async 
   assert.ok(calls.indexOf("retailMediaOrderCreative") < calls.indexOf("promoAsset"));
   assert.ok(calls.indexOf("radioClockItem") < calls.indexOf("promoAsset"));
   assert.ok(calls.indexOf("schoolRundownItem") < calls.indexOf("promoAsset"));
+  assert.ok(calls.indexOf("promoAsset") < calls.indexOf("mediaAsset"));
+  assert.ok(calls.indexOf("audioProject") < calls.indexOf("mediaAsset"));
   assert.ok(calls.indexOf("schoolEpisodeContributor") < calls.indexOf("studentContributor"));
   assert.deepEqual(deletionArgs.get("deliveryProofs"), {
     where: { organisationId: { in: ["org-1"] } }
@@ -164,6 +166,8 @@ test("organisation reset order covers every tenant model and places children bef
   assert.ok(names.indexOf("DigitalSignagePlaylist") < names.indexOf("DigitalSignageLayout"));
   assert.ok(names.indexOf("VoiceTrackSegue") < names.indexOf("AudioProject"));
   assert.ok(names.indexOf("StudioProductHandoff") < names.indexOf("AudioRender"));
+  assert.ok(names.indexOf("PromoAsset") < names.indexOf("MediaAsset"));
+  assert.ok(names.indexOf("AudioProject") < names.indexOf("MediaAsset"));
   for (const promoVersionConsumer of [
     "Campaign",
     "VoiceTrackSegue",
