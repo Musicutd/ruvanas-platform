@@ -62,6 +62,11 @@ test("reset removes tenant records atomically before non-retained users", async 
     digitalSignageDeliveryProof: { deleteMany: async (args) => { calls.push("digitalSignageDeliveryProof"); deletionArgs.set("deliveryProofs", args); return { count: 1 }; } },
     digitalSignagePlaylistItem: { deleteMany: async (args) => { calls.push("digitalSignagePlaylistItem"); deletionArgs.set("playlistItems", args); return { count: 1 }; } },
     retailMediaOrderVisualCreative: { deleteMany: async (args) => { calls.push("retailMediaOrderVisualCreative"); deletionArgs.set("retailVisualCreatives", args); return { count: 1 }; } },
+    schoolEpisodeExchangeOffer: { deleteMany: async (args) => { calls.push("schoolEpisodeExchangeOffer"); deletionArgs.set("exchangeOffers", args); return { count: 1 }; } },
+    retailMediaOrderCreative: { deleteMany: async (args) => { calls.push("retailMediaOrderCreative"); deletionArgs.set("retailMediaCreatives", args); return { count: 1 }; } },
+    radioClockItem: { deleteMany: async (args) => { calls.push("radioClockItem"); deletionArgs.set("radioClockItems", args); return { count: 1 }; } },
+    schoolRundownItem: { deleteMany: async (args) => { calls.push("schoolRundownItem"); deletionArgs.set("schoolRundownItems", args); return { count: 1 }; } },
+    schoolEpisodeContributor: { deleteMany: async (args) => { calls.push("schoolEpisodeContributor"); deletionArgs.set("schoolEpisodeContributors", args); return { count: 1 }; } },
     billingInvoice: { count: async () => 0, ...deleting("billingInvoice", 0) }, billingContract: { count: async () => 0 },
     recoveryControl: { updateMany: async () => ({ count: 0 }) }, recoveryEvidence: { updateMany: async () => ({ count: 0 }) },
     $executeRaw: async () => { calls.push("rightsArchive"); return 1; }
@@ -85,6 +90,11 @@ test("reset removes tenant records atomically before non-retained users", async 
   assert.ok(calls.indexOf("digitalSignageDeliveryProof") < calls.indexOf("digitalSignagePlaylistItem"));
   assert.ok(calls.indexOf("digitalSignagePlaylistItem") < calls.indexOf("digitalSignageAsset"));
   assert.ok(calls.indexOf("retailMediaOrderVisualCreative") < calls.indexOf("digitalSignageAsset"));
+  assert.ok(calls.indexOf("schoolEpisodeExchangeOffer") < calls.indexOf("promoAsset"));
+  assert.ok(calls.indexOf("retailMediaOrderCreative") < calls.indexOf("promoAsset"));
+  assert.ok(calls.indexOf("radioClockItem") < calls.indexOf("promoAsset"));
+  assert.ok(calls.indexOf("schoolRundownItem") < calls.indexOf("promoAsset"));
+  assert.ok(calls.indexOf("schoolEpisodeContributor") < calls.indexOf("studentContributor"));
   assert.deepEqual(deletionArgs.get("deliveryProofs"), {
     where: { organisationId: { in: ["org-1"] } }
   });
@@ -96,6 +106,46 @@ test("reset removes tenant records atomically before non-retained users", async 
       OR: [
         { order: { organisationId: { in: ["org-1"] } } },
         { signageAsset: { organisationId: { in: ["org-1"] } } }
+      ]
+    }
+  });
+  assert.deepEqual(deletionArgs.get("exchangeOffers"), {
+    where: {
+      OR: [
+        { sourceOrganisationId: { in: ["org-1"] } },
+        { approvedPromoVersion: { promoAsset: { organisationId: { in: ["org-1"] } } } }
+      ]
+    }
+  });
+  assert.deepEqual(deletionArgs.get("retailMediaCreatives"), {
+    where: {
+      OR: [
+        { order: { organisationId: { in: ["org-1"] } } },
+        { promoVersion: { promoAsset: { organisationId: { in: ["org-1"] } } } }
+      ]
+    }
+  });
+  assert.deepEqual(deletionArgs.get("radioClockItems"), {
+    where: {
+      OR: [
+        { radioClock: { organisationId: { in: ["org-1"] } } },
+        { promoVersion: { promoAsset: { organisationId: { in: ["org-1"] } } } }
+      ]
+    }
+  });
+  assert.deepEqual(deletionArgs.get("schoolRundownItems"), {
+    where: {
+      OR: [
+        { rundown: { organisationId: { in: ["org-1"] } } },
+        { sourcePromoVersion: { promoAsset: { organisationId: { in: ["org-1"] } } } }
+      ]
+    }
+  });
+  assert.deepEqual(deletionArgs.get("schoolEpisodeContributors"), {
+    where: {
+      OR: [
+        { episode: { organisationId: { in: ["org-1"] } } },
+        { contributor: { organisationId: { in: ["org-1"] } } }
       ]
     }
   });
