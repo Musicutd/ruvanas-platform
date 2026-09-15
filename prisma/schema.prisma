@@ -68,6 +68,55 @@ enum IntegrationMetricType {
   FOOTFALL_EXITS
 }
 
+enum MusicDistributorConnectionStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  DEGRADED
+  REVOKED
+}
+
+enum MusicDistributorAuthType {
+  OAUTH2_CLIENT_CREDENTIALS
+}
+
+enum MusicDistributorDeliveryMode {
+  DOWNLOAD
+  PROTECTED_STREAM
+}
+
+enum MusicDistributorItemStatus {
+  ACTIVE
+  TAKEN_DOWN
+  UNAVAILABLE
+}
+
+enum MusicDistributorSyncKind {
+  FULL
+  DELTA
+  TAKEDOWN
+  RECONCILIATION
+}
+
+enum MusicDistributorReconciliationAction {
+  CREATED
+  UPDATED
+  UNCHANGED
+  RIGHTS_CHANGED
+  TAKEN_DOWN
+  UNAVAILABLE
+  RESTORED
+  DUPLICATE
+  REJECTED
+}
+
+enum MusicDistributorUsageDeliveryStatus {
+  QUEUED
+  DELIVERED
+  FAILED
+  ABANDONED
+}
+
 enum RadioDistributionKind {
   DIRECTORY
   STREAM_CDN
@@ -1618,6 +1667,7 @@ model User {
   reviewedAIJobs                         AIJob[]                          @relation("AIJobReviewedBy")
   recommendationFeedback                 RecommendationFeedback[]
   createdIntegrationConnections          IntegrationConnection[]          @relation("IntegrationConnectionCreatedBy")
+  createdMusicDistributorConnections     MusicDistributorConnection[]     @relation("MusicDistributorConnectionCreatedBy")
   createdRetailMediaInventory            RetailMediaInventoryPackage[]    @relation("RetailMediaInventoryCreatedBy")
   approvedRetailMediaOrders              RetailMediaOrder[]               @relation("RetailMediaOrderApprovedBy")
   fulfilledRetailMediaOrders             RetailMediaOrder[]               @relation("RetailMediaOrderFulfilledBy")
@@ -3778,6 +3828,7 @@ model Track {
   rightsWorkMappings       RightsWorkMapping[]
   rightsUsageLedgerEvents  RightsUsageLedgerEvent[]
   generatedPlaylistItems   GeneratedPlaylistItem[]
+  distributorItems         MusicDistributorTrack[]
 
   @@index([status])
   @@index([artist, title])
@@ -6156,6 +6207,226 @@ model IntegrationMetricSummary {
   @@unique([connectionId, externalId])
   @@index([organisationId, sourceTimestamp])
   @@index([locationId, metricType, windowStartedAt])
+  @@index([connectionId, createdAt])
+}
+
+model MusicDistributorConnection {
+  id                           String                           @id @default(cuid())
+  createdByUserId              String
+  name                         String                           @unique
+  providerKey                  String                           @unique
+  status                       MusicDistributorConnectionStatus @default(DRAFT)
+  authType                     MusicDistributorAuthType         @default(OAUTH2_CLIENT_CREDENTIALS)
+  apiBaseUrl                   String
+  tokenUrl                     String
+  cataloguePath                String                           @default("/v1/catalogue")
+  usageReportPath              String?
+  clientCredentialsEncrypted   String
+  oauthScopes                  String[]                         @default([])
+  defaultMinimumCatalogueLevel LicensedMusicCatalogueLevel      @default(FOCUSED)
+  defaultPermittedTerritories  String[]                         @default([])
+  defaultPermittedUses         MusicRightsUse[]                 @default([])
+  syncIntervalMinutes          Int                              @default(60)
+  syncCursor                   String?
+  nextSyncAt                   DateTime?
+  syncLeaseOwner               String?
+  syncLeaseUntil               DateTime?
+  lastAuthenticatedAt          DateTime?
+  lastSuccessfulSyncAt         DateTime?
+  lastErrorAt                  DateTime?
+  lastErrorCode                String?
+  consecutiveFailures          Int                              @default(0)
+  configuration                Json?
+  pausedAt                     DateTime?
+  revokedAt                    DateTime?
+  createdAt                    DateTime                         @default(now())
+  updatedAt                    DateTime                         @updatedAt
+
+  createdBy       User                                  @relation("MusicDistributorConnectionCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  releases        MusicDistributorRelease[]
+  tracks          MusicDistributorTrack[]
+  collections     MusicDistributorCollection[]
+  syncRuns        MusicDistributorSyncRun[]
+  reconciliation  MusicDistributorReconciliationEvent[]
+  usageDeliveries MusicDistributorUsageDelivery[]
+
+  @@index([status, nextSyncAt])
+  @@index([syncLeaseUntil])
+}
+
+model MusicDistributorRelease {
+  id                String                     @id @default(cuid())
+  connectionId      String
+  externalReleaseId String
+  title             String
+  label             String?
+  releaseDate       DateTime?                  @db.Date
+  status            MusicDistributorItemStatus @default(ACTIVE)
+  metadataChecksum  String                     @db.Char(64)
+  lastSeenAt        DateTime                   @default(now())
+  takenDownAt       DateTime?
+  createdAt         DateTime                   @default(now())
+  updatedAt         DateTime                   @updatedAt
+
+  connection MusicDistributorConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  tracks     MusicDistributorTrack[]
+
+  @@unique([connectionId, externalReleaseId])
+  @@index([connectionId, status, lastSeenAt])
+}
+
+model MusicDistributorCollection {
+  id                    String                      @id @default(cuid())
+  connectionId          String
+  externalCollectionId  String
+  name                  String
+  minimumCatalogueLevel LicensedMusicCatalogueLevel @default(FOCUSED)
+  permittedTerritories  String[]                    @default([])
+  permittedUses         MusicRightsUse[]            @default([])
+  active                Boolean                     @default(true)
+  metadataChecksum      String                      @db.Char(64)
+  lastSeenAt            DateTime                    @default(now())
+  createdAt             DateTime                    @default(now())
+  updatedAt             DateTime                    @updatedAt
+
+  connection MusicDistributorConnection        @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  tracks     MusicDistributorCollectionTrack[]
+
+  @@unique([connectionId, externalCollectionId])
+  @@index([connectionId, active, minimumCatalogueLevel])
+}
+
+model MusicDistributorTrack {
+  id                    String                       @id @default(cuid())
+  connectionId          String
+  releaseId             String?
+  trackId               String?
+  externalTrackId       String
+  externalRecordingId   String?
+  isrc                  String?
+  title                 String
+  artist                String
+  album                 String?
+  label                 String?
+  genreCodes            String[]                     @default([])
+  isExplicit            Boolean                      @default(false)
+  deliveryMode          MusicDistributorDeliveryMode
+  sourceUrlEncrypted    String?
+  sourceChecksumSha256  String?                      @db.Char(64)
+  sourceMimeType        String?
+  sourceSizeBytes       BigInt?
+  minimumCatalogueLevel LicensedMusicCatalogueLevel  @default(FOCUSED)
+  permittedTerritories  String[]                     @default([])
+  permittedUses         MusicRightsUse[]             @default([])
+  licenceStartsAt       DateTime?                    @db.Date
+  licenceExpiresAt      DateTime?                    @db.Date
+  rightsHolder          String
+  rightsReference       String
+  status                MusicDistributorItemStatus   @default(ACTIVE)
+  takedownReason        String?
+  takenDownAt           DateTime?
+  metadataChecksum      String                       @db.Char(64)
+  lastSeenAt            DateTime                     @default(now())
+  revision              Int                          @default(1)
+  createdAt             DateTime                     @default(now())
+  updatedAt             DateTime                     @updatedAt
+
+  connection     MusicDistributorConnection            @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  release        MusicDistributorRelease?              @relation(fields: [releaseId], references: [id], onDelete: SetNull)
+  track          Track?                                @relation(fields: [trackId], references: [id], onDelete: SetNull)
+  collections    MusicDistributorCollectionTrack[]
+  reconciliation MusicDistributorReconciliationEvent[]
+
+  @@unique([connectionId, externalTrackId])
+  @@index([connectionId, status, lastSeenAt])
+  @@index([connectionId, isrc])
+  @@index([trackId])
+  @@index([licenceExpiresAt])
+  @@index([minimumCatalogueLevel, status])
+}
+
+model MusicDistributorCollectionTrack {
+  collectionId String
+  trackId      String
+  createdAt    DateTime @default(now())
+
+  collection MusicDistributorCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  track      MusicDistributorTrack      @relation(fields: [trackId], references: [id], onDelete: Cascade)
+
+  @@id([collectionId, trackId])
+  @@index([trackId])
+}
+
+model MusicDistributorSyncRun {
+  id               String                   @id @default(cuid())
+  connectionId     String
+  kind             MusicDistributorSyncKind
+  status           IntegrationSyncRunStatus @default(PENDING)
+  cursorBefore     String?
+  cursorAfter      String?
+  releasesReceived Int                      @default(0)
+  tracksReceived   Int                      @default(0)
+  createdCount     Int                      @default(0)
+  updatedCount     Int                      @default(0)
+  unchangedCount   Int                      @default(0)
+  takenDownCount   Int                      @default(0)
+  rejectedCount    Int                      @default(0)
+  attempt          Int                      @default(0)
+  nextRetryAt      DateTime?
+  safeErrorCode    String?
+  startedAt        DateTime?
+  completedAt      DateTime?
+  createdAt        DateTime                 @default(now())
+
+  connection     MusicDistributorConnection            @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  reconciliation MusicDistributorReconciliationEvent[]
+
+  @@index([connectionId, status, createdAt])
+  @@index([status, nextRetryAt])
+}
+
+model MusicDistributorReconciliationEvent {
+  id                 String                               @id @default(cuid())
+  connectionId       String
+  syncRunId          String?
+  distributorTrackId String?
+  externalTrackId    String
+  action             MusicDistributorReconciliationAction
+  previousChecksum   String?                              @db.Char(64)
+  currentChecksum    String?                              @db.Char(64)
+  details            Json?
+  occurredAt         DateTime                             @default(now())
+
+  connection       MusicDistributorConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  syncRun          MusicDistributorSyncRun?   @relation(fields: [syncRunId], references: [id], onDelete: SetNull)
+  distributorTrack MusicDistributorTrack?     @relation(fields: [distributorTrackId], references: [id], onDelete: SetNull)
+
+  @@index([connectionId, occurredAt])
+  @@index([syncRunId, action])
+  @@index([distributorTrackId, occurredAt])
+}
+
+model MusicDistributorUsageDelivery {
+  id             String                              @id @default(cuid())
+  connectionId   String
+  periodFrom     DateTime                            @db.Date
+  periodUntil    DateTime                            @db.Date
+  status         MusicDistributorUsageDeliveryStatus @default(QUEUED)
+  eventCount     Int                                 @default(0)
+  payload        Json
+  payloadSha256  String                              @db.Char(64)
+  idempotencyKey String                              @unique
+  attemptCount   Int                                 @default(0)
+  nextAttemptAt  DateTime                            @default(now())
+  deliveredAt    DateTime?
+  lastErrorCode  String?
+  createdAt      DateTime                            @default(now())
+  updatedAt      DateTime                            @updatedAt
+
+  connection MusicDistributorConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@unique([connectionId, periodFrom, periodUntil])
+  @@index([status, nextAttemptAt])
   @@index([connectionId, createdAt])
 }
 
