@@ -164,6 +164,21 @@ test("organisation reset order covers every tenant model and places children bef
   assert.ok(names.indexOf("DigitalSignagePlaylist") < names.indexOf("DigitalSignageLayout"));
   assert.ok(names.indexOf("VoiceTrackSegue") < names.indexOf("AudioProject"));
   assert.ok(names.indexOf("StudioProductHandoff") < names.indexOf("AudioRender"));
+  for (const promoVersionConsumer of [
+    "Campaign",
+    "VoiceTrackSegue",
+    "SchoolAnnouncement",
+    "SchoolSubmission",
+    "StudioProductHandoff",
+    "LiveStudioSession",
+    "PlayoutIntent",
+    "ProofOfPlayEvent"
+  ]) {
+    assert.ok(
+      names.indexOf(promoVersionConsumer) < names.indexOf("PromoAsset"),
+      `${promoVersionConsumer} must be cleared before PromoAsset`
+    );
+  }
 });
 
 test("reset stops before deletion when external billing evidence exists", async () => {
