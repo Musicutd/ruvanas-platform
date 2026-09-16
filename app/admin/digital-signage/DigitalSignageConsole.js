@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSubscriberTheme } from "@/app/dashboard/SubscriberThemeContext";
 
 const emptyData = { assets: [], layouts: [], devices: [], playlists: [], takeovers: [], displayLimit: null };
+const formatDailyMinute = (value) => `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
 
 export default function DigitalSignageConsole({ organisations, showOrganisationSelector = true, locationsHref = "/admin/locations" }) {
   const subscriberTheme = useSubscriberTheme();
@@ -25,9 +26,9 @@ export default function DigitalSignageConsole({ organisations, showOrganisationS
   const displayLimitReached = Number.isInteger(data.displayLimit) && activeDisplayCount >= data.displayLimit;
   const playlistBlocker = !readyAssets.length
     ? "Add a ready visual first"
-    : !data.layouts.length
+    : showOrganisationSelector && !data.layouts.length
       ? "Create a layout first"
-      : !data.devices.length
+      : !data.devices.some((device) => device.status !== "DISABLED")
         ? "Add a display device first"
         : "";
 
@@ -133,14 +134,32 @@ export default function DigitalSignageConsole({ organisations, showOrganisationS
     event.preventDefault(); setBusy("playlist"); setMessage(""); setPlaylistFeedback(null);
     const form = event.currentTarget;
     const formData = new FormData(form);
-    const layout = data.layouts.find((item) => item.id === formData.get("layoutId"));
     try {
+      const deviceIds = formData.getAll("deviceIds");
+      if (!deviceIds.length) throw new Error("Select at least one display for this playlist.");
+      let layout = data.layouts.find((item) => item.id === formData.get("layoutId"));
+      if (!layout && !showOrganisationSelector && !formData.get("layoutId")) {
+        const device = data.devices.find((item) => item.id === deviceIds[0]);
+        const canvasWidth = device?.viewportWidth || 1920;
+        const canvasHeight = device?.viewportHeight || 1080;
+        const standardName = `Standard full-screen ${canvasWidth}×${canvasHeight}`;
+        layout = data.layouts.find((item) => item.name === standardName && item.regions?.length === 1);
+        if (!layout) {
+          const layoutResponse = await fetch("/api/admin/digital-signage/layouts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+            organisationId, name: standardName, description: "Automatically prepared for a simple visual playlist.", canvasWidth, canvasHeight,
+            backgroundColor: "#000000", regions: [{ name: "Main visual", x: 0, y: 0, width: canvasWidth, height: canvasHeight, zIndex: 0, fitMode: "COVER" }]
+          }) });
+          const layoutResult = await layoutResponse.json();
+          if (!layoutResponse.ok) throw new Error(layoutResult.error || "Unable to prepare the standard layout.");
+          layout = layoutResult.layout;
+        }
+      }
       if (!layout?.regions?.[0]) throw new Error("Create a layout with at least one region first.");
       const response = await fetch("/api/admin/digital-signage/playlists", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
         organisationId,
         name: formData.get("name"),
         layoutId: layout.id,
-        deviceIds: formData.getAll("deviceIds"),
+        deviceIds,
         activeDays: [0, 1, 2, 3, 4, 5, 6],
         dailyStart: formData.get("dailyStart"),
         dailyEnd: formData.get("dailyEnd"),
@@ -149,7 +168,7 @@ export default function DigitalSignageConsole({ organisations, showOrganisationS
       }) });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Unable to create the visual playlist.");
-      form.reset(); await load(); setPlaylistFeedback({ tone: "success", text: "Visual playlist saved as a draft. Review it below, then publish it to the assigned display." });
+      form.reset(); await load(); setPlaylistFeedback({ tone: "success", text: "Draft saved. Check the visual, display and daily hours below before you publish." });
     } catch (error) { setPlaylistFeedback({ tone: "error", text: error instanceof Error ? error.message : "Unable to create the visual playlist." }); }
     finally { setBusy(""); }
   }
@@ -204,6 +223,15 @@ export default function DigitalSignageConsole({ organisations, showOrganisationS
     {!organisationId ? <section style={styles.notice}>Digital Signage must be enabled for an organisation before visual content or devices can be prepared.</section> : <>
       {message ? <section style={styles.message}>{message}</section> : null}
       {loading ? <p style={styles.copy}>Refreshing workspace…</p> : null}
+      {!showOrganisationSelector ? <section style={styles.guide} aria-label="Set up a digital display">
+        {[
+          { id: "displays", number: "1", title: "Connect a display", detail: data.devices.some((device) => device.status === "ONLINE") ? "A display is online." : activeDisplayCount ? "Display added. Enter its one-time code on the screen." : "Add a screen and use its one-time code.", complete: data.devices.some((device) => device.status === "ONLINE") },
+          { id: "content", number: "2", title: "Add a visual", detail: readyAssets.length ? `${readyAssets.length} visual${readyAssets.length === 1 ? " is" : "s are"} ready.` : "Upload an image or video. Videos must finish processing.", complete: readyAssets.length > 0 },
+          { id: "playlists", number: "3", title: "Create and publish", detail: data.playlists.some((playlist) => playlist.status === "PUBLISHED") ? "A playlist is published." : "Save a draft, review it, then publish.", complete: data.playlists.some((playlist) => playlist.status === "PUBLISHED") }
+        ].map((step) => <button key={step.id} type="button" onClick={() => setActiveTab(step.id)} style={styles.guideStep} aria-label={`Step ${step.number}: ${step.title}. ${step.detail}`}>
+          <span style={styles.guideNumber}>{step.complete ? "✓" : step.number}</span><span style={styles.guideText}><strong>{step.title}</strong><small>{step.detail}</small></span>
+        </button>)}
+      </section> : null}
       <nav style={styles.tabs} aria-label="Digital Signage tools">
         {[
           { id: "displays", label: "Displays", detail: "Connect screens", count: data.devices.length },
@@ -264,7 +292,7 @@ export default function DigitalSignageConsole({ organisations, showOrganisationS
               <small style={styles.resultHint}>Paste only the code shown above. It expires after 24 hours and can be used once.</small>
             </> : null}
           </div> : null}
-          <p style={styles.count}>{activeDisplayCount}{Number.isInteger(data.displayLimit) ? ` / ${data.displayLimit}` : ""} connected digital display{activeDisplayCount === 1 ? "" : "s"}</p>
+          <p style={styles.count}>{activeDisplayCount}{Number.isInteger(data.displayLimit) ? ` / ${data.displayLimit}` : ""} registered display{activeDisplayCount === 1 ? "" : "s"} · {data.devices.filter((device) => device.status === "ONLINE").length} online</p>
           {data.devices.slice(0, 5).map((device) => <div key={device.id} style={styles.row}><strong>{device.name}</strong><span>{device.zone.location.name} · {device.status}</span></div>)}
         </form>
         : null}
@@ -272,22 +300,30 @@ export default function DigitalSignageConsole({ organisations, showOrganisationS
         {activeTab === "playlists" ?
         <form onSubmit={createPlaylist} style={styles.card}>
           <h2 style={styles.cardTitle}>Scheduled visual playlists</h2>
-          <p style={styles.small}>Create a reviewed draft, choose its displays, and publish it when ready.</p>
+          <p style={styles.small}>Choose a visual and its screens. Save a draft first; nothing is shown until you review and publish it.</p>
           <label style={styles.label}>Playlist name<input name="name" required maxLength={200} style={styles.input} /></label>
-          <label style={styles.label}>Layout<select name="layoutId" required style={styles.input}><option value="">Select a layout</option>{data.layouts.map((layout) => <option key={layout.id} value={layout.id}>{layout.name}</option>)}</select></label>
-          <label style={styles.label}>Visual asset<select name="assetId" required style={styles.input}><option value="">Select a ready visual</option>{readyAssets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name} — {asset.kind}</option>)}</select></label>
-          {!data.devices.length ? <div style={styles.emptyState}><strong>No display device is registered yet.</strong><span>Create the screen in Display devices above. It will appear here automatically.</span><a href="#display-devices" style={styles.emptyAction}>Add a display device</a></div> : <fieldset style={styles.choiceFieldset}>
+          <label style={styles.label}>Visual asset<select name="assetId" required defaultValue={readyAssets.length === 1 ? readyAssets[0].id : ""} style={styles.input}><option value="">Select a ready visual</option>{readyAssets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name} — {asset.kind}</option>)}</select></label>
+          {!data.devices.some((device) => device.status !== "DISABLED") ? <div style={styles.emptyState}><strong>No display device is available yet.</strong><span>Create a screen in the Displays tab. It will appear here automatically.</span><button type="button" onClick={() => setActiveTab("displays")} style={styles.emptyAction}>Add a display device</button></div> : <fieldset style={styles.choiceFieldset}>
             <legend style={styles.choiceLegend}>Display devices</legend>
-            <div style={styles.deviceChoices}>{data.devices.map((device) => <label key={device.id} style={styles.deviceChoice}><input type="checkbox" name="deviceIds" value={device.id} defaultChecked={data.devices.length === 1} /> <span style={styles.deviceChoiceText}><strong>{device.name}</strong><small>{device.zone.location.name} · {device.zone.name}</small></span></label>)}</div>
-            <span style={styles.choiceHint}>{data.devices.length === 1 ? "Your only display is selected automatically." : "Select every display that should receive this playlist."}</span>
+            <div style={styles.deviceChoices}>{data.devices.filter((device) => device.status !== "DISABLED").map((device) => <label key={device.id} style={styles.deviceChoice}><input type="checkbox" name="deviceIds" value={device.id} defaultChecked={activeDisplayCount === 1} /> <span style={styles.deviceChoiceText}><strong>{device.name}</strong><small>{device.zone.location.name} · {device.zone.name} · {device.status === "ONLINE" ? "Online" : "Not online yet"}</small></span></label>)}</div>
+            <span style={styles.choiceHint}>{activeDisplayCount === 1 ? "Your only available display is selected automatically." : "Select every display that should receive this playlist."}</span>
           </fieldset>}
-          <div style={styles.two}><label style={styles.label}>Daily start<input name="dailyStart" type="time" defaultValue="06:00" required style={styles.input} /></label><label style={styles.label}>Daily end<input name="dailyEnd" type="time" defaultValue="23:00" required style={styles.input} /></label></div>
-          <div style={styles.two}><label style={styles.label}>Seconds per visual<input name="durationSeconds" type="number" min="3" max="86400" defaultValue="10" required style={styles.input} /></label><label style={styles.label}>Priority<input name="priority" type="number" min="0" max="100" defaultValue="0" required style={styles.input} /></label></div>
+          <details style={styles.advanced} open={showOrganisationSelector}>
+            <summary>Schedule and advanced options</summary>
+            <div style={styles.advancedFields}>
+              <label style={styles.label}>Layout<select name="layoutId" required={showOrganisationSelector} defaultValue="" style={styles.input}><option value="">{showOrganisationSelector ? "Select a layout" : "Standard full-screen (recommended)"}</option>{data.layouts.map((layout) => <option key={layout.id} value={layout.id}>{layout.name}</option>)}</select></label>
+              <div style={styles.two}><label style={styles.label}>Daily start<input name="dailyStart" type="time" defaultValue="06:00" required style={styles.input} /></label><label style={styles.label}>Daily end<input name="dailyEnd" type="time" defaultValue="23:00" required style={styles.input} /></label></div>
+              <div style={styles.two}><label style={styles.label}>Seconds per visual<input name="durationSeconds" type="number" min="3" max="86400" defaultValue="10" required style={styles.input} /></label><label style={styles.label}>Priority<input name="priority" type="number" min="0" max="100" defaultValue="0" required style={styles.input} /></label></div>
+              {!showOrganisationSelector ? <small style={styles.choiceHint}>Default schedule: every day, 06:00–23:00. Open this section to change it before saving.</small> : null}
+            </div>
+          </details>
           <button disabled={busy === "playlist" || Boolean(playlistBlocker)} style={styles.button}>{busy === "playlist" ? "Creating…" : playlistBlocker || "Create playlist draft"}</button>
           {playlistFeedback ? <div role={playlistFeedback.tone === "error" ? "alert" : "status"} style={playlistFeedback.tone === "error" ? styles.localError : styles.localSuccess}>{playlistFeedback.text}</div> : null}
           <p style={styles.count}>{data.playlists.length} visual playlist{data.playlists.length === 1 ? "" : "s"}</p>
           {data.playlists.slice(0, 8).map((playlist) => <div key={playlist.id} style={styles.row}>
-            <strong>{playlist.name}</strong><span>{playlist.layout.name} · {playlist.status} · priority {playlist.priority}</span>
+            <strong>{playlist.name}</strong><span>{playlist.status} · {playlist.items.map((item) => item.asset.name).join(", ")}</span>
+            <span>Displays: {playlist.devices.map((assignment) => `${assignment.device.name}${assignment.device.status === "ONLINE" ? " (online)" : " (not online)"}`).join(", ")}</span>
+            <span>Every day {formatDailyMinute(playlist.dailyStartMinute)}–{formatDailyMinute(playlist.dailyEndMinute)} (display local time) · {playlist.layout.name}</span>
             <button type="button" disabled={busy === playlist.id} onClick={() => updatePlaylist(playlist.id, playlist.status === "PUBLISHED" ? "PAUSE" : "PUBLISH")} style={styles.smallButton}>{playlist.status === "PUBLISHED" ? "Pause" : "Publish"}</button>
           </div>)}
         </form>
@@ -319,6 +355,10 @@ const lightStyles = {
   copy: { maxWidth: 800, color: "#475569", lineHeight: 1.6 },
   notice: { marginTop: 24, padding: 18, border: "1px solid #f59e0b", borderRadius: 10, background: "#fffbeb", color: "#78350f", fontWeight: 700 },
   message: { marginTop: 18, padding: 14, border: "1px solid #93c5fd", borderRadius: 9, background: "#eff6ff", color: "#1e3a8a", fontWeight: 700, overflowWrap: "anywhere" },
+  guide: { marginTop: 22, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10 },
+  guideStep: { display: "flex", alignItems: "flex-start", gap: 11, padding: 14, border: "1px solid #cbd5e1", borderRadius: 10, background: "#fff", color: "#0f172a", textAlign: "left", cursor: "pointer" },
+  guideNumber: { flex: "0 0 24px", display: "grid", placeItems: "center", width: 24, height: 24, borderRadius: 99, background: "#f4b942", color: "#101827", fontWeight: 900 },
+  guideText: { display: "grid", gap: 4 },
   tabs: { marginTop: 24, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 8, padding: 8, border: "1px solid #cbd5e1", borderRadius: 12, background: "#f1f5f9" },
   tab: { display: "grid", gap: 4, minHeight: 66, padding: "11px 13px", border: "1px solid transparent", borderRadius: 8, background: "transparent", color: "#475569", cursor: "pointer", textAlign: "left" },
   activeTab: { display: "grid", gap: 4, minHeight: 66, padding: "11px 13px", border: "1px solid #d69b1f", borderRadius: 8, background: "#fff7df", color: "#0f172a", cursor: "pointer", textAlign: "left", boxShadow: "0 1px 3px rgba(15,23,42,.08)" },
@@ -353,6 +393,8 @@ const lightStyles = {
   deviceChoice: { display: "flex", alignItems: "flex-start", gap: 8, padding: 9, borderRadius: 6, background: "#f8fafc", color: "#0f172a", cursor: "pointer" },
   deviceChoiceText: { display: "grid", gap: 2 },
   choiceHint: { color: "#64748b", fontSize: 12 },
+  advanced: { padding: 12, border: "1px solid #cbd5e1", borderRadius: 8, color: "#334155", fontSize: 13, fontWeight: 800 },
+  advancedFields: { display: "grid", gap: 12, marginTop: 14 },
   emptyState: { display: "grid", justifyItems: "start", gap: 12, padding: 15, borderRadius: 9, border: "1px solid #f59e0b", background: "#fffbeb", color: "#78350f", lineHeight: 1.5 },
   emptyAction: { display: "inline-flex", padding: "9px 12px", borderRadius: 7, background: "#0f172a", color: "#fff", fontWeight: 900, textDecoration: "none" }
 };
@@ -365,6 +407,7 @@ const darkStyles = {
   copy: { ...lightStyles.copy, color: "#b9c5d6" },
   notice: { ...lightStyles.notice, border: "1px solid #9a6b17", background: "#2f291c", color: "#fde68a" },
   message: { ...lightStyles.message, border: "1px solid #315b76", background: "#0c1b28", color: "#bae6fd" },
+  guideStep: { ...lightStyles.guideStep, border: "1px solid #2b3a54", background: "#182235", color: "#f8fafc" },
   tabs: { ...lightStyles.tabs, border: "1px solid #2f405b", background: "#111b2b" },
   tab: { ...lightStyles.tab, color: "#aebbd0" },
   activeTab: { ...lightStyles.activeTab, background: "#2b2416", color: "#f8fafc", boxShadow: "inset 0 -3px #f4b942" },
@@ -389,6 +432,7 @@ const darkStyles = {
   choiceLegend: { ...lightStyles.choiceLegend, color: "#dce5f2" },
   deviceChoice: { ...lightStyles.deviceChoice, background: "#111b2b", color: "#f8fafc" },
   choiceHint: { ...lightStyles.choiceHint, color: "#93a3ba" },
+  advanced: { ...lightStyles.advanced, border: "1px solid #2b3a54", color: "#dce5f2" },
   emptyState: { ...lightStyles.emptyState, border: "1px solid #9a6b17", background: "#2f291c", color: "#fde68a" },
   emptyAction: { ...lightStyles.emptyAction, background: "#f4b942", color: "#101827" }
 };

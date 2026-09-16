@@ -40,6 +40,12 @@ export default async function RetailRadioDashboard() {
     complimentary={entitlements.complimentaryAccess}
     onboarding={onboarding}
     primaryAction={{ href: "/dashboard/programming", label: "Open programming" }}
+    quickTasks={[
+      { href: "/dashboard/programming", label: "Plan this week's music", description: "Choose a music mode and check the schedule for your shops." },
+      { href: "/dashboard/promotions", label: "Prepare a promotion", description: "Create and review customer-facing audio before it goes live." },
+      { href: "/dashboard/players", label: "Check shop players", description: "See which listening devices are ready and which need attention." },
+      ...(entitlements.digitalSignageEnabled ? [{ href: "/dashboard/digital-signage", label: "Update a display", description: "Connect a screen or review a visual playlist before publishing." }] : [])
+    ]}
     metrics={[
       { label: "Active locations", value: locations, detail: "Retail spaces ready for service" },
       { label: "Players", value: `${players} / ${entitlements.streamLimit}`, detail: "Secure devices configured" },
