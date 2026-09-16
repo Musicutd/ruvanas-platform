@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requirePlatformAdmin } from "@/lib/access-control";
 import { accessDenied } from "@/lib/api-response";
@@ -10,21 +9,7 @@ import {
   hashComplimentaryCode
 } from "@/lib/complimentary-access.mjs";
 import { runSerializableTransaction } from "@/lib/transaction-retry.mjs";
-
-const createSchema = z.object({
-  mode: z.enum(["DIRECT", "CODE"]).default("DIRECT"),
-  organisationId: z.string().cuid().optional(),
-  recipientEmail: z.string().trim().toLowerCase().email().max(320).optional(),
-  planId: z.string().cuid(),
-  note: z.string().trim().max(160).optional().nullable()
-}).strict().superRefine((value, context) => {
-  if (value.mode === "DIRECT" && !value.organisationId) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ["organisationId"], message: "Choose a client organisation." });
-  }
-  if (value.mode === "CODE" && !value.recipientEmail) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ["recipientEmail"], message: "Enter the eligible recipient's email." });
-  }
-});
+import { complimentaryAccessCreateSchema } from "@/lib/complimentary-access-request.mjs";
 
 async function issueRegistrationCode({ access, plan, data }) {
   const internalCode = generateComplimentaryCode();
@@ -132,7 +117,7 @@ export async function POST(request) {
       return NextResponse.json({ error: "Only a Ruvanas Super Admin can grant complimentary access." }, { status: 403 });
     }
 
-    const parsed = createSchema.safeParse(await request.json());
+    const parsed = complimentaryAccessCreateSchema.safeParse(await request.json());
     if (!parsed.success) {
       return NextResponse.json({ error: parsed.error.issues[0]?.message || "Choose an active tier." }, { status: 400 });
     }
