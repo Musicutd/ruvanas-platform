@@ -10,12 +10,13 @@ export default async function RetailRadioDashboard() {
   const { context, entitlements } = await requireSubscriberProduct("RETAIL");
   const organisationId = context.membership.organisationId;
   const now = new Date();
-  const [locations, players, liveStreams, activeMusicModes, schedules] = await Promise.all([
+  const [locations, players, liveStreams, activeMusicModes, schedules, activeAutoDjPolicies] = await Promise.all([
     prisma.location.count({ where: { organisationId, status: "ACTIVE" } }),
     prisma.player.count({ where: { organisationId, status: { not: "DISABLED" } } }),
     prisma.playerListenerLease.count({ where: { organisationId, revokedAt: null, expiresAt: { gt: now } } }),
     prisma.musicMode.count({ where: { organisationId, status: "ACTIVE" } }),
-    prisma.musicSchedule.count({ where: { organisationId, status: "PUBLISHED" } })
+    prisma.musicSchedule.count({ where: { organisationId, status: "PUBLISHED" } }),
+    prisma.autoDjPolicy.count({ where: { organisationId, enabled: true, state: "ACTIVE", rightsUse: "RETAIL_RADIO" } })
   ]);
   const optionalActions = [
     entitlements.retailMediaEnabled ? { href: "/dashboard/retail-media", label: "Retail Media", description: "Coordinate approved commercial media campaigns." } : null,
@@ -27,6 +28,7 @@ export default async function RetailRadioDashboard() {
     activeLocationCount: locations,
     activeMusicModeCount: activeMusicModes,
     publishedScheduleCount: schedules,
+    activeAutoDjPolicyCount: activeAutoDjPolicies,
     configuredPlayerCount: players,
     activePlayerStreams: liveStreams
   });
@@ -39,9 +41,9 @@ export default async function RetailRadioDashboard() {
     statusTone={liveStreams > 0 ? "healthy" : "attention"}
     complimentary={entitlements.complimentaryAccess}
     onboarding={onboarding}
-    primaryAction={{ href: "/dashboard/programming", label: "Open programming" }}
+    primaryAction={{ href: "/dashboard/retail/music", label: "Choose shop music" }}
     quickTasks={[
-      { href: "/dashboard/programming", label: "Plan this week's music", description: "Choose a music mode and check the schedule for your shops." },
+      { href: "/dashboard/retail/music", label: "Choose music for a shop", description: "Pick a listening area, approved music and playback hours." },
       { href: "/dashboard/promotions", label: "Prepare a promotion", description: "Create and review customer-facing audio before it goes live." },
       { href: "/dashboard/players", label: "Check shop players", description: "See which listening devices are ready and which need attention." },
       ...(entitlements.digitalSignageEnabled ? [{ href: "/dashboard/digital-signage", label: "Update a display", description: "Connect a screen or review a visual playlist before publishing." }] : [])
@@ -55,7 +57,8 @@ export default async function RetailRadioDashboard() {
     sections={[
       { eyebrow: "Daily control", title: "Run your locations", description: "The tools used most often by retail teams.", actions: [
         { href: "/dashboard/locations", label: "Locations & Zones", description: "Create shops and the playback or display areas inside them." },
-        { href: "/dashboard/programming", label: "Music programming", description: "Choose modes and schedule the week." },
+        { href: "/dashboard/retail/music", label: "Music for shops", description: "Choose approved music and keep it playing automatically." },
+        { href: "/dashboard/programming", label: "Advanced programming", description: "Build detailed schedules and AutoDJ rules when you need them." },
         { href: "/dashboard/players", label: "Shop players", description: "Set up and check each listening device." },
         { href: "/dashboard/player-sessions", label: "Live stream sessions", description: "See which stream slots are active now." }
       ] },

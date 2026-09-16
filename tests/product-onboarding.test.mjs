@@ -33,6 +33,18 @@ test("Retail Radio onboarding follows location, programming, player and live evi
   assert.equal(readiness.nextAction.label, "Prepare player");
 });
 
+test("Retail automatic music counts as programming without forcing a weekly schedule", () => {
+  const readiness = buildRetailProductOnboarding({
+    membershipRole: "OWNER",
+    activeLocationCount: 1,
+    activeMusicModeCount: 1,
+    activeAutoDjPolicyCount: 1
+  });
+  assert.equal(readiness.steps.find((step) => step.id === "PROGRAMMING").complete, true);
+  assert.equal(readiness.nextStepId, "PLAYER");
+  assert.equal(buildRetailProductOnboarding({ activeLocationCount: 1 }).nextAction.href, "/dashboard/retail/music");
+});
+
 test("School Radio separates client safeguarding preparation from Ruvanas approval", () => {
   const waiting = buildSchoolProductOnboarding({
     membershipRole: "MANAGER",

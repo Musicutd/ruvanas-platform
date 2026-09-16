@@ -66,6 +66,7 @@ test("Retail navigation does not leak Online or School administration", () => {
     assert.ok(!ids.includes(id), `${id} must not be shown to a Retail-only account`);
   }
   assert.ok(ids.includes("retailHome"));
+  assert.ok(ids.includes("retailMusic"));
   assert.ok(ids.includes("promotions"));
 });
 
@@ -73,7 +74,7 @@ test("School navigation excludes Retail and Online product operations", () => {
   const ids = itemIds(schoolOnly);
   assert.ok(ids.includes("schoolHome"));
   assert.ok(ids.includes("school"));
-  for (const id of ["retailHome", "radioHome", "station", "publicPlayer", "promotions", "podcasts", "listenerAnalytics", "retail", "signage"]) {
+  for (const id of ["retailHome", "retailMusic", "radioHome", "station", "publicPlayer", "promotions", "podcasts", "listenerAnalytics", "retail", "signage"]) {
     assert.ok(!ids.includes(id), `${id} must not be shown to a School-only account`);
   }
 });
@@ -83,7 +84,7 @@ test("Online navigation excludes Retail and School product language", () => {
   assert.ok(ids.includes("radioHome"));
   assert.ok(ids.includes("station"));
   assert.ok(ids.includes("listenerAnalytics"));
-  for (const id of ["retailHome", "schoolHome", "school", "retail", "signage"]) {
+  for (const id of ["retailHome", "retailMusic", "schoolHome", "school", "retail", "signage"]) {
     assert.ok(!ids.includes(id), `${id} must not be shown to an Online-only account`);
   }
 });
