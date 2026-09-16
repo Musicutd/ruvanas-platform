@@ -40,7 +40,7 @@ export default function RetailMusicSetup() {
 
   const areas = useMemo(() => buildRetailMusicAreas(programming), [programming]);
   const area = areas.find((item) => item.id === areaId) || null;
-  const playableModes = programming?.musicModes.filter((mode) => mode.playableTrackCount > 0) || [];
+  const playableModes = programming?.musicModes?.filter((mode) => mode.playableTrackCount > 0) || [];
   const selectedMode = playableModes.find((mode) => mode.id === modeId) || null;
   const currentPolicy = area?.channel?.autoDjPolicy || null;
   const changed = currentPolicy?.enabled !== true || currentPolicy.defaultMusicModeId !== modeId || currentPolicy.playbackPolicy !== playbackPolicy;
