@@ -38,8 +38,9 @@ test("product dashboards stay separate while shared radio station tools accept e
 });
 
 test("complimentary access codes create perpetual accounts controlled only by Super Admin", async () => {
-  const [createRoute, redeemRoute, revokeRoute, admin, account, subscriberNavigation, clientPage, login, freeRegistration] = await Promise.all([
+  const [createRoute, createSchema, redeemRoute, revokeRoute, admin, account, subscriberNavigation, clientPage, login, freeRegistration] = await Promise.all([
     readFile(new URL("../app/api/admin/complimentary-access/route.js", import.meta.url), "utf8"),
+    readFile(new URL("../lib/complimentary-access-request.mjs", import.meta.url), "utf8"),
     readFile(new URL("../app/api/complimentary-access/redeem/route.js", import.meta.url), "utf8"),
     readFile(new URL("../app/api/admin/complimentary-access/[codeId]/route.js", import.meta.url), "utf8"),
     readFile(new URL("../app/admin/complimentary-access/ComplimentaryAccessAdmin.js", import.meta.url), "utf8"),
@@ -57,7 +58,8 @@ test("complimentary access codes create perpetual accounts controlled only by Su
   assert.match(createRoute, /status: "ACTIVE"/);
   assert.match(createRoute, /complimentaryAccessActive: true/);
   assert.match(createRoute, /COMPLIMENTARY_ACCESS_GRANTED/);
-  assert.match(createRoute, /mode: z\.enum\(\["DIRECT", "CODE"\]\)/);
+  assert.match(createRoute, /complimentaryAccessCreateSchema\.safeParse/);
+  assert.match(createSchema, /mode: z\.enum\(\["DIRECT", "CODE"\]\)/);
   assert.match(createRoute, /code: internalCode/);
   assert.match(createRoute, /recipientEmail/);
   assert.doesNotMatch(createRoute, /tx\.(billingEvent|billingInvoice)/);
