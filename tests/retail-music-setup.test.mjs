@@ -5,6 +5,12 @@ import { buildRetailMusicAreas, retailMusicSelection } from "../lib/retail-music
 
 const zone = { id: "zone-1", type: "ZONE", locationName: "Main shop", name: "Sales floor", channelId: "channel-1" };
 
+test("Retail music setup renders safely before the first API response", () => {
+  assert.deepEqual(buildRetailMusicAreas(null), []);
+  assert.deepEqual(buildRetailMusicAreas({}), []);
+  assert.deepEqual(retailMusicSelection(null, null), { modeId: "", playbackPolicy: "FOLLOW_LOCATION_HOURS" });
+});
+
 test("Retail quick setup lists listening zones and blocks shared channels", () => {
   const areas = buildRetailMusicAreas({
     targets: [{ id: "location-1", type: "LOCATION", name: "Main shop" }, zone],
