@@ -5,6 +5,7 @@ import { resolveEffectivePlan, resolveEntitlements } from "@/lib/entitlements.mj
 import { prisma } from "@/lib/prisma";
 import { buildSubscriberNavigation, buildSubscriberProductCards } from "@/lib/user-experience-navigation.mjs";
 import { buildSubscriberOnboarding } from "@/lib/subscriber-onboarding.mjs";
+import { buildSubscriberHome } from "@/lib/subscriber-home.mjs";
 import ContextHelp from "@/app/components/ContextHelp";
 import OnboardingChecklist from "@/app/components/OnboardingChecklist";
 import SkipLink from "@/app/components/SkipLink";
@@ -83,7 +84,8 @@ export default async function DashboardPage() {
     configuredPlayerCount,
     activePlayerStreams
   });
-  const nextAction = onboarding.nextAction;
+  const home = buildSubscriberHome({ products, onboarding, serviceEnabled: entitlements.serviceEnabled });
+  const nextAction = home.nextAction;
   const allNavigationItems = navigation.flatMap((section) => section.items);
   const quickActionIds = [
     "station",
@@ -96,7 +98,7 @@ export default async function DashboardPage() {
     .map((id) => allNavigationItems.find((item) => item.id === id))
     .filter(Boolean);
   const storageUsedGb = storageUsedMb / 1024;
-  const setupProgress = usagePercent(onboarding.completedCount, onboarding.totalCount);
+  const setupProgress = home.onboarding ? usagePercent(onboarding.completedCount, onboarding.totalCount) : 0;
   const playerUsage = usagePercent(configuredPlayerCount, entitlements.streamLimit);
   const liveUsage = usagePercent(activePlayerStreams, entitlements.streamLimit);
   const storageUsage = usagePercent(storageUsedGb, entitlements.storageLimitGb);
@@ -109,7 +111,7 @@ export default async function DashboardPage() {
           <div>
             <p className={styles.eyebrow}>SUBSCRIBER PORTAL</p>
             <h1 id="dashboard-title">Hello {user.name || "there"}</h1>
-            <p>Your radio service, daily tasks and support in one clear place.</p>
+            <p>{home.description}</p>
           </div>
           <span className={styles.roleBadge}>{membership.role.replaceAll("_", " ").toLowerCase()}</span>
         </section>
@@ -133,10 +135,10 @@ export default async function DashboardPage() {
               <p>{nextAction.description}</p>
             </div>
             <div className={styles.nextActionFooter}>
-              <div className={styles.progressSummary}>
+              {home.onboarding ? <div className={styles.progressSummary}>
                 <span>{onboarding.completedCount} of {onboarding.totalCount} setup checks complete</span>
                 <progress value={onboarding.completedCount} max={onboarding.totalCount} aria-label={`${setupProgress}% of setup complete`} />
-              </div>
+              </div> : null}
               <Link href={nextAction.href} className={styles.primaryButton}>{nextAction.label}</Link>
             </div>
           </section>
@@ -145,12 +147,12 @@ export default async function DashboardPage() {
             <div className={styles.pulseHeader}>
               <div>
                 <p className={styles.eyebrow}>SERVICE PULSE</p>
-                <h2 id="service-pulse-title">Radio status</h2>
+                <h2 id="service-pulse-title">Service access</h2>
               </div>
               <span className={entitlements.serviceEnabled ? styles.pulseDotHealthy : styles.pulseDotAttention} aria-hidden="true" />
             </div>
             <strong className={entitlements.serviceEnabled ? styles.pulseHealthy : styles.pulseAttention}>
-              {entitlements.serviceEnabled ? "Available" : "Action needed"}
+              {entitlements.serviceEnabled ? "Plan available" : "Action needed"}
             </strong>
             <dl className={styles.pulseRows}>
               <div><dt>Plan</dt><dd>{plan?.name || "Trial"}</dd></div>
@@ -160,7 +162,7 @@ export default async function DashboardPage() {
           </aside>
         </div>
 
-        <OnboardingChecklist onboarding={onboarding} />
+        {home.onboarding ? <OnboardingChecklist onboarding={home.onboarding} /> : null}
 
           </div>
 
@@ -281,11 +283,11 @@ export default async function DashboardPage() {
 
         <ContextHelp
           title="Need a hand? Open quick help"
-          introduction="You do not need to configure the whole platform at once. The setup guide always points to the first unfinished step."
+          introduction="You do not need to configure the whole platform at once. Open a product dashboard to find the setup steps that apply to it."
           items={[
-            { title: "Your tasks", description: "Owners and managers create the station and securely enrol each player." },
-            { title: "Ruvanas-managed setup", description: "Locations, approved music modes and published schedules are prepared through controlled administration." },
-            { title: "Live confirmation", description: "A step becomes complete only when the system has real configuration or active-player evidence." }
+            { title: "Your tasks", description: "Open your product dashboard to see the next setup step and the tools you can use." },
+            { title: "Help with setup", description: "Your organisation's locations, content, schedules and devices can be prepared one task at a time." },
+            { title: "Check the result", description: "A setup step is complete only when the service has recorded the required configuration or activity." }
           ]}
           articleHref="/dashboard/help#getting-started"
           articleLabel="Open the getting-started guide"

@@ -2,7 +2,7 @@ import Link from "next/link";
 import styles from "./product-dashboard.module.css";
 import WorkspaceTabs from "./WorkspaceTabs";
 
-export default function ProductDashboard({ eyebrow, title, description, status, statusTone = "healthy", metrics, primaryAction, sections, complimentary, onboarding }) {
+export default function ProductDashboard({ eyebrow, title, description, status, statusTone = "healthy", metrics, primaryAction, sections, complimentary, onboarding, quickTasks = [] }) {
   const heroAction = onboarding && !onboarding.complete ? onboarding.nextAction : primaryAction;
 
   return (
@@ -55,6 +55,18 @@ export default function ProductDashboard({ eyebrow, title, description, status, 
           </ol>
         </section>
       ) : null}
+
+      {quickTasks.length ? <section className={styles.quickTasks} aria-labelledby="product-quick-tasks-title">
+        <div>
+          <p className={styles.eyebrow}>COMMON TASKS</p>
+          <h2 id="product-quick-tasks-title">What do you need to do today?</h2>
+        </div>
+        <div className={styles.quickTaskGrid}>
+          {quickTasks.map((task) => <Link href={task.href} key={task.href} className={styles.quickTask}>
+            <strong>{task.label}</strong><span>{task.description}</span><b aria-hidden="true">→</b>
+          </Link>)}
+        </div>
+      </section> : null}
 
       <section className={styles.metrics} aria-label={`${title} overview`}>
         {metrics.map((metric) => <article key={metric.label}>

@@ -31,7 +31,8 @@ test("the Digital Signage interface separates tasks, explains enrolment and enfo
   assert.match(consoleSource, /const darkStyles =/);
   assert.match(consoleSource, /background: "radial-gradient\([^\n]+#101827"/);
   assert.match(consoleSource, /Display allowance reached/);
-  assert.match(consoleSource, /connected digital display/);
+  assert.match(consoleSource, /registered display/);
+  assert.match(consoleSource, /online<\/p>/);
   assert.match(deviceRoute, /runSerializableTransaction/);
   assert.match(deviceRoute, /activeDisplayCount >= displayLimit/);
   assert.match(deviceRoute, /status: \{ not: "DISABLED" \}/);
