@@ -110,6 +110,8 @@ export default function LoginPage() {
           <div><strong id="free-access-title">Have a free-access code?</strong><span style={styles.freeAccessText}>Create the eligible account linked to the code. No payment details are required.</span></div>
           <a href="/register/free-access" style={styles.freeAccessLink}>Create free account with code</a>
         </section>
+
+        <p style={styles.partnerDemo}>Invited to a read-only partner tour? <a href="/partner-demo/access" style={styles.link}>Open your demo invitation</a></p>
       </section>
     </main>
   );
@@ -240,6 +242,12 @@ const styles = {
     marginTop: 6,
     color: "#aeb9c8",
     fontSize: 13,
+    lineHeight: 1.5
+  },
+  partnerDemo: {
+    margin: "20px 0 0",
+    color: "#b8c3d6",
+    fontSize: 14,
     lineHeight: 1.5
   },
   link: {

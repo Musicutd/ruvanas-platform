@@ -16,7 +16,11 @@ export default async function OrganisationsDashboard() {
     prisma.schoolPodcastEpisode.count({ where: { organisationId: organisation.id, status: "PUBLISHED", series: { product: "ORGANISATIONS_RADIO" } } })
   ]);
   const activeChannels = organisation.stations.filter((station) => station.status === "ACTIVE");
-  return <ProductDashboard eyebrow="Ruvanas Organisations" title="Your organisation’s media, under your control" description="Operate channels, announcements, events, podcasts, sponsors and displays. Ruvanas supplies the technology; your organisation controls the service and content." status={activeChannels.length ? "Organisation media ready" : "Channel setup needed"} statusTone={activeChannels.length ? "healthy" : "attention"} complimentary={entitlements.complimentaryAccess} primaryAction={{ href: "/dashboard/organisations/workspace", label: "Open Organisations workspace" }} metrics={[
+  return <ProductDashboard eyebrow="Ruvanas Organisations" title="Your organisation’s media, under your control" description="Operate channels, announcements, events, podcasts, sponsors and displays. Ruvanas supplies the technology; your organisation controls the service and content." status={activeChannels.length ? "Organisation media ready" : "Channel setup needed"} statusTone={activeChannels.length ? "healthy" : "attention"} complimentary={entitlements.complimentaryAccess} primaryAction={{ href: "/dashboard/organisations/workspace", label: "Open Organisations workspace" }} quickTasks={[
+    { href: "/dashboard/organisations/workspace?tab=announcements", label: "Prepare an announcement", description: "Choose the message, review it and select where it appears." },
+    { href: "/dashboard/organisations/workspace?tab=events", label: "Prepare an event", description: "Plan a live window with a safe fallback." },
+    { href: "/dashboard/organisations/setup", label: "Review your channels", description: "Check audience and access settings before publishing." }
+  ]} metrics={[
     { label: "Branches & venues", value: locations, detail: "Subscriber-owned locations" },
     { label: "Channels", value: `${activeChannels.length} / ${entitlements.stationLimit}`, detail: "Organisation channels" },
     { label: "Published announcements", value: announcements, detail: "Explicitly selected surfaces" },

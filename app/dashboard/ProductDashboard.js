@@ -14,6 +14,7 @@ export default function ProductDashboard({ eyebrow, title, description, status, 
           <p>{description}</p>
           <div className={styles.heroActions}>
             <Link href={heroAction.href} className={styles.primary}>{heroAction.label}</Link>
+            <Link href="/dashboard/how-it-works" className={styles.secondary}>How it works</Link>
             <Link href="/dashboard" className={styles.secondary}>All products</Link>
           </div>
         </div>

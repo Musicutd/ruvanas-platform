@@ -1691,6 +1691,7 @@ model User {
   updatedRecoveryControls                RecoveryControl[]                @relation("RecoveryControlUpdatedBy")
   recordedRecoveryEvidence               RecoveryEvidence[]               @relation("RecoveryEvidenceRecordedBy")
   createdComplimentaryAccessCodes        ComplimentaryAccessCode[]        @relation("ComplimentaryAccessCreatedBy")
+  createdPartnerDemoInvitations           PartnerDemoInvitation[]         @relation("PartnerDemoInvitationCreatedBy")
   redeemedComplimentaryAccessCodes       ComplimentaryAccessCode[]        @relation("ComplimentaryAccessRedeemedBy")
   revokedComplimentaryAccessCodes        ComplimentaryAccessCode[]        @relation("ComplimentaryAccessRevokedBy")
   createdSmartPlaylists                  SmartPlaylist[]                  @relation("SmartPlaylistCreatedBy")
@@ -2385,6 +2386,27 @@ model ComplimentaryAccessCode {
   @@index([organisationId, status, createdAt])
   @@index([recipientEmail, status, createdAt])
   @@index([planId, status])
+}
+
+model PartnerDemoInvitation {
+  id               String    @id @default(cuid())
+  partnerName      String
+  recipientEmail   String
+  codeHash         String?   @unique
+  codeSuffix       String
+  codeExpiresAt    DateTime
+  sessionHash      String?   @unique
+  sessionExpiresAt DateTime?
+  redeemedAt       DateTime?
+  revokedAt        DateTime?
+  lastViewedAt     DateTime?
+  createdByUserId  String
+  createdAt        DateTime  @default(now())
+
+  createdBy User @relation("PartnerDemoInvitationCreatedBy", fields: [createdByUserId], references: [id], onDelete: Cascade)
+
+  @@index([recipientEmail, createdAt])
+  @@index([revokedAt, sessionExpiresAt])
 }
 
 model BillingAccount {
