@@ -42,6 +42,11 @@ export default async function OnlineRadioDashboard() {
     complimentary={entitlements.complimentaryAccess}
     onboarding={onboarding}
     primaryAction={{ href: firstStation ? `/stations/${firstStation.id}` : "/stations/new", label: firstStation ? "Open station" : "Create station" }}
+    quickTasks={[
+      { href: "/dashboard/programming", label: "Plan what plays", description: "Choose approved music and review the station schedule." },
+      { href: "/dashboard/media", label: "Add station audio", description: "Prepare your own tracks, imaging or spoken content." },
+      { href: "/dashboard/player-sessions", label: "Check live listening", description: "See current stream sessions and player activity." }
+    ]}
     metrics={[
       { label: "Stations", value: `${organisation.stations.length} / ${entitlements.stationLimit}`, detail: "Online services configured" },
       { label: "Connected players", value: players, detail: "Secure listening endpoints" },

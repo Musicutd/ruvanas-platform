@@ -43,6 +43,11 @@ export default async function SchoolProductDashboard() {
     complimentary={entitlements.complimentaryAccess}
     onboarding={onboarding}
     primaryAction={{ href: "/dashboard/school-radio", label: "Open School Radio" }}
+    quickTasks={[
+      { href: "/dashboard/school-radio", label: "Create a school programme", description: "Start a supervised show or episode in the school workspace." },
+      { href: "/dashboard/notifications", label: "Review work awaiting staff", description: "See approval and safeguarding tasks that need attention." },
+      { href: "/dashboard/players", label: "Check listening devices", description: "Confirm the school player is connected and ready." }
+    ]}
     metrics={[
       { label: "Episodes", value: episodes, detail: "School productions created" },
       { label: "Awaiting review", value: reviewQueue, detail: "Staff action required" },
