@@ -1,0 +1,73 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
+import {
+  deriveStudioDailyLog,
+  normalizeStudioConsoleLayout,
+  safeStudioMixTiming,
+  studioConsoleNowNext,
+  studioMixDefaults,
+  studioTimingToNextHardEvent,
+  validateStudioMixPoints
+} from "../lib/studio-console.mjs";
+
+test("console layouts retain critical status and bound panel sizing", () => {
+  assert.deepEqual(normalizeStudioConsoleLayout({ preset: "PRESENTER", panels: ["MIC", "MIC", "UNKNOWN"], sizes: { MIC: 9000 } }), {
+    preset: "PRESENTER", panels: ["OUTPUT_HEALTH", "ON_AIR", "MIC"], sizes: { MIC: 1200 }
+  });
+});
+
+test("mix points reject out of bounds and safely fall back", () => {
+  assert.equal(validateStudioMixPoints([{ type: "CUE_IN", positionMs: 400 }, { type: "END", positionMs: 200 }], 1000).valid, false);
+  assert.equal(safeStudioMixTiming([{ type: "END", positionMs: 1001 }], 1000).fallback, true);
+  assert.deepEqual(safeStudioMixTiming([{ type: "CUE_IN", positionMs: 20 }, { type: "INTRO_END", positionMs: 250 }, { type: "END", positionMs: 950 }], 1000), {
+    cueInMs: 20, introEndMs: 250, mixStartMs: null, fadeStartMs: null, endMs: 950, fallback: false
+  });
+});
+
+test("valid mix points supply bounded prepare defaults without changing the source", () => {
+  assert.deepEqual(studioMixDefaults([{ type: "CUE_IN", positionMs: 1200 }, { type: "FADE_START", positionMs: 8000 }, { type: "END", positionMs: 9000 }], 10000), { cueInMs: 1200, cueOutMs: 9000, fadeOutMs: 1000 });
+  assert.deepEqual(studioMixDefaults([{ type: "END", positionMs: 12000 }], 10000), {});
+});
+
+test("now next and after next use the server queue ordering", () => {
+  const output = studioConsoleNowNext({ items: [
+    { id: "c", area: "LIVE", status: "READY", position: 2 },
+    { id: "a", area: "LIVE", status: "ON_AIR", position: 0 },
+    { id: "b", area: "LIVE", status: "READY", position: 1 }
+  ] });
+  assert.equal(output.onAir.id, "a");
+  assert.equal(output.next.id, "b");
+  assert.equal(output.afterNext.id, "c");
+});
+
+test("Daily Log keeps planned timing distinct from verified play events", () => {
+  const log = deriveStudioDailyLog({
+    dayStart: "2026-09-17T00:00:00Z", dayEnd: "2026-09-18T00:00:00Z",
+    scheduled: [{ id: "a", sourceType: "CLOCK", label: "First hour", startsAt: "2026-09-17T10:00:00Z", durationMs: 3_600_000 }],
+    campaigns: [{ id: "b", sourceType: "CAMPAIGN", label: "Fixed spot", startsAt: "2026-09-17T10:30:00Z", durationMs: 30_000, hardEvent: true }],
+    proof: [{ id: "proof-1", eventType: "COMPLETED", occurredAt: "2026-09-17T10:30:05Z", trackTitle: "Actual spot" }]
+  });
+  assert.equal(log.planned.length, 2);
+  assert.equal(log.actual.length, 1);
+  assert.equal(log.planned[0].actualStartAt, null);
+  assert.equal(log.planned[1].timingVarianceMs, 0);
+  assert.equal(studioTimingToNextHardEvent(log, new Date("2026-09-17T10:10:00Z")).deltaMs, -1_800_000);
+});
+
+test("Console routes reuse Studio authority and keep tenant-scoped writes behind Pro", async () => {
+  const [route, monitor, hub, migration] = await Promise.all([
+    readFile(new URL("../app/api/studio/console/route.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/dashboard/studio/monitor/page.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/dashboard/studio/StudioHubClient.js", import.meta.url), "utf8"),
+    readFile(new URL("../prisma/migrations/20261120000000_studio_broadcast_console/migration.sql", import.meta.url), "utf8")
+  ]);
+  assert.match(route, /requireActiveStudio\(ORGANISATION_CONTENT_ROLES\)/);
+  assert.match(route, /studioProEnabled/);
+  assert.match(route, /const organisationId = access\.organisation\.id/);
+  assert.match(route, /productFamily: access\.entitlements\.planProductFamily/);
+  assert.doesNotMatch(route, /FIRE_CART|START_BROADCAST/);
+  assert.match(monitor, /monitor \/>/);
+  assert.match(hub, /BroadcastConsoleClient/);
+  for (const name of ["StudioConsolePreference", "StudioCartBank", "StudioCart", "StudioMixPoint", "StudioPresenterNote"]) assert.match(migration, new RegExp(`CREATE TABLE "${name}"`));
+});

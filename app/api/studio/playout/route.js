@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireActiveStudio } from "@/lib/studio-access";
 import { ORGANISATION_CONTENT_ROLES } from "@/lib/permissions.mjs";
 import { fallbackForQueue, normalizePreparedItem, playoutModeTransition, safeEndManualSession, studioQueueReadiness } from "@/lib/studio-playout.mjs";
+import { studioMixDefaults } from "@/lib/studio-console.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -95,7 +96,8 @@ export async function POST(request) {
         const asset = await tx.mediaAsset.findFirst({ where: { id: input.mediaAssetId, OR: [{ organisationId: access.organisation.id }, { organisationId: null, libraryType: "RUVANAS_CATALOGUE" }] }, include: { track: true } });
         if (!asset) throw new Error("Choose protected media available to this organisation.");
         const readiness = studioQueueReadiness(asset, access.entitlements);
-        const prepared = normalizePreparedItem(input, asset, { studioLevel: access.entitlements.studioLevel, readiness });
+        const points = asset.organisationId === access.organisation.id ? await tx.studioMixPoint.findMany({ where: { organisationId: access.organisation.id, mediaAssetId: asset.id }, select: { type: true, positionMs: true } }) : [];
+        const prepared = normalizePreparedItem({ ...studioMixDefaults(points, Math.round(Number(asset.durationSeconds || 0) * 1000)), ...input }, asset, { studioLevel: access.entitlements.studioLevel, readiness });
         if (input.action === "ADD_LIVE" && !readiness.ready) throw new Error(readiness.reason);
         const area = input.action === "ADD_LIVE" ? "LIVE" : "PREPARE";
         const position = await tx.studioPlayoutItem.count({ where: { sessionId: session.id, area, ...(area === "LIVE" ? { status: "READY" } : {}) } });
