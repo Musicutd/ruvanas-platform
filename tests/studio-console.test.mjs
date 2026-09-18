@@ -104,3 +104,18 @@ test("live commands cannot mark an item on air or start distribution without a b
   assert.match(manualUi, /disabled=\{busy \|\| !manualOutputConnected\}/);
   assert.match(broadcastUi, /disabled=\{busy\|\|!selected\.length\|\|!data\.manualOutput\?\.connected\}/);
 });
+
+test("Console presenter actions reuse the governed Manual Playout queue and keep the monitor read only", async () => {
+  const [consoleUi, playout] = await Promise.all([
+    readFile(new URL("../app/dashboard/studio/BroadcastConsoleClient.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/studio/playout/route.js", import.meta.url), "utf8")
+  ]);
+  assert.match(consoleUi, /if \(monitor \|\| !session \|\| busy\) return/);
+  assert.match(consoleUi, /fetch\("\/api\/studio\/playout"/);
+  assert.match(consoleUi, /expectedRevision: session\.revision/);
+  assert.match(consoleUi, /prepareQueue\("REORDER"/);
+  assert.match(consoleUi, /prepareQueue\("LOCK"/);
+  assert.match(consoleUi, /prepareQueue\("SEND_NEXT"/);
+  assert.match(consoleUi, /hardEventTiming\?\.deltaMs < 0/);
+  assert.match(playout, /planStudioFutureReorder\(session\.items, input\.itemId, input\.position\)/);
+});

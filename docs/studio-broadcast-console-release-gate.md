@@ -10,6 +10,8 @@ Locally added: a Pro-only Broadcast Console tab and read-only second-screen moni
 
 This continuation adds a fail-closed output boundary: Manual start/skip/fade and Studio Broadcast start return a conflict until a verified Studio queue-to-player/encoder bridge exists. Queue preparation remains available; it rechecks product use, ownership, media status, catalogue tier, rights approval, licence window and known channel territory. Restricted-territory music is not represented as ready when territory is unknown. Console and playout sessions, carts and managed stations are constrained to the active product family. Studio destination monitoring keeps legacy connections in standby and does not claim listener or metadata output from a healthy Centova source alone. The Console and Studio screens explain the boundary instead of presenting queue state as proven output.
 
+The next local increment makes the presenter workspace a controlled preparation surface: it sends approved Prepare items to Next or the future queue through the existing Manual Playout API, and reorders/locks future items with idempotency keys and optimistic revisions. Dense ordering is computed server-side, played items cannot move, and a locked future item cannot be crossed or displaced by Send to Next. The read-only second-screen monitor still cannot issue commands. The Daily Log now warns when the preceding planned item may overlap a fixed event. None of these controls starts public audio.
+
 The new migration is `20261120000000_studio_broadcast_console`. It adds five small reference/configuration tables: `StudioConsolePreference`, `StudioCartBank`, `StudioCart`, `StudioMixPoint`, and `StudioPresenterNote`. It does not duplicate media bytes, the scheduler, playout, broadcasting, or proof tables.
 
 | Roadmap | Local status |
@@ -17,7 +19,7 @@ The new migration is `20261120000000_studio_broadcast_console`. It adds five sma
 | STP.0 architecture/dependency audit | Complete; evidence and classifications recorded separately. |
 | STP.1–STP.5 Basic/Pro, Waveform and Multitrack | Existing foundations reused; regression suite passed. |
 | STP.6–STP.7 Manual Playout and three-area workflow | Existing queue and Prepare reused; mix-point defaults and command-time rights gates added. Unverified live commands fail closed. Actual listener output remains disconnected. |
-| STP.7A Broadcast Console | Partial presenter view, layouts, Daily Log, cart configuration, notes and monitor. Live controls and full editing remain open. |
+| STP.7A Broadcast Console | Presenter view, layouts, Daily Log timing warning, governed future-queue and Prepare controls, cart configuration, notes and read-only monitor. Live controls and full log editing remain open. |
 | STP.8–STP.8A scheduling, fallback and distribution | Existing authority reused. Real output bridge and provider-backed transport are unverified. |
 | STP.9–STP.11 packs, products, security and downgrade | Existing foundations reused; new Console is Pro-, product- and tenant-gated. Prepared item eligibility is rechecked, but live-use rights recheck still awaits an output bridge. |
 | STP.12 final release gate | Not passed; see blockers below. |
@@ -34,6 +36,6 @@ The new migration is `20261120000000_studio_broadcast_console`. It adds five sma
 
 - Prisma schema validation and client generation passed using a dummy local validation URL and the installed Prisma engines.
 - Production Next.js build passed after the output/rights guard changes; prerender logged expected authentication failures against the dummy URL. This is not a live-data acceptance check.
-- Full suite after final product/territory tightening: 820 tests, 812 passed, 8 environment-dependent skips, 0 failed. A pre-existing Organisations schema-source test was made line-ending portable for this Windows checkout. The production build also passed after the final changes.
+- Full suite after the presenter-queue increment: 822 tests, 814 passed, 8 environment-dependent skips, 0 failed. A pre-existing Organisations schema-source test was made line-ending portable for this Windows checkout. The production build also passed after the final changes.
 - No migration was applied to production or to a disposable database. No external encoder, browser live provider, listener playback, failover or cross-tenant integration was exercised.
 - No release-gate claim is made for live broadcasting. **Not safe to publish, merge or deploy as the full requested expansion.**

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireActiveStudio } from "@/lib/studio-access";
 import { ORGANISATION_CONTENT_ROLES } from "@/lib/permissions.mjs";
-import { assertStudioManualOutputBridge, normalizePreparedItem, playoutModeTransition, safeEndManualSession, studioManualOutputAvailability, studioQueueReadiness } from "@/lib/studio-playout.mjs";
+import { assertStudioManualOutputBridge, nextStudioQueuePosition, normalizePreparedItem, planStudioFutureReorder, playoutModeTransition, safeEndManualSession, studioManualOutputAvailability, studioQueueReadiness } from "@/lib/studio-playout.mjs";
 import { studioMixDefaults } from "@/lib/studio-console.mjs";
 
 export const dynamic = "force-dynamic";
@@ -123,7 +123,7 @@ export async function POST(request) {
         const prepared = normalizePreparedItem({ ...studioMixDefaults(points, Math.round(Number(asset.durationSeconds || 0) * 1000)), ...input }, asset, { studioLevel: access.entitlements.studioLevel, readiness });
         if (input.action === "ADD_LIVE" && !readiness.ready) throw new Error(readiness.reason);
         const area = input.action === "ADD_LIVE" ? "LIVE" : "PREPARE";
-        const position = await tx.studioPlayoutItem.count({ where: { sessionId: session.id, area, ...(area === "LIVE" ? { status: "READY" } : {}) } });
+        const position = nextStudioQueuePosition(session.items, area);
         payload.item = await tx.studioPlayoutItem.create({ data: { ...prepared, area, sessionId: session.id, organisationId: access.organisation.id, position, createdByUserId: access.user.id } });
       } else if (input.action === "UPDATE_PREPARE") {
         const item = session.items.find((candidate) => candidate.id === input.itemId && candidate.area === "PREPARE");
@@ -136,6 +136,7 @@ export async function POST(request) {
       } else if (input.action === "SEND_NEXT") {
         const item = session.items.find((candidate) => candidate.id === input.itemId && candidate.area === "PREPARE");
         if (!item) throw new Error("Prepare an item first.");
+        if (session.items.some((candidate) => candidate.area === "LIVE" && candidate.status === "READY" && candidate.locked)) throw new Error("A future item is locked. Unlock it before inserting another item ahead of it.");
         const asset = await tx.mediaAsset.findFirst({ where: { id: item.mediaAssetId, OR: [{ organisationId: access.organisation.id }, { organisationId: null, libraryType: "RUVANAS_CATALOGUE" }] }, include: { genres: { include: { mediaGenre: true } }, track: true } });
         const readiness = studioQueueReadiness(asset, await rightsContext(tx, access, session.channelId));
         if (!readiness.ready) throw new Error(readiness.reason);
@@ -147,12 +148,12 @@ export async function POST(request) {
         const asset = await tx.mediaAsset.findFirst({ where: { id: item.mediaAssetId, OR: [{ organisationId: access.organisation.id }, { organisationId: null, libraryType: "RUVANAS_CATALOGUE" }] }, include: { genres: { include: { mediaGenre: true } }, track: true } });
         const readiness = studioQueueReadiness(asset, await rightsContext(tx, access, session.channelId));
         if (!readiness.ready) throw new Error(readiness.reason);
-        const position = await tx.studioPlayoutItem.count({ where: { sessionId: session.id, area: "LIVE", status: "READY" } });
+        const position = nextStudioQueuePosition(session.items, "LIVE");
         payload.item = await tx.studioPlayoutItem.update({ where: { id: item.id }, data: { area: "LIVE", position } });
       } else if (input.action === "REORDER") {
-        const item = session.items.find((candidate) => candidate.id === input.itemId && candidate.area === "LIVE" && candidate.status === "READY");
-        if (!item || item.locked) throw new Error("Only unlocked future playlist items can be reordered.");
-        payload.item = await tx.studioPlayoutItem.update({ where: { id: item.id }, data: { position: input.position } });
+        const changes = planStudioFutureReorder(session.items, input.itemId, input.position);
+        for (const change of changes) await tx.studioPlayoutItem.update({ where: { id: change.id }, data: { position: change.position } });
+        payload.item = await tx.studioPlayoutItem.findUnique({ where: { id: input.itemId } });
       } else if (input.action === "LOCK") {
         const item = session.items.find((candidate) => candidate.id === input.itemId && candidate.area === "LIVE" && candidate.status === "READY");
         if (!item) throw new Error("Choose a future playlist item.");

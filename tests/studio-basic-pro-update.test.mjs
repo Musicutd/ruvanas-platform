@@ -4,7 +4,7 @@ import test from "node:test";
 import { resolveEntitlements, studioExternalDestinationLimit, studioLevelForTier } from "../lib/entitlements.mjs";
 import { assertStudioMultitrackWriteAllowed, splitMultitrackClip, studioMultitrackTrackLimit } from "../lib/multitrack-studio.mjs";
 import { assertStudioWaveformWriteAllowed } from "../lib/waveform-editor.mjs";
-import { assertStudioManualOutputBridge, fallbackForQueue, playoutModeTransition, studioQueueReadiness } from "../lib/studio-playout.mjs";
+import { assertStudioManualOutputBridge, fallbackForQueue, nextStudioQueuePosition, planStudioFutureReorder, playoutModeTransition, studioQueueReadiness } from "../lib/studio-playout.mjs";
 import { assertDestinationCapacity, broadcastMetadata, safeStudioDestination } from "../lib/studio-broadcast.mjs";
 
 function plan(tierNumber, productFamily = "RETAIL") {
@@ -94,6 +94,22 @@ test("shared Studio APIs enforce idempotency, optimistic concurrency and worker-
 
 test("Studio Manual Playout never claims broadcast output before an authoritative bridge exists", () => {
   assert.throws(() => assertStudioManualOutputBridge(), /not connected to a verified player or encoder/);
+});
+
+test("future queue reorder keeps dense order and does not cross locks or played items", () => {
+  const items = [
+    { id: "played", area: "PLAYED", status: "PLAYED", position: 0 },
+    { id: "a", area: "LIVE", status: "READY", position: 0 },
+    { id: "b", area: "LIVE", status: "READY", position: 1 },
+    { id: "c", area: "LIVE", status: "READY", position: 2 }
+  ];
+  assert.deepEqual(planStudioFutureReorder(items, "c", 0), [{ id: "c", position: 0 }, { id: "a", position: 1 }, { id: "b", position: 2 }]);
+  assert.deepEqual(planStudioFutureReorder(items, "a", 0), []);
+  assert.throws(() => planStudioFutureReorder(items, "played", 0), /future playlist/);
+  assert.throws(() => planStudioFutureReorder(items, "c", 3), /valid future playlist position/);
+  assert.throws(() => planStudioFutureReorder(items.map((item) => item.id === "b" ? { ...item, locked: true } : item), "c", 0), /intervening/);
+  assert.equal(nextStudioQueuePosition(items, "LIVE"), 3);
+  assert.equal(nextStudioQueuePosition([{ id: "gap", area: "LIVE", status: "READY", position: 7 }], "LIVE"), 8);
 });
 
 test("Studio music queue rechecks product, tenant, review and licence window", () => {

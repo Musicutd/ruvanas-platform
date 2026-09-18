@@ -48,7 +48,7 @@ function localDayBounds(date, timezone) {
   return { start: localMinuteToUtc(date, 0, timezone), end: localMinuteToUtc(next, 0, timezone) };
 }
 
-async function dailyLog(organisationId, channelId, requestedDate) {
+async function dailyLog(organisationId, channelId, productFamily, requestedDate) {
   const schedule = await prisma.programmeSchedule.findFirst({
     where: { organisationId, channelId },
     include: { versions: { where: { status: "PUBLISHED", isActive: true }, orderBy: { version: "desc" }, take: 1,
@@ -61,7 +61,7 @@ async function dailyLog(organisationId, channelId, requestedDate) {
     prisma.generatedPlaylist.findMany({ where: { organisationId, targetId: channelId, status: "PUBLISHED", scheduledDate: new Date(`${date}T00:00:00Z`) }, include: { versions: { where: { publishedAt: { not: null } }, orderBy: { version: "desc" }, take: 1, include: { items: { orderBy: { position: "asc" }, include: { track: { select: { title: true, artist: true } } } } } } }, take: 20 }),
     prisma.playoutIntent.findMany({ where: { organisationId, channelId, plannedStart: { gte: start, lt: end } }, include: { campaign: { select: { name: true } } }, take: 200 }),
     prisma.liveStudioSession.findMany({ where: { organisationId, channelId, scheduledStart: { lt: end }, scheduledEnd: { gt: start } }, select: { id: true, title: true, status: true, scheduledStart: true, scheduledEnd: true }, take: 100 }),
-    prisma.studioPlayoutSession.findMany({ where: { organisationId, channelId, status: { in: ["ACTIVE", "FALLBACK"] } }, include: { items: { where: { area: "LIVE" }, orderBy: { position: "asc" } } }, take: 1 }),
+    prisma.studioPlayoutSession.findMany({ where: { organisationId, channelId, productFamily, status: { in: ["ACTIVE", "FALLBACK"] } }, include: { items: { where: { area: "LIVE" }, orderBy: { position: "asc" } } }, take: 1 }),
     prisma.proofOfPlayEvent.findMany({ where: { organisationId, channelId, occurredAt: { gte: start, lt: end }, eventType: { in: ["STARTED", "COMPLETED"] } }, select: { id: true, scheduleItemId: true, mediaAssetId: true, trackTitle: true, eventType: true, occurredAt: true }, orderBy: { occurredAt: "asc" }, take: 300 })
   ]);
   const scheduled = [];
@@ -107,7 +107,7 @@ export async function GET(request) {
   ]);
   const assets = new Map(media.map((asset) => [asset.id, asset]));
   try {
-    const log = await dailyLog(organisationId, channel.id, new URL(request.url).searchParams.get("date"));
+    const log = await dailyLog(organisationId, channel.id, access.entitlements.planProductFamily, new URL(request.url).searchParams.get("date"));
     const mixPoints = await prisma.studioMixPoint.findMany({ where: { organisationId, mediaAssetId: { in: mediaIds } }, take: 200 });
     return NextResponse.json({ channels, channel, productFamily: access.entitlements.planProductFamily, manualOutput: studioManualOutputAvailability(), layout: normalizeStudioConsoleLayout(preference || {}), session: sessions[0] || null, banks: banks.map((bank) => ({ ...bank, carts: bank.carts.map((cart) => ({ ...cart, media: assets.get(cart.mediaAssetId) || null, ready: assets.has(cart.mediaAssetId) })) })), cartChoices, markerChoices: media, notes, clocks, sources, browserLive, broadcast, mixPoints, dailyLog: log, rightsNotice: "Only authorised protected media may enter programme output; this Console does not grant catalogue rights." });
   } catch (cause) { return fail(cause instanceof Error ? cause.message : "The Daily Log is unavailable.", 400); }
