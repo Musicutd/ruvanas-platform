@@ -11,6 +11,7 @@ import { decryptSecret } from "../lib/crypto.js";
 import { resolveEntitlements } from "../lib/entitlements.mjs";
 import { isPrivateNetworkAddress } from "../lib/stream-source-health.mjs";
 import { eligibleOnlineRadioRotation, liquidsoapScript, rotationFingerprint } from "../lib/online-radio-output.mjs";
+import { inspectStudioOnlineHandoff } from "../lib/studio-online-shadow.mjs";
 
 const stationId = String(process.env.RUVANAS_AUTODJ_STATION_ID || "");
 if (!/^c[a-z0-9]{10,40}$/i.test(stationId)) throw new Error("RUVANAS_AUTODJ_STATION_ID must identify one Online Radio station.");
@@ -27,9 +28,12 @@ const storage = new S3Client({ region: "auto", endpoint: process.env.R2_ENDPOINT
 const owner = `${String(process.env.RENDER_INSTANCE_ID || hostname()).slice(0, 70)}-${process.pid}`;
 const scanMs = 15_000;
 const leaseMs = 45_000;
+// Opt-in diagnostics only: no queue push, source switch, or Studio command.
+const studioShadowEnabled = process.env.RUVANAS_STUDIO_HANDOFF_SHADOW === "1";
 let stopping = false;
 let running = null;
 let lastWaitingReason = null;
+let lastShadowReason = null;
 for (const signal of ["SIGTERM", "SIGINT"]) process.once(signal, () => { stopping = true; if (running?.child && running.child.exitCode === null) running.child.kill("SIGTERM"); });
 
 function event(name, details = {}) {
@@ -81,7 +85,7 @@ async function readRotation() {
   if (!rotation.ready) return rotation;
   const bitrateKbps = station.streamConfig.bitrateKbps || Math.min(128, station.maxBitrateKbps, entitlements.maxBitrateKbps || 128);
   if (bitrateKbps > station.maxBitrateKbps || bitrateKbps > (entitlements.maxBitrateKbps || 0)) return { ready: false, reason: "BITRATE_NOT_ALLOWED" };
-  return { ...rotation, bitrateKbps, fingerprint: rotationFingerprint(rotation) };
+  return { ...rotation, bitrateKbps, fingerprint: rotationFingerprint(rotation), entitlements, configuredGenres: genres };
 }
 
 async function claimLease() {
@@ -152,11 +156,12 @@ try {
   while (!stopping) {
     try {
       const rotation = await readRotation();
+      let leaseHeld = false;
       if (!rotation.ready) {
         await stopOutput();
         if (lastWaitingReason !== rotation.reason) event("waiting_for_configuration", { reason: rotation.reason });
         lastWaitingReason = rotation.reason;
-      } else if (!await claimLease()) {
+      } else if (!(leaseHeld = await claimLease())) {
         await stopOutput();
         if (lastWaitingReason !== "ENCODER_LEASE_BUSY") event("waiting_for_encoder_lease");
         lastWaitingReason = "ENCODER_LEASE_BUSY";
@@ -166,6 +171,15 @@ try {
         if (!stopping) await startOutput(rotation);
       } else {
         lastWaitingReason = null;
+      }
+      if (studioShadowEnabled && leaseHeld && !stopping) {
+        // Diagnostic errors must never stop or restart the existing AutoDJ source.
+        const shadow = await inspectStudioOnlineHandoff(prisma, {
+          rotation, entitlements: rotation.entitlements, configuredGenres: rotation.configuredGenres,
+          workerOwner: owner, instant: new Date()
+        }).catch(() => ({ ready: false, reason: "SHADOW_CHECK_FAILED" }));
+        if (shadow.reason !== lastShadowReason) event("studio_handoff_shadow", { ready: shadow.ready, reason: shadow.reason });
+        lastShadowReason = shadow.reason;
       }
     } catch (error) {
       await stopOutput();

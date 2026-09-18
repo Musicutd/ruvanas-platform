@@ -69,6 +69,7 @@ test("plan cannot mark actual output or unlock manual controls", async () => {
     readFile(new URL("../scripts/online-radio-encoder-worker.mjs", import.meta.url), "utf8"),
     readFile(new URL("../lib/studio-playout.mjs", import.meta.url), "utf8")
   ]);
-  assert.doesNotMatch(worker, /planStudioOnlineOutput/);
+  assert.match(worker, /inspectStudioOnlineHandoff/);
+  assert.doesNotMatch(worker, /pushPreparedStudioAudio|studio-encoder-transport/);
   assert.match(playout, /connected: false/);
 });
