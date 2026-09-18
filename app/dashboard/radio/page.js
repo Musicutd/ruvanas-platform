@@ -8,17 +8,17 @@ export const metadata = { title: "Online Radio dashboard | Ruvanas" };
 
 export default async function OnlineRadioDashboard() {
   const { context, entitlements } = await requireSubscriberProduct("ONLINE", {
-    stations: { select: { id: true, slug: true, status: true, storageUsedMb: true, publicPlayerEnabled: true, stationWebsiteEnabled: true, streamConfig: { select: { streamUrl: true } } }, orderBy: { createdAt: "asc" } }
+    stations: { where: { productFamily: "ONLINE" }, select: { id: true, slug: true, status: true, storageUsedMb: true, publicPlayerEnabled: true, stationWebsiteEnabled: true, streamConfig: { select: { streamUrl: true } } }, orderBy: { createdAt: "asc" } }
   });
   const organisation = context.membership.organisation;
   const firstStation = organisation.stations.find((station) => station.status === "ACTIVE") || organisation.stations[0] || null;
   const now = new Date();
-  const [players, liveStreams, publicListeners, activeMusicModes, publishedSchedules] = await Promise.all([
+  const [players, liveStreams, publicListeners, activeMusicModes, activeAutoDjPolicies] = await Promise.all([
     prisma.player.count({ where: { organisationId: organisation.id, status: { not: "DISABLED" } } }),
     prisma.playerListenerLease.count({ where: { organisationId: organisation.id, revokedAt: null, expiresAt: { gt: now } } }),
     prisma.publicListenerLease.count({ where: { organisationId: organisation.id, expiresAt: { gt: now } } }),
     prisma.musicMode.count({ where: { organisationId: organisation.id, status: "ACTIVE" } }),
-    prisma.musicSchedule.count({ where: { organisationId: organisation.id, status: "PUBLISHED" } })
+    prisma.autoDjPolicy.count({ where: { organisationId: organisation.id, enabled: true, state: "ACTIVE", playbackPolicy: "RUN_24_7", rightsUse: "ONLINE_RADIO", channel: { status: "ACTIVE", stationId: firstStation?.id || "" } } })
   ]);
   const storageGb = organisation.stations.reduce((total, station) => total + station.storageUsedMb, 0) / 1024;
   const onboarding = buildOnlineRadioProductOnboarding({
@@ -28,7 +28,7 @@ export default async function OnlineRadioDashboard() {
     stationActive: firstStation?.status === "ACTIVE",
     streamConfigured: Boolean(firstStation?.streamConfig?.streamUrl),
     activeMusicModeCount: activeMusicModes,
-    publishedScheduleCount: publishedSchedules,
+    activeAutoDjPolicyCount: activeAutoDjPolicies,
     publicPlayerEnabled: Boolean(firstStation?.publicPlayerEnabled),
     activePublicListeners: publicListeners
   });
@@ -43,7 +43,7 @@ export default async function OnlineRadioDashboard() {
     onboarding={onboarding}
     primaryAction={{ href: firstStation ? `/stations/${firstStation.id}` : "/stations/new", label: firstStation ? "Open station" : "Create station" }}
     quickTasks={[
-      { href: "/dashboard/programming", label: "Plan what plays", description: "Choose approved music and review the station schedule." },
+      { href: "/dashboard/programming#workspace-schedule", label: "Start continuous music", description: "Choose the approved mode for this station's 24/7 AutoDJ rotation." },
       { href: "/dashboard/media", label: "Add station audio", description: "Prepare your own tracks, imaging or spoken content." },
       { href: "/dashboard/player-sessions", label: "Check live listening", description: "See current stream sessions and player activity." }
     ]}
@@ -66,7 +66,7 @@ export default async function OnlineRadioDashboard() {
         ...(entitlements.retailMediaEnabled ? [{ href: "/dashboard/radio/advertising", label: "Radio advertising", description: "Set break limits and review commercial placement readiness and completed-play evidence." }] : []),
         { href: firstStation ? `/stations/${firstStation.id}/listener-requests` : "/stations/new", label: "Listener requests", description: "Moderate audience song requests without changing the live schedule automatically." },
         { href: "/dashboard/podcasts", label: "Podcasts", description: "Publish on-demand programmes with protected audio and an RSS feed." },
-        { href: "/dashboard/programming", label: "Programme schedule", description: "Plan music and dayparts." },
+        { href: firstStation ? `/dashboard/radio/schedule/${firstStation.id}` : "/stations/new", label: "Station programme schedule", description: "Draft and preview timed programmes for this station's channel. Continuous AutoDJ separately supplies the Centova encoder." },
         { href: "/dashboard/player-sessions", label: "Live sessions", description: "Monitor current listening connections." }
       ] },
       { eyebrow: "Audio", title: "Build your sound", description: "Prepare music, imaging and promotional content.", actions: [

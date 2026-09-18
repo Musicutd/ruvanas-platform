@@ -53,7 +53,7 @@ function SchedulePreview({ slots, modes, autoDjPolicy = null }) {
   );
 }
 
-export default function ProgrammingWorkspace({ organisationName }) {
+export default function ProgrammingWorkspace({ organisationName, onlineRadioStationId = null }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -251,7 +251,7 @@ export default function ProgrammingWorkspace({ organisationName }) {
 
   if (loading) return <div className={styles.loading}>Loading {organisationName}&apos;s radio programming…</div>;
   if (!data) return <div className={styles.error}>{error || "Radio programming is unavailable."}</div>;
-  const onlineOnly = data.channels.some((channel) => channel.productFamily === "ONLINE") && data.targets.length === 0;
+  const onlineOnly = Boolean(onlineRadioStationId) && data.targets.length === 0;
 
   return (
     <div className={styles.workspace}>

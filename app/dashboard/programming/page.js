@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getActiveOrganisationContext } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 import SkipLink from "@/app/components/SkipLink";
 import ProgrammingWorkspace from "./ProgrammingWorkspace";
 import SmartPlaylistsWorkspace from "./SmartPlaylistsWorkspace";
@@ -22,6 +23,11 @@ export default async function SubscriberProgrammingPage() {
   if (!context) redirect("/login");
   if (!context.membership) redirect("/dashboard");
   const canManage = ["OWNER", "MANAGER"].includes(context.membership.role);
+  const onlineRadioStation = await prisma.station.findFirst({
+    where: { organisationId: context.membership.organisationId, productFamily: "ONLINE" },
+    select: { id: true, name: true },
+    orderBy: { createdAt: "asc" }
+  });
   const tabs = [
     { id: "schedule", label: "Schedule", description: "Now, AutoDJ and weekly plans" },
     { id: "automation", label: "Automation", description: "Playlists, clocks and advanced rules" },
@@ -51,8 +57,11 @@ export default async function SubscriberProgrammingPage() {
             <span>Music selection and rights controls remain managed by Ruvanas.</span>
           </div>
         </div>
+        {onlineRadioStation ? <div className={styles.notice} role="status">
+          Scheduling {onlineRadioStation.name}? <a href={`/dashboard/radio/schedule/${onlineRadioStation.id}`}>Open its station-channel schedule</a>. The location planner, when available, is for retail listening areas, not Online Radio stations. For the live Centova rotation, use Continuous AutoDJ in the Schedule tab.
+        </div> : null}
         <WorkspaceTabs label="Programming tools" intro="Open only the part of radio programming you need right now." tabs={tabs}>
-          <div className={styles.workspace}><ProgrammingWorkspace organisationName={context.membership.organisation.name} /></div>
+          <div className={styles.workspace}><ProgrammingWorkspace organisationName={context.membership.organisation.name} onlineRadioStationId={onlineRadioStation?.id || null} /></div>
           <div className={styles.workspace}><AutoDjExpansionWorkspace /><SmartPlaylistsWorkspace /><RadioClocksWorkspace /><AdvancedSchedulerWorkspace /></div>
           <div className={styles.workspace}><ExternalLiveWorkspace /><LiveFailoverWorkspace /><BrowserLiveStudioWorkspace /></div>
           <div className={styles.workspace}><VoiceTrackingWorkspace /><AudioProcessingWorkspace /></div>
