@@ -8,7 +8,8 @@ export const runtime = "nodejs";
 
 export async function GET(request, { params }) {
   try {
-    const access = await authorizePublicPlayback(prisma, { slug: String(params.slug || ""), token: request.nextUrl.searchParams.get("listener") });
+    const { slug } = await params;
+    const access = await authorizePublicPlayback(prisma, { slug: String(slug || ""), token: request.nextUrl.searchParams.get("listener") });
     if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
     if (!access.station.streamConfig?.streamUrl) return NextResponse.json({ error: "The station stream is unavailable." }, { status: 404 });
     return protectedLiveResponse(request, { streamUrl: access.station.streamConfig.streamUrl, userAgent: "Ruvanas-Public-Player/1.0" });

@@ -105,3 +105,13 @@ jobs:
       - name: Stop application
         if: always()
         run: test ! -f /tmp/ruvanas-next.pid || kill $(cat /tmp/ruvanas-next.pid) || true
+
+  encoder-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build and validate Online Radio encoder image
+        run: docker build --file Dockerfile.online-radio-worker --tag ruvanas-online-radio-encoder:ci .

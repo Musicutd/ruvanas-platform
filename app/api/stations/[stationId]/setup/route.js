@@ -26,10 +26,13 @@ export async function POST(request, { params }) {
     if (!access.ok) {
       return accessDenied(access);
     }
+    if (access.user.role !== "SUPER_ADMIN") {
+      return NextResponse.json({ error: "Only a Ruvanas Super Admin can configure station streaming." }, { status: 403 });
+    }
 
     const adminUser = access.user;
 
-    const stationId = params.stationId;
+    const { stationId } = await params;
 
     if (!stationId) {
       return badRequest("Station ID is required.");
@@ -84,6 +87,9 @@ export async function POST(request, { params }) {
     }
 
     const serverPort = Number(body.serverPort);
+    const sourcePort = body.sourcePort === "" || body.sourcePort === null || body.sourcePort === undefined ? null : Number(body.sourcePort);
+    const sourceUsername = typeof body.sourceUsername === "string" ? body.sourceUsername.trim() : "";
+    const outboundAutoDjEnabled = body.outboundAutoDjEnabled === true;
 
     if (providerKey === "CENTOVA_CAST" && (
       !Number.isInteger(serverPort) ||
@@ -94,6 +100,10 @@ export async function POST(request, { params }) {
         "Server port must be a whole number from 1 to 65535."
       );
     }
+    if (sourcePort !== null && (!Number.isInteger(sourcePort) || sourcePort < 1 || sourcePort > 65535)) {
+      return badRequest("The Centova live-source port must be a whole number from 1 to 65535.");
+    }
+    if (sourceUsername.length > 120 || /[\r\n]/.test(sourceUsername)) return badRequest("The live-source username is invalid.");
 
     const bitrateKbps =
       body.bitrateKbps === null ||
@@ -119,7 +129,9 @@ export async function POST(request, { params }) {
       },
       select: {
         id: true,
-        organisationId: true
+        organisationId: true,
+        productFamily: true,
+        streamConfig: { select: { sourcePasswordEncrypted: true } }
       }
     });
 
@@ -132,6 +144,9 @@ export async function POST(request, { params }) {
           status: 404
         }
       );
+    }
+    if (outboundAutoDjEnabled && (station.productFamily !== "ONLINE" || providerKey !== "CENTOVA_CAST" || sourcePort === null || !sourcePassword && !station.streamConfig?.sourcePasswordEncrypted)) {
+      return badRequest("Ruvanas AutoDJ output requires an Online Radio station, the exact Centova live-source port and a source password. Enter a live-source username only if Centova supplies one.");
     }
 
     let healthSettings;
@@ -161,6 +176,9 @@ export async function POST(request, { params }) {
         : Number.isInteger(serverPort) && serverPort >= 1 && serverPort <= 65535
           ? serverPort
           : endpointPort,
+      sourcePort: providerKey === "CENTOVA_CAST" ? sourcePort : null,
+      sourceUsername: providerKey === "CENTOVA_CAST" ? sourceUsername || null : null,
+      outboundAutoDjEnabled: providerKey === "CENTOVA_CAST" && outboundAutoDjEnabled,
       bitrateKbps,
       centovaUsername,
       ...healthSettings
@@ -194,6 +212,9 @@ export async function POST(request, { params }) {
             mountPointUpdated: true,
             serverHostUpdated: true,
             serverPortUpdated: true,
+            sourcePortConfigured: configData.sourcePort !== null,
+            sourceUsernameConfigured: Boolean(configData.sourceUsername),
+            outboundAutoDjEnabled: configData.outboundAutoDjEnabled,
             bitrateUpdated: true,
             centovaUsernameUpdated: true,
             sourcePasswordUpdated: Boolean(sourcePassword),

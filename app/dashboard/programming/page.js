@@ -43,8 +43,7 @@ export default async function SubscriberProgrammingPage() {
             <p className={styles.eyebrow}>RADIO PROGRAMMING</p>
             <h1>Plan your week with confidence</h1>
             <p className={styles.intro}>
-              Choose from the music modes approved for {context.membership.organisation.name},
-              build a clear weekly plan and publish it to the right shop or listening area.
+              Choose approved music for {context.membership.organisation.name}, switch on Continuous AutoDJ for an Online Radio channel, or build a weekly plan for a shop or listening area.
             </p>
           </div>
           <div className={styles.safetyNote}>

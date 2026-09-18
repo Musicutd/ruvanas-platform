@@ -89,7 +89,8 @@ test("Online Radio requires an active configured station and continuous programm
 
   assert.equal(readiness.nextStepId, "STREAM");
   assert.equal(readiness.nextAction.href, "/stations/station-1/setup");
-  assert.equal(readiness.nextAction.label, "Configure streaming");
+  assert.equal(readiness.nextAction.label, "View setup status");
+  assert.equal(readiness.steps.find((step) => step.id === "STREAM").owner, "Ruvanas Super Admin");
 });
 
 test("viewers receive status actions rather than configuration authority", () => {
@@ -99,7 +100,7 @@ test("viewers receive status actions rather than configuration authority", () =>
 
   assert.equal(retail.steps.find((step) => step.id === "PROGRAMMING").actionLabel, "View status");
   assert.equal(school.steps.find((step) => step.id === "SUPERVISION").actionLabel, "View status");
-  assert.equal(radio.steps.find((step) => step.id === "STREAM").actionLabel, "View status");
+  assert.equal(radio.steps.find((step) => step.id === "STREAM").actionLabel, "View setup status");
 });
 
 test("product dashboards and Super Admin organisations render evidence-led progress", async () => {

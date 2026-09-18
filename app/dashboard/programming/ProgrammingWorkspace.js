@@ -93,7 +93,7 @@ export default function ProgrammingWorkspace({ organisationName }) {
           enabled: policy?.enabled === true,
           defaultMusicModeId: policy?.defaultMusicModeId || payload.musicModes.find((mode) => mode.playableTrackCount > 0)?.id || "",
           backupMusicModeId: policy?.backupMusicModeId || "",
-          playbackPolicy: policy?.playbackPolicy || "FOLLOW_LOCATION_HOURS"
+          playbackPolicy: policy?.playbackPolicy || (channel?.productFamily === "ONLINE" ? "RUN_24_7" : "FOLLOW_LOCATION_HOURS")
         };
       });
       setForm((current) => ({
@@ -139,7 +139,7 @@ export default function ProgrammingWorkspace({ organisationName }) {
       enabled: policy?.enabled === true,
       defaultMusicModeId: policy?.defaultMusicModeId || playableModes[0]?.id || "",
       backupMusicModeId: policy?.backupMusicModeId || "",
-      playbackPolicy: policy?.playbackPolicy || "FOLLOW_LOCATION_HOURS"
+      playbackPolicy: policy?.playbackPolicy || (channel?.productFamily === "ONLINE" ? "RUN_24_7" : "FOLLOW_LOCATION_HOURS")
     });
   }
 
@@ -162,7 +162,7 @@ export default function ProgrammingWorkspace({ organisationName }) {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Unable to save Continuous AutoDJ settings.");
       setNotice(autoDjForm.enabled
-        ? "Continuous AutoDJ is ready. Scheduled programmes keep priority and uncovered time uses your fallback music."
+        ? "Continuous AutoDJ rotation saved. Online Radio also needs the dedicated encoder connected to Centova before listeners hear audio."
         : "Continuous AutoDJ is off for this channel. Published schedules remain unchanged.");
       await load();
     } catch (saveError) {
@@ -251,6 +251,7 @@ export default function ProgrammingWorkspace({ organisationName }) {
 
   if (loading) return <div className={styles.loading}>Loading {organisationName}&apos;s radio programming…</div>;
   if (!data) return <div className={styles.error}>{error || "Radio programming is unavailable."}</div>;
+  const onlineOnly = data.channels.some((channel) => channel.productFamily === "ONLINE") && data.targets.length === 0;
 
   return (
     <div className={styles.workspace}>
@@ -270,7 +271,7 @@ export default function ProgrammingWorkspace({ organisationName }) {
               <small>{target.timezone}</small>
             </article>
           ))}
-          {!data.targets.length ? <div className={styles.emptyState}>No active listening areas are ready yet. Ask Ruvanas to prepare your first location.</div> : null}
+          {!data.targets.length ? <div className={styles.emptyState}>{onlineOnly ? "Online Radio does not need a retail listening area. Set the channel's Continuous AutoDJ below, then wait for Ruvanas to connect its encoder to Centova." : "No active listening areas are ready yet. Ask Ruvanas to prepare your first location or Online Radio channel."}</div> : null}
         </div>
       </section>
 
@@ -280,7 +281,7 @@ export default function ProgrammingWorkspace({ organisationName }) {
           <span className={autoDjForm.enabled ? styles.permission : styles.readOnly}>{autoDjForm.enabled ? "AutoDJ on" : "AutoDJ off"}</span>
         </div>
         <p className={styles.panelIntro}>Scheduled programmes, approved school audio and campaign insertions keep their existing priority. AutoDJ covers only the remaining gaps, using a backup mode if the default becomes unavailable.</p>
-        {!data.channels.length ? <div className={styles.emptyState}>No active channel is assigned yet. Prepare a channel before enabling Continuous AutoDJ.</div> : (
+        {!data.channels.length ? <div className={styles.emptyState}>No active channel is assigned yet. Ask Ruvanas Super Admin to prepare your Online Radio channel before enabling Continuous AutoDJ.</div> : (
           <>
             <div className={styles.formGrid}>
               <label><span>Radio channel</span><select value={autoDjForm.channelId} onChange={(event) => chooseAutoDjChannel(event.target.value)}>{data.channels.map((channel) => <option value={channel.id} key={channel.id}>{channel.name}{channel.stationName ? ` · ${channel.stationName}` : ""}</option>)}</select></label>
@@ -296,7 +297,7 @@ export default function ProgrammingWorkspace({ organisationName }) {
         )}
       </section>
 
-      <section className={styles.panel} aria-labelledby="planner-heading">
+      {!onlineOnly ? <section className={styles.panel} aria-labelledby="planner-heading">
         <div className={styles.sectionHeading}>
           <div><p className={styles.kicker}>WEEKLY PLANNER</p><h2 id="planner-heading">Create a radio plan</h2></div>
           <span className={data.canManage ? styles.permission : styles.readOnly}>{data.canManage ? "Owner / manager editing" : "View only"}</span>
@@ -343,9 +344,9 @@ export default function ProgrammingWorkspace({ organisationName }) {
             ) : null}
           </>
         )}
-      </section>
+      </section> : null}
 
-      <section className={styles.panel} aria-labelledby="plans-heading">
+      {!onlineOnly ? <section className={styles.panel} aria-labelledby="plans-heading">
         <div className={styles.sectionHeading}><div><p className={styles.kicker}>SAVED PLANS</p><h2 id="plans-heading">Live and upcoming programming</h2></div><span className={styles.count}>{published.length} live · {drafts.length} draft</span></div>
         <div className={styles.scheduleList}>
           {[...published, ...drafts].slice(0, 12).map((schedule) => (
@@ -356,7 +357,7 @@ export default function ProgrammingWorkspace({ organisationName }) {
           ))}
           {!published.length && !drafts.length ? <div className={styles.emptyState}>No radio plans have been saved yet. Your first published plan will appear here.</div> : null}
         </div>
-      </section>
+      </section> : null}
     </div>
   );
 }

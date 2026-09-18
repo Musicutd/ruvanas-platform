@@ -18,7 +18,8 @@ function response(error, status, headers = {}) {
 export async function POST(request, { params }) {
   try {
     const instant = new Date();
-    const station = await loadPublicPlayerStation(prisma, String(params.slug || ""));
+    const { slug } = await params;
+    const station = await loadPublicPlayerStation(prisma, String(slug || ""));
     if (!station) return response("This public station is unavailable.", 404);
     if (!station.listenerRequestsEnabled) return response("This station is not accepting listener requests right now.", 403);
     const target = publicPlayerTarget(station, instant);
