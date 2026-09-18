@@ -2884,6 +2884,11 @@ model StationStreamConfig {
   mountPoint      String?
   serverHost      String?
   serverPort      Int?
+  sourcePort      Int?
+  sourceUsername  String?
+  outboundAutoDjEnabled Boolean @default(false)
+  encoderLeaseOwner String?
+  encoderLeaseUntil DateTime?
   bitrateKbps     Int?
 
   serverType     StreamServerType @default(SHOUTCAST_V2)
@@ -2918,6 +2923,7 @@ model StationStreamConfig {
   healthSamples StationStreamHealthSample[]
 
   @@index([probeEnabled, lastProbeAt])
+  @@index([outboundAutoDjEnabled, encoderLeaseUntil])
 }
 
 model StationStreamHealthSample {

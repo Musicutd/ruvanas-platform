@@ -41,9 +41,9 @@ export default async function AdminChannelsPage() {
         <div>
           <h1 style={{ marginBottom: 8 }}>Ruvanas Channels</h1>
           <p style={{ margin: 0, opacity: 0.7 }}>
-            Each active channel runs its own synchronized live programme clock.
-            Premium plans can run several channels simultaneously; a linked
-            technical stream is an optional fallback.
+            Online Radio channels are linked to stations. Retail channels are
+            assigned to listening zones. Each active channel has its own
+            programming and AutoDJ controls.
           </p>
         </div>
 
@@ -115,7 +115,11 @@ export default async function AdminChannelsPage() {
                   channel.station?.streamConfig?.streamUrl
                 );
 
-                const canActivate = channel.zoneAssignments.length > 0;
+                const canActivate = channel.zoneAssignments.length > 0 || (
+                  channel.station?.productFamily === "ONLINE" &&
+                  channel.station.status === "ACTIVE" &&
+                  streamConfigured
+                );
 
                 return (
                   <tr

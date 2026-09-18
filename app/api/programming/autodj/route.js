@@ -76,9 +76,16 @@ export async function PUT(request) {
     expansion.blockedReason = null;
     const channel = await prisma.channel.findFirst({
       where: { id: parsed.data.channelId, organisationId, status: "ACTIVE", ...(resolvedTarget?.channelId ? { id: resolvedTarget.channelId } : {}) },
-      select: { id: true, name: true }
+      select: { id: true, name: true, station: { select: { productFamily: true } } }
     });
     if (!channel) return NextResponse.json({ error: "The selected channel is not available to your organisation." }, { status: 404 });
+    if (channel.station?.productFamily === "ONLINE" && parsed.data.rightsUse && parsed.data.rightsUse !== "ONLINE_RADIO") {
+      return NextResponse.json({ error: "Online Radio AutoDJ must use the Online Radio rights profile." }, { status: 400 });
+    }
+    if (channel.station?.productFamily === "ONLINE" && input.enabled && input.playbackPolicy !== "RUN_24_7") {
+      return NextResponse.json({ error: "Online Radio AutoDJ must run continuously, 24/7." }, { status: 400 });
+    }
+    if (channel.station?.productFamily === "ONLINE") expansion.rightsUse = "ONLINE_RADIO";
 
     const modeIds = [...new Set([input.defaultMusicModeId, input.backupMusicModeId].filter(Boolean))];
     const modes = await prisma.musicMode.findMany({

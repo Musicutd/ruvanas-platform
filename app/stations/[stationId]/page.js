@@ -61,9 +61,7 @@ export default async function StationDetailsPage({ params }) {
           </div>
 
           {needsSetup ? (
-            <a href={`/stations/${station.id}/setup`} style={styles.setupButton}>
-              Configure streaming
-            </a>
+            <a href={`/stations/${station.id}/setup`} style={styles.setupButton}>View setup status</a>
           ) : (
             <span style={styles.badge}>Streaming configured</span>
           )}
@@ -92,7 +90,7 @@ export default async function StationDetailsPage({ params }) {
         <section style={styles.nextCard}>
           <p style={styles.eyebrow}>PUBLIC LISTENING</p>
           <h2 style={styles.nextTitle}>{station.publicPlayerEnabled ? "Your public player is live" : "Publish your station player"}</h2>
-          <p style={styles.cardText}>Create a branded listener page and website embed with protected audio delivery, live now-playing information and privacy-safe audience analytics.</p>
+          <p style={styles.cardText}>Create a branded listener page and website embed with protected audio delivery, live now-playing information and privacy-safe audience analytics. Streaming credentials and station activation are managed by Ruvanas Super Admin.</p>
           <div style={styles.actions}>
             <a href={`/stations/${station.id}/public-player`} style={styles.setupButton}>Manage public player</a>
             <a href={`/stations/${station.id}/website`} style={styles.secondaryButton}>Station website</a>

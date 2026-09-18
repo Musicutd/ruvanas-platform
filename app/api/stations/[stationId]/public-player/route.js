@@ -6,7 +6,8 @@ import { subscriberProductForStationFamily } from "@/lib/product-access.mjs";
 
 export async function PATCH(request, { params }) {
   try {
-    const station = await prisma.station.findUnique({ where: { id: String(params.stationId || "") }, select: { id: true, organisationId: true, status: true, slug: true, productFamily: true } });
+    const { stationId } = await params;
+    const station = await prisma.station.findUnique({ where: { id: String(stationId || "") }, select: { id: true, organisationId: true, status: true, slug: true, productFamily: true, streamConfig: { select: { streamUrl: true } } } });
     if (!station) return NextResponse.json({ error: "Station not found." }, { status: 404 });
     const product = subscriberProductForStationFamily(station.productFamily);
     const access = await requireOrganisationProductAccess(station.organisationId, product, ORGANISATION_MANAGER_ROLES);
@@ -20,8 +21,9 @@ export async function PATCH(request, { params }) {
     if (product === "HEALTH" && body.listenerRequestMessage) return NextResponse.json({ error: "Health requests accept song and artist only; do not configure clinical or patient-message fields." }, { status: 400 });
     if (settings.enabled) {
       if (station.status !== "ACTIVE") return NextResponse.json({ error: "Activate the station before publishing its player." }, { status: 409 });
-      const channel = await prisma.channel.findFirst({ where: { organisationId: station.organisationId, stationId: station.id, status: "ACTIVE", zoneAssignments: { some: { OR: [{ activeTo: null }, { activeTo: { gt: new Date() } }] } } }, select: { id: true } });
-      if (!channel) return NextResponse.json({ error: "Assign an active channel to a listening zone before publishing the player." }, { status: 409 });
+      if (station.productFamily === "ONLINE" && !station.streamConfig?.streamUrl) return NextResponse.json({ error: "Configure the station stream before publishing its player." }, { status: 409 });
+      const channel = await prisma.channel.findFirst({ where: { organisationId: station.organisationId, stationId: station.id, status: "ACTIVE", ...(station.productFamily === "ONLINE" ? {} : { zoneAssignments: { some: { OR: [{ activeTo: null }, { activeTo: { gt: new Date() } }] } } }) }, select: { id: true } });
+      if (!channel) return NextResponse.json({ error: station.productFamily === "ONLINE" ? "Activate this station's Online Radio channel before publishing the player." : "Assign an active channel to a listening zone before publishing the player." }, { status: 409 });
     }
     const updated = await prisma.$transaction(async (tx) => {
       const value = await tx.station.update({ where: { id: station.id }, data: { publicPlayerEnabled: settings.enabled, audiencePolicy: settings.enabled ? "PUBLIC" : undefined, publicPlayerTagline: settings.tagline, publicPlayerAccent: settings.accent, listenerRequestsEnabled: settings.listenerRequestsEnabled, listenerRequestInstructions: settings.listenerRequestInstructions }, select: { id: true, slug: true, publicPlayerEnabled: true, publicPlayerTagline: true, publicPlayerAccent: true, listenerRequestsEnabled: true, listenerRequestInstructions: true } });

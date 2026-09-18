@@ -46,10 +46,13 @@ export default async function DashboardPage() {
   const subscription = organisation.subscription;
   const plan = resolveEffectivePlan(subscription);
   const entitlements = resolveEntitlements(subscription);
+  const hasPhysicalProduct = ["retailRadioEnabled", "schoolRadioEnabled", "healthRadioEnabled", "faithRadioEnabled", "organisationsEnabled"]
+    .some((capability) => entitlements[capability]);
+  const onlineOnly = entitlements.onlineRadioEnabled && !hasPhysicalProduct;
   const firstStation = organisation.stations.find((station) => station.status === "ACTIVE") || organisation.stations[0] || null;
   const now = new Date();
 
-  const [activePlayerStreams, configuredPlayerCount, activeMusicModeCount, publishedScheduleCount] = await Promise.all([
+  const [activePlayerStreams, configuredPlayerCount, activeMusicModeCount, publishedScheduleCount, publicListeners] = await Promise.all([
     prisma.playerListenerLease.count({
       where: { organisationId: organisation.id, revokedAt: null, expiresAt: { gt: now } }
     }),
@@ -61,7 +64,10 @@ export default async function DashboardPage() {
     }),
     prisma.musicSchedule.count({
       where: { organisationId: organisation.id, status: "PUBLISHED" }
-    })
+    }),
+    onlineOnly
+      ? prisma.publicListenerLease.count({ where: { organisationId: organisation.id, expiresAt: { gt: now } } })
+      : Promise.resolve(0)
   ]);
 
   const storageUsedMb = organisation.stations.reduce(
@@ -89,7 +95,7 @@ export default async function DashboardPage() {
   const allNavigationItems = navigation.flatMap((section) => section.items);
   const quickActionIds = [
     "station",
-    "players",
+    ...(hasPhysicalProduct ? ["players"] : []),
     "media",
     entitlements.schoolRadioEnabled ? "school" : "sessions",
     "notifications"
@@ -100,7 +106,9 @@ export default async function DashboardPage() {
   const storageUsedGb = storageUsedMb / 1024;
   const setupProgress = home.onboarding ? usagePercent(onboarding.completedCount, onboarding.totalCount) : 0;
   const playerUsage = usagePercent(configuredPlayerCount, entitlements.streamLimit);
-  const liveUsage = usagePercent(activePlayerStreams, entitlements.streamLimit);
+  const liveUsage = onlineOnly
+    ? usagePercent(publicListeners, entitlements.listenerLimit)
+    : usagePercent(activePlayerStreams, entitlements.streamLimit);
   const storageUsage = usagePercent(storageUsedGb, entitlements.storageLimitGb);
 
   return (
@@ -156,8 +164,8 @@ export default async function DashboardPage() {
             </strong>
             <dl className={styles.pulseRows}>
               <div><dt>Plan</dt><dd>{plan?.name || "Trial"}</dd></div>
-              <div><dt>Live streams</dt><dd>{activePlayerStreams} of {entitlements.streamLimit}</dd></div>
-              <div><dt>Players ready</dt><dd>{configuredPlayerCount}</dd></div>
+              {onlineOnly ? <div><dt>Public listeners</dt><dd>{publicListeners} of {entitlements.listenerLimit}</dd></div> : <div><dt>Live streams</dt><dd>{activePlayerStreams} of {entitlements.streamLimit}</dd></div>}
+              {onlineOnly ? <div><dt>Stations</dt><dd>{organisation.stations.length}</dd></div> : <div><dt>Players ready</dt><dd>{configuredPlayerCount}</dd></div>}
             </dl>
           </aside>
         </div>
@@ -229,17 +237,17 @@ export default async function DashboardPage() {
               <strong>{plan?.name || "Trial"}</strong>
               <small>{entitlements.complimentaryAccess ? "Complimentary access — no charge" : subscription?.status === "TRIAL" ? "Trial active" : subscription?.status || "No active plan"}</small>
             </article>
-            <article>
+            {hasPhysicalProduct ? <article>
               <span>Players ready</span>
               <strong>{configuredPlayerCount} / {entitlements.streamLimit}</strong>
               <small>Secure players prepared</small>
               <progress value={playerUsage} max="100" aria-label={`${playerUsage}% of player allowance used`} />
-            </article>
+            </article> : null}
             <article>
               <span>Live now</span>
-              <strong>{activePlayerStreams} / {entitlements.streamLimit}</strong>
-              <small>Stream slots in use</small>
-              <progress value={liveUsage} max="100" aria-label={`${liveUsage}% of live stream allowance used`} />
+              <strong>{onlineOnly ? publicListeners : activePlayerStreams} / {onlineOnly ? entitlements.listenerLimit : entitlements.streamLimit}</strong>
+              <small>{onlineOnly ? "Public listeners connected" : "Stream slots in use"}</small>
+              <progress value={liveUsage} max="100" aria-label={`${liveUsage}% of ${onlineOnly ? "public listener" : "live stream"} allowance used`} />
             </article>
             <article>
               <span>Audio storage</span>
@@ -286,7 +294,7 @@ export default async function DashboardPage() {
           introduction="You do not need to configure the whole platform at once. Open a product dashboard to find the setup steps that apply to it."
           items={[
             { title: "Your tasks", description: "Open your product dashboard to see the next setup step and the tools you can use." },
-            { title: "Help with setup", description: "Your organisation's locations, content, schedules and devices can be prepared one task at a time." },
+            { title: "Help with setup", description: "Your product dashboard explains its own content, programming and playback steps." },
             { title: "Check the result", description: "A setup step is complete only when the service has recorded the required configuration or activity." }
           ]}
           articleHref="/dashboard/help#getting-started"
