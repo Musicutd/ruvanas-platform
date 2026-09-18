@@ -10,6 +10,12 @@ This is a **test plan, not a completed playback test**. Keep the existing Radio 
 4. Install and syntax-check the exact Liquidsoap version used by the worker image, then run the encoder against the test Centova source. The local Windows checkout currently has neither Liquidsoap nor Docker and cannot perform this step.
 5. Before any Manual handoff attempt, finish the priority-aware encoder adapter, event acknowledgements and immediate output-time rights check. The present worker sends **AutoDJ only**; the private Studio queue helper is not connected. The live Manual controls must remain locked until that adapter and independent listener checks pass.
 
+## Independent listener-audio sample
+
+Use only synthetic, self-owned acceptance tones: 440 Hz for AutoDJ, 660 Hz for Studio Manual, and 880 Hz for a protected programme. Record the **separate test listener URL** through an independent listener, not the encoder source socket. Preserve the original recording, the URL identity, UTC capture window and its checksum. With an independently installed audio decoder, convert a copy to mono, signed 16-bit little-endian PCM at 16 kHz (`.s16le`). Run `node scripts/analyze-studio-listener-pcm.mjs <absolute-path-to-sample.s16le>` locally. The analyser labels each full second `AUTODJ`, `MANUAL`, `PROTECTED`, `SILENCE` or `UNKNOWN`; it does not contact the stream or read credentials.
+
+Require at least two consecutive matching seconds after each transition, listen to the original recording, and correlate those seconds with encoder events and the expected test-tone timeline. Transition windows, compressed-audio artefacts, real music, mixed audio and weak signals may be `UNKNOWN`; do not force them into a source claim. The analyser always returns `listenerVerified: false` because a local PCM file alone cannot prove where or when it was recorded. This is supporting test evidence, not automatic proof-of-play or distributor reporting.
+
 ## Acceptance sequence
 
 | Step | Action on the isolated station | Required observation |
@@ -27,4 +33,4 @@ For each step retain the test station ID, UTC timestamps, safely redacted encode
 
 Stop immediately if a target matches production, the test account shares a live source endpoint, rights or tenant checks are uncertain, another encoder owns the lease, protected programming cannot be represented, or the listener sample disagrees with the claimed source. Do not use the production Radio Test 105 stream as a substitute for the isolated test.
 
-The acceptance sequence is **not runnable yet**: there is no attached test stream/container/disposable database, and the Studio Manual-to-Centova adapter is intentionally unwired. `RUVANAS_STUDIO_HANDOFF_SHADOW=1` is a read-only diagnostic, not a switch. Manual start/skip/fade and Broadcast start remain blocked. This document records what must be proven before those controls can be unlocked or the Broadcast Console released.
+The acceptance sequence is **not runnable yet**: there is no attached test stream/container/disposable database, and the Studio Manual-to-Centova adapter is intentionally unwired. The local analyser has only been verified against synthetic PCM, not an actual Centova recording. `RUVANAS_STUDIO_HANDOFF_SHADOW=1` is a read-only diagnostic, not a switch. Manual start/skip/fade and Broadcast start remain blocked. This document records what must be proven before those controls can be unlocked or the Broadcast Console released.
