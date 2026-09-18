@@ -4,7 +4,7 @@ import test from "node:test";
 import { resolveEntitlements, studioExternalDestinationLimit, studioLevelForTier } from "../lib/entitlements.mjs";
 import { assertStudioMultitrackWriteAllowed, splitMultitrackClip, studioMultitrackTrackLimit } from "../lib/multitrack-studio.mjs";
 import { assertStudioWaveformWriteAllowed } from "../lib/waveform-editor.mjs";
-import { fallbackForQueue, playoutModeTransition, studioQueueReadiness } from "../lib/studio-playout.mjs";
+import { assertStudioManualOutputBridge, fallbackForQueue, playoutModeTransition, studioQueueReadiness } from "../lib/studio-playout.mjs";
 import { assertDestinationCapacity, broadcastMetadata, safeStudioDestination } from "../lib/studio-broadcast.mjs";
 
 function plan(tierNumber, productFamily = "RETAIL") {
@@ -48,9 +48,11 @@ test("Manual Playout requires fallback and returns to AutoDJ when its queue empt
 });
 
 test("catalogue use, external destination caps, safe credentials and metadata are explicit", () => {
-  const catalogueAsset = { status: "READY", organisationId: null, libraryType: "RUVANAS_CATALOGUE", track: { status: "READY", licenceExpiresAt: null } };
-  assert.equal(studioQueueReadiness(catalogueAsset, { licensedMusicCatalogueEnabled: false }).ready, false);
-  assert.equal(studioQueueReadiness(catalogueAsset, { licensedMusicCatalogueEnabled: true }).ready, true);
+  const catalogueAsset = { status: "READY", organisationId: null, libraryType: "RUVANAS_CATALOGUE", licensedCatalogue: true, mediaType: "MUSIC", genres: [{ mediaGenre: { slug: "pop" } }], track: { status: "READY", rightsReviewStatus: "APPROVED", permittedUses: ["ONLINE_RADIO"], permittedTerritories: "MT", licenceExpiresAt: null } };
+  const context = { organisationId: "tenant-1", productFamily: "ONLINE", territory: "MT" };
+  assert.equal(studioQueueReadiness(catalogueAsset, context).ready, false);
+  assert.equal(studioQueueReadiness(catalogueAsset, { ...context, licensedMusicCatalogueLevel: "FOCUSED" }).ready, true);
+  assert.equal(studioQueueReadiness(catalogueAsset, { ...context, licensedMusicCatalogueLevel: "FOCUSED", territory: "GB" }).ready, false);
   assert.deepEqual([1, 2, 3, 4, 5].map((tier) => studioExternalDestinationLimit(tier)), [0, 0, 2, 5, 10]);
   assert.throws(() => assertDestinationCapacity({ tierNumber: 3, activeCount: 1, requestedCount: 2 }), /2 simultaneous/);
   assert.equal(assertDestinationCapacity({ tierNumber: 5, customLimit: 14, activeCount: 10, requestedCount: 4 }), 14);
@@ -74,7 +76,8 @@ test("shared Studio APIs enforce idempotency, optimistic concurrency and worker-
   assert.match(playout, /Idempotency-Key/);
   assert.match(playout, /expectedRevision/);
   assert.match(playout, /CREATE_PACK/);
-  assert.match(playout, /SCHEDULED_PRIORITY/);
+  assert.match(playout, /assertStudioManualOutputBridge/);
+  assert.match(playout, /revision: session\.revision/);
   assert.match(playout, /SEND_NEXT/);
   assert.match(broadcast, /Idempotency-Key/);
   assert.match(broadcast, /activeExternalLinks/);
@@ -87,4 +90,23 @@ test("shared Studio APIs enforce idempotency, optimistic concurrency and worker-
   assert.match(schema, /model StudioBroadcastCommand/);
   assert.match(hub, /HEALTH:/);
   assert.match(hub, /FAITH:/);
+});
+
+test("Studio Manual Playout never claims broadcast output before an authoritative bridge exists", () => {
+  assert.throws(() => assertStudioManualOutputBridge(), /not connected to a verified player or encoder/);
+});
+
+test("Studio music queue rechecks product, tenant, review and licence window", () => {
+  const asset = {
+    id: "media-1", status: "READY", organisationId: "tenant-1", libraryType: "ORGANISATION_MUSIC", mediaType: "MUSIC",
+    track: { status: "READY", rightsReviewStatus: "APPROVED", rightsConfirmedAt: new Date("2026-01-01"), rightsHolder: "Owner", rightsReference: "Agreement", rightsBasis: "OWNED_MASTER", permittedTerritories: "MT", permittedUses: ["ONLINE_RADIO"], licenceExpiresAt: new Date("2026-12-31") }
+  };
+  const context = { organisationId: "tenant-1", productFamily: "ONLINE", rightsUse: "ONLINE_RADIO", territory: "MT", instant: new Date("2026-09-18") };
+  assert.equal(studioQueueReadiness(asset, context).ready, true);
+  assert.equal(studioQueueReadiness(asset, { ...context, organisationId: "tenant-2" }).ready, false);
+  assert.equal(studioQueueReadiness(asset, { ...context, productFamily: "RETAIL" }).ready, false);
+  assert.equal(studioQueueReadiness(asset, { ...context, territory: "GB" }).ready, false);
+  assert.match(studioQueueReadiness(asset, { ...context, territory: null }).reason, /channel territory/);
+  assert.equal(studioQueueReadiness({ ...asset, track: { ...asset.track, rightsReviewStatus: "REJECTED" } }, context).ready, false);
+  assert.equal(studioQueueReadiness(asset, { ...context, instant: new Date("2027-01-01") }).ready, false);
 });

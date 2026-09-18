@@ -5,6 +5,7 @@ import { requireActiveStudio } from "@/lib/studio-access";
 import { ORGANISATION_CONTENT_ROLES } from "@/lib/permissions.mjs";
 import { compileProgrammeScheduleHorizon, localMinuteToUtc } from "@/lib/advanced-scheduler.mjs";
 import { deriveStudioDailyLog, normalizeStudioConsoleLayout, STUDIO_CART_BEHAVIOURS, STUDIO_MIX_POINT_TYPES, validateStudioMixPoints } from "@/lib/studio-console.mjs";
+import { studioManualOutputAvailability } from "@/lib/studio-playout.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -91,7 +92,7 @@ export async function GET(request) {
   if (!channel) return NextResponse.json({ channels, channel: null, notice: "Create a channel before opening Broadcast Console." });
   const [preference, sessions, banks, notes, clocks, sources, browserLive] = await Promise.all([
     prisma.studioConsolePreference.findUnique({ where: { organisationId_userId_contextKey: { organisationId, userId: access.user.id, contextKey: channel.id } } }),
-    prisma.studioPlayoutSession.findMany({ where: { organisationId, channelId: channel.id, status: { in: ["ACTIVE", "FALLBACK"] } }, include: { items: { orderBy: [{ area: "asc" }, { position: "asc" }] } }, orderBy: { updatedAt: "desc" }, take: 1 }),
+    prisma.studioPlayoutSession.findMany({ where: { organisationId, channelId: channel.id, productFamily: access.entitlements.planProductFamily, status: { in: ["ACTIVE", "FALLBACK"] } }, include: { items: { orderBy: [{ area: "asc" }, { position: "asc" }] } }, orderBy: { updatedAt: "desc" }, take: 1 }),
     prisma.studioCartBank.findMany({ where: { organisationId, productFamily: access.entitlements.planProductFamily, OR: [{ channelId: channel.id }, { channelId: null }] }, include: { carts: { orderBy: { position: "asc" } } }, orderBy: { name: "asc" }, take: 30 }),
     prisma.studioPresenterNote.findMany({ where: { organisationId, channelId: channel.id }, orderBy: { createdAt: "desc" }, take: 100 }),
     prisma.radioClock.findMany({ where: { organisationId, status: "PUBLISHED" }, select: { id: true, name: true, durationSeconds: true, publishedVersion: true }, orderBy: { name: "asc" }, take: 100 }),
@@ -108,7 +109,7 @@ export async function GET(request) {
   try {
     const log = await dailyLog(organisationId, channel.id, new URL(request.url).searchParams.get("date"));
     const mixPoints = await prisma.studioMixPoint.findMany({ where: { organisationId, mediaAssetId: { in: mediaIds } }, take: 200 });
-    return NextResponse.json({ channels, channel, productFamily: access.entitlements.planProductFamily, layout: normalizeStudioConsoleLayout(preference || {}), session: sessions[0] || null, banks: banks.map((bank) => ({ ...bank, carts: bank.carts.map((cart) => ({ ...cart, media: assets.get(cart.mediaAssetId) || null, ready: assets.has(cart.mediaAssetId) })) })), cartChoices, markerChoices: media, notes, clocks, sources, browserLive, broadcast, mixPoints, dailyLog: log, rightsNotice: "Only authorised protected media may enter programme output; this Console does not grant catalogue rights." });
+    return NextResponse.json({ channels, channel, productFamily: access.entitlements.planProductFamily, manualOutput: studioManualOutputAvailability(), layout: normalizeStudioConsoleLayout(preference || {}), session: sessions[0] || null, banks: banks.map((bank) => ({ ...bank, carts: bank.carts.map((cart) => ({ ...cart, media: assets.get(cart.mediaAssetId) || null, ready: assets.has(cart.mediaAssetId) })) })), cartChoices, markerChoices: media, notes, clocks, sources, browserLive, broadcast, mixPoints, dailyLog: log, rightsNotice: "Only authorised protected media may enter programme output; this Console does not grant catalogue rights." });
   } catch (cause) { return fail(cause instanceof Error ? cause.message : "The Daily Log is unavailable.", 400); }
 }
 
@@ -144,7 +145,7 @@ export async function POST(request) {
       return NextResponse.json({ cart }, { status: 201 });
     }
     if (input.action === "REMOVE_CART") {
-      const cart = await prisma.studioCart.findFirst({ where: { id: input.cartId, organisationId, bank: { OR: [{ channelId: channel.id }, { channelId: null }] } } });
+      const cart = await prisma.studioCart.findFirst({ where: { id: input.cartId, organisationId, bank: { productFamily: access.entitlements.planProductFamily, OR: [{ channelId: channel.id }, { channelId: null }] } } });
       if (!cart) return fail("The cart was not found.", 404);
       await prisma.studioCart.delete({ where: { id: cart.id } });
       await prisma.auditLog.create({ data: { organisationId, actorUserId: access.user.id, action: "STUDIO_CART_REMOVED", entityType: "StudioCart", entityId: cart.id, details: { bankId: cart.bankId } } });
@@ -163,7 +164,7 @@ export async function POST(request) {
     }
     if (input.action === "CREATE_NOTE") {
       if (!input.title || !input.body) return fail("Enter a note title and text.");
-      if (input.playoutSessionId && !await prisma.studioPlayoutSession.findFirst({ where: { id: input.playoutSessionId, organisationId, channelId: channel.id }, select: { id: true } })) return fail("The live session was not found.");
+      if (input.playoutSessionId && !await prisma.studioPlayoutSession.findFirst({ where: { id: input.playoutSessionId, organisationId, channelId: channel.id, productFamily: access.entitlements.planProductFamily }, select: { id: true } })) return fail("The live session was not found.");
       const note = await prisma.studioPresenterNote.create({ data: { organisationId, channelId: channel.id, playoutSessionId: input.playoutSessionId || null, title: input.title, body: input.body, alertAt: input.alertAt ? new Date(input.alertAt) : null, createdByUserId: access.user.id } });
       await prisma.auditLog.create({ data: { organisationId, actorUserId: access.user.id, action: "STUDIO_PRESENTER_NOTE_CREATED", entityType: "StudioPresenterNote", entityId: note.id, details: { channelId: channel.id } } });
       return NextResponse.json({ note }, { status: 201 });

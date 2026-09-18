@@ -10,6 +10,7 @@ import {
   studioTimingToNextHardEvent,
   validateStudioMixPoints
 } from "../lib/studio-console.mjs";
+import { scanStudioBroadcastConnections } from "../lib/studio-broadcast-service.js";
 
 test("console layouts retain critical status and bound panel sizing", () => {
   assert.deepEqual(normalizeStudioConsoleLayout({ preset: "PRESENTER", panels: ["MIC", "MIC", "UNKNOWN"], sizes: { MIC: 9000 } }), {
@@ -70,4 +71,36 @@ test("Console routes reuse Studio authority and keep tenant-scoped writes behind
   assert.match(monitor, /monitor \/>/);
   assert.match(hub, /BroadcastConsoleClient/);
   for (const name of ["StudioConsolePreference", "StudioCartBank", "StudioCart", "StudioMixPoint", "StudioPresenterNote"]) assert.match(migration, new RegExp(`CREATE TABLE "${name}"`));
+});
+
+test("existing Studio destination links stay standby without verified Manual output", async () => {
+  const writes = [];
+  const database = {
+    studioBroadcastSessionDestination: {
+      findMany: async () => [{ sessionId: "session-1", destinationId: "destination-1", state: "CONNECTED" }],
+      updateMany: (input) => { writes.push(["links", input]); return Promise.resolve({ count: 1 }); }
+    },
+    studioBroadcastDestination: {
+      updateMany: (input) => { writes.push(["destinations", input]); return Promise.resolve({ count: 1 }); }
+    },
+    $transaction: (operations) => Promise.all(operations)
+  };
+  const result = await scanStudioBroadcastConnections(database);
+  assert.deepEqual(result, { scanned: 1, connected: 0, reconnecting: 0, failed: 0, waitingForOutput: 1 });
+  assert.equal(writes[0][1].data.state, "STANDBY");
+  assert.equal(writes[1][1].data.connectionState, "STANDBY");
+});
+
+test("live commands cannot mark an item on air or start distribution without a bridge", async () => {
+  const [playout, broadcast, manualUi, broadcastUi] = await Promise.all([
+    readFile(new URL("../app/api/studio/playout/route.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/studio/broadcast/route.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/dashboard/studio/ManualPlayoutClient.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/dashboard/studio/StudioBroadcastClient.js", import.meta.url), "utf8")
+  ]);
+  assert.match(playout, /assertStudioManualOutputBridge\(\)/);
+  assert.doesNotMatch(playout, /status: "ON_AIR", startedAt/);
+  assert.match(broadcast, /if \(input\.action === "START_BROADCAST"\) \{\s*assertStudioManualOutputBridge\(\)/);
+  assert.match(manualUi, /disabled=\{busy \|\| !manualOutputConnected\}/);
+  assert.match(broadcastUi, /disabled=\{busy\|\|!selected\.length\|\|!data\.manualOutput\?\.connected\}/);
 });
