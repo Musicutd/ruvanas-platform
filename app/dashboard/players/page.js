@@ -22,6 +22,7 @@ export default async function SubscriberPlayersPage() {
   const organisation = context.membership.organisation;
   const players = await listSubscriberPlayers(prisma, { organisationId: organisation.id, instant: now });
   const allowance = subscriberPlayerAllowance(organisation.subscription, now);
+  if (allowance.physicalProduct === false) redirect("/dashboard/account?reason=not-included");
   const configured = players.filter((player) => player.status !== "DISABLED").length;
   const zones = organisation.locations.flatMap((location) => location.zones.map((zone) => ({ id: zone.id, name: zone.name, locationName: location.name })));
   const serviceEnabled = organisation.subscription ? resolveEntitlements(organisation.subscription).serviceEnabled : true;

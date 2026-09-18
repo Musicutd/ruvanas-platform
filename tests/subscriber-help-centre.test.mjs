@@ -44,6 +44,37 @@ test("owner and manager guidance remains distinct from view-only access", () => 
   assert.match(viewer.guidance, /owner or manager/i);
 });
 
+test("help guidance follows each of six product families and does not leak shop setup to Online Radio", () => {
+  const productCapabilities = {
+    RETAIL: "retailRadioEnabled", SCHOOL: "schoolRadioEnabled", ONLINE: "onlineRadioEnabled",
+    HEALTH: "healthRadioEnabled", FAITH: "faithRadioEnabled", ORGANISATIONS: "organisationsEnabled"
+  };
+  for (const [family, capability] of Object.entries(productCapabilities)) {
+    const help = subscriberHelpOverview("OWNER", { serviceEnabled: true, planProductFamily: family, planName: `${family} Start`, [capability]: true });
+    const ids = help.articles.map((article) => article.id);
+    assert.equal(ids.filter((id) => id === "getting-started").length, 1);
+    assert.equal(new Set(ids).size, ids.length);
+    assert.equal(help.planLabel, `${family} Start`);
+    assert.ok(help.productLabel);
+    if (family === "ONLINE") {
+      assert.match(help.articles.find((article) => article.id === "getting-started").title, /online station/i);
+      assert.ok(ids.includes("online-programming"));
+      assert.ok(!ids.includes("shop-players"));
+      assert.ok(!ids.includes("locations-zones"));
+      assert.ok(!ids.includes("online-advertising"));
+      assert.doesNotMatch(help.articles.map((article) => `${article.title} ${article.summary} ${article.steps.join(" ")}`).join(" "), /shop|retail location|retail media/i);
+    } else {
+      assert.ok(ids.includes("locations-zones"));
+      assert.ok(ids.includes("shop-players"));
+      assert.ok(!ids.includes("online-programming"));
+    }
+  }
+  const onlineCommercial = subscriberHelpOverview("OWNER", { serviceEnabled: true, planProductFamily: "ONLINE", onlineRadioEnabled: true, retailMediaEnabled: true });
+  assert.ok(onlineCommercial.articles.some((article) => article.id === "online-advertising"));
+  const disabled = subscriberHelpOverview("VIEWER", { serviceEnabled: false, planProductFamily: "ONLINE" });
+  assert.ok(!disabled.articles.some((article) => article.id === "online-programming"));
+});
+
 test("context help links can target only known internal articles", () => {
   assert.equal(subscriberHelpHref("shop-players"), "/dashboard/help#shop-players");
   assert.equal(subscriberHelpHref("unknown"), "/dashboard/help");

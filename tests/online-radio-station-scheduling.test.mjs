@@ -42,7 +42,9 @@ test("station page checks tenant and Online Radio family; draft and publish rema
   assert.match(page, /AdvancedSchedulerWorkspace stationId=\{station\.id\}/);
   assert.match(scheduler, /scopeStationScheduleData\(payload, stationId\)/);
   assert.match(source("../app/dashboard/programming/page.js"), /Open its station-channel schedule/);
-  assert.match(source("../app/dashboard/programming/ProgrammingWorkspace.js"), /Boolean\(onlineRadioStationId\) && data\.targets\.length === 0/);
+  assert.match(source("../app/dashboard/programming/page.js"), /onlineOnly=\{onlineOnly\}/);
+  assert.match(source("../app/dashboard/programming/ProgrammingWorkspace.js"), /channels: payload\.channels\.filter\(\(channel\) => channel\.productFamily === "ONLINE"\)/);
+  assert.match(source("../app/dashboard/programming/ProgrammingWorkspace.js"), /!onlineOnly \? <section className=\{styles\.panel\} aria-labelledby="planner-heading"/);
   assert.match(create, /programmeSchedule\.create/);
   assert.match(publish, /assertProgrammeSchedulePublishable|publishProgrammeScheduleVersion/);
   assert.match(source("../app/admin/music-schedules/new/NewMusicScheduleForm.js"), /Online Radio stations use their own channel schedule/);

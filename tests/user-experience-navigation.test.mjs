@@ -31,11 +31,12 @@ test("subscriber navigation is organised by tasks and isolates an Online Radio a
   assert.equal(items.find((item) => item.id === "station").href, "/stations/station-1");
   assert.equal(items.find((item) => item.id === "account").href, "/dashboard/account");
   assert.equal(items.find((item) => item.id === "team").href, "/dashboard/team");
-  assert.ok(items.some((item) => item.id === "retail"));
+  assert.ok(!items.some((item) => item.id === "retail"));
   assert.equal(items.find((item) => item.id === "radioAdvertising").href, "/dashboard/radio/advertising");
   assert.ok(!items.some((item) => item.id === "school"));
   assert.ok(!items.some((item) => item.id === "signage"));
   assert.ok(!items.some((item) => item.id === "locations"));
+  assert.ok(!items.some((item) => item.id === "players"));
   assert.ok(!items.some((item) => item.id === "retailHome"));
   assert.ok(!items.some((item) => item.id === "schoolHome"));
   assert.equal(items.find((item) => item.id === "radioHome").href, "/dashboard/radio");
@@ -49,6 +50,37 @@ test("Locations & Zones appears before Players & Devices only for physical produ
   }
   const online = buildSubscriberNavigation({ entitlements: { serviceEnabled: true, onlineRadioEnabled: true } }).flatMap((section) => section.items);
   assert.equal(online.some((item) => item.id === "locations"), false);
+});
+
+test("Retail Media is not shown to Online Radio even when its commercial capability powers radio advertising", async () => {
+  const online = buildSubscriberNavigation({ entitlements: { serviceEnabled: true, onlineRadioEnabled: true, retailMediaEnabled: true } })
+    .flatMap((section) => section.items);
+  assert.ok(online.some((item) => item.id === "radioAdvertising"));
+  assert.ok(!online.some((item) => item.id === "retail"));
+
+  const retail = buildSubscriberNavigation({ entitlements: { serviceEnabled: true, retailRadioEnabled: true, retailMediaEnabled: true } })
+    .flatMap((section) => section.items);
+  assert.ok(retail.some((item) => item.id === "retail"));
+  const route = await readFile(new URL("../app/dashboard/retail-media/page.js", import.meta.url), "utf8");
+  assert.match(route, /hasSubscriberProduct\(entitlements, "RETAIL"\)/);
+});
+
+test("each exclusive product account sees its own dashboard and only entitled optional services", () => {
+  const families = [
+    ["retailRadioEnabled", "retailHome"], ["schoolRadioEnabled", "schoolHome"],
+    ["onlineRadioEnabled", "radioHome"], ["healthRadioEnabled", "healthHome"],
+    ["faithRadioEnabled", "faithHome"], ["organisationsEnabled", "organisationsHome"]
+  ];
+  const dashboardIds = families.map(([, id]) => id);
+  for (const [capability, ownId] of families) {
+    const items = buildSubscriberNavigation({ entitlements: { serviceEnabled: true, [capability]: true } })
+      .flatMap((section) => section.items);
+    assert.deepEqual(items.filter((item) => dashboardIds.includes(item.id)).map((item) => item.id), [ownId]);
+    assert.ok(!items.some((item) => item.id === "retail" || item.id === "signage"));
+  }
+  const enabledDisplay = buildSubscriberNavigation({ entitlements: { serviceEnabled: true, healthRadioEnabled: true, digitalSignageEnabled: true } })
+    .flatMap((section) => section.items);
+  assert.ok(enabledDisplay.some((item) => item.id === "signage"));
 });
 
 test("product cards show only products owned by the subscriber", () => {
@@ -119,6 +151,8 @@ test("subscriber command centre keeps shortcuts permission-filtered and accessib
   assert.match(dashboard, /<progress/);
   assert.match(dashboard, /SERVICE PULSE/);
   assert.match(dashboard, /QUICK ACTIONS/);
+  assert.match(dashboard, /prisma\.publicListenerLease\.count/);
+  assert.match(dashboard, /Public listeners connected/);
   assert.match(styles, /@media \(max-width: 520px\)/);
   assert.match(styles, /:focus-visible/);
   assert.match(shellStyles, /@media \(max-width: 980px\)/);

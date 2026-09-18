@@ -16,7 +16,8 @@ function subscription(limit = 1, status = "ACTIVE") {
       stationLimit: limit,
       storageLimitGb: 5,
       listenerLimit: 100,
-      maxBitrateKbps: 320
+      maxBitrateKbps: 320,
+      retailRadioEnabled: true
     },
     billingContract: null
   };
@@ -65,6 +66,13 @@ test("player setup input is bounded and requires a zone", () => {
 
 test("legacy organisations retain one controlled setup slot", () => {
   assert.deepEqual(subscriberPlayerAllowance(null), { enabled: true, limit: 1, legacy: true });
+});
+
+test("Online-only subscriptions cannot create a physical area player", () => {
+  const online = subscription(3);
+  online.plan.retailRadioEnabled = false;
+  online.plan.onlineRadioEnabled = true;
+  assert.deepEqual(subscriberPlayerAllowance(online), { enabled: false, limit: 0, legacy: false, physicalProduct: false });
 });
 
 test("an owner can create a tenant-zone player inside the subscribed allowance", async () => {

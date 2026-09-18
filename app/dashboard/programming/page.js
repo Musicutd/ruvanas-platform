@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getActiveOrganisationContext } from "@/lib/auth";
+import { resolveEntitlements } from "@/lib/entitlements.mjs";
 import { prisma } from "@/lib/prisma";
 import SkipLink from "@/app/components/SkipLink";
 import ProgrammingWorkspace from "./ProgrammingWorkspace";
@@ -19,15 +20,20 @@ import styles from "./programming.module.css";
 export const dynamic = "force-dynamic";
 
 export default async function SubscriberProgrammingPage() {
-  const context = await getActiveOrganisationContext();
+  const context = await getActiveOrganisationContext({ subscription: { include: { plan: true, billingContract: true } } });
   if (!context) redirect("/login");
   if (!context.membership) redirect("/dashboard");
   const canManage = ["OWNER", "MANAGER"].includes(context.membership.role);
-  const onlineRadioStation = await prisma.station.findFirst({
+  const entitlements = resolveEntitlements(context.membership.organisation.subscription);
+  const onlineOnly = entitlements.onlineRadioEnabled && ![
+    entitlements.retailRadioEnabled, entitlements.schoolRadioEnabled, entitlements.healthRadioEnabled,
+    entitlements.faithRadioEnabled, entitlements.organisationsEnabled
+  ].some(Boolean);
+  const onlineRadioStation = entitlements.onlineRadioEnabled ? await prisma.station.findFirst({
     where: { organisationId: context.membership.organisationId, productFamily: "ONLINE" },
     select: { id: true, name: true },
     orderBy: { createdAt: "asc" }
-  });
+  }) : null;
   const tabs = [
     { id: "schedule", label: "Schedule", description: "Now, AutoDJ and weekly plans" },
     { id: "automation", label: "Automation", description: "Playlists, clocks and advanced rules" },
@@ -47,9 +53,11 @@ export default async function SubscriberProgrammingPage() {
         <div className={styles.hero}>
           <div>
             <p className={styles.eyebrow}>RADIO PROGRAMMING</p>
-            <h1>Plan your week with confidence</h1>
+            <h1>{onlineOnly ? "Programme your online station" : "Plan your week with confidence"}</h1>
             <p className={styles.intro}>
-              Choose approved music for {context.membership.organisation.name}, switch on Continuous AutoDJ for an Online Radio channel, or build a weekly plan for a shop or listening area.
+              {onlineOnly
+                ? `Choose approved music for ${context.membership.organisation.name}, switch on Continuous AutoDJ for your station channel, and schedule timed programmes there.`
+                : `Choose approved music for ${context.membership.organisation.name}, switch on Continuous AutoDJ for a channel, or build a weekly plan for a listening area.`}
             </p>
           </div>
           <div className={styles.safetyNote}>
@@ -58,10 +66,10 @@ export default async function SubscriberProgrammingPage() {
           </div>
         </div>
         {onlineRadioStation ? <div className={styles.notice} role="status">
-          Scheduling {onlineRadioStation.name}? <a href={`/dashboard/radio/schedule/${onlineRadioStation.id}`}>Open its station-channel schedule</a>. The location planner, when available, is for retail listening areas, not Online Radio stations. For the live Centova rotation, use Continuous AutoDJ in the Schedule tab.
+          Scheduling {onlineRadioStation.name}? <a href={`/dashboard/radio/schedule/${onlineRadioStation.id}`}>Open its station-channel schedule</a>. For the live stream rotation, use Continuous AutoDJ in the Schedule tab.
         </div> : null}
         <WorkspaceTabs label="Programming tools" intro="Open only the part of radio programming you need right now." tabs={tabs}>
-          <div className={styles.workspace}><ProgrammingWorkspace organisationName={context.membership.organisation.name} onlineRadioStationId={onlineRadioStation?.id || null} /></div>
+          <div className={styles.workspace}><ProgrammingWorkspace organisationName={context.membership.organisation.name} onlineOnly={onlineOnly} /></div>
           <div className={styles.workspace}><AutoDjExpansionWorkspace /><SmartPlaylistsWorkspace /><RadioClocksWorkspace /><AdvancedSchedulerWorkspace /></div>
           <div className={styles.workspace}><ExternalLiveWorkspace /><LiveFailoverWorkspace /><BrowserLiveStudioWorkspace /></div>
           <div className={styles.workspace}><VoiceTrackingWorkspace /><AudioProcessingWorkspace /></div>

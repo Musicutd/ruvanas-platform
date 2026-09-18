@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getActiveOrganisationContext } from "@/lib/auth";
 import { resolveEntitlements } from "@/lib/entitlements.mjs";
+import { hasSubscriberProduct } from "@/lib/product-access.mjs";
 import { ORGANISATION_CONTENT_ROLES, ORGANISATION_MANAGER_ROLES } from "@/lib/permissions.mjs";
 import RetailMediaConsole from "@/app/admin/retail-media/RetailMediaConsole";
 
@@ -22,7 +23,7 @@ export default async function SubscriberRetailMediaPage() {
 
   const organisation = context.membership.organisation;
   const entitlements = resolveEntitlements(organisation.subscription);
-  if (!entitlements.retailMediaEnabled) redirect("/dashboard");
+  if (!entitlements.retailMediaEnabled || !hasSubscriberProduct(entitlements, "RETAIL")) redirect("/dashboard");
 
   const clientOrganisation = {
     id: organisation.id,
