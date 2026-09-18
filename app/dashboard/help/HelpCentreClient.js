@@ -20,7 +20,7 @@ export default function HelpCentreClient({ organisationName, help }) {
       <section className={styles.content} id="main-content">
         <p className={styles.eyebrow}>HELP CENTRE</p>
         <h1>How can we help?</h1>
-        <p className={styles.subtitle}>Plain-language guidance for {organisationName}. Your account role is <strong>{help.roleLabel}</strong>.</p>
+        <p className={styles.subtitle}>Plain-language guidance for {organisationName}. Showing <strong>{help.productLabel}</strong>{help.planLabel ? ` · ${help.planLabel}` : ""} for your <strong>{help.roleLabel}</strong> account.</p>
 
         <aside className={styles.roleGuidance} aria-label="Guidance for your account role">
           <strong>{help.canManage ? "Owner and manager guidance" : "View-only guidance"}</strong>
@@ -30,7 +30,7 @@ export default function HelpCentreClient({ organisationName, help }) {
         <aside className={styles.howItWorksPrompt}>
           <div>
             <strong>New to Ruvanas?</strong>
-            <span>See the complete Retail, School and Online Radio journey on one guided page.</span>
+            <span>See the guided journey for {help.productLabel} and the services in your plan.</span>
           </div>
           <Link href="/dashboard/how-it-works">Open how Ruvanas works</Link>
         </aside>
@@ -42,7 +42,7 @@ export default function HelpCentreClient({ organisationName, help }) {
             value={query}
             maxLength={80}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Try player, schedule, upload or offline"
+            placeholder="Search your service, schedule or account"
           />
         </label>
         <p className={styles.resultCount} aria-live="polite">
@@ -66,7 +66,7 @@ export default function HelpCentreClient({ organisationName, help }) {
           </article>
         ))}</div> : <section className={styles.noResults} role="status">
           <h2>No matching help article</h2>
-          <p>Try a shorter term such as “player”, “music”, “upload” or “offline”.</p>
+          <p>Try a shorter term such as “music”, “schedule”, “upload” or “account”.</p>
           <button type="button" onClick={() => setQuery("")}>Clear search</button>
         </section>}
       </section>

@@ -5,12 +5,14 @@ import { buildSubscriberHome } from "../lib/subscriber-home.mjs";
 
 const onboarding = { nextAction: { href: "/dashboard/players", label: "Set up a player" } };
 
-test("single Retail and Online accounts keep the audio checklist", () => {
-  for (const key of ["RETAIL", "ONLINE"]) {
-    const home = buildSubscriberHome({ products: [{ key, label: key, actionHref: `/dashboard/${key.toLowerCase()}` }], onboarding });
-    assert.equal(home.onboarding, onboarding);
-    assert.equal(home.nextAction.href, "/dashboard/players");
-  }
+test("only a physical Retail account uses the first-shop checklist", () => {
+  const retail = buildSubscriberHome({ products: [{ key: "RETAIL", label: "Retail Radio", actionHref: "/dashboard/retail" }], onboarding });
+  assert.equal(retail.onboarding, onboarding);
+  assert.equal(retail.nextAction.href, "/dashboard/players");
+
+  const online = buildSubscriberHome({ products: [{ key: "ONLINE", label: "Online Radio", actionHref: "/dashboard/radio" }], onboarding });
+  assert.equal(online.onboarding, null);
+  assert.equal(online.nextAction.href, "/dashboard/radio");
 });
 
 test("other and multi-product accounts go to their product workspace", () => {
