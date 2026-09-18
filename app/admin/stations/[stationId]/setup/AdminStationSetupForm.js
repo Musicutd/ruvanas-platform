@@ -6,6 +6,9 @@ import { useRouter } from "next/navigation";
 export default function AdminStationSetupForm({
   stationId,
   stationName,
+  stationStatus,
+  productFamily,
+  hasStreamConfig,
   initialData
 }) {
   const router = useRouter();
@@ -15,6 +18,9 @@ export default function AdminStationSetupForm({
     mountPoint: initialData?.mountPoint || "",
     serverHost: initialData?.serverHost || "",
     serverPort: initialData?.serverPort?.toString() || "",
+    sourcePort: initialData?.sourcePort?.toString() || "",
+    sourceUsername: initialData?.sourceUsername || "",
+    outboundAutoDjEnabled: initialData?.outboundAutoDjEnabled === true,
     bitrateKbps: initialData?.bitrateKbps?.toString() || "",
     centovaUsername: initialData?.centovaUsername || "",
     providerKey: initialData?.providerKey || "CENTOVA_CAST",
@@ -26,12 +32,18 @@ export default function AdminStationSetupForm({
   });
 
   const [saving, setSaving] = useState(false);
+  const [activating, setActivating] = useState(false);
+  const [preparing, setPreparing] = useState(false);
+  const [configured, setConfigured] = useState(hasStreamConfig);
+  const [dirty, setDirty] = useState(false);
+  const [status, setStatus] = useState(stationStatus);
   const [message, setMessage] = useState({
     type: "",
     text: ""
   });
 
   function updateField(event) {
+    setDirty(true);
     setForm((current) => ({
       ...current,
       [event.target.name]: event.target.type === "checkbox" ? event.target.checked : event.target.value
@@ -89,6 +101,9 @@ export default function AdminStationSetupForm({
         mountPoint: form.mountPoint.trim(),
         serverHost: form.serverHost.trim(),
         serverPort: Number(form.serverPort),
+        sourcePort: form.sourcePort.trim() ? Number(form.sourcePort) : null,
+        sourceUsername: form.sourceUsername.trim(),
+        outboundAutoDjEnabled: form.outboundAutoDjEnabled,
         bitrateKbps: form.bitrateKbps.trim()
           ? Number(form.bitrateKbps)
           : null,
@@ -121,8 +136,10 @@ export default function AdminStationSetupForm({
 
       setMessage({
         type: "success",
-        text: "Streaming configuration saved successfully."
+        text: "Streaming configuration saved. Verify live audio and activate the station when ready."
       });
+      setConfigured(true);
+      setDirty(false);
 
       setForm((current) => ({
         ...current,
@@ -137,6 +154,39 @@ export default function AdminStationSetupForm({
       });
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function activateStation() {
+    setActivating(true);
+    setMessage({ type: "", text: "" });
+    try {
+      const response = await fetch(`/api/admin/stations/${stationId}/activate`, { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Unable to activate the station.");
+      setStatus("ACTIVE");
+      setMessage({ type: "success", text: "Station activated after a healthy live-stream check. Online Radio channels are prepared automatically; retail channels still need a listening-zone assignment." });
+      router.refresh();
+    } catch (error) {
+      setMessage({ type: "error", text: error instanceof Error ? error.message : "Unable to activate the station." });
+    } finally {
+      setActivating(false);
+    }
+  }
+
+  async function prepareChannel() {
+    setPreparing(true);
+    setMessage({ type: "", text: "" });
+    try {
+      const response = await fetch(`/api/admin/stations/${stationId}/prepare-channel`, { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Unable to prepare the channel.");
+      setMessage({ type: "success", text: "Online Radio channel prepared. The subscriber can now select it for Continuous AutoDJ. This does not mean audio is live yet." });
+      router.refresh();
+    } catch (error) {
+      setMessage({ type: "error", text: error instanceof Error ? error.message : "Unable to prepare the channel." });
+    } finally {
+      setPreparing(false);
     }
   }
 
@@ -217,6 +267,7 @@ export default function AdminStationSetupForm({
             />
           </label>
         </div>
+        {form.providerKey === "CENTOVA_CAST" ? <p style={styles.helpText}>The listener and live-source ports are separate settings; Centova may give them the same number. Use the exact values in Live Source Connections below.</p> : null}
       </section>
 
       <section style={styles.section}>
@@ -256,9 +307,14 @@ export default function AdminStationSetupForm({
 
       {form.providerKey === "CENTOVA_CAST" ? <section style={styles.section}>
         <h2 style={styles.sectionTitle}>Centova credentials</h2>
+        <p style={styles.helpText}>For Ruvanas AutoDJ as the source, use Centova Cast → Quick Links → Live Source Connections → “When the autoDJ is not running”. Do not use the DJ-account connection intended to interrupt Centova AutoDJ. Stop Centova AutoDJ before connecting Ruvanas.</p>
+        <label style={styles.label}>Live-source port<input style={styles.input} type="number" name="sourcePort" value={form.sourcePort} onChange={updateField} min="1" max="65535" disabled={saving} placeholder="From Live Source Connections" /></label>
+        <label style={styles.label}>Live-source username <span style={styles.optional}>(only if Centova supplies one; leave blank for source-password-only Shoutcast v1)</span><input style={styles.input} type="text" name="sourceUsername" value={form.sourceUsername} onChange={updateField} maxLength={120} disabled={saving} placeholder="Optional" /></label>
+        <label style={styles.checkLabel}><input type="checkbox" name="outboundAutoDjEnabled" checked={form.outboundAutoDjEnabled} onChange={updateField} disabled={saving} />Allow the dedicated Ruvanas AutoDJ worker to connect to this Centova stream</label>
+        <p style={styles.helpText}>Enabling this setting does not start audio by itself. A dedicated Ruvanas encoder worker, an active Online Radio channel and a rights-approved Continuous AutoDJ mode are also required.</p>
 
         <label style={styles.label}>
-          Centova username
+          Centova account username (for admin reference, not the Shoutcast source login)
           <input
             style={styles.input}
             type="text"
@@ -309,6 +365,19 @@ export default function AdminStationSetupForm({
       <button type="submit" style={styles.button} disabled={saving}>
         {saving ? "Saving…" : "Save configuration"}
       </button>
+      <section style={styles.section}>
+        <h2 style={styles.sectionTitle}>Station activation</h2>
+        {productFamily === "ONLINE" ? <><p style={styles.helpText}>Step 1: Prepare the Online Radio channel. Step 2: The subscriber selects a rights-approved music mode and enables Continuous AutoDJ. Step 3: Once the dedicated encoder sends audio to Centova, check the stream and activate the station.</p><button type="button" style={styles.button} disabled={!configured || dirty || saving || preparing} onClick={prepareChannel}>{preparing ? "Preparing channel…" : "Prepare Online Radio channel"}</button></> : null}
+        {productFamily === "ONLINE" ? <p style={styles.helpText}>Encoder worker lease: {initialData.encoderLeaseUntil && new Date(initialData.encoderLeaseUntil) > new Date() ? "active (connection not yet verified)" : "not active"}. A lease means a worker is assigned, not that Centova is receiving audio.</p> : null}
+        <p style={styles.helpText}>Last stream check: {initialData.sourceConnectionStatus}{initialData.lastProbeHttpStatus ? ` · HTTP ${initialData.lastProbeHttpStatus}` : ""}{initialData.lastError === "REDIRECT_NOT_FOLLOWED" ? " · the URL redirected instead of returning audio" : ""}.</p>
+        <p style={styles.helpText}>{status === "ACTIVE"
+          ? "This station is active. Publishing its public player is a separate subscriber action."
+          : "Super Admin activates the station only after its saved public stream returns healthy audio. A failed check leaves the station pending."}</p>
+        {status !== "ACTIVE" ? <button type="button" style={styles.button} disabled={!configured || dirty || saving || activating} onClick={activateStation}>
+          {activating ? "Checking live stream…" : "Check stream and activate station"}
+        </button> : null}
+        {dirty ? <p style={styles.helpText}>Save your changes before running the live check.</p> : null}
+      </section>
     </form>
   );
 }

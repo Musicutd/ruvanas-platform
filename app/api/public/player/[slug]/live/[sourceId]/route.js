@@ -12,10 +12,12 @@ export const runtime = "nodejs";
 export async function GET(request, { params }) {
   try {
     const instant = new Date();
-    const access = await authorizePublicPlayback(prisma, { slug: String(params.slug || ""), token: request.nextUrl.searchParams.get("listener"), instant });
+    const { slug, sourceId: requestedSourceId } = await params;
+    const access = await authorizePublicPlayback(prisma, { slug: String(slug || ""), token: request.nextUrl.searchParams.get("listener"), instant });
     if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
+    if (access.target.online) return NextResponse.json({ error: "Online Radio is delivered through the station stream." }, { status: 404 });
     const programming = await resolvePlayerProgramming(access.target.player, instant, { persistOperationalEvidence: false, publicAudience: true });
-    const sourceId = String(params.sourceId || "");
+    const sourceId = String(requestedSourceId || "");
     if (programming.playoutDecision.sourceType !== "LIVE_SESSION" || programming.playoutDecision.sourceId !== sourceId || programming.resolution.liveSource?.id !== sourceId) return NextResponse.json({ error: "This source is not the station's current public programme." }, { status: 404 });
     const source = await prisma.externalLiveSource.findFirst({ where: { id: sourceId, organisationId: access.station.organisationId, channelId: access.target.channel.id, status: { in: ["ACTIVE", "READY"] }, healthStatus: "HEALTHY" } });
     if (!source) return NextResponse.json({ error: "The live programme is temporarily unavailable." }, { status: 409 });

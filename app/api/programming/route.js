@@ -119,7 +119,7 @@ async function loadProgramming(organisationId, role) {
     prisma.channel.findMany({
       where: { organisationId, status: "ACTIVE" },
       include: {
-        station: { select: { id: true, name: true, status: true } },
+        station: { select: { id: true, name: true, status: true, productFamily: true } },
         zoneAssignments: {
           where: { activeFrom: { lte: now }, OR: [{ activeTo: null }, { activeTo: { gt: now } }] },
           include: { zone: { select: { id: true, name: true, location: { select: { name: true } } } } }
@@ -205,6 +205,7 @@ async function loadProgramming(organisationId, role) {
       id: channel.id,
       name: channel.name,
       stationName: channel.station?.name || null,
+      productFamily: channel.station?.productFamily || null,
       assignments: channel.zoneAssignments.map((assignment) => `${assignment.zone.location.name} / ${assignment.zone.name}`),
       autoDjPolicy: channel.autoDjPolicy ? {
         id: channel.autoDjPolicy.id,

@@ -4,8 +4,10 @@ import StreamSourceOperations from "./StreamSourceOperations";
 import PageHeader from "@/app/components/PageHeader";
 import EmptyState from "@/app/components/EmptyState";
 import { interfaceMessages } from "@/lib/interface-guidance.mjs";
+import { getAdminUser } from "@/lib/requireAdmin";
 
 export default async function AdminStationsPage() {
+  const adminUser = await getAdminUser();
   const stations = await prisma.station.findMany({
     include: {
       organisation: true,
@@ -80,12 +82,12 @@ export default async function AdminStationsPage() {
                     </td>
 
                     <td style={styles.tableCell}>
-                      <Link
+                      {adminUser?.role === "SUPER_ADMIN" ? <Link
                         href={`/admin/stations/${station.id}/setup`}
                         style={styles.setupLink}
                       >
                         Configure streaming
-                      </Link>
+                      </Link> : <span>Super Admin only</span>}
                     </td>
                   </tr>
                 ))}

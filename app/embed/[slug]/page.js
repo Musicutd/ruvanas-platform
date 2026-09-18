@@ -6,7 +6,8 @@ export const dynamic = "force-dynamic";
 export const metadata = { robots: { index: false, follow: false } };
 
 export default async function PublicEmbedPage({ params }) {
-  const station = await prisma.station.findFirst({ where: { slug: params.slug, status: "ACTIVE", publicPlayerEnabled: true }, select: { id: true } });
+  const { slug } = await params;
+  const station = await prisma.station.findFirst({ where: { slug, status: "ACTIVE", publicPlayerEnabled: true }, select: { id: true } });
   if (!station) notFound();
-  return <main style={{ minHeight: "100vh", background: "#0c1525" }}><PublicRadioPlayer slug={params.slug} compact /></main>;
+  return <main style={{ minHeight: "100vh", background: "#0c1525" }}><PublicRadioPlayer slug={slug} compact /></main>;
 }

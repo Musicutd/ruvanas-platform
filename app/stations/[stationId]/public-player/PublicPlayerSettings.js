@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 
 export default function PublicPlayerSettings({ station, canManage }) {
   const [enabled, setEnabled] = useState(station.publicPlayerEnabled);
+  const [published, setPublished] = useState(station.publicPlayerEnabled);
   const [tagline, setTagline] = useState(station.publicPlayerTagline || "");
   const [accent, setAccent] = useState(station.publicPlayerAccent || "#f4b942");
   const [listenerRequestsEnabled, setListenerRequestsEnabled] = useState(station.listenerRequestsEnabled);
@@ -21,6 +22,7 @@ export default function PublicPlayerSettings({ station, canManage }) {
       const response = await fetch(`/api/stations/${station.id}/public-player`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled, tagline, accent, listenerRequestsEnabled, listenerRequestInstructions }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Unable to save the public player.");
+      setPublished(enabled);
       setMessage(enabled ? "Public player published." : "Public player is private.");
     } catch (error) { setMessage(error.message); }
     finally { setSaving(false); }
@@ -28,7 +30,8 @@ export default function PublicPlayerSettings({ station, canManage }) {
 
   return <div style={styles.grid}>
     <section style={styles.card}>
-      <div style={styles.statusRow}><div><strong>Public availability</strong><p style={styles.muted}>{enabled ? "Listeners can open the public and embedded players." : "Only your private station tools are available."}</p></div><span style={{ ...styles.badge, ...(enabled ? styles.live : {}) }}>{enabled ? "LIVE" : "PRIVATE"}</span></div>
+      <div style={styles.statusRow}><div><strong>Public availability</strong><p style={styles.muted}>{published && station.status === "ACTIVE" ? "Listeners can open the public and embedded players." : "Only your private station tools are available."}</p></div><span style={{ ...styles.badge, ...(published && station.status === "ACTIVE" ? styles.live : {}) }}>{published && station.status === "ACTIVE" ? "LIVE" : "PRIVATE"}</span></div>
+      {enabled !== published ? <p style={styles.notice}>Publication change not saved yet.</p> : null}
       <label style={styles.toggle}><input type="checkbox" checked={enabled} disabled={!canManage} onChange={(event) => { setEnabled(event.target.checked); if (!event.target.checked) setListenerRequestsEnabled(false); }} /> Publish this station’s public player</label>
       <label style={styles.label}>Listener-facing tagline<input style={styles.input} value={tagline} maxLength={160} disabled={!canManage} onChange={(event) => setTagline(event.target.value)} placeholder="Live music, shows and stories from our station." /></label>
       <label style={styles.label}>Accent colour<input style={{ ...styles.input, maxWidth: 180 }} type="color" value={accent} disabled={!canManage} onChange={(event) => setAccent(event.target.value)} /></label>
@@ -46,7 +49,11 @@ export default function PublicPlayerSettings({ station, canManage }) {
       <p style={styles.kicker}>SHARE</p><h2 style={styles.subheading}>Listener links</h2>
       <label style={styles.label}>Public page<input style={styles.input} readOnly value={listenUrl} /></label>
       <label style={styles.label}>Embeddable player<textarea style={{ ...styles.input, minHeight: 110 }} readOnly value={embedCode} /></label>
-      <div style={styles.actions}><a style={styles.linkButton} href={`/listen/${station.slug}`} target="_blank" rel="noreferrer">Preview player</a><button style={styles.secondary} onClick={() => navigator.clipboard.writeText(embedCode).then(() => setMessage("Embed code copied."))}>Copy embed code</button></div>
+      <div style={styles.actions}>{station.status === "ACTIVE" && published
+        ? <a style={styles.linkButton} href={`/listen/${station.slug}`} target="_blank" rel="noreferrer">Preview player</a>
+        : <span style={styles.disabledLink}>Preview available after station activation and publication</span>}
+        <button style={styles.secondary} onClick={() => navigator.clipboard.writeText(embedCode).then(() => setMessage("Embed code copied."))}>Copy embed code</button></div>
+      {station.status !== "ACTIVE" ? <p style={styles.notice}>Ruvanas Super Admin must verify the streaming source and activate this station first. You can prepare branding now.</p> : null}
       <p style={styles.muted}>The player creates anonymous, short-lived listening sessions. It does not expose subscriber accounts, streaming credentials or enrolled shop-player controls.</p>
     </section>
   </div>;
@@ -68,6 +75,7 @@ const styles = {
   subheading: { fontSize: 28, margin: "5px 0" },
   actions: { display: "flex", gap: 10, flexWrap: "wrap", marginTop: 20 },
   linkButton: { borderRadius: 9, padding: "11px 15px", background: "#f4b942", color: "#111827", fontWeight: 900, textDecoration: "none" },
+  disabledLink: { borderRadius: 9, padding: "11px 15px", background: "#273449", color: "#cbd5e1", fontWeight: 700 },
   secondary: { border: "1px solid #52627a", borderRadius: 9, padding: "11px 15px", background: "transparent", color: "#f8fafc", fontWeight: 800, cursor: "pointer" },
   requestBox: { marginTop: 22, padding: 18, border: "1px solid #334762", borderRadius: 14, background: "#0d1728" },
   queueLink: { display: "inline-block", marginTop: 14, color: "#f4b942", fontWeight: 800, textDecoration: "none" }

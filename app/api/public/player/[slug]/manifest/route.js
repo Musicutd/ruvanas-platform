@@ -13,7 +13,8 @@ function listenerSession(request) {
 export async function GET(request, { params }) {
   try {
     const instant = new Date();
-    const station = await loadPublicPlayerStation(prisma, String(params.slug || ""));
+    const { slug } = await params;
+    const station = await loadPublicPlayerStation(prisma, String(slug || ""));
     if (!station) return NextResponse.json({ error: "This public station is unavailable." }, { status: 404 });
     const target = publicPlayerTarget(station, instant);
     if (!target) return NextResponse.json({ error: "This station does not yet have an active public channel." }, { status: 409 });
@@ -31,7 +32,8 @@ export async function GET(request, { params }) {
 
 export async function DELETE(request, { params }) {
   try {
-    const station = await prisma.station.findUnique({ where: { slug: String(params.slug || "") }, select: { id: true } });
+    const { slug } = await params;
+    const station = await prisma.station.findUnique({ where: { slug: String(slug || "") }, select: { id: true } });
     if (station) await releasePublicPlayerSession(prisma, { station, sessionId: listenerSession(request) });
     return NextResponse.json({ success: true }, { headers: { "Cache-Control": "no-store" } });
   } catch {

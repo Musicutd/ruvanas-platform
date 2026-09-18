@@ -14,6 +14,7 @@ export async function POST(request, { params }) {
       return accessDenied(access);
     }
 
+    const { channelId } = await params;
     const body = await request.json();
     const nextStatus = body.status;
 
@@ -30,7 +31,7 @@ export async function POST(request, { params }) {
 
     const channel = await prisma.channel.findUnique({
       where: {
-        id: params.channelId
+        id: channelId
       },
       include: {
         station: {
@@ -93,7 +94,14 @@ export async function POST(request, { params }) {
         );
       }
 
-      if (channel.zoneAssignments.length === 0) {
+      const onlineChannel = channel.station?.productFamily === "ONLINE";
+      if (onlineChannel && (channel.station.status !== "ACTIVE" || !channel.station.streamConfig?.streamUrl)) {
+        return NextResponse.json(
+          { error: "Activate the linked Online Radio station and verify its stream before activating this channel." },
+          { status: 409 }
+        );
+      }
+      if (!onlineChannel && channel.zoneAssignments.length === 0) {
         return NextResponse.json(
           {
             error:
