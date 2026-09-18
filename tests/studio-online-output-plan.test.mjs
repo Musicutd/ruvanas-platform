@@ -13,7 +13,7 @@ const entitlements = { onlineRadioEnabled: true, studioProEnabled: true, license
 const session = { id: "session-1", organisationId: station.organisationId, channelId: channel.id, productFamily: "ONLINE", status: "ACTIVE", mode: "MANUAL", fallbackAutoDjId: policy.id, revision: 3 };
 const asset = { id: "asset-1", organisationId: station.organisationId, status: "READY", mediaType: "AUDIO", libraryType: "ORGANISATION_AUDIO", durationSeconds: 60, storageKey: "private/asset.mp3" };
 const item = { id: "item-1", sessionId: session.id, organisationId: station.organisationId, mediaAssetId: asset.id, area: "LIVE", status: "READY", rightsReady: true, durationMs: 60_000, cueInMs: 0, cueOutMs: null, fadeInMs: 0, fadeOutMs: 0, gainDb: 0, updatedAt: instant };
-const authority = { complete: true, organisationId: station.organisationId, channelId: channel.id, capturedAt: instant, candidates: [], requiredInsertions: [] };
+const authority = { complete: true, organisationId: station.organisationId, channelId: channel.id, capturedAt: instant, coversUntil: new Date(instant.getTime() + 60_000), candidates: [], requiredInsertions: [] };
 const plan = (overrides = {}) => planStudioOnlineOutput({ rotation, entitlements, session, item, asset, authority, workerOwner: "worker-1", instant, ...overrides });
 
 test("Manual output is only a dry-run decision above AutoDJ and below protected programming", () => {
@@ -38,6 +38,7 @@ test("tenant, channel, entitlement, fallback and stale authority all fail closed
   assert.equal(plan({ workerOwner: "worker-2" }).reason, "ENCODER_LEASE_UNAVAILABLE");
   assert.equal(plan({ authority: { ...authority, capturedAt: new Date(instant.getTime() - 11_000) } }).reason, "AUTHORITATIVE_SCHEDULE_UNAVAILABLE");
   assert.equal(plan({ authority: { ...authority, complete: false } }).reason, "AUTHORITATIVE_SCHEDULE_UNAVAILABLE");
+  assert.equal(plan({ authority: { ...authority, coversUntil: new Date(instant.getTime() + 30_000) } }).reason, "AUTHORITATIVE_SCHEDULE_UNAVAILABLE");
   assert.equal(plan({ authority: { ...authority, candidates: [{ sourceType: "EMERGENCY_OVERRIDE", sourceId: "forged", priority: 1 }] } }).reason, "AUTHORITATIVE_SCHEDULE_UNAVAILABLE");
   assert.equal(plan({ authority: { ...authority, candidates: [{ sourceType: "DEFAULT_AUTODJ", sourceId: "forged" }] } }).reason, "AUTHORITATIVE_SCHEDULE_UNAVAILABLE");
 });
