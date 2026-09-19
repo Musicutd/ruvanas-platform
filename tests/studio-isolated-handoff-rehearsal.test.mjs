@@ -16,8 +16,9 @@ const fixture = {
 test("isolated graph gives Manual priority, returns to AutoDJ and writes only a file", () => {
   const bundle = renderIsolatedStudioHandoffRehearsal(fixture);
   assert.equal(bundle.playlistText, `${fixture.autodjPath}\n`);
-  assert.match(bundle.liquidsoapText, /settings\.server\.telnet := false/);
-  assert.match(bundle.liquidsoapText, /settings\.server\.socket\.permissions := 0o600/);
+  assert.match(bundle.liquidsoapText, /settings\.server\.telnet\.set\(false\)/);
+  assert.match(bundle.liquidsoapText, /settings\.server\.socket\.set\(true\)/);
+  assert.match(bundle.liquidsoapText, /settings\.server\.socket\.permissions\.set\(0o600\)/);
   assert.match(bundle.liquidsoapText, /studio_manual = request\.queue\(id="studio_manual"\)/);
   assert.match(bundle.liquidsoapText, /fallback\(track_sensitive=false, \[studio_manual, autodj\]\)/);
   assert.match(bundle.liquidsoapText, /output\.file\(/);
