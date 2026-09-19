@@ -1,10 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
-import { loadStudioOnlineAdmission } from "../lib/studio-online-admission.mjs";
+import { loadStudioIsolatedHandoffCandidate, loadStudioOnlineAdmission, recheckStudioIsolatedHandoffCandidate } from "../lib/studio-online-admission.mjs";
 
 const instant = new Date("2026-09-21T12:00:00Z");
 const input = { stationId: "station-1", workerOwner: "worker-1", clock: () => instant };
+const isolation = {
+  acknowledgement: "ISOLATED_TEST_STREAM",
+  testListenerUrl: "https://ruvanas_studio_test-radio105network.radioca.st/stream",
+  testSourceHost: "pollux.shoutca.st", testSourcePort: 8198,
+  productionListenerUrl: "https://plus-radio105network.radioca.st/stream",
+  productionSourceHost: "pollux.shoutca.st", productionSourcePort: 8393
+};
 
 function fixture(changes = {}) {
   const asset = {
@@ -131,4 +138,75 @@ test("the optional worker scan uses the snapshot but cannot switch audio or unlo
   assert.match(worker, /loadStudioOnlineAdmission/);
   assert.doesNotMatch(worker, /pushPreparedStudioAudio|studio-encoder-transport/);
   assert.match(playout, /connected: false/);
+});
+
+test("a short-lived isolated handoff candidate binds the exact test endpoint without authorising output", async () => {
+  const rows = fixture();
+  rows.station.streamConfig.streamUrl = isolation.testListenerUrl;
+  rows.station.streamConfig.serverHost = isolation.testSourceHost;
+  rows.station.streamConfig.sourcePort = isolation.testSourcePort;
+  const decision = await loadStudioIsolatedHandoffCandidate(fakeDatabase(rows), { ...input, isolation });
+  assert.equal(decision.ready, true);
+  assert.equal(decision.reason, "ADMISSION_CANDIDATE_NOT_ON_AIR");
+  assert.equal(decision.sourceCommandAllowed, false);
+  assert.equal(decision.listenerVerified, false);
+  assert.equal(decision.candidate.itemId, rows.item.id);
+  assert.equal(decision.candidate.mediaAssetId, rows.asset.id);
+  assert.equal(decision.candidate.source, "pollux.shoutca.st:8198");
+  assert.equal(decision.candidate.validUntil - decision.candidate.checkedAt, 5_000);
+  assert.equal(Object.hasOwn(decision.candidate, "storageKey"), false);
+  assert.equal(JSON.stringify(decision).includes("ciphertext"), false);
+  assert.deepEqual(await loadStudioOnlineAdmission(fakeDatabase(rows), input), { ready: true, reason: "ADMISSION_ELIGIBLE_NOT_ON_AIR" });
+});
+
+test("isolated handoff refuses missing acknowledgement, mismatched test endpoint and protected production source", async () => {
+  const rows = fixture();
+  rows.station.streamConfig.streamUrl = isolation.testListenerUrl;
+  rows.station.streamConfig.serverHost = isolation.testSourceHost;
+  rows.station.streamConfig.sourcePort = isolation.testSourcePort;
+  assert.equal((await loadStudioIsolatedHandoffCandidate(fakeDatabase(rows), input)).reason, "ADMISSION_ISOLATION_REQUIRED");
+  assert.equal((await loadStudioIsolatedHandoffCandidate(fakeDatabase(rows), { ...input, isolation: { ...isolation, acknowledgement: "" } })).reason, "ADMISSION_ISOLATED_TARGET_MISMATCH");
+  const wrong = fixture();
+  wrong.station.streamConfig.streamUrl = isolation.testListenerUrl;
+  wrong.station.streamConfig.serverHost = isolation.testSourceHost;
+  wrong.station.streamConfig.sourcePort = 8199;
+  assert.equal((await loadStudioIsolatedHandoffCandidate(fakeDatabase(wrong), { ...input, isolation })).reason, "ADMISSION_ISOLATED_TARGET_MISMATCH");
+  const production = fixture();
+  production.station.streamConfig.streamUrl = isolation.productionListenerUrl;
+  production.station.streamConfig.serverHost = isolation.productionSourceHost;
+  production.station.streamConfig.sourcePort = isolation.productionSourcePort;
+  const result = await loadStudioIsolatedHandoffCandidate(fakeDatabase(production), { ...input, isolation });
+  assert.equal(result.ready, false);
+  assert.equal(result.candidate, null);
+  assert.equal(result.sourceCommandAllowed, false);
+  assert.equal(result.listenerVerified, false);
+});
+
+test("a second snapshot rejects stale or changed handoffs and still never commands audio", async () => {
+  const rows = fixture();
+  rows.station.streamConfig.streamUrl = isolation.testListenerUrl;
+  rows.station.streamConfig.serverHost = isolation.testSourceHost;
+  rows.station.streamConfig.sourcePort = isolation.testSourcePort;
+  const prepared = await loadStudioIsolatedHandoffCandidate(fakeDatabase(rows), { ...input, isolation });
+  const at = new Date(instant.getTime() + 1_000);
+  const recheck = (database, clock = () => at) => recheckStudioIsolatedHandoffCandidate(database, {
+    candidate: prepared.candidate, isolation, workerOwner: input.workerOwner, clock
+  });
+  const consistent = await recheck(fakeDatabase(rows));
+  assert.equal(consistent.reason, "ADMISSION_RECHECK_CONSISTENT_NOT_ON_AIR");
+  assert.equal(consistent.sourceCommandAllowed, false);
+  assert.equal(consistent.listenerVerified, false);
+  assert.equal((await recheck(fakeDatabase(rows), () => new Date(instant.getTime() + 5_000))).reason, "ADMISSION_CANDIDATE_EXPIRED_OR_INVALID");
+  let ticks = 0;
+  assert.equal((await recheck(fakeDatabase(rows), () => new Date(instant.getTime() + (ticks++ < 2 ? 1_000 : 6_000)))).reason, "ADMISSION_CANDIDATE_EXPIRED_OR_INVALID");
+  const changed = fixture();
+  changed.station.streamConfig.streamUrl = isolation.testListenerUrl;
+  changed.station.streamConfig.serverHost = isolation.testSourceHost;
+  changed.station.streamConfig.sourcePort = isolation.testSourcePort;
+  changed.item.updatedAt = new Date(instant.getTime() + 500);
+  assert.equal((await recheck(fakeDatabase(changed))).reason, "ADMISSION_CANDIDATE_CHANGED");
+  changed.item.rightsReady = false;
+  assert.equal((await recheck(fakeDatabase(changed))).reason, "STUDIO_ITEM_NOT_READY");
+  changed.station.streamConfig.encoderLeaseOwner = "another-worker";
+  assert.equal((await recheck(fakeDatabase(changed))).reason, "ADMISSION_LEASE_UNAVAILABLE");
 });
