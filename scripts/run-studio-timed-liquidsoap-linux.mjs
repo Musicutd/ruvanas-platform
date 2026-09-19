@@ -17,6 +17,11 @@ export function isIsolatedTimedTarget(value) {
   return typeof value === "string" && TARGET_PATTERN.test(value) && path.posix.normalize(value) === value;
 }
 
+export function canAnalyseTimedFileOutput(rendered, details) {
+  const boundedFile = details?.isFile?.() === true && details.size > 20_000 && details.size < 2_000_000;
+  return boundedFile && (rendered?.status === 0 || rendered?.error?.code === "ETIMEDOUT");
+}
+
 function run(binary, args, cwd, timeout) {
   return spawnSync(binary, args, { cwd, timeout, maxBuffer: 1024 * 1024, encoding: "utf8" });
 }
@@ -58,9 +63,10 @@ export async function runSelfOwnedLinuxMp3Rehearsal() {
   const log = String(rendered.stderr || rendered.stdout || "");
   const outputMp3 = path.join(target, "listener-sample.mp3");
   const details = await stat(outputMp3).catch(() => null);
-  const finishedFiniteFile = rendered.error?.code === "ETIMEDOUT" &&
-    log.includes("Source failed (no more tracks) stopping output") && (details?.size ?? 0) > 20_000;
-  if (rendered.status !== 0 && !finishedFiniteFile) return { passed: false, stage: "LIQUIDSOAP_MP3_RENDER_FAILED",
+  // Liquidsoap 2.1.3 may keep a fallible output alive after the finite
+  // playlist ends. A timeout is not success: analyse only a bounded file and
+  // require the decoded duration, order and both crossfades to match exactly.
+  if (!canAnalyseTimedFileOutput(rendered, details)) return { passed: false, stage: "LIQUIDSOAP_MP3_RENDER_FAILED",
     diagnostic: log.slice(-2000), pack, target, mp3TemplateVerified: false,
     sourceCommandAllowed: false, listenerVerified: false };
   const outputPcm = path.join(target, "listener-sample.s16le");
@@ -78,7 +84,8 @@ export async function runSelfOwnedLinuxMp3Rehearsal() {
     analysis, pack, target, outputMp3, outputPcm,
     outputMp3Sha256: sha256(await readFile(outputMp3)), outputPcmSha256: sha256(pcm),
     liquidsoapVersion: "2.1.3", mp3TemplateVerified: analysis.matches,
-    finiteOutputStopped: finishedFiniteFile || rendered.status === 0,
+    finiteOutputStopped: rendered.status === 0,
+    fileVerifiedAfterTimeout: rendered.error?.code === "ETIMEDOUT" && analysis.matches,
     sourceCommandAllowed: false, listenerVerified: false };
 }
 

@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { isIsolatedTimedTarget } from "../scripts/run-studio-timed-liquidsoap-linux.mjs";
+import { canAnalyseTimedFileOutput, isIsolatedTimedTarget } from "../scripts/run-studio-timed-liquidsoap-linux.mjs";
 
 test("Linux MP3 rehearsal accepts only the generated private /tmp target shape", () => {
   assert.equal(isIsolatedTimedTarget("/tmp/ruvanas-timed-self-owned-012345abcdef"), true);
@@ -12,6 +12,17 @@ test("Linux MP3 rehearsal accepts only the generated private /tmp target shape",
     "/app/ruvanas-timed-self-owned-012345abcdef", "C:\\tmp\\ruvanas-timed-self-owned-012345abcdef", null]) {
     assert.equal(isIsolatedTimedTarget(value), false, String(value));
   }
+});
+
+test("only a bounded local output may proceed to exact decoded-audio analysis", () => {
+  const file = (size) => ({ isFile: () => true, size });
+  assert.equal(canAnalyseTimedFileOutput({ status: 0 }, file(100_000)), true);
+  assert.equal(canAnalyseTimedFileOutput({ status: null, error: { code: "ETIMEDOUT" } }, file(100_000)), true);
+  assert.equal(canAnalyseTimedFileOutput({ status: 1 }, file(100_000)), false);
+  assert.equal(canAnalyseTimedFileOutput({ status: null, error: { code: "ENOENT" } }, file(100_000)), false);
+  assert.equal(canAnalyseTimedFileOutput({ status: null, error: { code: "ETIMEDOUT" } }, file(10)), false);
+  assert.equal(canAnalyseTimedFileOutput({ status: null, error: { code: "ETIMEDOUT" } }, file(3_000_000)), false);
+  assert.equal(canAnalyseTimedFileOutput({ status: null, error: { code: "ETIMEDOUT" } }, null), false);
 });
 
 test("Linux MP3 rehearsal rejects caller paths and stays separate from the live worker", async () => {
