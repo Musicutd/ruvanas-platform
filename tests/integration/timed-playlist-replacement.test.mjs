@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import test from "node:test";
 import { PrismaClient } from "@prisma/client";
 import { assertSafeFinalAcceptanceEnvironment } from "../../lib/final-platform-acceptance.mjs";
-import { loadPublishedTimedChannelSequence } from "../../lib/studio-timed-sequence-loader.mjs";
+import { loadPublishedTimedChannelAuthority, loadPublishedTimedChannelSequence } from "../../lib/studio-timed-sequence-loader.mjs";
 
 function isolatedEnvironmentReady() {
   try {
@@ -74,7 +74,7 @@ test("timed playlist publication replaces exactly one future programme and rolls
       } });
     }
 
-    const scheduledDate = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+    const scheduledDate = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
     const draftResponse = await api("/api/programming/autodj-expansion", { method: "POST", cookie: owner.cookie, body: {
       name: "Isolated future block", targetType: "CHANNEL", targetId: channel.id,
       scheduledDate, startTime: "10:00", endTime: "11:00",
@@ -108,6 +108,18 @@ test("timed playlist publication replaces exactly one future programme and rolls
     const schedule = await db.programmeSchedule.findUniqueOrThrow({ where: { channelId_organisationId: { channelId: channel.id, organisationId } } });
     const versionOne = await db.programmeScheduleVersion.findFirstOrThrow({ where: { scheduleId: schedule.id, isActive: true }, include: { items: true } });
     assert.equal(versionOne.items.filter((item) => item.musicModeId === first.musicMode.id).length, 1);
+    const authorityAtStart = await loadPublishedTimedChannelAuthority(db, {
+      organisationId, channelId: channel.id, playlistId: draft.id, clock: () => firstPlan.startsAt
+    });
+    assert.equal(authorityAtStart.sourceCommandAllowed, false);
+    assert.equal(authorityAtStart.listenerVerified, false);
+    const publishedBlock = versionOne.items.find((item) => item.musicModeId === first.musicMode.id);
+    const blockEndsAt = new Date(publishedBlock.startsAt.getTime() + publishedBlock.durationMinutes * 60_000);
+    if (firstPlan.endsAt <= blockEndsAt) {
+      assert.equal(authorityAtStart.consistent, true, authorityAtStart.reason);
+    } else {
+      assert.equal(authorityAtStart.reason, "SEQUENCE_PROGRAMME_AUTHORITY_MISMATCH");
+    }
 
     const regeneratePath = `/api/programming/autodj-expansion/${draft.id}`;
     const regenerated = await api(regeneratePath, { method: "POST", cookie: owner.cookie, body: { action: "REGENERATE" } });
