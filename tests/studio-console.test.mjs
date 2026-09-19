@@ -205,6 +205,10 @@ test("a regenerated draft leaves the previously published playlist visible but n
   assert.equal(log.planned[0].rightsReady, null);
   const route = await readFile(new URL("../app/api/studio/console/route.js", import.meta.url), "utf8");
   assert.match(route, /status: \{ in: \["PUBLISHED", "DRAFT"\] \}, publishedVersion: \{ gt: 0 \}, publishedAt: \{ not: null \}/);
+  assert.match(route, /timedPlaylists\.push\(\{ id: playlist\.id, name: playlist\.name/);
+  const consoleUi = await readFile(new URL("../app/dashboard/studio/BroadcastConsoleClient.js", import.meta.url), "utf8");
+  assert.match(consoleUi, /<TimedPlaylistHandoff playlists=\{data\.dailyLog\?\.timedPlaylists\}/);
+  assert.match(consoleUi, /timedPlaylistId=\$\{encodeURIComponent\(playlist\.id\)\}#workspace-automation/);
 });
 
 test("a clock item crossing another fixed programme is flagged for planning, not playback proof", () => {

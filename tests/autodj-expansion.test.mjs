@@ -121,3 +121,22 @@ test("routes derive tenant and plan server-side and preserve frozen version reco
   assert.match(schema, /model GeneratedPlaylistVersion/); assert.match(schema, /model GeneratedPlaylistItem/);
   assert.match(migration, /GeneratedPlaylistItem_timing_check/); assert.match(player, /licensedCatalogueLevel/);
 });
+
+test("saved timed playlists reopen for review and an unchanged version cannot be published twice", async () => {
+  const [workspace, service, publish] = await Promise.all([
+    readFile(new URL("../app/dashboard/programming/AutoDjExpansionWorkspace.js", import.meta.url), "utf8"),
+    readFile(new URL("../lib/generated-playlist-service.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/programming/autodj-expansion/[playlistId]/publish/route.js", import.meta.url), "utf8")
+  ]);
+  assert.match(workspace, /get\("timedPlaylistId"\)/);
+  assert.match(workspace, /Open a saved timed playlist/);
+  assert.match(workspace, /preview\.currentVersion <= preview\.publishedVersion/);
+  assert.match(workspace, /data\.canPublish && preview\.publishedVersion === 0/);
+  assert.match(service, /current\.currentVersion <= current\.publishedVersion/);
+  assert.match(service, /if \(current\.publishedVersion > 0\)/);
+  assert.match(service, /"REPLACEMENT_NOT_READY"/);
+  assert.match(service, /tx\.generatedPlaylist\.updateMany\(\{/);
+  assert.match(service, /publishedVersion: \{ lt: current\.currentVersion \}/);
+  assert.match(publish, /"ALREADY_PUBLISHED"/);
+  assert.match(publish, /"REPLACEMENT_NOT_READY"/);
+});

@@ -24,17 +24,23 @@ export default function AutoDjExpansionWorkspace() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
-  async function load() {
+  async function load(requestedPlaylistId = null) {
     const [expansionResponse, programmingResponse] = await Promise.all([fetch("/api/programming/autodj-expansion", { cache: "no-store" }), fetch("/api/programming", { cache: "no-store" })]);
     const [expansion, radio] = await Promise.all([expansionResponse.json(), programmingResponse.json()]);
     if (!expansionResponse.ok) throw new Error(expansion.error || "Unable to load AutoDJ.");
     if (!programmingResponse.ok) throw new Error(radio.error || "Unable to load radio targets.");
     setData(expansion); setProgramming(radio);
+    setPreview((current) => expansion.playlists.find((playlist) => playlist.id === (current?.id || requestedPlaylistId)) || null);
+    if (requestedPlaylistId && !expansion.playlists.some((playlist) => playlist.id === requestedPlaylistId)) setError("This saved timed playlist is not available in this organisation's recent list.");
     const firstTarget = expansion.targets[0];
     setTimed((value) => ({ ...value, targetKey: value.targetKey || (firstTarget ? `${firstTarget.type}:${firstTarget.id}` : "") }));
     setContinuous((value) => ({ ...value, targetKey: value.targetKey || (firstTarget ? `${firstTarget.type}:${firstTarget.id}` : ""), defaultMusicModeId: value.defaultMusicModeId || radio.musicModes.find((musicMode) => musicMode.playableTrackCount)?.id || "" }));
   }
-  useEffect(() => { load().catch((loadError) => setError(loadError.message)); }, []);
+  useEffect(() => {
+    const requestedPlaylistId = new URLSearchParams(window.location.search).get("timedPlaylistId");
+    if (requestedPlaylistId) setMode("TIMED");
+    load(requestedPlaylistId).catch((loadError) => setError(loadError.message));
+  }, []);
   const selectedTarget = (key) => { const [type, id] = key.split(":"); return data?.targets.find((target) => target.type === type && target.id === id) || null; };
   const timedTarget = useMemo(() => selectedTarget(timed.targetKey), [data, timed.targetKey]);
   const continuousTarget = useMemo(() => selectedTarget(continuous.targetKey), [data, continuous.targetKey]);
@@ -88,6 +94,10 @@ export default function AutoDjExpansionWorkspace() {
       <button type="button" className={mode === "CONTINUOUS" ? styles.autodjModeActive : styles.autodjModeCard} onClick={() => setMode("CONTINUOUS")}><strong>Continuous AutoDJ</strong><span>Set up non-stop music</span><small>Ruvanas resumes automatically after a temporary live or scheduled block.</small></button>
       <button type="button" className={mode === "TIMED" ? styles.autodjModeActive : styles.autodjModeCard} onClick={() => setMode("TIMED")}><strong>Timed Playlist Generator</strong><span>Generate a timed playlist</span><small>Build and review a finite block such as 10:00–14:00.</small></button>
     </div>
+    {mode === "TIMED" && data.playlists.length ? <div className={styles.formGrid}>
+      <label><span>Open a saved timed playlist</span><select value={preview?.id || ""} onChange={(event) => { setPreview(data.playlists.find((playlist) => playlist.id === event.target.value) || null); setError(""); setNotice(""); }}><option value="">Choose a saved playlist</option>{data.playlists.map((playlist) => <option key={playlist.id} value={playlist.id}>{playlist.name} · {playlist.scheduledDate} · {playlist.status.toLowerCase()}</option>)}</select></label>
+      {preview ? <p className={styles.panelIntro}>Reviewing {preview.name}: published version {preview.publishedVersion || "none"}, latest version {preview.currentVersion}. A newer draft does not replace the published version. The fields below create a new playlist.{preview.publishedVersion > 0 ? " Existing published playlists are review-only until replacement-safe publication is implemented." : " Regenerate uses this saved draft's settings."}</p> : null}
+    </div> : null}
     {error ? <div className={styles.error} role="alert">{error}</div> : null}{notice ? <div className={styles.notice} role="status">{notice}</div> : null}
     <div className={styles.formGrid}>
       <label><span>Target</span><select value={form.targetKey} onChange={(event) => setForm({ ...form, targetKey: event.target.value })}><option value="">Choose a target</option>{data.targets.map((target) => <option key={`${target.type}:${target.id}`} value={`${target.type}:${target.id}`}>{target.product} · {target.label}</option>)}</select></label>
@@ -101,7 +111,7 @@ export default function AutoDjExpansionWorkspace() {
       {version.warnings.map((warning) => <div className={styles.compatibilityWarning} key={warning}>{warning}</div>)}
       <div className={styles.autodjPreviewTable}><div className={styles.autodjPreviewHead}><span>#</span><span>Start–end</span><span>Artist — title</span><span>Genre</span><span>Duration</span><span>Source</span></div>{version.items.map((item) => <div className={styles.autodjPreviewRow} key={item.id}><span>{item.position + 1}</span><span>{itemTime(preview, item.startOffsetSeconds)}–{itemTime(preview, item.endOffsetSeconds)}</span><strong>{item.artist} — {item.title}</strong><span>{item.genreCode.replaceAll("_", " ")}</span><span>{duration(item.durationSeconds)}</span><span>{item.sourceScope.replaceAll("_", " ")}</span></div>)}</div>
       <p className={styles.panelIntro}>Genre distribution: {Object.entries(version.genreDistribution).map(([genre, count]) => `${genre.replaceAll("_", " ")} ${count}`).join(" · ") || "No eligible music"}</p>
-      <div className={styles.actionBar}><button type="button" className={styles.secondaryButton} disabled={busy} onClick={() => action("regenerate")}>Regenerate new version</button><span className={styles.secondaryButton}>Draft saved</span>{data.canPublish ? <button type="button" className={styles.primaryButton} disabled={busy || !version.items.length} onClick={() => action("publish")}>Publish / schedule</button> : null}</div>
+      <div className={styles.actionBar}>{preview.publishedVersion === 0 ? <button type="button" className={styles.secondaryButton} disabled={busy || !data.canAuthor} onClick={() => action("regenerate")}>Regenerate new draft</button> : null}<span className={styles.secondaryButton}>{preview.publishedVersion > 0 ? "Published playlist · review only" : "Draft awaiting review"}</span>{data.canPublish && preview.publishedVersion === 0 ? <button type="button" className={styles.primaryButton} disabled={busy || !version.items.length || preview.currentVersion <= preview.publishedVersion || preview.status === "INVALIDATED"} onClick={() => action("publish")}>Publish / schedule</button> : null}</div>
     </div> : null}
   </section>;
 }

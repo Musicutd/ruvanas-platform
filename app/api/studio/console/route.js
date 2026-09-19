@@ -74,16 +74,18 @@ async function dailyLog(organisationId, channelId, productFamily, requestedDate)
   }
   let scheduledEntries = scheduled;
   const generatedItems = [];
+  const timedPlaylists = [];
   for (const playlist of generated) {
     const playlistStart = localMinuteToUtc(date, playlist.startMinute, playlist.timezone);
     const projection = studioTimedPlaylistLogEntries(playlist, playlistStart, scheduledEntries);
     scheduledEntries = projection.scheduled;
     generatedItems.push(...projection.generated);
+    if (projection.generated.some((item) => item.startsAt >= start && item.startsAt < end)) timedPlaylists.push({ id: playlist.id, name: playlist.name, status: playlist.status, publishedVersion: playlist.publishedVersion, currentVersion: playlist.currentVersion });
   }
   const campaignItems = campaigns.map((item) => ({ id: item.id, sourceType: "CAMPAIGN", label: item.campaign?.name || "Scheduled campaign", startsAt: item.plannedStart, durationMs: Math.max(0, item.expiresAt - item.plannedStart), hardEvent: true }));
   const liveItems = live.map((item) => ({ id: item.id, sourceType: "LIVE_SESSION", label: item.title, startsAt: item.scheduledStart, durationMs: item.scheduledEnd - item.scheduledStart, hardEvent: true }));
   const manualItems = manual.flatMap((session) => session.items.filter((item) => item.estimatedStartAt).map((item) => ({ id: item.id, sourceType: "MANUAL_QUEUE", label: item.title, startsAt: item.estimatedStartAt, durationMs: item.durationMs, locked: item.locked })));
-  return { date, timezone, ...deriveStudioDailyLog({ scheduled: scheduledEntries, generated: generatedItems, campaigns: campaignItems, live: liveItems, manual: manualItems, proof, dayStart: start, dayEnd: end }) };
+  return { date, timezone, timedPlaylists, ...deriveStudioDailyLog({ scheduled: scheduledEntries, generated: generatedItems, campaigns: campaignItems, live: liveItems, manual: manualItems, proof, dayStart: start, dayEnd: end }) };
 }
 
 export async function GET(request) {
