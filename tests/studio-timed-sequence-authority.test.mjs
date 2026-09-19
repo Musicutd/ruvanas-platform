@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
-import { inspectTimedSequenceAuthority, inspectTimedSequenceItemAdmission } from "../lib/studio-timed-sequence-authority.mjs";
+import { inspectTimedSequenceAuthority, inspectTimedSequenceContinuation, inspectTimedSequenceItemAdmission } from "../lib/studio-timed-sequence-authority.mjs";
 
 const start = new Date("2026-10-02T10:00:00Z");
 const end = new Date(start.getTime() + 720_000);
@@ -55,7 +55,7 @@ test("stale, early and changed programme evidence fails closed", () => {
 
 test("the existing worker cannot use this read-only check as a source switch", async () => {
   const worker = await readFile(new URL("../scripts/online-radio-encoder-worker.mjs", import.meta.url), "utf8");
-  assert.doesNotMatch(worker, /inspectTimedSequenceAuthority|studio-timed-sequence-authority|loadPublishedTimedChannelAuthority/);
+  assert.doesNotMatch(worker, /inspectTimedSequenceAuthority|inspectTimedSequenceContinuation|studio-timed-sequence-authority|loadPublishedTimedChannelAuthority|loadPublishedTimedChannelContinuation/);
   assert.equal(inspect().sourceCommandAllowed, false);
 });
 
@@ -84,4 +84,39 @@ test("a later frozen item needs its exact boundary, original programme and curre
   assert.equal(reason({ streamConfig: { ...streamConfig, encoderLeaseOwner: "other-worker" } }), "SEQUENCE_ITEM_ENCODER_LEASE_UNAVAILABLE");
   assert.equal(reason({ streamConfig: { ...streamConfig, encoderLeaseUntil: boundary } }), "SEQUENCE_ITEM_ENCODER_LEASE_UNAVAILABLE");
   assert.equal(reason({ streamConfig: { ...streamConfig, outboundAutoDjEnabled: false } }), "SEQUENCE_ITEM_ENCODER_LEASE_UNAVAILABLE");
+});
+
+test("in-track continuation is a fresh read-only diagnostic that fails closed on lost authority", () => {
+  const instant = new Date(start.getTime() + 300_000);
+  const frozen = { ...sequence(), version: 2, capturedAt: instant,
+    items: [{ position: 0, trackId: "a", startOffsetSeconds: 0, endOffsetSeconds: 240 },
+      { position: 1, trackId: "b", startOffsetSeconds: 238, endOffsetSeconds: 482 },
+      { position: 2, trackId: "a", startOffsetSeconds: 480, endOffsetSeconds: 720 }] };
+  const currentAuthority = { ...authority(), capturedAt: instant };
+  const streamConfig = { outboundAutoDjEnabled: true, encoderLeaseOwner: "worker-1",
+    encoderLeaseUntil: new Date(instant.getTime() + 30_000) };
+  const scope = { sequence: frozen, authority: currentAuthority, streamConfig,
+    expectedVersion: 2, expectedTrackId: "b", position: 1, workerOwner: "worker-1", instant };
+  assert.deepEqual(inspectTimedSequenceContinuation(scope), {
+    consistent: true, reason: "SEQUENCE_CONTINUATION_CONSISTENT_NOT_ON_AIR",
+    sourceCommandAllowed: false, listenerVerified: false
+  });
+  const reason = (change) => inspectTimedSequenceContinuation({ ...scope, ...change }).reason;
+  assert.equal(reason({ expectedVersion: 3 }), "SEQUENCE_CONTINUATION_FROZEN_ITEM_MISMATCH");
+  assert.equal(reason({ expectedTrackId: "a" }), "SEQUENCE_CONTINUATION_FROZEN_ITEM_MISMATCH");
+  assert.equal(reason({ instant: new Date(start.getTime() + 482_000) }), "SEQUENCE_CONTINUATION_ITEM_NOT_CURRENT");
+  assert.equal(reason({ sequence: { ...frozen, capturedAt: new Date(instant.getTime() - 1_000) } }),
+    "SEQUENCE_CONTINUATION_PLAN_STALE");
+  assert.equal(reason({ authority: { ...currentAuthority, capturedAt: new Date(instant.getTime() - 1_000) } }),
+    "SEQUENCE_CONTINUATION_AUTHORITY_INVALID");
+  assert.equal(reason({ authority: { ...currentAuthority, candidates: [candidate(), { ...candidate(), sourceId: "emergency" }] } }),
+    "SEQUENCE_CONTINUATION_COMPETING_SOURCE_NOT_ARBITRATED");
+  assert.equal(reason({ authority: { ...currentAuthority, requiredInsertions: [{}] } }),
+    "SEQUENCE_CONTINUATION_INSERTION_NOT_ARBITRATED");
+  assert.equal(reason({ authority: { ...currentAuthority, candidates: [{ ...candidate(), available: false }] } }),
+    "SEQUENCE_CONTINUATION_PROGRAMME_MISMATCH");
+  assert.equal(reason({ streamConfig: { ...streamConfig, encoderLeaseOwner: "other-worker" } }),
+    "SEQUENCE_CONTINUATION_ENCODER_LEASE_UNAVAILABLE");
+  assert.equal(reason({ streamConfig: { ...streamConfig, encoderLeaseUntil: new Date(instant.getTime() + 1_000) } }),
+    "SEQUENCE_CONTINUATION_ENCODER_LEASE_UNAVAILABLE");
 });
