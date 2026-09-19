@@ -2926,6 +2926,33 @@ model StationStreamConfig {
   @@index([outboundAutoDjEnabled, encoderLeaseUntil])
 }
 
+// Provider accounts are prepared outside Ruvanas and only claimed here after
+// verification. stationId is intentionally not a foreign key: deleting a
+// subscriber station must never silently return its stream credentials to the
+// available pool. Reclaiming a slot requires a separate audited workflow.
+model PreprovisionedRadioStream {
+  id                      String    @id @default(cuid())
+  providerKey             String    @default("CENTOVA_CAST")
+  centovaUsername         String    @unique
+  streamUrl               String    @unique
+  serverHost              String
+  serverPort              Int
+  sourcePort              Int
+  sourceUsername          String?
+  sourcePasswordEncrypted String?
+  listenerLimit           Int
+  maxBitrateKbps          Int
+  status                  String    @default("QUARANTINED")
+  verifiedAt              DateTime?
+  stationId               String?   @unique
+  claimedAt               DateTime?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  @@unique([serverHost, sourcePort])
+  @@index([status, maxBitrateKbps, listenerLimit])
+}
+
 model StationStreamHealthSample {
   id             String            @id @default(cuid())
   organisationId String
