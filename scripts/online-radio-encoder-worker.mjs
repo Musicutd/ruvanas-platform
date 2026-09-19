@@ -12,6 +12,7 @@ import { resolveEntitlements } from "../lib/entitlements.mjs";
 import { isPrivateNetworkAddress } from "../lib/stream-source-health.mjs";
 import { eligibleOnlineRadioRotation, liquidsoapScript, rotationFingerprint } from "../lib/online-radio-output.mjs";
 import { inspectStudioOnlineHandoff } from "../lib/studio-online-shadow.mjs";
+import { createStudioShadowScan } from "../lib/studio-shadow-scan.mjs";
 
 const stationId = String(process.env.RUVANAS_AUTODJ_STATION_ID || "");
 if (!/^c[a-z0-9]{10,40}$/i.test(stationId)) throw new Error("RUVANAS_AUTODJ_STATION_ID must identify one Online Radio station.");
@@ -33,12 +34,16 @@ const studioShadowEnabled = process.env.RUVANAS_STUDIO_HANDOFF_SHADOW === "1";
 let stopping = false;
 let running = null;
 let lastWaitingReason = null;
-let lastShadowReason = null;
 for (const signal of ["SIGTERM", "SIGINT"]) process.once(signal, () => { stopping = true; if (running?.child && running.child.exitCode === null) running.child.kill("SIGTERM"); });
 
 function event(name, details = {}) {
   console.log(JSON.stringify({ service: "ONLINE_RADIO_ENCODER", event: name, stationId, ...details }));
 }
+
+const shadowScan = createStudioShadowScan({
+  inspect: (input) => inspectStudioOnlineHandoff(prisma, input),
+  report: (state) => event("studio_handoff_shadow", state)
+});
 
 async function stopOutput() {
   const current = running;
@@ -173,13 +178,11 @@ try {
         lastWaitingReason = null;
       }
       if (studioShadowEnabled && leaseHeld && !stopping) {
-        // Diagnostic errors must never stop or restart the existing AutoDJ source.
-        const shadow = await inspectStudioOnlineHandoff(prisma, {
+        // The diagnostic is read-only and never blocks an AutoDJ lease renewal.
+        shadowScan.start({
           rotation, entitlements: rotation.entitlements, configuredGenres: rotation.configuredGenres,
           workerOwner: owner, instant: new Date()
-        }).catch(() => ({ ready: false, reason: "SHADOW_CHECK_FAILED" }));
-        if (shadow.reason !== lastShadowReason) event("studio_handoff_shadow", { ready: shadow.ready, reason: shadow.reason });
-        lastShadowReason = shadow.reason;
+        });
       }
     } catch (error) {
       await stopOutput();
@@ -190,6 +193,7 @@ try {
 } finally {
   await stopOutput();
   await releaseLease().catch(() => undefined);
+  await shadowScan.close();
   await prisma.$disconnect();
   storage.destroy();
 }
