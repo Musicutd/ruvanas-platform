@@ -190,6 +190,23 @@ test("published timed playlist tracks replace only their matching programme dura
   assert.equal(localMinuteToUtc("2026-03-29", 180, "Europe/Malta").toISOString(), "2026-03-29T01:00:00.000Z");
 });
 
+test("a regenerated draft leaves the previously published playlist visible but not rights-certified", async () => {
+  const publishedAt = new Date("2026-09-17T10:00:00Z");
+  const playlist = {
+    id: "playlist-1", status: "DRAFT", currentVersion: 3, publishedVersion: 2, publishedAt,
+    versions: [
+      { version: 3, publishedAt: null, items: [{ id: "draft-track", track: { artist: "Draft", title: "Not live" }, startOffsetSeconds: 0, durationSeconds: 100 }] },
+      { version: 2, publishedAt, items: [{ id: "published-track", track: { artist: "Published", title: "Still selected" }, startOffsetSeconds: 0, durationSeconds: 100 }] }
+    ]
+  };
+  const projection = studioTimedPlaylistLogEntries(playlist, publishedAt);
+  assert.deepEqual(projection.generated.map((item) => item.id), ["published-track"]);
+  const log = deriveStudioDailyLog({ generated: projection.generated, dayStart: "2026-09-17T00:00:00Z", dayEnd: "2026-09-18T00:00:00Z" });
+  assert.equal(log.planned[0].rightsReady, null);
+  const route = await readFile(new URL("../app/api/studio/console/route.js", import.meta.url), "utf8");
+  assert.match(route, /status: \{ in: \["PUBLISHED", "DRAFT"\] \}, publishedVersion: \{ gt: 0 \}, publishedAt: \{ not: null \}/);
+});
+
 test("a clock item crossing another fixed programme is flagged for planning, not playback proof", () => {
   const first = studioProgrammeLogEntries({
     itemId: "morning", sourceType: "RADIO_CLOCK", sourceId: "clock-1", label: "Morning",

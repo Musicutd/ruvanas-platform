@@ -3,9 +3,28 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { assertGenreSelection, licensedGenresForLevel, normaliseGenreCode } from "../lib/autodj-genre-entitlements.mjs";
 import { generateTimedPlaylist, invalidationForCatalogueDowngrade, parseTimedPlaylistInput } from "../lib/timed-playlist-generator.mjs";
+import { playableMusicModeEntries, publishedGeneratedPlaylist } from "../lib/music-mode-playback.mjs";
 import { resolveUnifiedPlayout, PLAYOUT_SOURCE_PRIORITIES } from "../lib/playout-resolver.mjs";
 
 const codes = (level, extra = []) => licensedGenresForLevel(level, extra).map((genre) => genre.code);
+
+test("playback keeps the published playlist's genre policy while a newer version is draft", async () => {
+  const previouslyPublished = { status: "DRAFT", currentVersion: 3, publishedVersion: 2, selectedGenreCodes: ["POP"] };
+  assert.equal(publishedGeneratedPlaylist({ generatedPlaylists: [previouslyPublished] }), previouslyPublished);
+  assert.equal(publishedGeneratedPlaylist({ generatedPlaylists: [{ ...previouslyPublished, publishedVersion: 0 }] }), null);
+  assert.equal(publishedGeneratedPlaylist({ generatedPlaylists: [{ ...previouslyPublished, status: "INVALIDATED" }] }), null);
+  assert.equal(publishedGeneratedPlaylist({ generatedPlaylists: [{ ...previouslyPublished, status: "ARCHIVED" }] }), null);
+  const resolver = await readFile(new URL("../lib/player-programming.js", import.meta.url), "utf8");
+  assert.match(resolver, /generatedPlaylists: \{ where: \{ status: \{ in: \["PUBLISHED", "DRAFT"\] \}, publishedVersion: \{ gt: 0 \} \}/);
+  const track = (id, genre) => ({ id, status: "READY", rightsReviewStatus: "APPROVED", permittedUses: ["ONLINE_RADIO"], permittedTerritories: "MT", mediaAsset: {
+    status: "READY", mediaType: "MUSIC", libraryType: "RUVANAS_CATALOGUE", organisationId: null, licensedCatalogue: true,
+    genres: [{ mediaGenre: { slug: genre } }]
+  } });
+  const musicMode = { organisationId: "org-1", generatedPlaylists: [previouslyPublished], tracks: [
+    { weight: 100, track: track("pop", "pop") }, { weight: 100, track: track("rock", "rock") }
+  ] };
+  assert.deepEqual(playableMusicModeEntries(musicMode, new Date("2026-09-18"), { organisationId: "org-1", requiredUse: "ONLINE_RADIO", territory: "MT", licensedCatalogueLevel: "FOCUSED" }).map((entry) => entry.track.id), ["pop"]);
+});
 
 test("Licensed Music Catalogue tiers expose the exact fixed genre matrix", () => {
   assert.deepEqual(codes("NONE"), []);
