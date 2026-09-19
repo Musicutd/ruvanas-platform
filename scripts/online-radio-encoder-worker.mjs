@@ -90,7 +90,7 @@ async function readRotation() {
   if (!rotation.ready) return rotation;
   const bitrateKbps = station.streamConfig.bitrateKbps || Math.min(128, station.maxBitrateKbps, entitlements.maxBitrateKbps || 128);
   if (bitrateKbps > station.maxBitrateKbps || bitrateKbps > (entitlements.maxBitrateKbps || 0)) return { ready: false, reason: "BITRATE_NOT_ALLOWED" };
-  return { ...rotation, bitrateKbps, fingerprint: rotationFingerprint(rotation), entitlements, configuredGenres: genres };
+  return { ...rotation, bitrateKbps, fingerprint: rotationFingerprint({ ...rotation, bitrateKbps }), entitlements, configuredGenres: genres };
 }
 
 async function claimLease() {
