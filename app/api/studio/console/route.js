@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireActiveStudio } from "@/lib/studio-access";
 import { ORGANISATION_CONTENT_ROLES } from "@/lib/permissions.mjs";
 import { compileProgrammeScheduleHorizon, localMinuteToUtc } from "@/lib/advanced-scheduler.mjs";
-import { deriveStudioDailyLog, normalizeStudioConsoleLayout, studioSpotBoard, STUDIO_CART_BEHAVIOURS, STUDIO_MIX_POINT_TYPES, validateStudioMixPoints } from "@/lib/studio-console.mjs";
+import { deriveStudioDailyLog, normalizeStudioConsoleLayout, studioProgrammeLogEntries, studioSpotBoard, STUDIO_CART_BEHAVIOURS, STUDIO_MIX_POINT_TYPES, validateStudioMixPoints } from "@/lib/studio-console.mjs";
 import { studioManualOutputAvailability } from "@/lib/studio-playout.mjs";
 
 export const dynamic = "force-dynamic";
@@ -52,7 +52,7 @@ async function dailyLog(organisationId, channelId, productFamily, requestedDate)
   const schedule = await prisma.programmeSchedule.findFirst({
     where: { organisationId, channelId },
     include: { versions: { where: { status: "PUBLISHED", isActive: true }, orderBy: { version: "desc" }, take: 1,
-      include: { items: { include: { musicMode: { select: { id: true, name: true, status: true } }, radioClock: { select: { id: true, name: true, status: true, publishedVersion: true, items: { orderBy: { position: "asc" }, select: { id: true, label: true, type: true, offsetSeconds: true, durationSeconds: true } } } }, schoolRundown: { select: { id: true, status: true, episode: { select: { title: true } } } } } } } } }
+      include: { items: { include: { musicMode: { select: { id: true, name: true, status: true } }, radioClock: { select: { id: true, name: true, status: true, version: true, publishedVersion: true, items: { orderBy: { position: "asc" }, select: { id: true, label: true, type: true, offsetSeconds: true, durationSeconds: true } } } }, schoolRundown: { select: { id: true, status: true, episode: { select: { title: true } } } } } } } } }
   });
   const timezone = schedule?.timezone || "UTC";
   const date = requestedDate || new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
@@ -68,11 +68,8 @@ async function dailyLog(organisationId, channelId, productFamily, requestedDate)
   if (schedule?.versions?.[0]) {
     const projection = compileProgrammeScheduleHorizon(schedule.versions[0], { timezone, startsAt: start, days: 1 });
     for (const occurrence of projection.occurrences) {
-      scheduled.push({ id: occurrence.itemId, sourceType: occurrence.sourceType, sourceId: occurrence.sourceId, label: occurrence.label, startsAt: occurrence.startsAt, durationMs: occurrence.endsAt - occurrence.startsAt, hardEvent: true });
       const clock = schedule.versions[0].items.find((item) => item.id === occurrence.itemId)?.radioClock;
-      if (clock?.publishedVersion) for (const item of clock.items) {
-        scheduled.push({ id: `clock:${occurrence.itemId}:${item.id}`, sourceType: `RADIO_CLOCK_${item.type}`, sourceId: item.id, label: item.label, startsAt: new Date(occurrence.startsAt.getTime() + item.offsetSeconds * 1000), durationMs: item.durationSeconds * 1000, locked: true });
-      }
+      scheduled.push(...studioProgrammeLogEntries(occurrence, clock));
     }
   }
   const generatedItems = generated.flatMap((playlist) => (playlist.versions.find((version) => version.version === playlist.publishedVersion)?.items || []).map((item) => ({ id: item.id, sourceType: "TIMED_PLAYLIST", sourceId: playlist.id, label: `${item.track.artist} — ${item.track.title}`, startsAt: new Date(start.getTime() + playlist.startMinute * 60_000 + item.startOffsetSeconds * 1000), durationMs: item.durationSeconds * 1000, locked: true })));

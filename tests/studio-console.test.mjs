@@ -11,6 +11,8 @@ import {
   STUDIO_CONSOLE_PANELS,
   safeStudioMixTiming,
   studioConsoleNowNext,
+  studioClockBoundaryConflicts,
+  studioProgrammeLogEntries,
   studioSpotBoard,
   studioMixDefaults,
   studioTimingToNextHardEvent,
@@ -111,6 +113,61 @@ test("Daily Log keeps planned timing distinct from verified play events", () => 
   assert.equal(log.planned[0].actualStartAt, null);
   assert.equal(log.planned[1].timingVarianceMs, 0);
   assert.equal(studioTimingToNextHardEvent(log, new Date("2026-09-17T10:10:00Z")).deltaMs, -1_800_000);
+});
+
+test("Radio Clock programme headers do not double-count their items or delay intentional overlaps", async () => {
+  const occurrence = {
+    itemId: "programme-1", sourceType: "RADIO_CLOCK", sourceId: "clock-1", label: "Morning hour",
+    startsAt: new Date("2026-09-17T10:00:00Z"), endsAt: new Date("2026-09-17T11:00:00Z")
+  };
+  const clock = { status: "PUBLISHED", version: 2, publishedVersion: 2, items: [
+    { id: "intro", type: "MUSIC_MODE", label: "Opening", offsetSeconds: 0, durationSeconds: 1860 },
+    { id: "finish", type: "MUSIC_MODE", label: "Close", offsetSeconds: 1800, durationSeconds: 1800 }
+  ] };
+  const entries = studioProgrammeLogEntries(occurrence, clock);
+  assert.equal(entries[0].durationMs, 0);
+  assert.equal(entries[0].programmeBoundary, true);
+  assert.equal(entries.length, 3);
+  const unpublishedEdit = studioProgrammeLogEntries(occurrence, { ...clock, version: 3 });
+  assert.equal(unpublishedEdit.length, 1);
+  assert.equal(unpublishedEdit[0].durationMs, 3_600_000);
+  assert.notEqual(entries[0].id, studioProgrammeLogEntries({ ...occurrence, startsAt: new Date("2026-09-17T12:00:00Z") }, clock)[0].id);
+  const log = deriveStudioDailyLog({ dayStart: "2026-09-17T00:00:00Z", dayEnd: "2026-09-18T00:00:00Z", scheduled: entries });
+  assert.equal(log.planned[1].estimatedStartAt, "2026-09-17T10:00:00.000Z");
+  assert.equal(log.planned[2].estimatedStartAt, "2026-09-17T10:30:00.000Z");
+  assert.deepEqual(studioClockBoundaryConflicts(log), []);
+  const [route, ui] = await Promise.all([
+    readFile(new URL("../app/api/studio/console/route.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/dashboard/studio/BroadcastConsoleClient.js", import.meta.url), "utf8")
+  ]);
+  assert.match(route, /studioProgrammeLogEntries\(occurrence, clock\)/);
+  assert.match(ui, /studioClockBoundaryConflicts\(data\?\.dailyLog\)/);
+});
+
+test("a clock item crossing another fixed programme is flagged for planning, not playback proof", () => {
+  const first = studioProgrammeLogEntries({
+    itemId: "morning", sourceType: "RADIO_CLOCK", sourceId: "clock-1", label: "Morning",
+    startsAt: new Date("2026-09-17T10:00:00Z"), endsAt: new Date("2026-09-17T11:00:00Z")
+  }, { status: "PUBLISHED", version: 1, publishedVersion: 1, items: [
+    { id: "early", type: "MUSIC_MODE", label: "Opening sweep", offsetSeconds: 0, durationSeconds: 3000 },
+    { id: "late", type: "MUSIC_MODE", label: "Late sweep", offsetSeconds: 3000, durationSeconds: 600 }
+  ] });
+  const second = studioProgrammeLogEntries({
+    itemId: "midday", sourceType: "MUSIC_MODE", sourceId: "mode-2", label: "Midday",
+    startsAt: new Date("2026-09-17T10:55:00Z"), endsAt: new Date("2026-09-17T11:55:00Z")
+  });
+  const log = deriveStudioDailyLog({ dayStart: "2026-09-17T00:00:00Z", dayEnd: "2026-09-18T00:00:00Z", scheduled: [...first, ...second] });
+  const conflicts = studioClockBoundaryConflicts(log);
+  assert.equal(conflicts.length, 1);
+  assert.equal(conflicts[0].clockLabel, "Late sweep");
+  assert.equal(conflicts[0].boundaryLabel, "Midday");
+  assert.equal(conflicts[0].overlapMs, 300_000);
+  assert.equal("actualStartAt" in conflicts[0], false);
+  assert.equal(log.actual.length, 0);
+  assert.equal(studioProgrammeLogEntries({
+    itemId: "plain", sourceType: "MUSIC_MODE", sourceId: "mode-3", label: "Plain",
+    startsAt: new Date("2026-09-17T13:00:00Z"), endsAt: new Date("2026-09-17T14:00:00Z")
+  })[0].durationMs, 3_600_000);
 });
 
 test("Daily Log times use the channel timezone and distinguish the repeated DST hour", async () => {
