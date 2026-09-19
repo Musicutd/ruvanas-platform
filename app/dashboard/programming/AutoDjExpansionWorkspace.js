@@ -20,6 +20,7 @@ export default function AutoDjExpansionWorkspace() {
   const [timed, setTimed] = useState(initialTimed);
   const [continuous, setContinuous] = useState({ targetKey: "", enabled: true, state: "ACTIVE", defaultMusicModeId: "", backupMusicModeId: "", playbackPolicy: "RUN_24_7", sourceScopes: ["SUBSCRIBER_LIBRARY"], selectedGenreCodes: [] });
   const [preview, setPreview] = useState(null);
+  const [reviewVersion, setReviewVersion] = useState("PUBLISHED");
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -69,7 +70,7 @@ export default function AutoDjExpansionWorkspace() {
       if (!timedTarget) throw new Error("Choose a target.");
       const response = await fetch("/api/programming/autodj-expansion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...timed, targetType: timedTarget.type, targetId: timedTarget.id }) });
       const payload = await response.json(); if (!response.ok) throw new Error(payload.error || "Unable to generate the playlist.");
-      setPreview(payload.playlist); setNotice("Draft generated. Review the running order before publishing."); await load();
+      setPreview(payload.playlist); setReviewVersion("DRAFT"); setNotice("Draft generated. Review the running order before publishing."); await load();
     } catch (generateError) { setError(generateError.message); } finally { setBusy(""); }
   }
 
@@ -79,14 +80,17 @@ export default function AutoDjExpansionWorkspace() {
       const endpoint = actionName === "publish" ? `/api/programming/autodj-expansion/${preview.id}/publish` : `/api/programming/autodj-expansion/${preview.id}`;
       const response = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "REGENERATE" }) });
       const payload = await response.json(); if (!response.ok) throw new Error(payload.error || `Unable to ${actionName} the playlist.`);
-      setPreview(payload.playlist); setNotice(actionName === "publish" ? "Playlist saved to the programming schedule. Listener output and exact track order are not yet verified." : "A new draft version was generated. The published version was not changed."); await load();
+      setPreview(payload.playlist); setReviewVersion(actionName === "publish" ? "PUBLISHED" : "DRAFT"); setNotice(actionName === "publish" ? "Playlist saved to the programming schedule. Listener output and exact track order are not yet verified." : "A new draft version was generated. The published version was not changed."); await load();
     } catch (actionError) { setError(actionError.message); } finally { setBusy(""); }
   }
 
   if (!data || !programming) return <section className={styles.panel}><div className={error ? styles.error : styles.loading}>{error || "Loading the AutoDJ workspace…"}</div></section>;
   const form = mode === "CONTINUOUS" ? continuous : timed;
   const setForm = mode === "CONTINUOUS" ? setContinuous : setTimed;
-  const version = preview?.versions.find((entry) => entry.version === preview.currentVersion);
+  const hasNewerDraft = preview?.publishedVersion > 0 && preview.currentVersion > preview.publishedVersion;
+  const displayedVersion = reviewVersion === "DRAFT" && hasNewerDraft ? preview.currentVersion : preview?.publishedVersion || preview?.currentVersion;
+  const version = preview?.versions.find((entry) => entry.version === displayedVersion);
+  const showingPublished = preview?.publishedVersion > 0 && version?.version === preview.publishedVersion;
   return <section className={styles.panel} aria-labelledby="autodj-expansion-title">
     <div className={styles.sectionHeading}><div><p className={styles.kicker}>AUTODJ</p><h2 id="autodj-expansion-title">Choose how you want music to run</h2></div><span className={styles.permission}>{data.catalogueLevel.toLowerCase()} catalogue</span></div>
     <p className={styles.panelIntro}>Use non-stop music for simple operation, or build a reviewed sequence for a specific time. Schedules, live content, school messages and promotions keep priority.</p>
@@ -96,8 +100,9 @@ export default function AutoDjExpansionWorkspace() {
     </div>
     {mode === "TIMED" ? <div className={styles.compatibilityWarning} role="note">Publishing saves a programming plan, not proof of listener playback. For Online Radio, the current Ruvanas Centova worker plays from the Continuous AutoDJ pool, not this playlist&apos;s exact running order.</div> : null}
     {mode === "TIMED" && data.playlists.length ? <div className={styles.formGrid}>
-      <label><span>Open a saved timed playlist</span><select value={preview?.id || ""} onChange={(event) => { setPreview(data.playlists.find((playlist) => playlist.id === event.target.value) || null); setError(""); setNotice(""); }}><option value="">Choose a saved playlist</option>{data.playlists.map((playlist) => <option key={playlist.id} value={playlist.id}>{playlist.name} · {playlist.scheduledDate} · {playlist.status.toLowerCase()}</option>)}</select></label>
+      <label><span>Open a saved timed playlist</span><select value={preview?.id || ""} onChange={(event) => { setPreview(data.playlists.find((playlist) => playlist.id === event.target.value) || null); setReviewVersion("PUBLISHED"); setError(""); setNotice(""); }}><option value="">Choose a saved playlist</option>{data.playlists.map((playlist) => <option key={playlist.id} value={playlist.id}>{playlist.name} · {playlist.scheduledDate} · {playlist.publishedVersion > 0 ? `published v${playlist.publishedVersion}${playlist.currentVersion > playlist.publishedVersion ? ` · draft v${playlist.currentVersion}` : ""}` : "draft"}</option>)}</select></label>
       {preview ? <p className={styles.panelIntro}>Reviewing {preview.name}: published version {preview.publishedVersion || "none"}, latest version {preview.currentVersion}. A newer draft does not replace the published version. The fields below create a new playlist.{preview.publishedVersion > 0 ? " Existing published playlists remain review-only until replacement passes database and playback checks." : " Regenerate uses this saved draft's settings."}</p> : null}
+      {hasNewerDraft ? <div className={styles.actionBar} role="group" aria-label="Review playlist version"><button type="button" className={styles.secondaryButton} aria-pressed={reviewVersion !== "DRAFT"} onClick={() => setReviewVersion("PUBLISHED")}>Published v{preview.publishedVersion} · scheduled plan</button><button type="button" className={styles.secondaryButton} aria-pressed={reviewVersion === "DRAFT"} onClick={() => setReviewVersion("DRAFT")}>Draft v{preview.currentVersion} · not scheduled</button></div> : null}
     </div> : null}
     {error ? <div className={styles.error} role="alert">{error}</div> : null}{notice ? <div className={styles.notice} role="status">{notice}</div> : null}
     <div className={styles.formGrid}>
@@ -108,11 +113,11 @@ export default function AutoDjExpansionWorkspace() {
     <div className={styles.autodjGenreHeader}><h3>Genres</h3><button type="button" className={styles.secondaryButton} onClick={() => setForm({ ...form, selectedGenreCodes: genreItems.filter((genre) => !licensedSelected(form) || genre.enabled).map((genre) => genre.code) })}>All available genres</button></div>
     <ChoiceChips items={genreItems} values={form.selectedGenreCodes} disabledFor={(genre) => licensedSelected(form) && !genre.enabled} onChange={(values) => setForm({ ...form, selectedGenreCodes: values })} />
     <div className={styles.actionBar}><span className={styles.safeClaim}>{mode === "CONTINUOUS" ? "No avoidable dead air while an eligible fallback exists." : "Generate → review → save a programming plan"}</span>{mode === "CONTINUOUS" ? <button type="button" className={styles.primaryButton} disabled={busy || !continuous.defaultMusicModeId || !continuous.selectedGenreCodes.length} onClick={saveContinuous}>{busy ? "Saving…" : "Save Continuous AutoDJ"}</button> : <button type="button" className={styles.primaryButton} disabled={busy || !timed.selectedGenreCodes.length} onClick={generate}>{busy ? "Generating…" : "Generate and save draft"}</button>}</div>
-    {version ? <div className={styles.smartPreview}><div className={styles.sectionHeading}><div><p className={styles.kicker}>TIMED PLAYLIST PREVIEW · VERSION {version.version}</p><h3>{version.items.length} tracks · {duration(version.generatedDurationSeconds)}</h3></div><span className={Math.abs(version.varianceSeconds) <= version.toleranceSeconds ? styles.permission : styles.draftBadge}>{version.varianceSeconds >= 0 ? "+" : ""}{version.varianceSeconds}s</span></div>
+    {version ? <div className={styles.smartPreview}><div className={styles.sectionHeading}><div><p className={styles.kicker}>TIMED PLAYLIST REVIEW · {showingPublished ? "PUBLISHED" : "DRAFT"} VERSION {version.version}</p><h3>{version.items.length} tracks · {duration(version.generatedDurationSeconds)}</h3></div><span className={Math.abs(version.varianceSeconds) <= version.toleranceSeconds ? styles.permission : styles.draftBadge}>{version.varianceSeconds >= 0 ? "+" : ""}{version.varianceSeconds}s</span></div>
       {version.warnings.map((warning) => <div className={styles.compatibilityWarning} key={warning}>{warning}</div>)}
       <div className={styles.autodjPreviewTable}><div className={styles.autodjPreviewHead}><span>#</span><span>Start–end</span><span>Artist — title</span><span>Genre</span><span>Duration</span><span>Source</span></div>{version.items.map((item) => <div className={styles.autodjPreviewRow} key={item.id}><span>{item.position + 1}</span><span>{itemTime(preview, item.startOffsetSeconds)}–{itemTime(preview, item.endOffsetSeconds)}</span><strong>{item.artist} — {item.title}</strong><span>{item.genreCode.replaceAll("_", " ")}</span><span>{duration(item.durationSeconds)}</span><span>{item.sourceScope.replaceAll("_", " ")}</span></div>)}</div>
       <p className={styles.panelIntro}>Genre distribution: {Object.entries(version.genreDistribution).map(([genre, count]) => `${genre.replaceAll("_", " ")} ${count}`).join(" · ") || "No eligible music"}</p>
-      <div className={styles.actionBar}>{preview.publishedVersion === 0 ? <button type="button" className={styles.secondaryButton} disabled={busy || !data.canAuthor} onClick={() => action("regenerate")}>Regenerate new draft</button> : null}<span className={styles.secondaryButton}>{preview.publishedVersion > 0 ? "Published plan · review only" : "Draft awaiting review"}</span>{data.canPublish && preview.publishedVersion === 0 ? <button type="button" className={styles.primaryButton} disabled={busy || !version.items.length || preview.currentVersion <= preview.publishedVersion || preview.status === "INVALIDATED"} onClick={() => action("publish")}>Publish plan</button> : null}</div>
+      <div className={styles.actionBar}>{preview.publishedVersion === 0 ? <button type="button" className={styles.secondaryButton} disabled={busy || !data.canAuthor} onClick={() => action("regenerate")}>Regenerate new draft</button> : null}<span className={styles.secondaryButton}>{showingPublished ? "Published schedule plan · review only" : preview.publishedVersion > 0 ? "Unpublished draft · review only" : "Draft awaiting review"}</span>{data.canPublish && preview.publishedVersion === 0 ? <button type="button" className={styles.primaryButton} disabled={busy || !version.items.length || preview.currentVersion <= preview.publishedVersion || preview.status === "INVALIDATED"} onClick={() => action("publish")}>Publish plan</button> : null}</div>
     </div> : null}
   </section>;
 }

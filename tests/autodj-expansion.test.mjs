@@ -131,6 +131,11 @@ test("saved timed playlists reopen for review and an unchanged version cannot be
   ]);
   assert.match(workspace, /get\("timedPlaylistId"\)/);
   assert.match(workspace, /Open a saved timed playlist/);
+  assert.match(workspace, /setReviewVersion\("PUBLISHED"\)/);
+  assert.match(workspace, /reviewVersion === "DRAFT" && hasNewerDraft/);
+  assert.match(workspace, /Published v\{preview\.publishedVersion\} · scheduled plan/);
+  assert.match(workspace, /Draft v\{preview\.currentVersion\} · not scheduled/);
+  assert.match(workspace, /Unpublished draft · review only/);
   assert.match(workspace, /preview\.currentVersion <= preview\.publishedVersion/);
   assert.match(workspace, /data\.canPublish && preview\.publishedVersion === 0/);
   assert.match(workspace, /Publishing saves a programming plan, not proof of listener playback/);

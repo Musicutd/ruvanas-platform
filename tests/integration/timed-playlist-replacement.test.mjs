@@ -22,16 +22,17 @@ function isolatedEnvironmentReady() {
 
 const baseUrl = process.env.INTEGRATION_BASE_URL || "http://127.0.0.1:3100";
 
-async function api(path, { method = "GET", body, cookie } = {}) {
+async function api(path, { method = "GET", body, cookie, clientAddress } = {}) {
   const headers = { origin: baseUrl, "x-ruvanas-registration-test-key": process.env.INTERNAL_REGISTRATION_TEST_KEY };
   if (cookie) headers.cookie = cookie;
+  if (clientAddress) headers["x-forwarded-for"] = clientAddress;
   if (body !== undefined) headers["content-type"] = "application/json";
   return fetch(`${baseUrl}${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), redirect: "manual" });
 }
 
 async function registerOwner(label, { product = "ONLINE", tier = "online-starter" } = {}) {
   const suffix = randomUUID();
-  const response = await api("/api/auth/register", { method: "POST", body: {
+  const response = await api("/api/auth/register", { method: "POST", clientAddress: `2001:db8::${suffix.slice(0, 4)}`, body: {
     name: `${label} Owner`, organisationName: `${label} ${suffix}`,
     email: `timed-playlist-${suffix}@example.invalid`, password: "correct-horse-battery-staple",
     product, tier, source: "ADMIN_TEST"
@@ -45,8 +46,8 @@ test("timed playlist publication replaces exactly one future programme and rolls
 }, async () => {
   const db = new PrismaClient();
   try {
-    const owner = await registerOwner("Timed Playlist");
-    const outsider = await registerOwner("Outside Timed Playlist");
+    const owner = await registerOwner("Timed Playlist", { tier: "online-professional" });
+    const outsider = await registerOwner("Outside Timed Playlist", { tier: "online-professional" });
     const organisationId = owner.organisation.id;
     const channel = await db.channel.create({ data: { organisationId, name: "Isolated timed radio", slug: `timed-${randomUUID()}`, status: "ACTIVE" } });
     const genre = await db.mediaGenre.upsert({ where: { slug: "pop" }, update: {}, create: { name: "Pop", slug: "pop" } });
@@ -83,6 +84,14 @@ test("timed playlist publication replaces exactly one future programme and rolls
     const first = (await firstResponse.json()).playlist;
     assert.equal(first.publishedVersion, 1);
     assert.equal(await db.musicModeTrack.count({ where: { musicModeId: first.musicMode.id } }), 2);
+    const consolePath = `/api/studio/console?channelId=${channel.id}&date=${scheduledDate}`;
+    assert.equal((await api(consolePath, { cookie: outsider.cookie })).status, 404);
+    const firstLogResponse = await api(consolePath, { cookie: owner.cookie });
+    assert.equal(firstLogResponse.status, 200, await firstLogResponse.clone().text());
+    const firstLog = (await firstLogResponse.json()).dailyLog;
+    assert.deepEqual(firstLog.timedPlaylists.map((playlist) => [playlist.id, playlist.publishedVersion, playlist.currentVersion]), [[draft.id, 1, 1]]);
+    assert.equal(firstLog.planned.filter((item) => item.sourceType === "TIMED_PLAYLIST").length, first.versions.find((version) => version.version === 1).items.length);
+    assert.equal(firstLog.actual.length, 0, "a published plan is not listener proof");
     assert.equal((await api(publishPath, { method: "POST", cookie: owner.cookie })).status, 409);
     const schedule = await db.programmeSchedule.findUniqueOrThrow({ where: { channelId_organisationId: { channelId: channel.id, organisationId } } });
     const versionOne = await db.programmeScheduleVersion.findFirstOrThrow({ where: { scheduleId: schedule.id, isActive: true }, include: { items: true } });
@@ -92,6 +101,9 @@ test("timed playlist publication replaces exactly one future programme and rolls
     const regenerated = await api(regeneratePath, { method: "POST", cookie: owner.cookie, body: { action: "REGENERATE" } });
     assert.equal(regenerated.status, 200, await regenerated.clone().text());
     assert.equal((await regenerated.json()).playlist.currentVersion, 2);
+    const draftLogResponse = await api(consolePath, { cookie: owner.cookie });
+    assert.equal(draftLogResponse.status, 200, await draftLogResponse.clone().text());
+    assert.deepEqual((await draftLogResponse.json()).dailyLog.timedPlaylists.map((playlist) => [playlist.publishedVersion, playlist.currentVersion]), [[1, 2]]);
     const replacementResponses = await Promise.all([
       api(publishPath, { method: "POST", cookie: owner.cookie }),
       api(publishPath, { method: "POST", cookie: owner.cookie })
@@ -100,6 +112,9 @@ test("timed playlist publication replaces exactly one future programme and rolls
     const published = (await replacementResponses.find((response) => response.status === 200).json()).playlist;
     assert.equal(published.publishedVersion, 2);
     assert.notEqual(published.musicMode.id, first.musicMode.id);
+    const replacedLogResponse = await api(consolePath, { cookie: owner.cookie });
+    assert.equal(replacedLogResponse.status, 200, await replacedLogResponse.clone().text());
+    assert.deepEqual((await replacedLogResponse.json()).dailyLog.timedPlaylists.map((playlist) => [playlist.publishedVersion, playlist.currentVersion]), [[2, 2]]);
     const versions = await db.programmeScheduleVersion.findMany({ where: { scheduleId: schedule.id }, include: { items: true }, orderBy: { version: "asc" } });
     assert.deepEqual(versions.map((version) => [version.status, version.isActive]), [["ARCHIVED", false], ["PUBLISHED", true]]);
     assert.equal(versions[0].items.filter((item) => item.musicModeId === first.musicMode.id).length, 1);
