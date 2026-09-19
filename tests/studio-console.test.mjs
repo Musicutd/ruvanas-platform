@@ -6,6 +6,7 @@ import {
   formatStudioLogTime,
   moveStudioConsolePanel,
   normalizeStudioConsoleLayout,
+  reorderStudioConsolePanel,
   STUDIO_CONSOLE_LAYOUTS,
   STUDIO_CONSOLE_PANELS,
   safeStudioMixTiming,
@@ -53,6 +54,25 @@ test("panel ordering moves only within a visible section and keeps saved widths"
   assert.deepEqual(moveStudioConsolePanel(layout, "OUTPUT_HEALTH", 1).panels, layout.panels);
   assert.deepEqual(moveStudioConsolePanel(layout, "PREPARE", -1).panels, layout.panels);
   assert.deepEqual(moveStudioConsolePanel(layout, "CARTS", 0).panels, layout.panels);
+});
+
+test("drag reorder moves visible panels within their section without changing audio or widths", async () => {
+  const layout = { preset: "PRESENTER", panels: ["ON_AIR", "CARTS", "DAILY_LOG", "NOTES", "OUTPUT_HEALTH"], sizes: { CARTS: 640 } };
+  assert.deepEqual(reorderStudioConsolePanel(layout, "ON_AIR", "OUTPUT_HEALTH"), {
+    ...layout, panels: ["DAILY_LOG", "CARTS", "OUTPUT_HEALTH", "NOTES", "ON_AIR"]
+  });
+  assert.deepEqual(reorderStudioConsolePanel(layout, "NOTES", "CARTS").panels, ["ON_AIR", "NOTES", "DAILY_LOG", "CARTS", "OUTPUT_HEALTH"]);
+  assert.deepEqual(reorderStudioConsolePanel(layout, "ON_AIR", "CARTS").panels, layout.panels);
+  assert.deepEqual(reorderStudioConsolePanel(layout, "PREPARE", "CARTS").panels, layout.panels);
+  assert.deepEqual(reorderStudioConsolePanel(layout, "CARTS", "CARTS").panels, layout.panels);
+  const [ui, css] = await Promise.all([
+    readFile(new URL("../app/dashboard/studio/BroadcastConsoleClient.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/dashboard/studio/studio-pro.module.css", import.meta.url), "utf8")
+  ]);
+  assert.match(ui, /onDragStart=/);
+  assert.match(ui, /onDrop=/);
+  assert.match(ui, /savePanels\(reorderStudioConsolePanel\(layout, draggedPanelId, id\)\.panels\)/);
+  assert.match(css, /\.panelDropTarget\{/);
 });
 
 test("mix points reject out of bounds and safely fall back", () => {

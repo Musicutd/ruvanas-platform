@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { formatStudioLogTime, moveStudioConsolePanel, STUDIO_CONSOLE_PANEL_GROUPS, studioTimingToNextHardEvent } from "@/lib/studio-console.mjs";
+import { formatStudioLogTime, moveStudioConsolePanel, reorderStudioConsolePanel, STUDIO_CONSOLE_PANEL_GROUPS, studioTimingToNextHardEvent } from "@/lib/studio-console.mjs";
 import { studioVoiceTrackingUrl } from "@/lib/studio-voice-handoff.mjs";
 import styles from "./studio-pro.module.css";
 
@@ -15,12 +15,15 @@ const pretty = (value) => String(value || "").replaceAll("_", " ").toLowerCase()
 const widthChoices = [240, 320, 480, 640, 800, 1200];
 
 function ConsoleLayoutControls({ layout, busy, onSave }) {
+  const [draggedPanelId, setDraggedPanelId] = useState("");
+  const [dropTargetId, setDropTargetId] = useState("");
   const visible = new Set(layout.panels);
   const labelFor = (id) => panelOptions.find(([key]) => key === id)?.[1] || pretty(id);
   const savePanels = (panels, sizes = layout.sizes) => onSave({ preset: layout.preset, panels, sizes });
+  const clearDrag = () => { setDraggedPanelId(""); setDropTargetId(""); };
   return <details className={styles.layoutControls}>
     <summary>Choose visible panels, order and widths</summary>
-    <p className={styles.muted}>On-air status and output health always stay visible. These settings change only your Console view, not audio.</p>
+    <p className={styles.muted}>Drag a visible panel handle onto another panel in the same section to reorder it. The arrow buttons also work with a keyboard. On-air status and output health always stay visible. These settings change only your Console view, not audio.</p>
     {Object.entries(STUDIO_CONSOLE_PANEL_GROUPS).map(([groupName, group]) => {
       const ordered = [...group].sort((left, right) => {
         const leftIndex = layout.panels.indexOf(left);
@@ -34,7 +37,11 @@ function ConsoleLayoutControls({ layout, busy, onSave }) {
           const label = labelFor(id);
           const width = layout.sizes?.[id] || 320;
           const position = active.indexOf(id);
-          return <div className={styles.panelSetting} key={id}>
+          return <div className={`${styles.panelSetting} ${dropTargetId === id ? styles.panelDropTarget : ""}`} key={id}
+            onDragOver={(event) => { if (busy || !draggedPanelId || !visible.has(id) || !group.includes(draggedPanelId) || draggedPanelId === id) return; event.preventDefault(); event.dataTransfer.dropEffect = "move"; setDropTargetId((current) => current === id ? current : id); }}
+            onDrop={(event) => { event.preventDefault(); if (!busy && draggedPanelId && draggedPanelId !== id && group.includes(draggedPanelId) && visible.has(id)) savePanels(reorderStudioConsolePanel(layout, draggedPanelId, id).panels); clearDrag(); }}>
+            <span className={styles.dragHandle} draggable={!busy && visible.has(id)} title={visible.has(id) ? `Drag ${label} to reorder` : "Show this panel before reordering"} aria-hidden="true"
+              onDragStart={(event) => { if (busy || !visible.has(id)) { event.preventDefault(); return; } event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", id); setDraggedPanelId(id); }} onDragEnd={clearDrag}>⋮⋮</span>
             <label><input type="checkbox" checked={visible.has(id)} disabled={busy || id === "ON_AIR" || id === "OUTPUT_HEALTH"} onChange={(event) => savePanels(event.target.checked ? [...layout.panels, id] : layout.panels.filter((panelId) => panelId !== id))} />{label}</label>
             <div className={styles.panelSettingActions}>
               <button type="button" className={styles.secondary} aria-label={`Move ${label} earlier`} disabled={busy || position <= 0} onClick={() => savePanels(moveStudioConsolePanel(layout, id, -1).panels)}>↑</button>
