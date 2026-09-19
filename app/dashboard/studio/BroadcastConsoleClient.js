@@ -77,7 +77,7 @@ function TimedPlaylistHandoff({ playlists = [] }) {
   if (!playlists.length) return null;
   return <section aria-label="Published timed playlists in this Daily Log">
     <h4>Timed playlists on this date</h4>
-    <p className={styles.muted}>Open the existing generator to review its saved published version and any draft. Replacing a published timed playlist is currently blocked until schedule-safe publication is implemented; this link does not change output.</p>
+    <p className={styles.muted}>Open the existing generator to review its saved plan and any draft. Replacement remains unavailable here until database and listener-output checks pass; this link does not change what listeners hear.</p>
     <div className={styles.actions}>{playlists.map((playlist) => <a className={styles.secondary} key={playlist.id} href={`/dashboard/programming?timedPlaylistId=${encodeURIComponent(playlist.id)}#workspace-automation`}>Review {playlist.name} · published v{playlist.publishedVersion}{playlist.currentVersion > playlist.publishedVersion ? ` · draft v${playlist.currentVersion}` : ""}</a>)}</div>
   </section>;
 }

@@ -133,6 +133,10 @@ test("saved timed playlists reopen for review and an unchanged version cannot be
   assert.match(workspace, /Open a saved timed playlist/);
   assert.match(workspace, /preview\.currentVersion <= preview\.publishedVersion/);
   assert.match(workspace, /data\.canPublish && preview\.publishedVersion === 0/);
+  assert.match(workspace, /Publishing saves a programming plan, not proof of listener playback/);
+  assert.match(workspace, /current Ruvanas Centova worker plays from the Continuous AutoDJ pool/);
+  assert.match(workspace, /Listener output and exact track order are not yet verified/);
+  assert.match(workspace, /Publish plan/);
   assert.match(service, /current\.currentVersion <= current\.publishedVersion/);
   assert.match(service, /const replacing = current\.publishedVersion > 0/);
   assert.match(service, /RUVANAS_TIMED_PLAYLIST_REPLACEMENT_ENABLED !== "1"/);
