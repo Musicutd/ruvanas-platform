@@ -286,8 +286,12 @@ test("Console presenter actions reuse the governed Manual Playout queue and keep
   assert.match(consoleUi, /fetch\("\/api\/studio\/playout"/);
   assert.match(consoleUi, /expectedRevision: session\.revision/);
   assert.match(consoleUi, /prepareQueue\("REORDER"/);
+  assert.match(consoleUi, /Untimed future Manual queue/);
+  assert.match(consoleUi, /prepareQueue\("REPLACE_FUTURE"/);
   assert.match(consoleUi, /prepareQueue\("LOCK"/);
   assert.match(consoleUi, /prepareQueue\("SEND_NEXT"/);
   assert.match(consoleUi, /hardEventTiming\?\.deltaMs < 0/);
   assert.match(playout, /planStudioFutureReorder\(session\.items, input\.itemId, input\.position\)/);
+  assert.match(playout, /planStudioFutureReplacement\(session\.items, input\.itemId, input\.replacementItemId\)/);
+  assert.match(playout, /outgoingAsset\?\.mediaType !== "MUSIC"/);
 });

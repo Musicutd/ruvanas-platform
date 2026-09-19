@@ -3,16 +3,16 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireActiveStudio } from "@/lib/studio-access";
 import { ORGANISATION_CONTENT_ROLES } from "@/lib/permissions.mjs";
-import { assertStudioManualOutputBridge, nextStudioQueuePosition, normalizePreparedItem, planStudioFutureReorder, playoutModeTransition, safeEndManualSession, studioManualOutputAvailability, studioQueueReadiness } from "@/lib/studio-playout.mjs";
+import { assertStudioManualOutputBridge, nextStudioQueuePosition, normalizePreparedItem, planStudioFutureReorder, planStudioFutureReplacement, playoutModeTransition, safeEndManualSession, studioManualOutputAvailability, studioQueueReadiness } from "@/lib/studio-playout.mjs";
 import { studioMixDefaults } from "@/lib/studio-console.mjs";
 
 export const dynamic = "force-dynamic";
 
 const commandSchema = z.object({
-  action: z.enum(["CREATE_SESSION", "ADD_PREPARE", "ADD_LIVE", "UPDATE_PREPARE", "SEND_NEXT", "INSERT_QUEUE", "REORDER", "LOCK", "SET_MODE", "START_NEXT", "SKIP", "FADE", "END_SESSION", "CREATE_PACK", "ADD_PACK_ITEM"]),
+  action: z.enum(["CREATE_SESSION", "ADD_PREPARE", "ADD_LIVE", "UPDATE_PREPARE", "SEND_NEXT", "INSERT_QUEUE", "REORDER", "REPLACE_FUTURE", "LOCK", "SET_MODE", "START_NEXT", "SKIP", "FADE", "END_SESSION", "CREATE_PACK", "ADD_PACK_ITEM"]),
   sessionId: z.string().cuid().optional(), expectedRevision: z.number().int().min(0).optional(),
   channelId: z.string().cuid().optional(), title: z.string().trim().min(2).max(160).optional(), mode: z.enum(["AUTO", "ASSIST", "MANUAL"]).optional(),
-  itemId: z.string().cuid().optional(), mediaAssetId: z.string().cuid().optional(), position: z.number().int().min(0).optional(), locked: z.boolean().optional(),
+  itemId: z.string().cuid().optional(), replacementItemId: z.string().cuid().optional(), mediaAssetId: z.string().cuid().optional(), position: z.number().int().min(0).optional(), locked: z.boolean().optional(),
   artistOrProgramme: z.string().trim().max(160).optional().nullable(), itemType: z.string().trim().max(60).optional(),
   cueInMs: z.number().int().min(0).optional(), cueOutMs: z.number().int().positive().optional().nullable(), fadeInMs: z.number().int().min(0).optional(), fadeOutMs: z.number().int().min(0).optional(), gainDb: z.number().min(-18).max(12).optional(),
   packId: z.string().cuid().optional(), role: z.enum(["INTRO", "OUTRO", "JINGLE", "BED", "PROMO", "PRERECORDED_SEGMENT", "INTERVIEW", "RECURRING_FEATURE"]).optional(), description: z.string().trim().max(1000).optional().nullable()
@@ -154,6 +154,17 @@ export async function POST(request) {
         const changes = planStudioFutureReorder(session.items, input.itemId, input.position);
         for (const change of changes) await tx.studioPlayoutItem.update({ where: { id: change.id }, data: { position: change.position } });
         payload.item = await tx.studioPlayoutItem.findUnique({ where: { id: input.itemId } });
+      } else if (input.action === "REPLACE_FUTURE") {
+        const swap = planStudioFutureReplacement(session.items, input.itemId, input.replacementItemId);
+        const prepared = session.items.find((item) => item.id === swap.incoming.id);
+        const outgoing = session.items.find((item) => item.id === swap.outgoing.id);
+        const outgoingAsset = await tx.mediaAsset.findFirst({ where: { id: outgoing.mediaAssetId, organisationId: access.organisation.id }, select: { mediaType: true } });
+        if (outgoingAsset?.mediaType !== "MUSIC") throw new Error("Only ordinary organisation-owned music may be replaced here. Protected programme, promo and catalogue items remain unchanged.");
+        const asset = await tx.mediaAsset.findFirst({ where: { id: prepared.mediaAssetId, OR: [{ organisationId: access.organisation.id }, { organisationId: null, libraryType: "RUVANAS_CATALOGUE" }] }, include: { genres: { include: { mediaGenre: true } }, track: true } });
+        const readiness = studioQueueReadiness(asset, await rightsContext(tx, access, session.channelId));
+        if (!readiness.ready) throw new Error(readiness.reason);
+        await tx.studioPlayoutItem.update({ where: { id: swap.outgoing.id }, data: { area: swap.outgoing.area, position: swap.outgoing.position, estimatedStartAt: null } });
+        payload.item = await tx.studioPlayoutItem.update({ where: { id: swap.incoming.id }, data: { area: swap.incoming.area, position: swap.incoming.position, estimatedStartAt: swap.incoming.estimatedStartAt, rightsReady: true, readinessReason: readiness.reason } });
       } else if (input.action === "LOCK") {
         const item = session.items.find((candidate) => candidate.id === input.itemId && candidate.area === "LIVE" && candidate.status === "READY");
         if (!item) throw new Error("Choose a future playlist item.");
@@ -168,7 +179,7 @@ export async function POST(request) {
       const updated = await tx.studioPlayoutSession.findUnique({ where: { id: session.id }, include: sessionInclude });
       payload.session = updated;
       await recordCommand(tx, access, session, input, idempotencyKey, { sessionId: updated.id, revision: updated.revision });
-      await tx.auditLog.create({ data: { organisationId: access.organisation.id, actorUserId: access.user.id, action: `STUDIO_PLAYOUT_${input.action}`, entityType: "StudioPlayoutSession", entityId: session.id, details: { revision: updated.revision, itemId: input.itemId || payload.item?.id || null } } });
+      await tx.auditLog.create({ data: { organisationId: access.organisation.id, actorUserId: access.user.id, action: `STUDIO_PLAYOUT_${input.action}`, entityType: "StudioPlayoutSession", entityId: session.id, details: { revision: updated.revision, itemId: input.itemId || payload.item?.id || null, replacementItemId: input.replacementItemId || null } } });
       return payload;
     });
     return NextResponse.json(result);

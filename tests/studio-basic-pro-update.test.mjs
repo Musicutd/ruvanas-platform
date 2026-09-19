@@ -4,7 +4,7 @@ import test from "node:test";
 import { resolveEntitlements, studioExternalDestinationLimit, studioLevelForTier } from "../lib/entitlements.mjs";
 import { assertStudioMultitrackWriteAllowed, splitMultitrackClip, studioMultitrackTrackLimit } from "../lib/multitrack-studio.mjs";
 import { assertStudioWaveformWriteAllowed } from "../lib/waveform-editor.mjs";
-import { assertStudioManualOutputBridge, fallbackForQueue, nextStudioQueuePosition, planStudioFutureReorder, playoutModeTransition, studioQueueReadiness } from "../lib/studio-playout.mjs";
+import { assertStudioManualOutputBridge, fallbackForQueue, nextStudioQueuePosition, planStudioFutureReorder, planStudioFutureReplacement, playoutModeTransition, studioQueueReadiness } from "../lib/studio-playout.mjs";
 import { assertDestinationCapacity, broadcastMetadata, safeStudioDestination } from "../lib/studio-broadcast.mjs";
 
 function plan(tierNumber, productFamily = "RETAIL") {
@@ -110,6 +110,22 @@ test("future queue reorder keeps dense order and does not cross locks or played 
   assert.throws(() => planStudioFutureReorder(items.map((item) => item.id === "b" ? { ...item, locked: true } : item), "c", 0), /intervening/);
   assert.equal(nextStudioQueuePosition(items, "LIVE"), 3);
   assert.equal(nextStudioQueuePosition([{ id: "gap", area: "LIVE", status: "READY", position: 7 }], "LIVE"), 8);
+});
+
+test("future Manual replacement preserves position and refuses locked, played or stale items", () => {
+  const items = [
+    { id: "on-air", area: "LIVE", status: "ON_AIR", position: 0 },
+    { id: "future", area: "LIVE", status: "READY", position: 1, estimatedStartAt: null },
+    { id: "prepared", area: "PREPARE", status: "READY", position: 2 }
+  ];
+  assert.deepEqual(planStudioFutureReplacement(items, "future", "prepared"), {
+    outgoing: { id: "future", area: "PREPARE", position: 3, estimatedStartAt: null },
+    incoming: { id: "prepared", area: "LIVE", position: 1, estimatedStartAt: null }
+  });
+  assert.throws(() => planStudioFutureReplacement(items, "on-air", "prepared"), /future Manual queue/);
+  assert.throws(() => planStudioFutureReplacement(items.map((item) => item.id === "future" ? { ...item, locked: true } : item), "future", "prepared"), /locked future/);
+  assert.throws(() => planStudioFutureReplacement(items, "future", "on-air"), /private Prepare area/);
+  assert.throws(() => planStudioFutureReplacement(items.map((item) => item.id === "future" ? { ...item, estimatedStartAt: "2020-01-01T00:00:00Z" } : item), "future", "prepared"), /no longer in the future/);
 });
 
 test("Studio music queue rechecks product, tenant, review and licence window", () => {
