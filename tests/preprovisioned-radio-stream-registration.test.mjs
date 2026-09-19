@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { decryptSecret } from "../lib/crypto.js";
+import { manualStreamRegistrationPayload } from "../lib/preprovisioned-radio-stream-form.mjs";
 import { normalizePreprovisionedRadioStreamInput } from "../lib/preprovisioned-radio-stream.mjs";
 import {
   registerPreprovisionedRadioStream,
@@ -103,4 +104,16 @@ test("requires an authenticated actor", async () => {
     (error) => error instanceof RadioStreamRegistrationError && error.code === "ACTOR_REQUIRED"
   );
   assert.equal(writes.length, 0);
+});
+
+test("the simplified Streamerr form uses one port unless a separate listener port is selected", () => {
+  const fields = { ...validInput, sourcePort: "8198", serverPort: "8393", listenerLimit: "10", maxBitrateKbps: "128" };
+  const simple = manualStreamRegistrationPayload(fields);
+  const separate = manualStreamRegistrationPayload(fields, { differentPort: true });
+  assert.equal(simple.serverPort, "8198");
+  assert.equal(simple.sourcePort, "8198");
+  assert.equal(separate.serverPort, "8393");
+  assert.equal(separate.sourcePort, "8198");
+  assert.equal(normalizePreprovisionedRadioStreamInput(simple).serverPort, 8198);
+  assert.equal(normalizePreprovisionedRadioStreamInput(separate).serverPort, 8393);
 });
