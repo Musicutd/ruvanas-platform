@@ -2,6 +2,25 @@
 
 This is a **test plan, not a completed playback test**. Keep the existing Radio Test 105 stream and its Ruvanas AutoDJ worker untouched. Do not enable Studio Manual commands for subscribers, publish this branch, or change Render settings on the strength of a green unit test.
 
+## Isolated provider resource prepared (2026-09-19)
+
+The reseller's separate `ruvanas_studio_test` Shoutcast v2 account was created with Centova AutoDJ disabled, 10 listener slots, a 128 kbps ceiling, a 1,500 MB/month transfer limit and a 1,000 MB disk quota. Its server is online, but Centova reports **no source connected**. The account has no production music or customer media.
+
+- Test listener: `https://ruvanas_studio_test-radio105network.radioca.st/stream`
+- Test live-source host/port: `pollux.shoutca.st:8198` (Shoutcast v1 source protocol)
+- Protected production listener: `https://plus-radio105network.radioca.st/stream`
+- Protected production live-source host/port: `pollux.shoutca.st:8393`
+
+The offline endpoint-isolation checker passed for those distinct listener and source targets. It does not prove the test source password, outbound audio or public listener playback. Newly generated test passwords were not printed or written to this repository; a dedicated secret store is required before an encoder may connect. The live production worker and Radio Test 105 configuration were not changed.
+
+## Automatic start boundary
+
+Creating the Centova account and starting its server is **not** the same as starting Ruvanas audio. The isolated server was started, with Centova AutoDJ off, but the account still reports no source connected. The current Ruvanas Online Radio worker automatically scans one configured station every 15 seconds, obtains a database lease, starts its encoder when a rights-approved rotation is ready, and retries after an encoder exit. It cannot serve a newly created station until that station has a saved live-source configuration, securely stored source password, eligible channel/rotation and an assigned worker. This test account has none of those Ruvanas-side resources yet.
+
+Future hands-off onboarding must generate distinct provider credentials, store the source password only in an approved secret store, provision or allocate an unused Centova stream through a **provider-authorized** interface, attach its listener/source endpoints to the correct Online Radio station, and start a capacity-controlled encoder without a per-station human action. The existing `system.provision` Centova API requires the *server-wide administrator password*; reseller UI access does not grant permission to use it. In Streamerr support ticket **#73627** (August 2026), Streamerr confirmed by testing that this reseller's credentials authenticate to Centova but cannot call privileged `system.*` provisioning methods. They recommended a separately licensed WHMCS installation with Centova's reseller module for standard account creation/suspension/reactivation/termination; alternatively, Streamerr offered to scope and quote a bespoke reseller-scoped API. Neither option has been implemented or purchased. A pre-provisioned pool of the reseller's stream slots is another option to evaluate. Never put the provider's global administrator password into Ruvanas. Automatic activation must still wait for rights checks and independent listener audio evidence; HTTP 200 or a worker lease is insufficient.
+
+The local `planPreprovisionedRadioStream` helper is the first fail-closed check for the pool option: it requires a verified, password-ready slot; rejects duplicate inventory and source/listener/account collisions with existing stations; respects Online Radio capacity; and returns only a slot ID. It makes **no database claim or provider call** and is not wired into station creation. A future caller must supply a complete occupied-station snapshot, recheck and claim atomically in a serializable transaction, audit the assignment and keep broadcasting off until the rest of the release gate passes. The separate test Centova account is not yet in a Ruvanas slot registry.
+
 ## Test boundary and prerequisites
 
 1. Obtain a **separate non-production Centova stream** with its own listener URL, live-source port and source password. A second stream on the same reseller host is acceptable only if both the listener URL and source host/port tuple are different from production. Do not paste passwords into tickets, chat, commands or test evidence.
@@ -33,6 +52,6 @@ For each step retain the test station ID, UTC timestamps, safely redacted encode
 
 Stop immediately if a target matches production, the test account shares a live source endpoint, rights or tenant checks are uncertain, another encoder owns the lease, protected programming cannot be represented, or the listener sample disagrees with the claimed source. Do not use the production Radio Test 105 stream as a substitute for the isolated test.
 
-The acceptance sequence is **not runnable yet**: there is no attached test stream/container/disposable database, and the Studio Manual-to-Centova adapter is intentionally unwired. The local analyser has only been verified against synthetic PCM, not an actual Centova recording. `RUVANAS_STUDIO_HANDOFF_SHADOW=1` is a read-only diagnostic, not a switch. Manual start/skip/fade and Broadcast start remain blocked. This document records what must be proven before those controls can be unlocked or the Broadcast Console released.
+The full acceptance sequence is **not runnable yet**: the separate test stream exists, but no Linux encoder, isolated database or protected-media bucket is attached, and the Studio Manual-to-Centova adapter is intentionally unwired. The local analyser has only been verified against synthetic PCM, not an actual Centova recording. `RUVANAS_STUDIO_HANDOFF_SHADOW=1` is a read-only diagnostic, not a switch. Manual start/skip/fade and Broadcast start remain blocked. This document records what must be proven before those controls can be unlocked or the Broadcast Console released.
 
 An offline `studio-timed-preemption-rehearsal.mjs` decision sequence models the **required** response to a mid-track rights withdrawal, conflicting source, lost lease or missed recheck. It latches `HALT_REQUIRED_NOT_EXECUTED` and cannot rearm itself after a later green check. This is policy rehearsal, not a live stop, safe fallback, encoder acknowledgement or listener proof. The worker does not import it. A real priority-aware source adapter and an isolated listener recording are still required.
