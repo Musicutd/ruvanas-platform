@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import test from "node:test";
 import { PrismaClient } from "@prisma/client";
 import { assertSafeFinalAcceptanceEnvironment } from "../../lib/final-platform-acceptance.mjs";
+import { loadPublishedTimedChannelSequence } from "../../lib/studio-timed-sequence-loader.mjs";
 
 function isolatedEnvironmentReady() {
   try {
@@ -49,7 +50,13 @@ test("timed playlist publication replaces exactly one future programme and rolls
     const owner = await registerOwner("Timed Playlist", { tier: "online-professional" });
     const outsider = await registerOwner("Outside Timed Playlist", { tier: "online-professional" });
     const organisationId = owner.organisation.id;
-    const channel = await db.channel.create({ data: { organisationId, name: "Isolated timed radio", slug: `timed-${randomUUID()}`, status: "ACTIVE" } });
+    const station = await db.station.create({ data: {
+      organisationId, productFamily: "ONLINE", name: "Isolated timed station", slug: `timed-station-${randomUUID()}`,
+      status: "DRAFT", listenerLimit: 100, storageLimitGb: 5, maxBitrateKbps: 128
+    } });
+    const channel = await db.channel.create({ data: {
+      organisationId, stationId: station.id, name: "Isolated timed radio", slug: `timed-${randomUUID()}`, status: "ACTIVE"
+    } });
     const genre = await db.mediaGenre.upsert({ where: { slug: "pop" }, update: {}, create: { name: "Pop", slug: "pop" } });
     const expiresAt = new Date(Date.now() + 4 * 365 * 86400000);
     for (const index of [1, 2]) {
@@ -84,6 +91,11 @@ test("timed playlist publication replaces exactly one future programme and rolls
     const first = (await firstResponse.json()).playlist;
     assert.equal(first.publishedVersion, 1);
     assert.equal(await db.musicModeTrack.count({ where: { musicModeId: first.musicMode.id } }), 2);
+    const firstPlan = await loadPublishedTimedChannelSequence(db, { organisationId, channelId: channel.id, playlistId: draft.id });
+    assert.equal(firstPlan.ready, true, firstPlan.reason);
+    assert.equal(firstPlan.version, 1);
+    assert.deepEqual(firstPlan.items.map((item) => item.trackId), first.versions.find((version) => version.version === 1).items.map((item) => item.trackId));
+    assert.equal(firstPlan.listenerVerified, false);
     const consolePath = `/api/studio/console?channelId=${channel.id}&date=${scheduledDate}`;
     assert.equal((await api(consolePath, { cookie: outsider.cookie })).status, 404);
     const firstLogResponse = await api(consolePath, { cookie: owner.cookie });
@@ -121,11 +133,17 @@ test("timed playlist publication replaces exactly one future programme and rolls
     assert.equal(versions[1].items.filter((item) => item.musicModeId === published.musicMode.id).length, 1);
     assert.equal(versions[1].items.filter((item) => item.musicModeId === first.musicMode.id).length, 0);
     assert.equal(await db.musicModeTrack.count({ where: { musicModeId: first.musicMode.id } }), 2);
+    const replacementPlan = await loadPublishedTimedChannelSequence(db, { organisationId, channelId: channel.id, playlistId: draft.id });
+    assert.equal(replacementPlan.ready, true, replacementPlan.reason);
+    assert.equal(replacementPlan.version, 2);
+    assert.deepEqual(replacementPlan.items.map((item) => item.trackId), published.versions.find((version) => version.version === 2).items.map((item) => item.trackId));
 
     const nextDraft = await api(regeneratePath, { method: "POST", cookie: owner.cookie, body: { action: "REGENERATE" } });
     assert.equal(nextDraft.status, 200, await nextDraft.clone().text());
+    assert.equal((await loadPublishedTimedChannelSequence(db, { organisationId, channelId: channel.id, playlistId: draft.id })).version, 2);
     const currentItem = versions[1].items.find((item) => item.musicModeId === published.musicMode.id);
     await db.programmeScheduleItem.update({ where: { id: currentItem.id }, data: { label: "Changed by another scheduler" } });
+    assert.equal((await loadPublishedTimedChannelSequence(db, { organisationId, channelId: channel.id, playlistId: draft.id })).reason, "SEQUENCE_PROGRAMME_MISMATCH");
     const modeCount = await db.musicMode.count({ where: { organisationId, source: "GENERATED_PLAYLIST" } });
     const rejected = await api(publishPath, { method: "POST", cookie: owner.cookie });
     assert.equal(rejected.status, 409, await rejected.clone().text());
