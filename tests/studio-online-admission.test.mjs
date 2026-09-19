@@ -122,11 +122,13 @@ test("protected programming, ambiguity, failures and a slow snapshot cannot auth
   assert.equal((await loadStudioOnlineAdmission(fakeDatabase(), { ...input, clock })).reason, "ADMISSION_SNAPSHOT_STALE");
 });
 
-test("snapshot is not wired to the encoder or used to unlock live controls", async () => {
+test("the optional worker scan uses the snapshot but cannot switch audio or unlock live controls", async () => {
   const [worker, playout] = await Promise.all([
     readFile(new URL("../scripts/online-radio-encoder-worker.mjs", import.meta.url), "utf8"),
     readFile(new URL("../lib/studio-playout.mjs", import.meta.url), "utf8")
   ]);
-  assert.doesNotMatch(worker, /loadStudioOnlineAdmission/);
+  assert.match(worker, /RUVANAS_STUDIO_HANDOFF_SHADOW === "1"/);
+  assert.match(worker, /loadStudioOnlineAdmission/);
+  assert.doesNotMatch(worker, /pushPreparedStudioAudio|studio-encoder-transport/);
   assert.match(playout, /connected: false/);
 });

@@ -65,5 +65,7 @@ test("worker keeps the default-off gate and does not await the shadow inspection
   assert.match(worker, /RUVANAS_STUDIO_HANDOFF_SHADOW === "1"/);
   assert.match(worker, /shadowScan\.start\(/);
   assert.match(worker, /await shadowScan\.close\(/);
-  assert.doesNotMatch(worker, /await inspectStudioOnlineHandoff|pushPreparedStudioAudio/);
+  assert.match(worker, /loadStudioOnlineAdmission\(prisma, input\)/);
+  assert.match(worker, /shadowScan\.start\(\{ stationId, workerOwner: owner \}\)/);
+  assert.doesNotMatch(worker, /await loadStudioOnlineAdmission|pushPreparedStudioAudio/);
 });
