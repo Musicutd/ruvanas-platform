@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { localMinuteToUtc } from "../lib/advanced-scheduler.mjs";
 import {
   deriveStudioDailyLog,
   formatStudioLogTime,
@@ -13,6 +14,7 @@ import {
   studioConsoleNowNext,
   studioClockBoundaryConflicts,
   studioProgrammeLogEntries,
+  studioTimedPlaylistLogEntries,
   studioSpotBoard,
   studioMixDefaults,
   studioTimingToNextHardEvent,
@@ -161,6 +163,31 @@ test("Radio Clock programme headers do not double-count their items or delay int
   ]);
   assert.match(route, /studioProgrammeLogEntries\(occurrence, clock\)/);
   assert.match(ui, /studioClockBoundaryConflicts\(data\?\.dailyLog\)/);
+});
+
+test("published timed playlist tracks replace only their matching programme duration and retain crossfades", async () => {
+  const startAt = new Date("2026-09-17T10:00:00Z");
+  const programme = { id: "programme", sourceType: "MUSIC_MODE", sourceId: "mode-1", label: "Generated hour", startsAt: startAt, durationMs: 3_600_000, hardEvent: true, programmeOccurrenceId: "programme" };
+  const unrelated = { ...programme, id: "other", sourceId: "mode-2", programmeOccurrenceId: "other" };
+  const playlist = { id: "playlist-1", musicModeId: "mode-1", publishedVersion: 2, versions: [
+    { version: 1, publishedAt: null, items: [] },
+    { version: 2, publishedAt: startAt, items: [
+      { id: "track-1", track: { artist: "A", title: "First" }, startOffsetSeconds: 0, durationSeconds: 180 },
+      { id: "track-2", track: { artist: "B", title: "Second" }, startOffsetSeconds: 178, durationSeconds: 180 }
+    ] }
+  ] };
+  const projection = studioTimedPlaylistLogEntries(playlist, startAt, [programme, unrelated]);
+  assert.equal(projection.scheduled[0].durationMs, 0);
+  assert.equal(projection.scheduled[0].programmeBoundary, true);
+  assert.equal(projection.scheduled[1].durationMs, 3_600_000);
+  assert.deepEqual(projection.generated.map((item) => item.programmeOccurrenceId), ["programme", "programme"]);
+  const log = deriveStudioDailyLog({ scheduled: projection.scheduled, generated: projection.generated, dayStart: "2026-09-17T00:00:00Z", dayEnd: "2026-09-18T00:00:00Z" });
+  assert.equal(log.planned.find((item) => item.id === "track-2").estimatedStartAt, "2026-09-17T10:02:58.000Z");
+  assert.equal(studioTimedPlaylistLogEntries(playlist, startAt, [unrelated]).scheduled[0].durationMs, 3_600_000);
+  assert.equal(studioTimedPlaylistLogEntries({ ...playlist, publishedVersion: 1 }, startAt, [programme]).generated.length, 0);
+  const route = await readFile(new URL("../app/api/studio/console/route.js", import.meta.url), "utf8");
+  assert.match(route, /localMinuteToUtc\(date, playlist\.startMinute, playlist\.timezone\)/);
+  assert.equal(localMinuteToUtc("2026-03-29", 180, "Europe/Malta").toISOString(), "2026-03-29T01:00:00.000Z");
 });
 
 test("a clock item crossing another fixed programme is flagged for planning, not playback proof", () => {

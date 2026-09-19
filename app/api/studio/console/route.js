@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireActiveStudio } from "@/lib/studio-access";
 import { ORGANISATION_CONTENT_ROLES } from "@/lib/permissions.mjs";
 import { compileProgrammeScheduleHorizon, localMinuteToUtc } from "@/lib/advanced-scheduler.mjs";
-import { deriveStudioDailyLog, normalizeStudioConsoleLayout, studioProgrammeLogEntries, studioSpotBoard, STUDIO_CART_BEHAVIOURS, STUDIO_MIX_POINT_TYPES, validateStudioMixPoints } from "@/lib/studio-console.mjs";
+import { deriveStudioDailyLog, normalizeStudioConsoleLayout, studioProgrammeLogEntries, studioSpotBoard, studioTimedPlaylistLogEntries, STUDIO_CART_BEHAVIOURS, STUDIO_MIX_POINT_TYPES, validateStudioMixPoints } from "@/lib/studio-console.mjs";
 import { studioManualOutputAvailability } from "@/lib/studio-playout.mjs";
 
 export const dynamic = "force-dynamic";
@@ -72,11 +72,18 @@ async function dailyLog(organisationId, channelId, productFamily, requestedDate)
       scheduled.push(...studioProgrammeLogEntries(occurrence, clock));
     }
   }
-  const generatedItems = generated.flatMap((playlist) => (playlist.versions.find((version) => version.version === playlist.publishedVersion)?.items || []).map((item) => ({ id: item.id, sourceType: "TIMED_PLAYLIST", sourceId: playlist.id, label: `${item.track.artist} — ${item.track.title}`, startsAt: new Date(start.getTime() + playlist.startMinute * 60_000 + item.startOffsetSeconds * 1000), durationMs: item.durationSeconds * 1000, locked: true })));
+  let scheduledEntries = scheduled;
+  const generatedItems = [];
+  for (const playlist of generated) {
+    const playlistStart = localMinuteToUtc(date, playlist.startMinute, playlist.timezone);
+    const projection = studioTimedPlaylistLogEntries(playlist, playlistStart, scheduledEntries);
+    scheduledEntries = projection.scheduled;
+    generatedItems.push(...projection.generated);
+  }
   const campaignItems = campaigns.map((item) => ({ id: item.id, sourceType: "CAMPAIGN", label: item.campaign?.name || "Scheduled campaign", startsAt: item.plannedStart, durationMs: Math.max(0, item.expiresAt - item.plannedStart), hardEvent: true }));
   const liveItems = live.map((item) => ({ id: item.id, sourceType: "LIVE_SESSION", label: item.title, startsAt: item.scheduledStart, durationMs: item.scheduledEnd - item.scheduledStart, hardEvent: true }));
   const manualItems = manual.flatMap((session) => session.items.filter((item) => item.estimatedStartAt).map((item) => ({ id: item.id, sourceType: "MANUAL_QUEUE", label: item.title, startsAt: item.estimatedStartAt, durationMs: item.durationMs, locked: item.locked })));
-  return { date, timezone, ...deriveStudioDailyLog({ scheduled, generated: generatedItems, campaigns: campaignItems, live: liveItems, manual: manualItems, proof, dayStart: start, dayEnd: end }) };
+  return { date, timezone, ...deriveStudioDailyLog({ scheduled: scheduledEntries, generated: generatedItems, campaigns: campaignItems, live: liveItems, manual: manualItems, proof, dayStart: start, dayEnd: end }) };
 }
 
 export async function GET(request) {
