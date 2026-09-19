@@ -12,6 +12,20 @@ const FIXTURE = [
   { trackId: "tone-b", mediaAssetId: "self-owned-tone-b", frequencyHz: 660, durationSeconds: 7, name: "tone-b.mp3" }
 ];
 
+export function selfOwnedTimedFixture(linuxDirectory) {
+  const mediaByAssetId = new Map(FIXTURE.map((tone) => [tone.mediaAssetId, `${linuxDirectory}/${tone.name}`]));
+  const plan = {
+    ready: true, reason: "FROZEN_SEQUENCE_PLANNED_NOT_ON_AIR", commandIssued: false, listenerVerified: false,
+    items: [
+      { position: 0, trackId: "tone-a", mediaAssetId: "self-owned-tone-a", startOffsetSeconds: 0, endOffsetSeconds: 6 },
+      { position: 1, trackId: "tone-b", mediaAssetId: "self-owned-tone-b", startOffsetSeconds: 4, endOffsetSeconds: 11 },
+      { position: 2, trackId: "tone-a", mediaAssetId: "self-owned-tone-a", startOffsetSeconds: 9, endOffsetSeconds: 15 }
+    ]
+  };
+  return { plan, options: { privateDirectory: linuxDirectory, mediaByAssetId,
+    playlistPath: `${linuxDirectory}/frozen.m3u`, outputPath: `${linuxDirectory}/listener-sample.mp3` } };
+}
+
 function tonePcm({ frequencyHz, durationSeconds }) {
   const samples = RATE * durationSeconds;
   const pcm = Buffer.alloc(samples * 2);
@@ -45,26 +59,14 @@ export async function prepareSelfOwnedTimedRehearsal(outputDirectory) {
   if (!ffmpegPath) throw new Error("The local FFmpeg test-tone encoder is unavailable.");
   await mkdir(outputDirectory, { mode: 0o700 }); // Existing directories are never reused or overwritten.
   const linuxDirectory = `/tmp/ruvanas-timed-self-owned-${randomUUID().replaceAll("-", "").slice(0, 12)}`;
-  const mediaByAssetId = new Map();
   const audioSha256 = {};
   for (const tone of FIXTURE) {
     const localPath = path.join(outputDirectory, tone.name);
     encodeTone(localPath, tone);
     audioSha256[tone.name] = sha256(await readFile(localPath));
-    mediaByAssetId.set(tone.mediaAssetId, `${linuxDirectory}/${tone.name}`);
   }
-  const plan = {
-    ready: true, reason: "FROZEN_SEQUENCE_PLANNED_NOT_ON_AIR", commandIssued: false, listenerVerified: false,
-    items: [
-      { position: 0, trackId: "tone-a", mediaAssetId: "self-owned-tone-a", startOffsetSeconds: 0, endOffsetSeconds: 6 },
-      { position: 1, trackId: "tone-b", mediaAssetId: "self-owned-tone-b", startOffsetSeconds: 4, endOffsetSeconds: 11 },
-      { position: 2, trackId: "tone-a", mediaAssetId: "self-owned-tone-a", startOffsetSeconds: 9, endOffsetSeconds: 15 }
-    ]
-  };
-  const bundle = renderTimedRehearsalBundle(plan, {
-    privateDirectory: linuxDirectory, mediaByAssetId,
-    playlistPath: `${linuxDirectory}/frozen.m3u`, outputPath: `${linuxDirectory}/listener-sample.mp3`
-  });
+  const { plan, options } = selfOwnedTimedFixture(linuxDirectory);
+  const bundle = renderTimedRehearsalBundle(plan, options);
   await writeFile(path.join(outputDirectory, "frozen.m3u"), bundle.playlistText, { flag: "wx", mode: 0o600 });
   await writeFile(path.join(outputDirectory, "rehearsal.liq"), bundle.liquidsoapText, { flag: "wx", mode: 0o600 });
   const manifest = {
