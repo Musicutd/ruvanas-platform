@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { moveStudioConsolePanel, STUDIO_CONSOLE_PANEL_GROUPS, studioTimingToNextHardEvent } from "@/lib/studio-console.mjs";
+import { formatStudioLogTime, moveStudioConsolePanel, STUDIO_CONSOLE_PANEL_GROUPS, studioTimingToNextHardEvent } from "@/lib/studio-console.mjs";
 import { studioVoiceTrackingUrl } from "@/lib/studio-voice-handoff.mjs";
 import styles from "./studio-pro.module.css";
 
@@ -12,7 +12,6 @@ const panelOptions = [
   ["NOTES", "Presenter notes"], ["MIX_POINTS", "Mix points"]
 ];
 const pretty = (value) => String(value || "").replaceAll("_", " ").toLowerCase().replace(/^./, (letter) => letter.toUpperCase());
-const clock = (value) => value ? new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—";
 const widthChoices = [240, 320, 480, 640, 800, 1200];
 
 function ConsoleLayoutControls({ layout, busy, onSave }) {
@@ -51,6 +50,7 @@ function ConsoleLayoutControls({ layout, busy, onSave }) {
 
 export default function BroadcastConsoleClient({ enabled, monitor = false }) {
   const [data, setData] = useState(null);
+  const clock = (value) => formatStudioLogTime(value, data?.dailyLog?.timezone);
   const [channelId, setChannelId] = useState("");
   const [date, setDate] = useState("");
   const [error, setError] = useState("");
@@ -127,7 +127,7 @@ export default function BroadcastConsoleClient({ enabled, monitor = false }) {
     {error ? <div role="alert" className={styles.error}>{error}</div> : null}{notice ? <div role="status" className={styles.notice}>{notice}</div> : null}
     {!monitor ? <><div className={styles.actions}><label>Layout <select aria-label="Console layout" value={data.layout.preset} disabled={busy} onChange={(event) => save("SAVE_LAYOUT", { preset: event.target.value })}>{presets.map((preset) => <option key={preset} value={preset}>{pretty(preset)}</option>)}</select></label><a href="/dashboard/studio?workspace=playout" className={styles.secondary}>Open Manual Playout controls</a><a href="/dashboard/studio?workspace=broadcast" className={styles.secondary}>Open distribution controls</a></div><ConsoleLayoutControls layout={data.layout} busy={busy} onSave={(next) => save("SAVE_LAYOUT", next)} /></> : null}
     {!data.manualOutput?.connected ? <p className={styles.warning} role="status">{data.manualOutput?.reason} The Daily Log and Manual queue below are preparation and planning views, not verified listener output.</p> : null}
-    <div className={styles.consoleStatus}><strong>{onAir ? "QUEUE ITEM MARKED ON AIR — UNVERIFIED" : "NO MANUAL ITEM CUED"}</strong><span>Mode: {data.session?.mode || "AutoDJ / schedule"}</span><span>Fallback: {data.session?.fallbackAutoDjId ? "configured" : "not confirmed"}</span><span>Studio destinations: {connected}/{health.length} verified connected</span><span>Clock: {now ? new Date(now).toLocaleTimeString() : "—"}</span></div>
+    <div className={styles.consoleStatus}><strong>{onAir ? "QUEUE ITEM MARKED ON AIR — UNVERIFIED" : "NO MANUAL ITEM CUED"}</strong><span>Mode: {data.session?.mode || "AutoDJ / schedule"}</span><span>Fallback: {data.session?.fallbackAutoDjId ? "configured" : "not confirmed"}</span><span>Studio destinations: {connected}/{health.length} verified connected</span><span>Channel clock: {now ? clock(now) : "—"}</span></div>
     <div className={styles.consoleGrid} data-section="primary" data-panels={monitor ? "ON_AIR DAILY_LOG OUTPUT_HEALTH" : data.layout.panels.join(" ")} style={panelStyles(["ON_AIR", "DAILY_LOG", "OUTPUT_HEALTH"])}>
       <article className={styles.card}><p className={styles.eyebrow}>OUTPUT STATUS · NEXT · AFTER NEXT</p><h3>{data.manualOutput?.connected && onAir?.title || "Schedule or AutoDJ controls output"}</h3><p className={styles.muted}>{data.manualOutput?.connected ? onAir?.artistOrProgramme || data.session?.outputHealth : "Manual output not verified"}</p><div className={styles.list}>{upcoming.slice(0, 8).map((item, index) => <div className={styles.item} key={item.id}><header><strong>{index === 0 ? "NEXT" : index === 1 ? "AFTER NEXT" : `#${index + 1}`} · {item.title}</strong><span className={styles.status}>{item.locked ? "LOCKED" : item.rightsReady ? "READY" : "BLOCKED"}</span></header><small>{item.artistOrProgramme || item.itemType} · {Math.round((item.durationMs || 0) / 1000)} sec</small>{!monitor ? <div className={styles.actions}><button className={styles.secondary} disabled={busy || index === 0 || item.locked || upcoming[index - 1]?.locked} onClick={() => prepareQueue("REORDER", { itemId: item.id, position: index - 1 })}>Move up</button><button className={styles.secondary} disabled={busy || index === upcoming.length - 1 || item.locked || upcoming[index + 1]?.locked} onClick={() => prepareQueue("REORDER", { itemId: item.id, position: index + 1 })}>Move down</button><button className={styles.secondary} disabled={busy} onClick={() => prepareQueue("LOCK", { itemId: item.id, locked: !item.locked })}>{item.locked ? "Unlock" : "Lock"}</button></div> : null}</div>)}{!upcoming.length ? <p className={styles.warning}>Manual queue empty. Check AutoDJ and destination state before a live show.</p> : null}</div></article>
       <article className={styles.card}><p className={styles.eyebrow}>DAILY LOG</p><h3>Planned and verified events</h3><label>Date <input type="date" value={date || data.dailyLog?.date || ""} onChange={(event) => setDate(event.target.value)} /></label><p className={styles.muted}>Timezone: {data.dailyLog?.timezone}. Planned entries and verified plays are separate; an entry here does not prove output.</p>{nextHard ? <p className={styles.warning}>Next fixed event: {clock(nextHard.plannedStartAt)} · {nextHard.label}</p> : null}{hardEventTiming?.deltaMs < 0 ? <p className={styles.warning} role="status">Timing warning: the preceding planned item may overlap this fixed event by {Math.ceil(-hardEventTiming.deltaMs / 60000)} min. Review the rundown.</p> : null}<div className={styles.list}>{(data.dailyLog?.planned || []).slice(0, 40).map((entry) => <div className={styles.item} key={`${entry.sourceType}:${entry.id}`}><header><strong>{clock(entry.plannedStartAt)} · {entry.label}</strong><span className={styles.status}>{entry.hardEvent ? "FIXED" : "PLANNED"}</span></header><small>{pretty(entry.sourceType)} · estimated {clock(entry.estimatedStartAt)}</small></div>)}{!data.dailyLog?.planned?.length ? <p className={styles.muted}>Nothing scheduled for this day.</p> : null}</div><p className={styles.muted}>Verified playback events: {data.dailyLog?.actual?.length || 0}</p></article>

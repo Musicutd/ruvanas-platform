@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   deriveStudioDailyLog,
+  formatStudioLogTime,
   moveStudioConsolePanel,
   normalizeStudioConsoleLayout,
   STUDIO_CONSOLE_LAYOUTS,
@@ -89,6 +90,20 @@ test("Daily Log keeps planned timing distinct from verified play events", () => 
   assert.equal(log.planned[0].actualStartAt, null);
   assert.equal(log.planned[1].timingVarianceMs, 0);
   assert.equal(studioTimingToNextHardEvent(log, new Date("2026-09-17T10:10:00Z")).deltaMs, -1_800_000);
+});
+
+test("Daily Log times use the channel timezone and distinguish the repeated DST hour", async () => {
+  assert.equal(formatStudioLogTime("2026-03-29T00:30:00Z", "Europe/Malta"), "01:30:00 GMT+1");
+  assert.equal(formatStudioLogTime("2026-03-29T01:30:00Z", "Europe/Malta"), "03:30:00 GMT+2");
+  assert.equal(formatStudioLogTime("2026-10-25T00:30:00Z", "Europe/Malta"), "02:30:00 GMT+2");
+  assert.equal(formatStudioLogTime("2026-10-25T01:30:00Z", "Europe/Malta"), "02:30:00 GMT+1");
+  assert.equal(formatStudioLogTime("not-a-date", "Europe/Malta"), "—");
+  assert.equal(formatStudioLogTime(null, "Europe/Malta"), "—");
+  assert.equal(formatStudioLogTime("2026-10-25T01:30:00Z", "Invalid/Zone"), "—");
+  const ui = await readFile(new URL("../app/dashboard/studio/BroadcastConsoleClient.js", import.meta.url), "utf8");
+  assert.match(ui, /formatStudioLogTime\(value, data\?\.dailyLog\?\.timezone\)/);
+  assert.match(ui, /clock\(entry\.plannedStartAt\)/);
+  assert.match(ui, /clock\(entry\.estimatedStartAt\)/);
 });
 
 test("Console routes reuse Studio authority and keep tenant-scoped writes behind Pro", async () => {
