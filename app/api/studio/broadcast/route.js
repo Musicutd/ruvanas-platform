@@ -5,6 +5,7 @@ import { encryptSecret } from "@/lib/crypto";
 import { requireActiveStudio } from "@/lib/studio-access";
 import { ORGANISATION_MANAGER_ROLES } from "@/lib/permissions.mjs";
 import { assertDestinationCapacity, broadcastMetadata, safeStudioDestination, validateStudioDestination } from "@/lib/studio-broadcast.mjs";
+import { assertStudioManualOutputBridge, studioManualOutputAvailability } from "@/lib/studio-playout.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -32,10 +33,10 @@ async function getWorkspace(access) {
   const [destinations, sessions, playoutSessions, stations] = await Promise.all([
     prisma.studioBroadcastDestination.findMany({ where: { organisationId }, orderBy: { updatedAt: "desc" } }),
     prisma.studioBroadcastSession.findMany({ where: { organisationId }, include: sessionInclude, orderBy: { updatedAt: "desc" }, take: 20 }),
-    prisma.studioPlayoutSession.findMany({ where: { organisationId, status: { in: ["ACTIVE", "FALLBACK"] } }, include: { items: { where: { status: "ON_AIR" } } }, orderBy: { updatedAt: "desc" } }),
-    prisma.station.findMany({ where: { organisationId, status: "ACTIVE", streamConfig: { isNot: null } }, include: { streamConfig: { select: { id: true, serverType: true, outputCodec: true, bitrateKbps: true, sourceConnectionStatus: true } } }, orderBy: { name: "asc" } })
+    prisma.studioPlayoutSession.findMany({ where: { organisationId, productFamily: access.entitlements.planProductFamily, status: { in: ["ACTIVE", "FALLBACK"] } }, include: { items: { where: { status: "ON_AIR" } } }, orderBy: { updatedAt: "desc" } }),
+    prisma.station.findMany({ where: { organisationId, productFamily: access.entitlements.planProductFamily, status: "ACTIVE", streamConfig: { isNot: null } }, include: { streamConfig: { select: { id: true, serverType: true, outputCodec: true, bitrateKbps: true, sourceConnectionStatus: true } } }, orderBy: { name: "asc" } })
   ]);
-  return { studioLevel: access.entitlements.studioLevel, externalDestinationLimit: access.entitlements.studioExternalDestinationLimit, providerConfigured: Boolean(process.env.STUDIO_BROADCAST_PROVIDER_URL && process.env.STUDIO_BROADCAST_PROVIDER_TOKEN), destinations: destinations.map(safeStudioDestination), sessions: sessions.map((session) => ({ ...session, destinations: session.destinations.map((link) => ({ ...link, destination: safeStudioDestination(link.destination) })) })), playoutSessions, stations };
+  return { studioLevel: access.entitlements.studioLevel, externalDestinationLimit: access.entitlements.studioExternalDestinationLimit, manualOutput: studioManualOutputAvailability(), providerConfigured: Boolean(process.env.STUDIO_BROADCAST_PROVIDER_URL && process.env.STUDIO_BROADCAST_PROVIDER_TOKEN), destinations: destinations.map(safeStudioDestination), sessions: sessions.map((session) => ({ ...session, destinations: session.destinations.map((link) => ({ ...link, destination: safeStudioDestination(link.destination) })) })), playoutSessions, stations };
 }
 
 export async function GET() {
@@ -58,9 +59,9 @@ export async function POST(request) {
     const prior = await prisma.studioBroadcastCommand.findUnique({ where: { organisationId_idempotencyKey: { organisationId: access.organisation.id, idempotencyKey } } });
     if (prior) return NextResponse.json({ repeated: true, command: prior.result });
     if (input.action === "QUICK_CONNECT") {
-      const station = await prisma.station.findFirst({ where: { id: input.stationId, organisationId: access.organisation.id, status: "ACTIVE", streamConfig: { isNot: null } }, include: { streamConfig: true } });
+      const station = await prisma.station.findFirst({ where: { id: input.stationId, organisationId: access.organisation.id, productFamily: access.entitlements.planProductFamily, status: "ACTIVE", streamConfig: { isNot: null } }, include: { streamConfig: true } });
       if (!station?.streamConfig) throw new Error("Choose an active Ruvanas station with a managed stream.");
-      const destination = await prisma.studioBroadcastDestination.upsert({ where: { organisationId_name: { organisationId: access.organisation.id, name: `Ruvanas · ${station.name}` } }, create: { organisationId: access.organisation.id, stationId: station.id, name: `Ruvanas · ${station.name}`, type: "RUVANAS_MANAGED", codec: station.streamConfig.outputCodec, bitrateKbps: station.streamConfig.bitrateKbps, enabled: true, connectionState: station.streamConfig.sourceConnectionStatus === "CONNECTED" ? "CONNECTED" : "STANDBY", createdByUserId: access.user.id }, update: { stationId: station.id, codec: station.streamConfig.outputCodec, bitrateKbps: station.streamConfig.bitrateKbps, enabled: true } });
+      const destination = await prisma.studioBroadcastDestination.upsert({ where: { organisationId_name: { organisationId: access.organisation.id, name: `Ruvanas · ${station.name}` } }, create: { organisationId: access.organisation.id, stationId: station.id, name: `Ruvanas · ${station.name}`, type: "RUVANAS_MANAGED", codec: station.streamConfig.outputCodec, bitrateKbps: station.streamConfig.bitrateKbps, enabled: true, connectionState: "STANDBY", createdByUserId: access.user.id }, update: { stationId: station.id, codec: station.streamConfig.outputCodec, bitrateKbps: station.streamConfig.bitrateKbps, enabled: true, connectionState: "STANDBY" } });
       await recordBroadcastCommand(access, input, idempotencyKey, { destinationId: destination.id });
       return NextResponse.json({ destination: safeStudioDestination(destination) }, { status: 201 });
     }
@@ -79,7 +80,8 @@ export async function POST(request) {
       return NextResponse.json({ destination: safeStudioDestination(updated) });
     }
     if (input.action === "START_BROADCAST") {
-      const playout = await prisma.studioPlayoutSession.findFirst({ where: { id: input.playoutSessionId, organisationId: access.organisation.id, status: { in: ["ACTIVE", "FALLBACK"] } }, include: { items: { where: { status: "ON_AIR" } } } });
+      assertStudioManualOutputBridge();
+      const playout = await prisma.studioPlayoutSession.findFirst({ where: { id: input.playoutSessionId, organisationId: access.organisation.id, productFamily: access.entitlements.planProductFamily, status: { in: ["ACTIVE", "FALLBACK"] } }, include: { items: { where: { status: "ON_AIR" } } } });
       if (!playout) throw new Error("Choose an active server-side playout session.");
       const destinations = await prisma.studioBroadcastDestination.findMany({ where: { id: { in: input.destinationIds || [] }, organisationId: access.organisation.id, enabled: true } });
       if (destinations.length !== (input.destinationIds || []).length || !destinations.length) throw new Error("Choose enabled destinations owned by this organisation.");

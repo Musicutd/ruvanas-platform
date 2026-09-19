@@ -28,6 +28,9 @@ export default async function AdminStationsPage() {
         <Link href="/admin/stations/new" style={styles.addButton}>
           Add station
         </Link>
+        {adminUser?.role === "SUPER_ADMIN" ? <Link href="/admin/radio-stream-pool" style={styles.addButton}>
+          Prepared stream pool
+        </Link> : null}
       </PageHeader>
 
       <StreamSourceOperations />

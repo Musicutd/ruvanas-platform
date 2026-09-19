@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { verifiedStudioVoiceChannel } from "@/lib/studio-voice-handoff.mjs";
 import styles from "./programming.module.css";
 
 const EMPTY = { title: "", channelId: "", audioRenderId: "", outgoingTrackId: "", incomingTrackId: "", outgoingCueOutMs: 0, voiceTrimStartMs: 0, voiceTrimEndMs: 0, incomingIntroEndMs: 15000, outgoingOverlapMs: 2000, incomingOverlapMs: 2000, duckingDb: -12 };
@@ -17,7 +18,10 @@ export default function VoiceTrackingWorkspace() {
   const [busy, setBusy] = useState("load");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [requestedChannelId, setRequestedChannelId] = useState("");
   const previewRef = useRef([]);
+
+  useEffect(() => { setRequestedChannelId(new URLSearchParams(window.location.search).get("studioChannelId") || ""); }, []);
 
   const load = useCallback(async () => {
     try {
@@ -28,6 +32,12 @@ export default function VoiceTrackingWorkspace() {
     } catch (loadError) { setError(loadError.message); } finally { setBusy(""); }
   }, []);
   useEffect(() => { load(); return () => stopPreview(); }, [load]);
+
+  const handoffChannel = verifiedStudioVoiceChannel(data?.channels, requestedChannelId);
+  useEffect(() => {
+    if (!handoffChannel || editing) return;
+    setForm((current) => current.channelId ? current : { ...current, channelId: handoffChannel.id });
+  }, [handoffChannel?.id, editing]);
 
   const selected = useMemo(() => ({
     render: sourceById(data?.renders, form.audioRenderId),
@@ -92,7 +102,7 @@ export default function VoiceTrackingWorkspace() {
     const track = sourceById(data?.tracks, id);
     setForm((current) => ({ ...current, [field]: id, ...(field === "outgoingTrackId" ? { outgoingCueOutMs: track?.durationMs || 0 } : { incomingIntroEndMs: Math.min(15000, track?.durationMs || 0) }) }));
   }
-  function reset() { setEditing(null); setForm(EMPTY); setPreviewed(""); setError(""); setNotice(""); }
+  function reset() { setEditing(null); setForm({ ...EMPTY, channelId: handoffChannel?.id || "" }); setPreviewed(""); setError(""); setNotice(""); }
   function edit(segue) {
     setEditing(segue);
     setForm({ title: segue.title, channelId: segue.channel.id, audioRenderId: segue.audioRenderId, outgoingTrackId: segue.outgoingTrack.id, incomingTrackId: segue.incomingTrack.id, outgoingCueOutMs: segue.outgoingCueOutMs, voiceTrimStartMs: segue.voiceTrimStartMs, voiceTrimEndMs: segue.voiceTrimEndMs, incomingIntroEndMs: segue.incomingIntroEndMs, outgoingOverlapMs: segue.outgoingOverlapMs, incomingOverlapMs: segue.incomingOverlapMs, duckingDb: segue.duckingDb });
@@ -106,7 +116,7 @@ export default function VoiceTrackingWorkspace() {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Unable to save the voice track.");
       setNotice(editing ? "Voice-track timing saved as a new draft version." : "Voice-track draft created. Listen to its complete segue before approval.");
-      setEditing(null); setForm(EMPTY); setPreviewed(""); await load();
+      setEditing(null); setForm({ ...EMPTY, channelId: handoffChannel?.id || "" }); setPreviewed(""); await load();
     } catch (saveError) { setError(saveError.message); } finally { setBusy(""); }
   }
 
@@ -126,6 +136,7 @@ export default function VoiceTrackingWorkspace() {
   return <section className={styles.panel} aria-labelledby="voice-tracking-title">
     <div className={styles.sectionHeading}><div><p className={styles.kicker}>VOICE TRACKING + SEGUE</p><h2 id="voice-tracking-title">Make every link sound live</h2></div><span className={styles.count}>{data?.segues?.filter((segue) => segue.status === "APPROVED").length || 0} approved</span></div>
     <p className={styles.panelIntro}>Reuse an approved AudioLab or multitrack voice render, set the outgoing cue and next-song intro, then listen to the real three-part transition before approval. Approved links become protected sources in Radio Clocks.</p>
+    {handoffChannel && !editing && form.channelId === handoffChannel.id ? <p className={styles.notice} role="status">From Broadcast Console: {handoffChannel.name} is selected for a new voice-track draft. Nothing is saved or broadcast until you choose to do so.</p> : null}
     {error ? <div className={styles.error} role="alert">{error}</div> : null}{notice ? <div className={styles.notice} role="status">{notice}</div> : null}
     {(data?.segues || []).length ? <div className={styles.voiceTrackGrid}>{data.segues.map((segue) => <article className={styles.voiceTrackCard} key={segue.id}>
       <div className={styles.smartPlaylistTitle}><div><strong>{segue.title}</strong><span>{segue.channel?.name}</span></div><span className={segue.status === "APPROVED" ? styles.publishedBadge : styles.draftBadge}>{segue.status}</span></div>

@@ -1,0 +1,13 @@
+# Test-only derivative of the exact Online Radio encoder image. It is built by
+# CI after the production image, never deployed or used as a source service.
+FROM ruvanas-online-radio-encoder:ci
+
+COPY scripts/prepare-studio-timed-rehearsal.mjs scripts/verify-studio-timed-surrogate.mjs scripts/run-studio-timed-liquidsoap-linux.mjs scripts/run-studio-isolated-handoff-linux.mjs ./scripts/
+
+# The runner creates its own private self-owned tones and only an MP3 file
+# output. No station URL, source credentials or customer media are available.
+RUN node scripts/run-studio-timed-liquidsoap-linux.mjs
+
+# Separately prove that a synthetic Manual request overrides local AutoDJ and
+# returns to AutoDJ. The only output is a private file in this CI image.
+RUN node scripts/run-studio-isolated-handoff-linux.mjs

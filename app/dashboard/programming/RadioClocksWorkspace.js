@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { formatClockOffset, reorderRadioClockDraftItems, reviewRadioClockDraft } from "@/lib/radio-clocks.mjs";
 import styles from "./programming.module.css";
 
 const TYPE_OPTIONS = [["MUSIC_MODE", "Music mode"], ["MUSIC_TRACK", "Specific music track"], ["PROMO", "Jingle or promo"], ["VOICE_TRACK", "Approved voice-track segue"], ["SHOW_RUNDOWN", "Approved show rundown"], ["MARKER", "Timing marker"]];
@@ -11,16 +12,6 @@ const EMPTY_FORM = { name: "", description: "", items: [{ ...EMPTY_ITEM }] };
 
 function sourceCollection(sources, type) {
   return { MUSIC_MODE: sources?.musicModes, MUSIC_TRACK: sources?.tracks, PROMO: sources?.promos, VOICE_TRACK: sources?.voiceTracks, SHOW_RUNDOWN: sources?.rundowns }[type] || [];
-}
-
-function plannedSeconds(items) {
-  let cursor = 0;
-  for (const item of items) {
-    if (item.type === "MARKER") continue;
-    const overlap = ["CROSSFADE", "DUCK_VOICE"].includes(item.transition) ? Number(item.transitionSeconds || 0) : 0;
-    cursor = Math.max(0, cursor - overlap) + Number(item.durationSeconds || 0);
-  }
-  return cursor;
 }
 
 function time(seconds) {
@@ -36,6 +27,8 @@ export default function RadioClocksWorkspace() {
   const [busy, setBusy] = useState("load");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [draggedIndex, setDraggedIndex] = useState(null);
+  const [dropIndex, setDropIndex] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -47,7 +40,8 @@ export default function RadioClocksWorkspace() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
-  const total = useMemo(() => plannedSeconds(form.items), [form.items]);
+  const draftReview = useMemo(() => reviewRadioClockDraft(form.items), [form.items]);
+  const total = draftReview.timeline.plannedSeconds;
   const remaining = 3600 - total;
   const clocks = data?.clocks || [];
 
@@ -77,11 +71,13 @@ export default function RadioClocksWorkspace() {
 
   function moveUp(index) {
     if (index < 1) return;
-    setForm((current) => {
-      const items = [...current.items];
-      [items[index - 1], items[index]] = [items[index], items[index - 1]];
-      return { ...current, items };
-    });
+    reorderItem(index, index - 1);
+  }
+
+  function reorderItem(from, to) {
+    setForm((current) => ({ ...current, items: reorderRadioClockDraftItems(current.items, from, to) }));
+    setPreview(null);
+    setNotice("Clock order changed. Save and preview the new version before publishing.");
   }
 
   function fitLastItem() {
@@ -141,10 +137,23 @@ export default function RadioClocksWorkspace() {
 
     {data?.canAuthor ? <form className={styles.smartPlaylistForm} onSubmit={save}><div className={styles.smartFormHeader}><div><h3>{editingId ? "Edit Radio Clock" : "Create a Radio Clock"}</h3><p>The timing meter must finish at exactly 60:00 before an owner or manager can publish.</p></div>{editingId ? <button type="button" className={styles.secondaryButton} onClick={resetForm}>Create another</button> : null}</div>
       <div className={styles.formGrid}><label><span>Clock name</span><input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="e.g. Contemporary daytime hour" /></label><label><span>Purpose</span><input value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder="Describe where this clock will be used" /></label></div>
-      <div className={styles.clockSummary}><div><strong>{time(total)} / 60:00</strong><span>{remaining === 0 ? "Ready for publication" : `${Math.abs(remaining)} seconds ${remaining > 0 ? "remaining" : "over"}`}</span></div><div className={styles.clockMeter}><span style={{ width: `${Math.min(100, total / 36)}%` }} /></div><button type="button" className={styles.secondaryButton} disabled={remaining === 0} onClick={fitLastItem}>Fit final item to hour</button></div>
+      <div className={styles.clockSummary}><div><strong>{time(total)} / 60:00</strong><span>{remaining === 0 ? draftReview.warnings.length ? "Timing needs review" : "Exact-hour timing; save and preview next" : `${Math.abs(remaining)} seconds ${remaining > 0 ? "remaining" : "over"}`}</span></div><div className={styles.clockMeter}><span style={{ width: `${Math.min(100, total / 36)}%` }} /></div><button type="button" className={styles.secondaryButton} disabled={remaining === 0} onClick={fitLastItem}>Fit final item to hour</button></div>
+      {draftReview.warnings.length ? <div className={styles.compatibilityWarning} role="status"><strong>Review clock timing before saving</strong><ul>{draftReview.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></div> : null}
       <div className={styles.slotHeader}><h3>Clock items</h3><button type="button" className={styles.secondaryButton} disabled={form.items.length >= 100} onClick={() => setForm({ ...form, items: [...form.items, { ...EMPTY_ITEM, durationSeconds: 180 }] })}>Add item</button></div>
-      <div className={styles.clockItemList}>{form.items.map((item, index) => { const options = sourceCollection(data.sources, item.type); return <div className={styles.clockItem} key={index}><span className={styles.clockPosition}>{index + 1}</span><label><span>Type</span><select value={item.type} onChange={(event) => updateItem(index, "type", event.target.value)}>{TYPE_OPTIONS.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label><label><span>Label</span><input required value={item.label} onChange={(event) => updateItem(index, "label", event.target.value)} /></label>{item.type !== "MARKER" ? <label className={styles.clockSource}><span>Approved source</span><select required value={item.sourceId} onChange={(event) => updateItem(index, "sourceId", event.target.value)}><option value="">Choose source</option>{options.map((source) => <option value={source.id} key={source.id}>{source.name}</option>)}</select></label> : <div className={styles.clockSource}><span>Marker only</span><small>No audio source is played.</small></div>}<label><span>Seconds</span><input type="number" min={item.type === "MARKER" ? 0 : 1} max="3600" value={item.durationSeconds} onChange={(event) => updateItem(index, "durationSeconds", event.target.value)} /></label><label><span>Transition</span><select value={item.transition} onChange={(event) => updateItem(index, "transition", event.target.value)}>{TRANSITIONS.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label><label><span>Mix seconds</span><input type="number" min="0" max="30" disabled={!['CROSSFADE', 'DUCK_VOICE'].includes(item.transition)} value={item.transitionSeconds} onChange={(event) => updateItem(index, "transitionSeconds", event.target.value)} /></label><div className={styles.clockItemActions}><button type="button" className={styles.copyButton} disabled={index === 0} onClick={() => moveUp(index)}>↑</button><button type="button" className={styles.removeButton} disabled={form.items.length === 1} onClick={() => setForm({ ...form, items: form.items.filter((_, itemIndex) => itemIndex !== index) })}>Remove</button></div></div>; })}</div>
-      <div className={styles.actionBar}><span className={styles.safeClaim}>Draft → exact-hour preview → owner/manager publish</span><button className={styles.primaryButton} disabled={busy !== ""}>{busy === "save" ? "Saving…" : editingId ? "Save new version" : "Create clock draft"}</button></div></form> : <div className={styles.readOnlyMessage}>You can view and preview Radio Clocks. An owner, manager or content editor can change them.</div>}
+      <p className={styles.panelIntro}>Drag a row by its handle to reorder the draft. The move-up button is the keyboard alternative. Review the new start times, then save and preview before publishing.</p>
+      <div className={styles.clockItemList}>{form.items.map((item, index) => { const options = sourceCollection(data.sources, item.type); return <div className={`${styles.clockItem} ${dropIndex === index ? styles.clockDropTarget : ""}`} key={index}
+        onDragOver={(event) => { if (busy || draggedIndex === null || draggedIndex === index) return; event.preventDefault(); event.dataTransfer.dropEffect = "move"; setDropIndex((current) => current === index ? current : index); }}
+        onDrop={(event) => { event.preventDefault(); if (!busy && draggedIndex !== null && draggedIndex !== index) reorderItem(draggedIndex, index); setDraggedIndex(null); setDropIndex(null); }}>
+        <div className={styles.clockRowHandle}><span className={styles.clockDragHandle} draggable={!busy} title={`Drag item ${index + 1} to reorder`} aria-hidden="true" onDragStart={(event) => { if (busy) { event.preventDefault(); return; } event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", String(index)); setDraggedIndex(index); }} onDragEnd={() => { setDraggedIndex(null); setDropIndex(null); }}>⋮⋮</span><span className={styles.clockPosition}>{index + 1}</span><small>{formatClockOffset(draftReview.timeline.items[index]?.offsetSeconds || 0)}</small></div>
+        <label><span>Type</span><select value={item.type} onChange={(event) => updateItem(index, "type", event.target.value)}>{TYPE_OPTIONS.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
+        <label><span>Label</span><input required value={item.label} onChange={(event) => updateItem(index, "label", event.target.value)} /></label>
+        {item.type !== "MARKER" ? <label className={styles.clockSource}><span>Approved source</span><select required value={item.sourceId} onChange={(event) => updateItem(index, "sourceId", event.target.value)}><option value="">Choose source</option>{options.map((source) => <option value={source.id} key={source.id}>{source.name}</option>)}</select></label> : <div className={styles.clockSource}><span>Marker only</span><small>No audio source is played.</small></div>}
+        <label><span>Seconds</span><input type="number" min={item.type === "MARKER" ? 0 : 1} max="3600" value={item.durationSeconds} onChange={(event) => updateItem(index, "durationSeconds", event.target.value)} /></label>
+        <label><span>Transition</span><select value={item.transition} onChange={(event) => updateItem(index, "transition", event.target.value)}>{TRANSITIONS.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
+        <label><span>Mix seconds</span><input type="number" min="0" max="30" disabled={!['CROSSFADE', 'DUCK_VOICE'].includes(item.transition)} value={item.transitionSeconds} onChange={(event) => updateItem(index, "transitionSeconds", event.target.value)} /></label>
+        <div className={styles.clockItemActions}><button type="button" className={styles.copyButton} disabled={index === 0} onClick={() => moveUp(index)}>↑</button><button type="button" className={styles.removeButton} disabled={form.items.length === 1} onClick={() => setForm({ ...form, items: form.items.filter((_, itemIndex) => itemIndex !== index) })}>Remove</button></div>
+      </div>; })}</div>
+      <div className={styles.actionBar}><span className={styles.safeClaim}>Draft → exact-hour preview → owner/manager publish</span><button className={styles.primaryButton} disabled={busy !== "" || draftReview.warnings.length > 0}>{busy === "save" ? "Saving…" : editingId ? "Save new version" : "Create clock draft"}</button></div></form> : <div className={styles.readOnlyMessage}>You can view and preview Radio Clocks. An owner, manager or content editor can change them.</div>}
 
     {preview ? <div className={styles.clockPreview}><div className={styles.sectionHeading}><div><p className={styles.kicker}>ONE-HOUR PREVIEW</p><h3>{preview.name}</h3></div><span className={preview.readyToPublish ? styles.publishedBadge : styles.draftBadge}>{preview.readyToPublish ? "EXACT 60:00" : "TIMING CHECK"}</span></div><div className={styles.timeline}>{preview.items.map((item) => <div className={styles.timelineItem} key={item.id}><time>{time(item.offsetSeconds)}</time><div><strong>{item.label}</strong><span>{item.type.replaceAll("_", " ")} · {item.source?.name || "Timing marker"}</span><small>{item.durationSeconds}s · {item.transition.replaceAll("_", " ").toLowerCase()}{item.transitionSeconds ? ` ${item.transitionSeconds}s` : ""}</small></div></div>)}</div></div> : null}
   </section>;

@@ -3,9 +3,29 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { assertGenreSelection, licensedGenresForLevel, normaliseGenreCode } from "../lib/autodj-genre-entitlements.mjs";
 import { generateTimedPlaylist, invalidationForCatalogueDowngrade, parseTimedPlaylistInput } from "../lib/timed-playlist-generator.mjs";
+import { playableMusicModeEntries, publishedGeneratedPlaylist } from "../lib/music-mode-playback.mjs";
 import { resolveUnifiedPlayout, PLAYOUT_SOURCE_PRIORITIES } from "../lib/playout-resolver.mjs";
+import { assertFutureTimedPublication, assertFutureTimedReplacement, firstInvalidTimedPublicationItem, replacePublishedAreaSchedule, replacePublishedProgrammeItem, uniquePublishedModeTracks } from "../lib/generated-playlist-publication.mjs";
 
 const codes = (level, extra = []) => licensedGenresForLevel(level, extra).map((genre) => genre.code);
+
+test("playback keeps the published playlist's genre policy while a newer version is draft", async () => {
+  const previouslyPublished = { status: "DRAFT", currentVersion: 3, publishedVersion: 2, selectedGenreCodes: ["POP"] };
+  assert.equal(publishedGeneratedPlaylist({ generatedPlaylists: [previouslyPublished] }), previouslyPublished);
+  assert.equal(publishedGeneratedPlaylist({ generatedPlaylists: [{ ...previouslyPublished, publishedVersion: 0 }] }), null);
+  assert.equal(publishedGeneratedPlaylist({ generatedPlaylists: [{ ...previouslyPublished, status: "INVALIDATED" }] }), null);
+  assert.equal(publishedGeneratedPlaylist({ generatedPlaylists: [{ ...previouslyPublished, status: "ARCHIVED" }] }), null);
+  const resolver = await readFile(new URL("../lib/player-programming.js", import.meta.url), "utf8");
+  assert.match(resolver, /generatedPlaylists: \{ where: \{ status: \{ in: \["PUBLISHED", "DRAFT"\] \}, publishedVersion: \{ gt: 0 \} \}/);
+  const track = (id, genre) => ({ id, status: "READY", rightsReviewStatus: "APPROVED", permittedUses: ["ONLINE_RADIO"], permittedTerritories: "MT", mediaAsset: {
+    status: "READY", mediaType: "MUSIC", libraryType: "RUVANAS_CATALOGUE", organisationId: null, licensedCatalogue: true,
+    genres: [{ mediaGenre: { slug: genre } }]
+  } });
+  const musicMode = { organisationId: "org-1", generatedPlaylists: [previouslyPublished], tracks: [
+    { weight: 100, track: track("pop", "pop") }, { weight: 100, track: track("rock", "rock") }
+  ] };
+  assert.deepEqual(playableMusicModeEntries(musicMode, new Date("2026-09-18"), { organisationId: "org-1", requiredUse: "ONLINE_RADIO", territory: "MT", licensedCatalogueLevel: "FOCUSED" }).map((entry) => entry.track.id), ["pop"]);
+});
 
 test("Licensed Music Catalogue tiers expose the exact fixed genre matrix", () => {
   assert.deepEqual(codes("NONE"), []);
@@ -101,4 +121,97 @@ test("routes derive tenant and plan server-side and preserve frozen version reco
   assert.match(route, /licensedMusicCatalogueLevel/); assert.match(publish, /assertGenreSelection/);
   assert.match(schema, /model GeneratedPlaylistVersion/); assert.match(schema, /model GeneratedPlaylistItem/);
   assert.match(migration, /GeneratedPlaylistItem_timing_check/); assert.match(player, /licensedCatalogueLevel/);
+});
+
+test("saved timed playlists reopen for review and an unchanged version cannot be published twice", async () => {
+  const [workspace, service, publish] = await Promise.all([
+    readFile(new URL("../app/dashboard/programming/AutoDjExpansionWorkspace.js", import.meta.url), "utf8"),
+    readFile(new URL("../lib/generated-playlist-service.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/programming/autodj-expansion/[playlistId]/publish/route.js", import.meta.url), "utf8")
+  ]);
+  assert.match(workspace, /get\("timedPlaylistId"\)/);
+  assert.match(workspace, /Open a saved timed playlist/);
+  assert.match(workspace, /setReviewVersion\("PUBLISHED"\)/);
+  assert.match(workspace, /reviewVersion === "DRAFT" && hasNewerDraft/);
+  assert.match(workspace, /Published v\{preview\.publishedVersion\} · scheduled plan/);
+  assert.match(workspace, /Draft v\{preview\.currentVersion\} · not scheduled/);
+  assert.match(workspace, /Unpublished draft · review only/);
+  assert.match(workspace, /preview\.currentVersion <= preview\.publishedVersion/);
+  assert.match(workspace, /data\.canPublish && preview\.publishedVersion === 0/);
+  assert.match(workspace, /Publishing saves a programming plan, not proof of listener playback/);
+  assert.match(workspace, /current Ruvanas Centova worker plays from the Continuous AutoDJ pool/);
+  assert.match(workspace, /Listener output and exact track order are not yet verified/);
+  assert.match(workspace, /Publish plan/);
+  assert.match(service, /current\.currentVersion <= current\.publishedVersion/);
+  assert.match(service, /const replacing = current\.publishedVersion > 0/);
+  assert.match(service, /RUVANAS_TIMED_PLAYLIST_REPLACEMENT_ENABLED !== "1"/);
+  assert.match(service, /replacePublishedProgrammeItem/);
+  assert.match(service, /replacePublishedAreaSchedule/);
+  assert.match(service, /isolationLevel: "Serializable"/);
+  assert.doesNotMatch(service, /musicModeTrack\.deleteMany/);
+  assert.match(service, /tx\.generatedPlaylist\.updateMany\(\{/);
+  assert.match(service, /publishedVersion: \{ lt: current\.currentVersion \}/);
+  assert.match(publish, /"ALREADY_PUBLISHED"/);
+  assert.match(publish, /"REPLACEMENT_CONFLICT"/);
+  assert.match(publish, /"REPLACEMENT_NOT_READY"/);
+});
+
+test("a published Online Radio timed block is replaced once while other programme items stay in order", () => {
+  const startsAt = new Date("2026-10-01T08:00:00.000Z");
+  const old = { id: "old", position: 1, label: "Timed block", recurrence: "ONE_OFF", sourceType: "MUSIC_MODE", startsAt, durationMinutes: 120, priority: 50, musicModeId: "old-mode" };
+  const another = { id: "another", position: 0, label: "News", recurrence: "WEEKLY", sourceType: "RADIO_CLOCK", weekday: 4, startMinute: 510, durationMinutes: 30, priority: 70, radioClockId: "clock" };
+  const input = { schedule: { timezone: "Europe/Malta" }, activeVersions: [{ id: "v1", status: "PUBLISHED", items: [old, another] }], oldMusicModeId: "old-mode", newMusicModeId: "new-mode", startsAt, durationMinutes: 120, timezone: "Europe/Malta", name: "Timed block" };
+  const result = replacePublishedProgrammeItem(input);
+  assert.equal(result.activeVersionId, "v1");
+  assert.deepEqual(result.items.map((item) => [item.position, item.label, item.musicModeId || null, item.radioClockId || null]), [[0, "News", null, "clock"], [1, "Timed block", "new-mode", null]]);
+  assert.equal(old.musicModeId, "old-mode");
+  assert.throws(() => replacePublishedProgrammeItem({ ...input, activeVersions: [{ id: "v1", status: "PUBLISHED", items: [another] }] }), { code: "REPLACEMENT_CONFLICT" });
+  assert.throws(() => replacePublishedProgrammeItem({ ...input, activeVersions: [{ id: "v1", status: "PUBLISHED", items: [old, { ...old, id: "duplicate" }] }] }), { code: "REPLACEMENT_CONFLICT" });
+  assert.throws(() => replacePublishedProgrammeItem({ ...input, activeVersions: [input.activeVersions[0], input.activeVersions[0]] }), { code: "REPLACEMENT_CONFLICT" });
+  assert.throws(() => replacePublishedProgrammeItem({ ...input, activeVersions: [{ id: "v1", status: "PUBLISHED", items: [{ ...old, startsAt: new Date("2026-10-01T09:00:00Z") }] }] }), { code: "REPLACEMENT_CONFLICT" });
+});
+
+test("a physical timed schedule can replace only its unique unchanged one-day slot", () => {
+  const scheduledDate = new Date("2026-10-01T00:00:00.000Z");
+  const schedule = { id: "schedule-1", status: "PUBLISHED", timezone: "Europe/Malta", effectiveFrom: scheduledDate, effectiveTo: scheduledDate, slots: [{ musicModeId: "old-mode", weekday: 4, startMinute: 600, endMinute: 720, priority: 50 }] };
+  const input = { schedules: [schedule], oldMusicModeId: "old-mode", scheduledDate, startMinute: 600, endMinute: 720, timezone: "Europe/Malta" };
+  assert.equal(replacePublishedAreaSchedule(input), "schedule-1");
+  assert.throws(() => replacePublishedAreaSchedule({ ...input, schedules: [schedule, { ...schedule, id: "schedule-2" }] }), { code: "REPLACEMENT_CONFLICT" });
+  assert.throws(() => replacePublishedAreaSchedule({ ...input, schedules: [{ ...schedule, slots: [{ ...schedule.slots[0], startMinute: 630 }] }] }), { code: "REPLACEMENT_CONFLICT" });
+  assert.throws(() => replacePublishedAreaSchedule({ ...input, schedules: [{ ...schedule, slots: [...schedule.slots, schedule.slots[0]] }] }), { code: "REPLACEMENT_CONFLICT" });
+  assert.throws(() => replacePublishedAreaSchedule({ ...input, schedules: [] }), { code: "REPLACEMENT_CONFLICT" });
+});
+
+test("a repeated timed sequence has a unique database music-mode pool without altering its frozen items", () => {
+  const items = [{ trackId: "a", position: 0 }, { trackId: "b", position: 1 }, { trackId: "a", position: 2 }];
+  assert.deepEqual(uniquePublishedModeTracks(items, "mode-new"), [
+    { musicModeId: "mode-new", trackId: "a", weight: 100, position: 0 },
+    { musicModeId: "mode-new", trackId: "b", weight: 100, position: 1 }
+  ]);
+  assert.deepEqual(items.map((item) => item.trackId), ["a", "b", "a"]);
+});
+
+test("a started or invalid timed block cannot replace its published history", () => {
+  const now = new Date("2026-10-01T08:00:00Z");
+  assert.doesNotThrow(() => assertFutureTimedReplacement(new Date("2026-10-01T08:00:01Z"), now));
+  assert.throws(() => assertFutureTimedReplacement(new Date("2026-10-01T08:00:00Z"), now), { code: "REPLACEMENT_CONFLICT" });
+  assert.throws(() => assertFutureTimedReplacement(new Date("2026-10-01T07:59:59Z"), now), { code: "REPLACEMENT_CONFLICT" });
+  assert.throws(() => assertFutureTimedReplacement(new Date("invalid"), now), { code: "REPLACEMENT_CONFLICT" });
+  assert.doesNotThrow(() => assertFutureTimedPublication(new Date("2026-10-01T08:00:01Z"), now));
+  assert.throws(() => assertFutureTimedPublication(new Date("2026-10-01T08:00:00Z"), now), { code: "GENERATION_INVALIDATED" });
+});
+
+test("publication rechecks each frozen track's future licence, source, genre, product use and timing", () => {
+  const startsAt = new Date("2026-10-02T10:00:00Z");
+  const eligibleTrack = track(0);
+  const item = { position: 0, trackId: eligibleTrack.id, track: eligibleTrack, startOffsetSeconds: 0, endOffsetSeconds: 240, durationSeconds: 240, genreCode: "POP", sourceScope: "SUBSCRIBER_LIBRARY" };
+  const options = { startsAt, organisationId: "org-1", rightsUse: "ONLINE_RADIO", territory: "MT", catalogueLevel: "NONE", selectedGenreCodes: ["POP"], sourceScopes: ["SUBSCRIBER_LIBRARY"], instant: new Date("2026-09-18T00:00:00Z") };
+  assert.equal(firstInvalidTimedPublicationItem([item], options), null);
+  assert.equal(firstInvalidTimedPublicationItem([{ ...item, track: { ...eligibleTrack, licenceExpiresAt: new Date("2026-09-30T00:00:00Z") } }], options).reason, "RIGHTS_WINDOW_INACTIVE");
+  assert.equal(firstInvalidTimedPublicationItem([{ ...item, track: { ...eligibleTrack, permittedUses: ["RETAIL_RADIO"] } }], options).reason, "USE_NOT_PERMITTED");
+  assert.equal(firstInvalidTimedPublicationItem([item], { ...options, selectedGenreCodes: ["DANCE"] }).reason, "FROZEN_METADATA_CHANGED");
+  assert.equal(firstInvalidTimedPublicationItem([item], { ...options, sourceScopes: ["RUVANAS_CORE"] }).reason, "FROZEN_METADATA_CHANGED");
+  assert.equal(firstInvalidTimedPublicationItem([{ ...item, durationSeconds: 239 }], options).reason, "FROZEN_TIMING_CHANGED");
+  assert.equal(firstInvalidTimedPublicationItem([{ ...item, track: { ...eligibleTrack, mediaAsset: { ...eligibleTrack.mediaAsset, durationSeconds: 241 } } }], options).reason, "FROZEN_TIMING_CHANGED");
+  assert.equal(firstInvalidTimedPublicationItem([{ ...item, track: { ...eligibleTrack, isExplicit: true } }], { ...options, rightsUse: "SCHOOL_RADIO" }).reason, "FROZEN_METADATA_CHANGED");
 });
