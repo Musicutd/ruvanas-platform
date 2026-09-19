@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 import { analyzeTimedRehearsalPcm } from "../lib/studio-timed-rehearsal-analysis.mjs";
 
 const require = createRequire(import.meta.url);
@@ -85,6 +86,37 @@ test("an MP3 encode/decode round-trip remains local sample evidence only", { tim
     const result = analyzeTimedRehearsalPcm(await readFile(decoded), { expectedOrder: order, toneHzByTrackId: tones });
     assert.equal(result.matches, true, JSON.stringify(result));
     assert.equal(result.listenerVerified, false);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("offline rehearsal command records hashes and fails closed on mismatched audio", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ruvanas-tone-analysis-"));
+  const command = fileURLToPath(new URL("../scripts/analyze-studio-timed-rehearsal-pcm.mjs", import.meta.url));
+  const sample = join(directory, "sample.s16le");
+  const manifestPath = join(directory, "manifest.json");
+  const manifest = JSON.stringify({ format: "RUVANAS_SELF_OWNED_TEST_TONES_V1", expectedOrder: order,
+    toneHzByTrackId: Object.fromEntries(tones) });
+  try {
+    await Promise.all([writeFile(sample, fixture()), writeFile(manifestPath, manifest)]);
+    const accepted = spawnSync(process.execPath, [command, sample, manifestPath], { encoding: "utf8", timeout: 10_000 });
+    assert.equal(accepted.status, 0, accepted.stderr);
+    const acceptedResult = JSON.parse(accepted.stdout);
+    assert.equal(acceptedResult.matches, true);
+    assert.equal(acceptedResult.listenerVerified, false);
+    assert.match(acceptedResult.pcmSha256, /^[a-f0-9]{64}$/);
+    assert.match(acceptedResult.manifestSha256, /^[a-f0-9]{64}$/);
+
+    await writeFile(sample, fixture({ crossfade: false }));
+    const mismatch = spawnSync(process.execPath, [command, sample, manifestPath], { encoding: "utf8", timeout: 10_000 });
+    assert.equal(mismatch.status, 2);
+    assert.equal(JSON.parse(mismatch.stdout).reason, "CROSSFADE_NOT_DETECTED");
+
+    await writeFile(manifestPath, "not-json-private-content");
+    const invalid = spawnSync(process.execPath, [command, sample, manifestPath], { encoding: "utf8", timeout: 10_000 });
+    assert.equal(invalid.status, 1);
+    assert.doesNotMatch(invalid.stderr, /not-json-private-content|ruvanas-tone-analysis-/);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
