@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { planPublishedTimedChannelSequence } from "../lib/studio-timed-sequence-plan.mjs";
-import { loadPublishedTimedChannelSequence } from "../lib/studio-timed-sequence-loader.mjs";
+import { loadPublishedTimedChannelAuthority, loadPublishedTimedChannelSequence } from "../lib/studio-timed-sequence-loader.mjs";
 
 const now = new Date("2026-09-19T12:00:00Z");
 const startsAt = new Date("2026-10-02T10:00:00Z");
@@ -43,7 +43,7 @@ function fixture() {
     schedule: {
       id: "schedule-1", organisationId: "org-1", channelId: "channel-1", timezone: "UTC",
       versions: [{ id: "schedule-version-1", version: 1, status: "PUBLISHED", isActive: true, items: [{
-        id: "programme-1", sourceType: "MUSIC_MODE", recurrence: "ONE_OFF", musicModeId: "mode-v2",
+        id: "programme-1", position: 0, sourceType: "MUSIC_MODE", recurrence: "ONE_OFF", musicModeId: "mode-v2",
         label: "Test hour", priority: 50, durationMinutes: 12, startsAt
       }] }]
     }
@@ -97,8 +97,21 @@ test("the dry-run rejects altered order, overlap, duration or rights before expo
   assert.equal(planPublishedTimedChannelSequence(expired).reason, "SEQUENCE_WINDOW_ELAPSED");
 });
 
-function fakeDatabase(rows = fixture(), { serviceActive = true } = {}) {
+function exactDurationFixture() {
+  const rows = fixture();
+  const version = rows.playlist.versions[1];
+  version.items[1].endOffsetSeconds = 482;
+  version.items[1].durationSeconds = 244;
+  version.items[1].track.mediaAsset.durationSeconds = 244;
+  version.items[2].startOffsetSeconds = 480;
+  version.items[2].endOffsetSeconds = 720;
+  version.generatedDurationSeconds = 720;
+  return rows;
+}
+
+function fakeDatabase(rows = fixture(), { serviceActive = true, campaign = null } = {}) {
   const calls = [];
+  let transactionCount = 0;
   const tx = {
     channel: { findFirst: async () => { calls.push("channel"); return rows.channel; } },
     organisation: { findUnique: async () => {
@@ -115,10 +128,20 @@ function fakeDatabase(rows = fixture(), { serviceActive = true } = {}) {
       assert.equal(where.generatedPlaylistId_version.version, 2);
       return rows.playlist.versions[1];
     } },
-    programmeSchedule: { findUnique: async () => { calls.push("schedule"); return rows.schedule; } },
+    programmeSchedule: {
+      findUnique: async () => { calls.push("schedule"); return rows.schedule; },
+      findFirst: async () => { calls.push("authority-schedule"); return rows.schedule; }
+    },
     mediaGenre: { findMany: async () => { calls.push("genres"); return []; } }
   };
-  return { calls, $transaction: async (operation, options) => {
+  tx.campaign = { findFirst: async () => { calls.push("campaign"); return campaign; } };
+  for (const name of ["radioAdvertisingPolicy", "playoutIntent", "channelAssignment", "radioSyndicationAgreement",
+    "liveFailoverPolicy", "externalLiveSource", "liveStudioSession"]) {
+    tx[name] = { findFirst: async () => { calls.push(name); return null; },
+      findUnique: async () => { calls.push(name); return null; } };
+  }
+  return { calls, get transactionCount() { return transactionCount; }, $transaction: async (operation, options) => {
+    transactionCount += 1;
     assert.equal(options.isolationLevel, "RepeatableRead");
     return operation(tx);
   } };
@@ -152,4 +175,33 @@ test("the snapshot refuses inactive service, stale reads and database failures",
   assert.deepEqual(await loadPublishedTimedChannelSequence(failed, {
     organisationId: "org-1", channelId: "channel-1", playlistId: "playlist-1", clock: () => now
   }), { ready: false, reason: "SEQUENCE_SNAPSHOT_FAILED", listenerVerified: false, commandIssued: false });
+});
+
+test("the frozen sequence and programme authority are read in one transaction", async () => {
+  const database = fakeDatabase(exactDurationFixture());
+  const atStart = new Date("2026-10-02T10:00:00Z");
+  const result = await loadPublishedTimedChannelAuthority(database, {
+    organisationId: "org-1", channelId: "channel-1", playlistId: "playlist-1", clock: () => atStart
+  });
+  assert.deepEqual(result, { consistent: true, reason: "SEQUENCE_AUTHORITY_CONSISTENT_NOT_ON_AIR",
+    sourceCommandAllowed: false, listenerVerified: false });
+  assert.equal(database.transactionCount, 1);
+  assert.deepEqual(database.calls.slice(0, 6), ["channel", "organisation", "playlist", "version", "schedule", "genres"]);
+  assert.ok(database.calls.indexOf("authority-schedule") > database.calls.indexOf("genres"));
+});
+
+test("one-snapshot authority refuses schedule overrun, uncompiled inserts and stale reads", async () => {
+  const atStart = new Date("2026-10-02T10:00:00Z");
+  const scope = { organisationId: "org-1", channelId: "channel-1", playlistId: "playlist-1" };
+  const overrun = await loadPublishedTimedChannelAuthority(fakeDatabase(), { ...scope, clock: () => atStart });
+  assert.equal(overrun.reason, "SEQUENCE_PROGRAMME_AUTHORITY_MISMATCH");
+  const campaign = await loadPublishedTimedChannelAuthority(fakeDatabase(exactDurationFixture(), { campaign: { id: "campaign-1" } }),
+    { ...scope, clock: () => atStart });
+  assert.equal(campaign.reason, "CAMPAIGN_OUTPUT_NOT_COMPILED");
+  let tick = 0;
+  const stale = await loadPublishedTimedChannelAuthority(fakeDatabase(exactDurationFixture()), {
+    ...scope, clock: () => new Date(atStart.getTime() + tick++ * 11_000)
+  });
+  assert.equal(stale.reason, "SEQUENCE_SNAPSHOT_STALE");
+  assert.equal(stale.sourceCommandAllowed, false);
 });

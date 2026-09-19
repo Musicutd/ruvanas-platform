@@ -55,6 +55,6 @@ test("stale, early and changed programme evidence fails closed", () => {
 
 test("the existing worker cannot use this read-only check as a source switch", async () => {
   const worker = await readFile(new URL("../scripts/online-radio-encoder-worker.mjs", import.meta.url), "utf8");
-  assert.doesNotMatch(worker, /inspectTimedSequenceAuthority|studio-timed-sequence-authority/);
+  assert.doesNotMatch(worker, /inspectTimedSequenceAuthority|studio-timed-sequence-authority|loadPublishedTimedChannelAuthority/);
   assert.equal(inspect().sourceCommandAllowed, false);
 });
