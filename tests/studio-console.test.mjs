@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   deriveStudioDailyLog,
+  moveStudioConsolePanel,
   normalizeStudioConsoleLayout,
   STUDIO_CONSOLE_LAYOUTS,
   STUDIO_CONSOLE_PANELS,
@@ -34,10 +35,22 @@ test("every preset names rendered panels and custom views keep mandatory output 
     readFile(new URL("../app/dashboard/studio/studio-pro.module.css", import.meta.url), "utf8")
   ]);
   assert.match(ui, /data-panels=\{data\.layout\.panels\.join\(" "\)\}/);
-  assert.match(ui, /savePanels\(data\.layout\.panels/);
+  assert.match(ui, /moveStudioConsolePanel\(layout, id, -1\)/);
   assert.match(css, /data-panels~="CARTS"/);
   assert.match(css, /--panel-5-width/);
+  assert.match(css, /order:var\(--panel-5-order,5\)/);
   assert.doesNotMatch(css, /data-preset="COMPACT"/);
+});
+
+test("panel ordering moves only within a visible section and keeps saved widths", () => {
+  const layout = { preset: "PRESENTER", panels: ["ON_AIR", "CARTS", "DAILY_LOG", "NOTES", "OUTPUT_HEALTH"], sizes: { CARTS: 640 } };
+  assert.deepEqual(moveStudioConsolePanel(layout, "ON_AIR", 1), {
+    preset: "PRESENTER", panels: ["DAILY_LOG", "CARTS", "ON_AIR", "NOTES", "OUTPUT_HEALTH"], sizes: { CARTS: 640 }
+  });
+  assert.deepEqual(moveStudioConsolePanel(layout, "CARTS", 1).panels, ["ON_AIR", "NOTES", "DAILY_LOG", "CARTS", "OUTPUT_HEALTH"]);
+  assert.deepEqual(moveStudioConsolePanel(layout, "OUTPUT_HEALTH", 1).panels, layout.panels);
+  assert.deepEqual(moveStudioConsolePanel(layout, "PREPARE", -1).panels, layout.panels);
+  assert.deepEqual(moveStudioConsolePanel(layout, "CARTS", 0).panels, layout.panels);
 });
 
 test("mix points reject out of bounds and safely fall back", () => {
