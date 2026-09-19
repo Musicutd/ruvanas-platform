@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { eligibleOnlineRadioRotation, liquidsoapScript, rotationFingerprint } from "../lib/online-radio-output.mjs";
+import { uniquePublishedModeTracks } from "../lib/generated-playlist-publication.mjs";
 
 const instant = new Date("2026-09-18T12:00:00Z");
 const baseTrack = (overrides = {}) => ({
@@ -50,6 +51,28 @@ test("the rotation fingerprint changes with the approved output bitrate", () => 
   const rotation = eligibleOnlineRadioRotation(station(), entitlements, instant);
   assert.equal(rotation.ready, true);
   assert.notEqual(rotationFingerprint({ ...rotation, bitrateKbps: 128 }), rotationFingerprint({ ...rotation, bitrateKbps: 64 }));
+});
+
+test("published timed order cannot be inferred from the current encoder's music-mode pool", () => {
+  const frozenItems = [
+    { position: 0, trackId: "track-1" },
+    { position: 1, trackId: "track-2" },
+    { position: 2, trackId: "track-1" }
+  ];
+  const pool = uniquePublishedModeTracks(frozenItems, "mode-1");
+  assert.deepEqual(frozenItems.map((item) => item.trackId), ["track-1", "track-2", "track-1"]);
+  assert.deepEqual(pool.map((item) => item.trackId), ["track-1", "track-2"]);
+  const trackTwo = baseTrack({ id: "track-2", mediaAsset: { ...baseTrack().mediaAsset, id: "asset-2", storageKey: "other.mp3" } });
+  const prepared = station();
+  prepared.channels[0].autoDjPolicy.defaultMusicMode.tracks = pool.map((entry) => ({
+    ...entry,
+    track: entry.trackId === "track-1" ? baseTrack() : trackTwo
+  }));
+  const rotation = eligibleOnlineRadioRotation(prepared, entitlements, instant);
+  assert.equal(rotation.ready, true);
+  assert.deepEqual(rotation.entries.map((entry) => entry.track.id), ["track-1", "track-2"]);
+  // A successful pool rotation is not proof that the timed A-B-A sequence is on-air.
+  assert.notDeepEqual(rotation.entries.map((entry) => entry.track.id), frozenItems.map((item) => item.trackId));
 });
 
 test("encoder fails closed when approved audio is unavailable or source scope excludes it", () => {
