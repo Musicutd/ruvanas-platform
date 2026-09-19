@@ -5,7 +5,7 @@ import { assertGenreSelection, licensedGenresForLevel, normaliseGenreCode } from
 import { generateTimedPlaylist, invalidationForCatalogueDowngrade, parseTimedPlaylistInput } from "../lib/timed-playlist-generator.mjs";
 import { playableMusicModeEntries, publishedGeneratedPlaylist } from "../lib/music-mode-playback.mjs";
 import { resolveUnifiedPlayout, PLAYOUT_SOURCE_PRIORITIES } from "../lib/playout-resolver.mjs";
-import { assertFutureTimedReplacement, replacePublishedAreaSchedule, replacePublishedProgrammeItem, uniquePublishedModeTracks } from "../lib/generated-playlist-publication.mjs";
+import { assertFutureTimedPublication, assertFutureTimedReplacement, firstInvalidTimedPublicationItem, replacePublishedAreaSchedule, replacePublishedProgrammeItem, uniquePublishedModeTracks } from "../lib/generated-playlist-publication.mjs";
 
 const codes = (level, extra = []) => licensedGenresForLevel(level, extra).map((genre) => genre.code);
 
@@ -188,4 +188,21 @@ test("a started or invalid timed block cannot replace its published history", ()
   assert.throws(() => assertFutureTimedReplacement(new Date("2026-10-01T08:00:00Z"), now), { code: "REPLACEMENT_CONFLICT" });
   assert.throws(() => assertFutureTimedReplacement(new Date("2026-10-01T07:59:59Z"), now), { code: "REPLACEMENT_CONFLICT" });
   assert.throws(() => assertFutureTimedReplacement(new Date("invalid"), now), { code: "REPLACEMENT_CONFLICT" });
+  assert.doesNotThrow(() => assertFutureTimedPublication(new Date("2026-10-01T08:00:01Z"), now));
+  assert.throws(() => assertFutureTimedPublication(new Date("2026-10-01T08:00:00Z"), now), { code: "GENERATION_INVALIDATED" });
+});
+
+test("publication rechecks each frozen track's future licence, source, genre, product use and timing", () => {
+  const startsAt = new Date("2026-10-02T10:00:00Z");
+  const eligibleTrack = track(0);
+  const item = { position: 0, trackId: eligibleTrack.id, track: eligibleTrack, startOffsetSeconds: 0, endOffsetSeconds: 240, durationSeconds: 240, genreCode: "POP", sourceScope: "SUBSCRIBER_LIBRARY" };
+  const options = { startsAt, organisationId: "org-1", rightsUse: "ONLINE_RADIO", territory: "MT", catalogueLevel: "NONE", selectedGenreCodes: ["POP"], sourceScopes: ["SUBSCRIBER_LIBRARY"], instant: new Date("2026-09-18T00:00:00Z") };
+  assert.equal(firstInvalidTimedPublicationItem([item], options), null);
+  assert.equal(firstInvalidTimedPublicationItem([{ ...item, track: { ...eligibleTrack, licenceExpiresAt: new Date("2026-09-30T00:00:00Z") } }], options).reason, "RIGHTS_WINDOW_INACTIVE");
+  assert.equal(firstInvalidTimedPublicationItem([{ ...item, track: { ...eligibleTrack, permittedUses: ["RETAIL_RADIO"] } }], options).reason, "USE_NOT_PERMITTED");
+  assert.equal(firstInvalidTimedPublicationItem([item], { ...options, selectedGenreCodes: ["DANCE"] }).reason, "FROZEN_METADATA_CHANGED");
+  assert.equal(firstInvalidTimedPublicationItem([item], { ...options, sourceScopes: ["RUVANAS_CORE"] }).reason, "FROZEN_METADATA_CHANGED");
+  assert.equal(firstInvalidTimedPublicationItem([{ ...item, durationSeconds: 239 }], options).reason, "FROZEN_TIMING_CHANGED");
+  assert.equal(firstInvalidTimedPublicationItem([{ ...item, track: { ...eligibleTrack, mediaAsset: { ...eligibleTrack.mediaAsset, durationSeconds: 241 } } }], options).reason, "FROZEN_TIMING_CHANGED");
+  assert.equal(firstInvalidTimedPublicationItem([{ ...item, track: { ...eligibleTrack, isExplicit: true } }], { ...options, rightsUse: "SCHOOL_RADIO" }).reason, "FROZEN_METADATA_CHANGED");
 });
