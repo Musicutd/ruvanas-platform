@@ -4,6 +4,8 @@ import test from "node:test";
 import {
   deriveStudioDailyLog,
   normalizeStudioConsoleLayout,
+  STUDIO_CONSOLE_LAYOUTS,
+  STUDIO_CONSOLE_PANELS,
   safeStudioMixTiming,
   studioConsoleNowNext,
   studioMixDefaults,
@@ -13,9 +15,29 @@ import {
 import { scanStudioBroadcastConnections } from "../lib/studio-broadcast-service.js";
 
 test("console layouts retain critical status and bound panel sizing", () => {
-  assert.deepEqual(normalizeStudioConsoleLayout({ preset: "PRESENTER", panels: ["MIC", "MIC", "UNKNOWN"], sizes: { MIC: 9000 } }), {
-    preset: "PRESENTER", panels: ["OUTPUT_HEALTH", "ON_AIR", "MIC"], sizes: { MIC: 1200 }
+  assert.deepEqual(normalizeStudioConsoleLayout({ preset: "PRESENTER", panels: ["NOTES", "NOTES", "UNKNOWN"], sizes: { NOTES: 9000 } }), {
+    preset: "PRESENTER", panels: ["OUTPUT_HEALTH", "ON_AIR", "NOTES"], sizes: { NOTES: 1200 }
   });
+});
+
+test("every preset names rendered panels and custom views keep mandatory output status", async () => {
+  const rendered = ["ON_AIR", "DAILY_LOG", "OUTPUT_HEALTH", "PREPARE", "CARTS", "RADIO_CLOCKS", "NOTES", "MIX_POINTS"];
+  assert.deepEqual([...STUDIO_CONSOLE_PANELS].sort(), rendered.sort());
+  for (const panels of Object.values(STUDIO_CONSOLE_LAYOUTS)) {
+    assert.ok(panels.includes("ON_AIR") && panels.includes("OUTPUT_HEALTH"));
+  }
+  assert.deepEqual(normalizeStudioConsoleLayout({ preset: "COMPACT", panels: ["CARTS", "CARTS", "MIC"], sizes: { CARTS: 640, MIC: 900 } }), {
+    preset: "COMPACT", panels: ["OUTPUT_HEALTH", "ON_AIR", "CARTS"], sizes: { CARTS: 640 }
+  });
+  const [ui, css] = await Promise.all([
+    readFile(new URL("../app/dashboard/studio/BroadcastConsoleClient.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/dashboard/studio/studio-pro.module.css", import.meta.url), "utf8")
+  ]);
+  assert.match(ui, /data-panels=\{data\.layout\.panels\.join\(" "\)\}/);
+  assert.match(ui, /savePanels\(data\.layout\.panels/);
+  assert.match(css, /data-panels~="CARTS"/);
+  assert.match(css, /--panel-5-width/);
+  assert.doesNotMatch(css, /data-preset="COMPACT"/);
 });
 
 test("mix points reject out of bounds and safely fall back", () => {
