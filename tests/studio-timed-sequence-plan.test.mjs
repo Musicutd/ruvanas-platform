@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { planPublishedTimedChannelSequence } from "../lib/studio-timed-sequence-plan.mjs";
-import { loadPublishedTimedChannelAuthority, loadPublishedTimedChannelSequence } from "../lib/studio-timed-sequence-loader.mjs";
+import { loadPublishedTimedChannelAuthority, loadPublishedTimedChannelItemAdmission, loadPublishedTimedChannelSequence } from "../lib/studio-timed-sequence-loader.mjs";
 
 const now = new Date("2026-09-19T12:00:00Z");
 const startsAt = new Date("2026-10-02T10:00:00Z");
@@ -204,4 +204,30 @@ test("one-snapshot authority refuses schedule overrun, uncompiled inserts and st
   });
   assert.equal(stale.reason, "SEQUENCE_SNAPSHOT_STALE");
   assert.equal(stale.sourceCommandAllowed, false);
+});
+
+test("the later-track diagnostic re-reads rights, programme and lease in one transaction", async () => {
+  const boundary = new Date("2026-10-02T10:03:58Z");
+  const scope = { organisationId: "org-1", channelId: "channel-1", playlistId: "playlist-1",
+    expectedVersion: 2, expectedTrackId: "b", position: 1, workerOwner: "worker-1", clock: () => boundary };
+  const rows = exactDurationFixture();
+  rows.channel.station.streamConfig = { outboundAutoDjEnabled: true, encoderLeaseOwner: "worker-1",
+    encoderLeaseUntil: new Date(boundary.getTime() + 30_000) };
+  const database = fakeDatabase(rows);
+  assert.deepEqual(await loadPublishedTimedChannelItemAdmission(database, scope), {
+    admissible: true, reason: "SEQUENCE_ITEM_CONSISTENT_NOT_ON_AIR",
+    sourceCommandAllowed: false, listenerVerified: false
+  });
+  assert.equal(database.transactionCount, 1);
+  assert.ok(database.calls.indexOf("authority-schedule") > database.calls.indexOf("genres"));
+  rows.playlist.versions[1].items[1].track.permittedUses = ["RETAIL_RADIO"];
+  assert.equal((await loadPublishedTimedChannelItemAdmission(fakeDatabase(rows), scope)).reason,
+    "SEQUENCE_RIGHTS_USE_NOT_PERMITTED");
+  rows.playlist.versions[1].items[1].track.permittedUses = ["ONLINE_RADIO"];
+  rows.channel.station.streamConfig.encoderLeaseOwner = "worker-2";
+  assert.equal((await loadPublishedTimedChannelItemAdmission(fakeDatabase(rows), scope)).reason,
+    "SEQUENCE_ITEM_ENCODER_LEASE_UNAVAILABLE");
+  const blocked = await loadPublishedTimedChannelItemAdmission(fakeDatabase(rows, { campaign: { id: "campaign-1" } }), scope);
+  assert.equal(blocked.reason, "CAMPAIGN_OUTPUT_NOT_COMPILED");
+  assert.equal(blocked.sourceCommandAllowed, false);
 });

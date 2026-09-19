@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import test from "node:test";
 import { PrismaClient } from "@prisma/client";
 import { assertSafeFinalAcceptanceEnvironment } from "../../lib/final-platform-acceptance.mjs";
-import { loadPublishedTimedChannelAuthority, loadPublishedTimedChannelSequence } from "../../lib/studio-timed-sequence-loader.mjs";
+import { loadPublishedTimedChannelAuthority, loadPublishedTimedChannelItemAdmission, loadPublishedTimedChannelSequence } from "../../lib/studio-timed-sequence-loader.mjs";
 
 function isolatedEnvironmentReady() {
   try {
@@ -119,6 +119,31 @@ test("timed playlist publication replaces exactly one future programme and rolls
       assert.equal(authorityAtStart.consistent, true, authorityAtStart.reason);
     } else {
       assert.equal(authorityAtStart.reason, "SEQUENCE_PROGRAMME_AUTHORITY_MISMATCH");
+    }
+
+    const secondItem = firstPlan.items[1];
+    const secondBoundary = new Date(firstPlan.startsAt.getTime() + secondItem.startOffsetSeconds * 1000);
+    await db.stationStreamConfig.create({ data: { stationId: station.id, outboundAutoDjEnabled: true,
+      encoderLeaseOwner: "isolated-worker", encoderLeaseUntil: new Date(secondBoundary.getTime() + 30_000) } });
+    const secondScope = { organisationId, channelId: channel.id, playlistId: draft.id,
+      expectedVersion: 1, expectedTrackId: secondItem.trackId, position: 1,
+      workerOwner: "isolated-worker", clock: () => secondBoundary };
+    const secondAdmission = await loadPublishedTimedChannelItemAdmission(db, secondScope);
+    assert.equal(secondAdmission.sourceCommandAllowed, false);
+    assert.equal(secondAdmission.listenerVerified, false);
+    if (firstPlan.endsAt <= blockEndsAt) {
+      assert.equal(secondAdmission.admissible, true, secondAdmission.reason);
+    } else {
+      assert.equal(secondAdmission.reason, "SEQUENCE_ITEM_PROGRAMME_MISMATCH");
+    }
+    const trackBeforeTakedown = await db.track.findUniqueOrThrow({ where: { id: secondItem.trackId } });
+    await db.track.update({ where: { id: secondItem.trackId }, data: { rightsReviewStatus: "REJECTED" } });
+    assert.match((await loadPublishedTimedChannelItemAdmission(db, secondScope)).reason, /^SEQUENCE_RIGHTS_/);
+    await db.track.update({ where: { id: secondItem.trackId }, data: { rightsReviewStatus: trackBeforeTakedown.rightsReviewStatus } });
+    await db.stationStreamConfig.update({ where: { stationId: station.id }, data: { encoderLeaseOwner: "other-worker" } });
+    if (firstPlan.endsAt <= blockEndsAt) {
+      assert.equal((await loadPublishedTimedChannelItemAdmission(db, secondScope)).reason,
+        "SEQUENCE_ITEM_ENCODER_LEASE_UNAVAILABLE");
     }
 
     const regeneratePath = `/api/programming/autodj-expansion/${draft.id}`;
