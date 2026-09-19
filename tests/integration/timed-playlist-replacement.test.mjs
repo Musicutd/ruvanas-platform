@@ -29,12 +29,12 @@ async function api(path, { method = "GET", body, cookie } = {}) {
   return fetch(`${baseUrl}${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), redirect: "manual" });
 }
 
-async function registerOwner(label) {
+async function registerOwner(label, { product = "ONLINE", tier = "online-starter" } = {}) {
   const suffix = randomUUID();
   const response = await api("/api/auth/register", { method: "POST", body: {
     name: `${label} Owner`, organisationName: `${label} ${suffix}`,
     email: `timed-playlist-${suffix}@example.invalid`, password: "correct-horse-battery-staple",
-    product: "ONLINE", tier: "online-starter", source: "ADMIN_TEST"
+    product, tier, source: "ADMIN_TEST"
   } });
   assert.equal(response.status, 201, await response.clone().text());
   return { ...(await response.json()), cookie: response.headers.get("set-cookie")?.split(";")[0] || "" };
@@ -119,6 +119,85 @@ test("timed playlist publication replaces exactly one future programme and rolls
     assert.equal(retained.status, "DRAFT");
     assert.equal(await db.musicMode.count({ where: { organisationId, source: "GENERATED_PLAYLIST" } }), modeCount);
     assert.equal(await db.programmeScheduleVersion.count({ where: { scheduleId: schedule.id, isActive: true } }), 1);
+  } finally {
+    await db.$disconnect();
+  }
+});
+
+test("future Retail location and zone playlists replace only their own published area schedules", {
+  skip: isolatedEnvironmentReady() ? false : "Requires a local disposable PostgreSQL database, local app, isolated registration key and replacement test flag"
+}, async () => {
+  const db = new PrismaClient();
+  try {
+    const owner = await registerOwner("Retail Timed Playlist", { product: "RETAIL", tier: "retail-start" });
+    const organisationId = owner.organisation.id;
+    const location = await db.location.create({ data: {
+      organisationId, name: "Isolated retail site", slug: `retail-${randomUUID()}`,
+      status: "ACTIVE", timezone: "Europe/Malta", countryCode: "MT"
+    } });
+    const zone = await db.zone.create({ data: {
+      locationId: location.id, name: "Isolated playback area", slug: `zone-${randomUUID()}`, status: "ACTIVE"
+    } });
+    const genre = await db.mediaGenre.upsert({ where: { slug: "pop" }, update: {}, create: { name: "Pop", slug: "pop" } });
+    for (const index of [1, 2]) {
+      const asset = await db.mediaAsset.create({ data: {
+        organisationId, libraryType: "ORGANISATION_MUSIC", name: `Retail test tone ${index}`,
+        originalName: `retail-tone-${index}.mp3`, storageKey: `isolated-retail/${randomUUID()}.mp3`,
+        mimeType: "audio/mpeg", sizeBytes: 1024n, durationSeconds: 180, mediaType: "MUSIC", status: "READY",
+        genres: { create: { mediaGenreId: genre.id, isPrimary: true } }
+      } });
+      await db.track.create({ data: {
+        mediaAssetId: asset.id, title: `Retail test tone ${index}`, artist: `Test Artist ${index}`,
+        status: "READY", rightsHolder: "Self-owned test audio", rightsReference: `RETAIL-TIMED-${randomUUID()}`,
+        rightsBasis: "DIRECT_LICENCE", permittedTerritories: "MT", permittedUses: ["RETAIL_RADIO"],
+        licenceExpiresAt: new Date(Date.now() + 4 * 365 * 86400000), rightsConfirmedAt: new Date(), rightsReviewStatus: "APPROVED"
+      } });
+    }
+
+    const scheduledDate = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+    for (const target of [{ type: "LOCATION", id: location.id }, { type: "ZONE", id: zone.id }]) {
+      const targetWhere = target.type === "LOCATION" ? { locationId: target.id } : { zoneId: target.id };
+      const draftResponse = await api("/api/programming/autodj-expansion", { method: "POST", cookie: owner.cookie, body: {
+        name: `Isolated ${target.type.toLowerCase()} block`, targetType: target.type, targetId: target.id,
+        scheduledDate, startTime: "10:00", endTime: "11:00",
+        selectedGenreCodes: ["POP"], sourceScopes: ["SUBSCRIBER_LIBRARY"]
+      } });
+      assert.equal(draftResponse.status, 201, await draftResponse.clone().text());
+      const draft = (await draftResponse.json()).playlist;
+      const publishPath = `/api/programming/autodj-expansion/${draft.id}/publish`;
+      const firstResponse = await api(publishPath, { method: "POST", cookie: owner.cookie });
+      assert.equal(firstResponse.status, 200, await firstResponse.clone().text());
+      const first = (await firstResponse.json()).playlist;
+      let schedules = await db.musicSchedule.findMany({ where: { organisationId, ...targetWhere }, include: { slots: true }, orderBy: { version: "asc" } });
+      assert.deepEqual(schedules.map((schedule) => [schedule.version, schedule.status]), [[1, "PUBLISHED"]]);
+      assert.equal(schedules[0].slots.length, 1);
+      assert.equal(schedules[0].slots[0].musicModeId, first.musicMode.id);
+
+      const regeneratePath = `/api/programming/autodj-expansion/${draft.id}`;
+      const regenerated = await api(regeneratePath, { method: "POST", cookie: owner.cookie, body: { action: "REGENERATE" } });
+      assert.equal(regenerated.status, 200, await regenerated.clone().text());
+      const secondResponse = await api(publishPath, { method: "POST", cookie: owner.cookie });
+      assert.equal(secondResponse.status, 200, await secondResponse.clone().text());
+      const second = (await secondResponse.json()).playlist;
+      assert.notEqual(second.musicMode.id, first.musicMode.id);
+      schedules = await db.musicSchedule.findMany({ where: { organisationId, ...targetWhere }, include: { slots: true }, orderBy: { version: "asc" } });
+      assert.deepEqual(schedules.map((schedule) => [schedule.version, schedule.status]), [[1, "ARCHIVED"], [2, "PUBLISHED"]]);
+      assert.equal(schedules[0].slots[0].musicModeId, first.musicMode.id);
+      assert.equal(schedules[1].slots[0].musicModeId, second.musicMode.id);
+      assert.equal(await db.musicModeTrack.count({ where: { musicModeId: first.musicMode.id } }), 2);
+
+      const thirdDraft = await api(regeneratePath, { method: "POST", cookie: owner.cookie, body: { action: "REGENERATE" } });
+      assert.equal(thirdDraft.status, 200, await thirdDraft.clone().text());
+      await db.scheduleSlot.update({ where: { id: schedules[1].slots[0].id }, data: { startMinute: 630 } });
+      const modeCount = await db.musicMode.count({ where: { organisationId, source: "GENERATED_PLAYLIST" } });
+      const rejected = await api(publishPath, { method: "POST", cookie: owner.cookie });
+      assert.equal(rejected.status, 409, await rejected.clone().text());
+      const retained = await db.generatedPlaylist.findUniqueOrThrow({ where: { id: draft.id } });
+      assert.equal(retained.publishedVersion, 2);
+      assert.equal(retained.status, "DRAFT");
+      assert.equal(await db.musicMode.count({ where: { organisationId, source: "GENERATED_PLAYLIST" } }), modeCount);
+      assert.equal(await db.musicSchedule.count({ where: { organisationId, ...targetWhere, status: "PUBLISHED" } }), 1);
+    }
   } finally {
     await db.$disconnect();
   }
