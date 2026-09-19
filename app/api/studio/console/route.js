@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireActiveStudio } from "@/lib/studio-access";
 import { ORGANISATION_CONTENT_ROLES } from "@/lib/permissions.mjs";
 import { compileProgrammeScheduleHorizon, localMinuteToUtc } from "@/lib/advanced-scheduler.mjs";
-import { deriveStudioDailyLog, normalizeStudioConsoleLayout, STUDIO_CART_BEHAVIOURS, STUDIO_MIX_POINT_TYPES, validateStudioMixPoints } from "@/lib/studio-console.mjs";
+import { deriveStudioDailyLog, normalizeStudioConsoleLayout, studioSpotBoard, STUDIO_CART_BEHAVIOURS, STUDIO_MIX_POINT_TYPES, validateStudioMixPoints } from "@/lib/studio-console.mjs";
 import { studioManualOutputAvailability } from "@/lib/studio-playout.mjs";
 
 export const dynamic = "force-dynamic";
@@ -86,7 +86,7 @@ export async function GET(request) {
   const { access, error, channelId } = await context(request);
   if (error) return error;
   const organisationId = access.organisation.id;
-  const channels = await prisma.channel.findMany({ where: { organisationId, status: "ACTIVE", ...productChannelFilter(access.entitlements.planProductFamily) }, select: { id: true, name: true }, orderBy: { name: "asc" } });
+  const channels = await prisma.channel.findMany({ where: { organisationId, status: "ACTIVE", ...productChannelFilter(access.entitlements.planProductFamily) }, select: { id: true, name: true, stationId: true }, orderBy: { name: "asc" } });
   const channel = channels.find((candidate) => candidate.id === channelId) || channels[0] || null;
   if (channelId && !channels.some((candidate) => candidate.id === channelId)) return fail("Choose a channel owned by this organisation.", 404);
   if (!channel) return NextResponse.json({ channels, channel: null, notice: "Create a channel before opening Broadcast Console." });
@@ -106,10 +106,28 @@ export async function GET(request) {
     prisma.mediaAsset.findMany({ where: { organisationId, status: "READY", mediaType: { in: ["COMMERCIAL", "JINGLE", "ANNOUNCEMENT", "VOICEOVER"] } }, select: { id: true, name: true, mediaType: true }, orderBy: { createdAt: "desc" }, take: 100 })
   ]);
   const assets = new Map(media.map((asset) => [asset.id, asset]));
+  let spotBoard = null;
+  if (access.entitlements.planProductFamily === "ONLINE" && access.entitlements.onlineRadioEnabled && access.entitlements.retailMediaEnabled && channel.stationId) {
+    const targetScopes = [{ targetType: "CHANNEL", channelId: channel.id }, { targetType: "STATION", stationId: channel.stationId }];
+    const [policy, orders] = await Promise.all([
+      prisma.radioAdvertisingPolicy.findUnique({ where: { channelId_organisationId: { channelId: channel.id, organisationId } }, select: { status: true } }),
+      prisma.retailMediaOrder.findMany({
+        where: { organisationId, campaign: { targets: { some: { OR: targetScopes } } } },
+        select: {
+          id: true, name: true, status: true, advertiser: { select: { name: true } },
+          inventoryPackage: { select: { status: true } },
+          campaign: { select: { name: true, status: true, promoVersionId: true, effectiveFrom: true, effectiveTo: true } },
+          creatives: { select: { promoVersionId: true, status: true } }
+        },
+        orderBy: { updatedAt: "desc" }, take: 30
+      })
+    ]);
+    spotBoard = studioSpotBoard({ policy, orders });
+  }
   try {
     const log = await dailyLog(organisationId, channel.id, access.entitlements.planProductFamily, new URL(request.url).searchParams.get("date"));
     const mixPoints = await prisma.studioMixPoint.findMany({ where: { organisationId, mediaAssetId: { in: mediaIds } }, take: 200 });
-    return NextResponse.json({ channels, channel, productFamily: access.entitlements.planProductFamily, manualOutput: studioManualOutputAvailability(), layout: normalizeStudioConsoleLayout(preference || {}), session: sessions[0] || null, banks: banks.map((bank) => ({ ...bank, carts: bank.carts.map((cart) => ({ ...cart, media: assets.get(cart.mediaAssetId) || null, ready: assets.has(cart.mediaAssetId) })) })), cartChoices, markerChoices: media, notes, clocks, sources, browserLive, broadcast, mixPoints, dailyLog: log, rightsNotice: "Only authorised protected media may enter programme output; this Console does not grant catalogue rights." });
+    return NextResponse.json({ channels, channel, productFamily: access.entitlements.planProductFamily, manualOutput: studioManualOutputAvailability(), layout: normalizeStudioConsoleLayout(preference || {}), session: sessions[0] || null, banks: banks.map((bank) => ({ ...bank, carts: bank.carts.map((cart) => ({ ...cart, media: assets.get(cart.mediaAssetId) || null, ready: assets.has(cart.mediaAssetId) })) })), cartChoices, markerChoices: media, notes, clocks, sources, browserLive, broadcast, mixPoints, dailyLog: log, spotBoard, rightsNotice: "Only authorised protected media may enter programme output; this Console does not grant catalogue rights." });
   } catch (cause) { return fail(cause instanceof Error ? cause.message : "The Daily Log is unavailable.", 400); }
 }
 

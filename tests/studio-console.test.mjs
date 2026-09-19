@@ -10,6 +10,7 @@ import {
   STUDIO_CONSOLE_PANELS,
   safeStudioMixTiming,
   studioConsoleNowNext,
+  studioSpotBoard,
   studioMixDefaults,
   studioTimingToNextHardEvent,
   validateStudioMixPoints
@@ -104,6 +105,31 @@ test("Daily Log times use the channel timezone and distinguish the repeated DST 
   assert.match(ui, /formatStudioLogTime\(value, data\?\.dailyLog\?\.timezone\)/);
   assert.match(ui, /clock\(entry\.plannedStartAt\)/);
   assert.match(ui, /clock\(entry\.estimatedStartAt\)/);
+});
+
+test("commercial spot board exposes scoped approval records without inventing readiness or play proof", async () => {
+  const board = studioSpotBoard({ policy: { status: "ACTIVE" }, orders: [{
+    id: "booking-1", name: "Morning booking", status: "APPROVED",
+    advertiser: { name: "Sponsor" }, inventoryPackage: { status: "ACTIVE" },
+    campaign: { name: "Morning spots", status: "PUBLISHED", promoVersionId: "creative-2", effectiveFrom: new Date("2026-09-20"), effectiveTo: new Date("2026-09-30") },
+    creatives: [{ promoVersionId: "creative-1", status: "APPROVED" }, { promoVersionId: "creative-2", status: "PENDING" }]
+  }] });
+  assert.equal(board.policyStatus, "ACTIVE");
+  assert.deepEqual(board.bookings.map((item) => [item.advertiser, item.bookingStatus, item.campaignStatus, item.inventoryStatus, item.creativeStatus]),
+    [["Sponsor", "APPROVED", "PUBLISHED", "ACTIVE", "PENDING"]]);
+  assert.equal(Object.hasOwn(board.bookings[0], "ready"), false);
+  assert.equal(Object.hasOwn(board.bookings[0], "deliveredPlays"), false);
+  assert.deepEqual(studioSpotBoard(), { policyStatus: "NOT_CONFIGURED", bookings: [] });
+  const [route, ui] = await Promise.all([
+    readFile(new URL("../app/api/studio/console/route.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/dashboard/studio/BroadcastConsoleClient.js", import.meta.url), "utf8")
+  ]);
+  assert.match(route, /planProductFamily === "ONLINE" && access\.entitlements\.onlineRadioEnabled && access\.entitlements\.retailMediaEnabled/);
+  assert.match(route, /where: \{ organisationId, campaign: \{ targets: \{ some: \{ OR: targetScopes \} \} \} \}/);
+  assert.match(route, /targetType: "CHANNEL", channelId: channel\.id/);
+  assert.match(route, /targetType: "STATION", stationId: channel\.stationId/);
+  assert.match(ui, /!monitor && data\.spotBoard/);
+  assert.match(ui, /not a timed playout list or proof that an advert reached listeners/);
 });
 
 test("Console routes reuse Studio authority and keep tenant-scoped writes behind Pro", async () => {
