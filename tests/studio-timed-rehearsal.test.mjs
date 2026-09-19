@@ -13,9 +13,9 @@ const options = () => ({
 const plan = () => ({
   ready: true, reason: "FROZEN_SEQUENCE_PLANNED_NOT_ON_AIR", commandIssued: false, listenerVerified: false,
   items: [
-    { position: 0, trackId: "a", mediaAssetId: "asset-a", startOffsetSeconds: 0 },
-    { position: 1, trackId: "b", mediaAssetId: "asset-b", startOffsetSeconds: 238 },
-    { position: 2, trackId: "a", mediaAssetId: "asset-a", startOffsetSeconds: 491 }
+    { position: 0, trackId: "a", mediaAssetId: "asset-a", startOffsetSeconds: 0, endOffsetSeconds: 240 },
+    { position: 1, trackId: "b", mediaAssetId: "asset-b", startOffsetSeconds: 238, endOffsetSeconds: 493 },
+    { position: 2, trackId: "a", mediaAssetId: "asset-a", startOffsetSeconds: 491, endOffsetSeconds: 731 }
   ]
 });
 
@@ -25,6 +25,7 @@ test("file-only rehearsal text preserves A-B-A and declares a two-second crossfa
     `${directory}/000.mp3`, `${directory}/001.mp3`, `${directory}/000.mp3`
   ]);
   assert.deepEqual(bundle.expectedOrder.map((item) => item.trackId), ["a", "b", "a"]);
+  assert.deepEqual(bundle.expectedOrder.map((item) => item.endOffsetSeconds), [240, 493, 731]);
   assert.match(bundle.liquidsoapText, /playlist\(mode="normal", loop=false, reload_mode="never"/);
   assert.match(bundle.liquidsoapText, /crossfade\(duration=2\., fade_in=2\., fade_out=2\., smart=false/);
   assert.match(bundle.liquidsoapText, /output\.file\(fallible=true, %mp3\(bitrate=128\)/);
@@ -44,6 +45,7 @@ test("rehearsal text refuses unapproved plans and paths outside the private cach
   assert.throws(() => renderTimedRehearsalBundle(plan(), { ...options(), mediaByAssetId: new Map([["asset-a", `${directory}/listener-sample.mp3`], ["asset-b", `${directory}/001.mp3`]]) }));
   assert.throws(() => renderTimedRehearsalBundle(plan(), { ...options(), bitrateKbps: 400 }));
   assert.throws(() => renderTimedRehearsalBundle({ ...plan(), items: [{ ...plan().items[0], position: 1 }] }, options()));
+  assert.throws(() => renderTimedRehearsalBundle({ ...plan(), items: plan().items.map((item, index) => index === 1 ? { ...item, startOffsetSeconds: 239 } : item) }, options()));
 });
 
 test("the rehearsal renderer cannot invoke the Online Radio worker or a remote output", async () => {
