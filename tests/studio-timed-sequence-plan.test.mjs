@@ -41,9 +41,9 @@ function fixture() {
       ]
     },
     schedule: {
-      organisationId: "org-1", channelId: "channel-1", timezone: "UTC",
-      versions: [{ status: "PUBLISHED", isActive: true, items: [{
-        sourceType: "MUSIC_MODE", recurrence: "ONE_OFF", musicModeId: "mode-v2",
+      id: "schedule-1", organisationId: "org-1", channelId: "channel-1", timezone: "UTC",
+      versions: [{ id: "schedule-version-1", version: 1, status: "PUBLISHED", isActive: true, items: [{
+        id: "programme-1", sourceType: "MUSIC_MODE", recurrence: "ONE_OFF", musicModeId: "mode-v2",
         label: "Test hour", priority: 50, durationMinutes: 12, startsAt
       }] }]
     }
@@ -55,6 +55,9 @@ test("the dry-run plan preserves the published A-B-A order, overlap and private 
   assert.equal(result.ready, true);
   assert.equal(result.reason, "FROZEN_SEQUENCE_PLANNED_NOT_ON_AIR");
   assert.equal(result.version, 2);
+  assert.equal(result.scheduleId, "schedule-1");
+  assert.equal(result.scheduleVersion, 1);
+  assert.equal(result.programmeItemId, "programme-1");
   assert.deepEqual(result.items.map((item) => item.trackId), ["a", "b", "a"]);
   assert.deepEqual(result.items.map((item) => item.startOffsetSeconds), [0, 238, 491]);
   assert.deepEqual(result.items.map((item) => item.storageKey), ["tests/a.mp3", "tests/b.mp3", "tests/a.mp3"]);
