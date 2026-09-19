@@ -41,11 +41,12 @@ test("every preset names rendered panels and custom views keep mandatory output 
     readFile(new URL("../app/dashboard/studio/BroadcastConsoleClient.js", import.meta.url), "utf8"),
     readFile(new URL("../app/dashboard/studio/studio-pro.module.css", import.meta.url), "utf8")
   ]);
-  assert.match(ui, /data-panels=\{data\.layout\.panels\.join\(" "\)\}/);
+  assert.match(ui, /Children\.toArray\(children\)\.filter/);
+  assert.match(ui, /panels\.sort\(\(left, right\) => layoutPanels\.indexOf/);
+  assert.match(ui, /cloneElement\(panel/);
   assert.match(ui, /moveStudioConsolePanel\(layout, id, -1\)/);
-  assert.match(css, /data-panels~="CARTS"/);
-  assert.match(css, /--panel-5-width/);
-  assert.match(css, /order:var\(--panel-5-order,5\)/);
+  assert.match(css, /var\(--panel-width,320px\)/);
+  assert.doesNotMatch(css, /order:var\(--panel-/);
   assert.doesNotMatch(css, /data-preset="COMPACT"/);
 });
 
