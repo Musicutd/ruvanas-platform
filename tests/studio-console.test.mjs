@@ -77,6 +77,25 @@ test("drag reorder moves visible panels within their section without changing au
   assert.match(css, /\.panelDropTarget\{/);
 });
 
+test("presenter cards expose handle-only same-section drag while monitor stays read only", async () => {
+  const [ui, css] = await Promise.all([
+    readFile(new URL("../app/dashboard/studio/BroadcastConsoleClient.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/dashboard/studio/studio-pro.module.css", import.meta.url), "utf8")
+  ]);
+  for (const id of STUDIO_CONSOLE_PANELS) {
+    assert.match(ui, new RegExp(`data-panel-id="${id}"`));
+    assert.match(ui, new RegExp(`data-card-drag="${id}"`));
+  }
+  assert.match(ui, /if \(!handle\) return/);
+  assert.match(ui, /draggedCard\?\.section !== section/);
+  assert.match(ui, /reorderStudioConsolePanel\(data\.layout, draggedCard\.id, id\)/);
+  assert.match(ui, /save\("SAVE_LAYOUT", \{ preset: layout\.preset, panels: layout\.panels, sizes: layout\.sizes \}\)/);
+  assert.match(ui, /!monitor \? <span className=\{styles\.cardDragHandle\}/);
+  assert.doesNotMatch(ui, /<article[^>]*draggable=/);
+  assert.match(css, /\.cardDragHandle\{/);
+  assert.match(css, /data-drop-panel="ON_AIR"/);
+});
+
 test("mix points reject out of bounds and safely fall back", () => {
   assert.equal(validateStudioMixPoints([{ type: "CUE_IN", positionMs: 400 }, { type: "END", positionMs: 200 }], 1000).valid, false);
   assert.equal(safeStudioMixTiming([{ type: "END", positionMs: 1001 }], 1000).fallback, true);
