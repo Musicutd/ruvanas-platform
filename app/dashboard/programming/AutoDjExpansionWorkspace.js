@@ -96,7 +96,7 @@ export default function AutoDjExpansionWorkspace() {
     </div>
     {mode === "TIMED" && data.playlists.length ? <div className={styles.formGrid}>
       <label><span>Open a saved timed playlist</span><select value={preview?.id || ""} onChange={(event) => { setPreview(data.playlists.find((playlist) => playlist.id === event.target.value) || null); setError(""); setNotice(""); }}><option value="">Choose a saved playlist</option>{data.playlists.map((playlist) => <option key={playlist.id} value={playlist.id}>{playlist.name} · {playlist.scheduledDate} · {playlist.status.toLowerCase()}</option>)}</select></label>
-      {preview ? <p className={styles.panelIntro}>Reviewing {preview.name}: published version {preview.publishedVersion || "none"}, latest version {preview.currentVersion}. A newer draft does not replace the published version. The fields below create a new playlist.{preview.publishedVersion > 0 ? " Existing published playlists are review-only until replacement-safe publication is implemented." : " Regenerate uses this saved draft's settings."}</p> : null}
+      {preview ? <p className={styles.panelIntro}>Reviewing {preview.name}: published version {preview.publishedVersion || "none"}, latest version {preview.currentVersion}. A newer draft does not replace the published version. The fields below create a new playlist.{preview.publishedVersion > 0 ? " Existing published playlists remain review-only until replacement passes database and playback checks." : " Regenerate uses this saved draft's settings."}</p> : null}
     </div> : null}
     {error ? <div className={styles.error} role="alert">{error}</div> : null}{notice ? <div className={styles.notice} role="status">{notice}</div> : null}
     <div className={styles.formGrid}>

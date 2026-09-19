@@ -5,6 +5,7 @@ import { assertGenreSelection, licensedGenresForLevel, normaliseGenreCode } from
 import { generateTimedPlaylist, invalidationForCatalogueDowngrade, parseTimedPlaylistInput } from "../lib/timed-playlist-generator.mjs";
 import { playableMusicModeEntries, publishedGeneratedPlaylist } from "../lib/music-mode-playback.mjs";
 import { resolveUnifiedPlayout, PLAYOUT_SOURCE_PRIORITIES } from "../lib/playout-resolver.mjs";
+import { assertFutureTimedReplacement, replacePublishedAreaSchedule, replacePublishedProgrammeItem, uniquePublishedModeTracks } from "../lib/generated-playlist-publication.mjs";
 
 const codes = (level, extra = []) => licensedGenresForLevel(level, extra).map((genre) => genre.code);
 
@@ -133,10 +134,58 @@ test("saved timed playlists reopen for review and an unchanged version cannot be
   assert.match(workspace, /preview\.currentVersion <= preview\.publishedVersion/);
   assert.match(workspace, /data\.canPublish && preview\.publishedVersion === 0/);
   assert.match(service, /current\.currentVersion <= current\.publishedVersion/);
-  assert.match(service, /if \(current\.publishedVersion > 0\)/);
-  assert.match(service, /"REPLACEMENT_NOT_READY"/);
+  assert.match(service, /const replacing = current\.publishedVersion > 0/);
+  assert.match(service, /RUVANAS_TIMED_PLAYLIST_REPLACEMENT_ENABLED !== "1"/);
+  assert.match(service, /replacePublishedProgrammeItem/);
+  assert.match(service, /replacePublishedAreaSchedule/);
+  assert.match(service, /isolationLevel: "Serializable"/);
+  assert.doesNotMatch(service, /musicModeTrack\.deleteMany/);
   assert.match(service, /tx\.generatedPlaylist\.updateMany\(\{/);
   assert.match(service, /publishedVersion: \{ lt: current\.currentVersion \}/);
   assert.match(publish, /"ALREADY_PUBLISHED"/);
+  assert.match(publish, /"REPLACEMENT_CONFLICT"/);
   assert.match(publish, /"REPLACEMENT_NOT_READY"/);
+});
+
+test("a published Online Radio timed block is replaced once while other programme items stay in order", () => {
+  const startsAt = new Date("2026-10-01T08:00:00.000Z");
+  const old = { id: "old", position: 1, label: "Timed block", recurrence: "ONE_OFF", sourceType: "MUSIC_MODE", startsAt, durationMinutes: 120, priority: 50, musicModeId: "old-mode" };
+  const another = { id: "another", position: 0, label: "News", recurrence: "WEEKLY", sourceType: "RADIO_CLOCK", weekday: 4, startMinute: 510, durationMinutes: 30, priority: 70, radioClockId: "clock" };
+  const input = { schedule: { timezone: "Europe/Malta" }, activeVersions: [{ id: "v1", status: "PUBLISHED", items: [old, another] }], oldMusicModeId: "old-mode", newMusicModeId: "new-mode", startsAt, durationMinutes: 120, timezone: "Europe/Malta", name: "Timed block" };
+  const result = replacePublishedProgrammeItem(input);
+  assert.equal(result.activeVersionId, "v1");
+  assert.deepEqual(result.items.map((item) => [item.position, item.label, item.musicModeId || null, item.radioClockId || null]), [[0, "News", null, "clock"], [1, "Timed block", "new-mode", null]]);
+  assert.equal(old.musicModeId, "old-mode");
+  assert.throws(() => replacePublishedProgrammeItem({ ...input, activeVersions: [{ id: "v1", status: "PUBLISHED", items: [another] }] }), { code: "REPLACEMENT_CONFLICT" });
+  assert.throws(() => replacePublishedProgrammeItem({ ...input, activeVersions: [{ id: "v1", status: "PUBLISHED", items: [old, { ...old, id: "duplicate" }] }] }), { code: "REPLACEMENT_CONFLICT" });
+  assert.throws(() => replacePublishedProgrammeItem({ ...input, activeVersions: [input.activeVersions[0], input.activeVersions[0]] }), { code: "REPLACEMENT_CONFLICT" });
+  assert.throws(() => replacePublishedProgrammeItem({ ...input, activeVersions: [{ id: "v1", status: "PUBLISHED", items: [{ ...old, startsAt: new Date("2026-10-01T09:00:00Z") }] }] }), { code: "REPLACEMENT_CONFLICT" });
+});
+
+test("a physical timed schedule can replace only its unique unchanged one-day slot", () => {
+  const scheduledDate = new Date("2026-10-01T00:00:00.000Z");
+  const schedule = { id: "schedule-1", status: "PUBLISHED", timezone: "Europe/Malta", effectiveFrom: scheduledDate, effectiveTo: scheduledDate, slots: [{ musicModeId: "old-mode", weekday: 4, startMinute: 600, endMinute: 720, priority: 50 }] };
+  const input = { schedules: [schedule], oldMusicModeId: "old-mode", scheduledDate, startMinute: 600, endMinute: 720, timezone: "Europe/Malta" };
+  assert.equal(replacePublishedAreaSchedule(input), "schedule-1");
+  assert.throws(() => replacePublishedAreaSchedule({ ...input, schedules: [schedule, { ...schedule, id: "schedule-2" }] }), { code: "REPLACEMENT_CONFLICT" });
+  assert.throws(() => replacePublishedAreaSchedule({ ...input, schedules: [{ ...schedule, slots: [{ ...schedule.slots[0], startMinute: 630 }] }] }), { code: "REPLACEMENT_CONFLICT" });
+  assert.throws(() => replacePublishedAreaSchedule({ ...input, schedules: [{ ...schedule, slots: [...schedule.slots, schedule.slots[0]] }] }), { code: "REPLACEMENT_CONFLICT" });
+  assert.throws(() => replacePublishedAreaSchedule({ ...input, schedules: [] }), { code: "REPLACEMENT_CONFLICT" });
+});
+
+test("a repeated timed sequence has a unique database music-mode pool without altering its frozen items", () => {
+  const items = [{ trackId: "a", position: 0 }, { trackId: "b", position: 1 }, { trackId: "a", position: 2 }];
+  assert.deepEqual(uniquePublishedModeTracks(items, "mode-new"), [
+    { musicModeId: "mode-new", trackId: "a", weight: 100, position: 0 },
+    { musicModeId: "mode-new", trackId: "b", weight: 100, position: 1 }
+  ]);
+  assert.deepEqual(items.map((item) => item.trackId), ["a", "b", "a"]);
+});
+
+test("a started or invalid timed block cannot replace its published history", () => {
+  const now = new Date("2026-10-01T08:00:00Z");
+  assert.doesNotThrow(() => assertFutureTimedReplacement(new Date("2026-10-01T08:00:01Z"), now));
+  assert.throws(() => assertFutureTimedReplacement(new Date("2026-10-01T08:00:00Z"), now), { code: "REPLACEMENT_CONFLICT" });
+  assert.throws(() => assertFutureTimedReplacement(new Date("2026-10-01T07:59:59Z"), now), { code: "REPLACEMENT_CONFLICT" });
+  assert.throws(() => assertFutureTimedReplacement(new Date("invalid"), now), { code: "REPLACEMENT_CONFLICT" });
 });
