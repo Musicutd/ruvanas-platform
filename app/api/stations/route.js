@@ -84,7 +84,7 @@ export async function POST(request) {
         listenerLimit: entitlements.listenerLimit,
         storageLimitGb: entitlements.storageLimitGb,
         maxBitrateKbps: entitlements.maxBitrateKbps,
-        channels: { create: { name, slug: `online-${stationSlug}`, status: "DRAFT", musicRightsUse: "ONLINE_RADIO" } }
+        channels: { create: { name, slug: `online-${stationSlug}`, status: "DRAFT", musicRightsUse: "ONLINE_RADIO", organisation: { connect: { id: org.id } } } }
       }
     });
 

@@ -46,7 +46,7 @@ export async function POST(request) {
       listenerRequestsEnabled: product.key === "HEALTH" && Boolean(body.listenerRequestsEnabled),
       listenerRequestInstructions: product.key === "HEALTH" ? "Share only a song or artist. Do not include medical or patient information." : null,
       listenerLimit: entitlements.listenerLimit, storageLimitGb: entitlements.storageLimitGb, maxBitrateKbps: entitlements.maxBitrateKbps,
-      channels: { create: { name, slug: `${slugify(name)}-${Math.random().toString(36).slice(2, 7)}`, status: "ACTIVE", musicRightsUse: product.rightsUse } }
+      channels: { create: { name, slug: `${slugify(name)}-${Math.random().toString(36).slice(2, 7)}`, status: "ACTIVE", musicRightsUse: product.rightsUse, organisation: { connect: { id: organisation.id } } } }
     }, include: { channels: true } });
     await tx.auditLog.create({ data: { organisationId: organisation.id, actorUserId: context.user.id, action: `${product.key}_CHANNEL_CREATED`, entityType: "Station", entityId: created.id, details: { audiencePolicy, planCode: entitlements.planCode } } });
     return created;
