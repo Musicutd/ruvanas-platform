@@ -5,11 +5,11 @@ export default function OnboardingChecklist({ onboarding }) {
   const progressLabel = `${onboarding.completedCount} of ${onboarding.totalCount} complete`;
 
   return (
-    <details className={styles.guide} open={!onboarding.complete} id="first-use-setup">
+    <details className={styles.guide} id="first-use-setup">
       <summary>
         <span>
           <strong>{onboarding.complete ? "First setup complete" : "Set up your first radio service"}</strong>
-          <small>{progressLabel} · Select to hide or show this guide</small>
+          <small>{progressLabel} · Open the full setup guide when you need it</small>
         </span>
         <span className={onboarding.complete ? styles.completeBadge : styles.progressBadge}>
           {onboarding.complete ? "Ready" : progressLabel}
