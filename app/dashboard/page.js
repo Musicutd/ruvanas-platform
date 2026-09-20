@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { buildSubscriberNavigation, buildSubscriberProductCards } from "@/lib/user-experience-navigation.mjs";
 import { buildSubscriberOnboarding } from "@/lib/subscriber-onboarding.mjs";
 import { buildSubscriberHome } from "@/lib/subscriber-home.mjs";
+import { firstListenableOnlineStation, onlineRadioListenHref } from "@/lib/online-radio-listen.mjs";
 import ContextHelp from "@/app/components/ContextHelp";
 import OnboardingChecklist from "@/app/components/OnboardingChecklist";
 import SkipLink from "@/app/components/SkipLink";
@@ -91,7 +92,15 @@ export default async function DashboardPage() {
     activePlayerStreams
   });
   const home = buildSubscriberHome({ products, onboarding, serviceEnabled: entitlements.serviceEnabled });
-  const nextAction = home.nextAction;
+  const listenStation = onlineOnly && entitlements.serviceEnabled ? firstListenableOnlineStation(organisation.stations) : null;
+  const nextAction = listenStation ? {
+    eyebrow: "YOUR STATION",
+    title: "Listen to your station",
+    description: "Open your own listening page to hear the current stream.",
+    href: onlineRadioListenHref(listenStation.id),
+    label: "Listen now",
+    newTab: true
+  } : home.nextAction;
   const allNavigationItems = navigation.flatMap((section) => section.items);
   const quickActionIds = [
     "station",
@@ -103,6 +112,23 @@ export default async function DashboardPage() {
   const quickActions = quickActionIds
     .map((id) => allNavigationItems.find((item) => item.id === id))
     .filter(Boolean);
+  const todayTasks = entitlements.serviceEnabled && products.length > 0 ? [
+    products.length === 1 ? {
+      href: products[0].actionHref,
+      label: onlineOnly ? "Manage your station" : `Open ${products[0].label}`,
+      description: onlineOnly ? "Review station setup, listeners and publishing." : "See the steps and tools for this service."
+    } : null,
+    {
+      href: products.length === 1 && products[0].key === "RETAIL" ? "/dashboard/retail/music" : "/dashboard/programming#workspace-simple",
+      label: "Choose music",
+      description: "Open your playlists, AutoDJ and scheduling tools."
+    },
+    {
+      href: "/dashboard/studio",
+      label: "Open Studio",
+      description: "Create, edit and prepare your audio."
+    }
+  ].filter(Boolean) : [];
   const storageUsedGb = storageUsedMb / 1024;
   const setupProgress = home.onboarding ? usagePercent(onboarding.completedCount, onboarding.totalCount) : 0;
   const playerUsage = usagePercent(configuredPlayerCount, entitlements.streamLimit);
@@ -117,9 +143,9 @@ export default async function DashboardPage() {
       <div className={styles.shell} id="main-content">
         <section className={styles.welcome} aria-labelledby="dashboard-title">
           <div>
-            <p className={styles.eyebrow}>SUBSCRIBER PORTAL</p>
-            <h1 id="dashboard-title">Hello {user.name || "there"}</h1>
-            <p>{home.description}</p>
+            <p className={styles.eyebrow}>YOUR WORKSPACE</p>
+            <h1 id="dashboard-title">{products.length === 1 ? products[0].label : "Your Ruvanas home"}</h1>
+            <p>Welcome back, {user.name || "there"}. Pick one task to get started.</p>
           </div>
           <span className={styles.roleBadge}>{membership.role.replaceAll("_", " ").toLowerCase()}</span>
         </section>
@@ -147,7 +173,7 @@ export default async function DashboardPage() {
                 <span>{onboarding.completedCount} of {onboarding.totalCount} setup checks complete</span>
                 <progress value={onboarding.completedCount} max={onboarding.totalCount} aria-label={`${setupProgress}% of setup complete`} />
               </div> : null}
-              <Link href={nextAction.href} className={styles.primaryButton}>{nextAction.label}</Link>
+              <Link href={nextAction.href} className={styles.primaryButton} target={nextAction.newTab ? "_blank" : undefined} rel={nextAction.newTab ? "noopener noreferrer" : undefined}>{nextAction.label}</Link>
             </div>
           </section>
 
@@ -162,13 +188,33 @@ export default async function DashboardPage() {
             <strong className={entitlements.serviceEnabled ? styles.pulseHealthy : styles.pulseAttention}>
               {entitlements.serviceEnabled ? "Plan available" : "Action needed"}
             </strong>
-            <dl className={styles.pulseRows}>
-              <div><dt>Plan</dt><dd>{plan?.name || "Trial"}</dd></div>
-              {onlineOnly ? <div><dt>Public listeners</dt><dd>{publicListeners} of {entitlements.listenerLimit}</dd></div> : <div><dt>Live streams</dt><dd>{activePlayerStreams} of {entitlements.streamLimit}</dd></div>}
-              {onlineOnly ? <div><dt>Stations</dt><dd>{organisation.stations.length}</dd></div> : <div><dt>Players ready</dt><dd>{configuredPlayerCount}</dd></div>}
-            </dl>
+            <details className={styles.pulseDetails}>
+              <summary>View account status</summary>
+              <dl className={styles.pulseRows}>
+                <div><dt>Plan</dt><dd>{plan?.name || "Trial"}</dd></div>
+                {onlineOnly ? <div><dt>Public listeners</dt><dd>{publicListeners} of {entitlements.listenerLimit}</dd></div> : <div><dt>Live streams</dt><dd>{activePlayerStreams} of {entitlements.streamLimit}</dd></div>}
+                {onlineOnly ? <div><dt>Stations</dt><dd>{organisation.stations.length}</dd></div> : <div><dt>Players ready</dt><dd>{configuredPlayerCount}</dd></div>}
+              </dl>
+            </details>
           </aside>
         </div>
+
+        {todayTasks.length ? <section className={styles.todaySection} aria-labelledby="today-tasks-title">
+          <div className={styles.todayHeading}>
+            <div>
+              <p className={styles.eyebrow}>EVERYDAY ACTIONS</p>
+              <h2 id="today-tasks-title">What would you like to do?</h2>
+            </div>
+            <span>More options are in All tools</span>
+          </div>
+          <div className={styles.todayGrid}>
+            {todayTasks.map((task) => <Link href={task.href} key={task.href} className={styles.todayTask}>
+              <strong>{task.label}</strong>
+              <small>{task.description}</small>
+              <b aria-hidden="true">→</b>
+            </Link>)}
+          </div>
+        </section> : null}
 
         {home.onboarding ? <OnboardingChecklist onboarding={home.onboarding} /> : null}
 
