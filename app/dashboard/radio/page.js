@@ -1,6 +1,7 @@
 import { buildOnlineRadioProductOnboarding } from "@/lib/product-onboarding.mjs";
 import { prisma } from "@/lib/prisma";
 import { requireSubscriberProduct } from "@/lib/subscriber-product-access";
+import { firstListenableOnlineStation, onlineRadioListenHref } from "@/lib/online-radio-listen.mjs";
 import ProductDashboard from "../ProductDashboard";
 
 export const dynamic = "force-dynamic";
@@ -8,10 +9,11 @@ export const metadata = { title: "Online Radio dashboard | Ruvanas" };
 
 export default async function OnlineRadioDashboard() {
   const { context, entitlements } = await requireSubscriberProduct("ONLINE", {
-    stations: { where: { productFamily: "ONLINE" }, select: { id: true, slug: true, status: true, storageUsedMb: true, publicPlayerEnabled: true, stationWebsiteEnabled: true, streamConfig: { select: { streamUrl: true } } }, orderBy: { createdAt: "asc" } }
+    stations: { where: { productFamily: "ONLINE" }, select: { id: true, slug: true, status: true, productFamily: true, storageUsedMb: true, publicPlayerEnabled: true, stationWebsiteEnabled: true, streamConfig: { select: { streamUrl: true } } }, orderBy: { createdAt: "asc" } }
   });
   const organisation = context.membership.organisation;
   const firstStation = organisation.stations.find((station) => station.status === "ACTIVE") || organisation.stations[0] || null;
+  const listenStation = firstListenableOnlineStation(organisation.stations);
   const now = new Date();
   const [players, liveStreams, publicListeners, activeMusicModes, activeAutoDjPolicies] = await Promise.all([
     prisma.player.count({ where: { organisationId: organisation.id, status: { not: "DISABLED" } } }),
@@ -42,6 +44,7 @@ export default async function OnlineRadioDashboard() {
     complimentary={entitlements.complimentaryAccess}
     onboarding={onboarding}
     primaryAction={{ href: firstStation ? `/stations/${firstStation.id}` : "/stations/new", label: firstStation ? "Open station" : "Create station" }}
+    listenAction={listenStation ? { href: onlineRadioListenHref(listenStation.id), label: listenStation.status === "ACTIVE" && listenStation.publicPlayerEnabled ? "Listen live" : "Listen to test stream" } : null}
     quickTasks={[
       { href: "/dashboard/programming#workspace-schedule", label: "Start continuous music", description: "Choose the approved mode for this station's 24/7 AutoDJ rotation." },
       { href: "/dashboard/media", label: "Add station audio", description: "Prepare your own tracks, imaging or spoken content." },

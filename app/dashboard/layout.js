@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getActiveOrganisationContext } from "@/lib/auth";
 import { resolveEntitlements } from "@/lib/entitlements.mjs";
 import { buildSubscriberNavigation } from "@/lib/user-experience-navigation.mjs";
+import { firstListenableOnlineStation, onlineRadioListenHref } from "@/lib/online-radio-listen.mjs";
 import SubscriberPortalShell from "./SubscriberPortalShell";
 
 export const dynamic = "force-dynamic";
@@ -9,7 +10,7 @@ export const dynamic = "force-dynamic";
 export default async function DashboardLayout({ children }) {
   const context = await getActiveOrganisationContext({
     subscription: { include: { plan: true, billingContract: true } },
-    stations: { select: { id: true, status: true }, orderBy: { createdAt: "asc" } },
+    stations: { select: { id: true, status: true, productFamily: true, streamConfig: { select: { streamUrl: true } } }, orderBy: { createdAt: "asc" } },
     betaParticipations: {
       where: { status: "ACTIVE", programme: { status: "ACTIVE" } },
       select: { id: true },
@@ -31,6 +32,9 @@ export default async function DashboardLayout({ children }) {
     firstStationId: firstStation?.id || null,
     betaActive: organisation.betaParticipations.length > 0
   });
+  const listenStation = entitlements.serviceEnabled && entitlements.onlineRadioEnabled
+    ? firstListenableOnlineStation(organisation.stations)
+    : null;
 
   return (
     <SubscriberPortalShell
@@ -38,6 +42,7 @@ export default async function DashboardLayout({ children }) {
       organisationName={organisation.name}
       userName={context.user.name || context.user.email}
       membershipRole={context.membership.role}
+      listenHref={onlineRadioListenHref(listenStation?.id)}
     >
       {children}
     </SubscriberPortalShell>

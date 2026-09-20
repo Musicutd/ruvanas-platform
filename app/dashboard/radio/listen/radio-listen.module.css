@@ -1,0 +1,15 @@
+.page{max-width:920px;margin:0 auto;padding:32px 24px 80px;color:var(--rv-text)}
+.back{color:var(--rv-accent-text);font-weight:850;text-decoration:none}
+.card{margin-top:24px;padding:clamp(24px,4vw,44px);border:1px solid var(--rv-border);border-radius:20px;background:var(--rv-surface)}
+.eyebrow{margin:0 0 14px;color:var(--rv-accent-text);font-size:11px;font-weight:950;letter-spacing:.15em}
+.card h1{margin:0 0 18px;font-size:clamp(30px,5vw,50px);line-height:1.05}
+.card p{max-width:650px;color:var(--rv-text-muted);line-height:1.55}
+.player{display:block;width:100%;margin:24px 0;color-scheme:light}
+.directLink{display:inline-flex;align-items:center;min-height:42px;padding:0 15px;border:1px solid var(--rv-border);border-radius:9px;color:var(--rv-text);font-weight:850;text-decoration:none}
+.directLink:hover,.directLink:focus-visible,.back:focus-visible,.stations a:focus-visible{border-color:#f4b942;outline:3px solid #6ea8fe;outline-offset:2px}
+.card .notice{margin:22px 0 0;padding:14px 16px;border-radius:10px;background:var(--rv-info-bg);color:var(--rv-info-text)}
+.notice a{color:var(--rv-accent-text);font-weight:850}
+.stations{display:grid;gap:10px;margin-top:28px}
+.stations h2{margin:0 0 4px;font-size:20px}
+.stations a{padding:13px 16px;border:1px solid var(--rv-border);border-radius:9px;background:var(--rv-surface);color:var(--rv-text);text-decoration:none}
+@media(max-width:620px){.page{padding:24px 16px 64px}.card{padding:22px}}

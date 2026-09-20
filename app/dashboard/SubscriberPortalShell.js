@@ -13,7 +13,7 @@ function matchesPath(pathname, href) {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export default function SubscriberPortalShell({ navigation, organisationName, userName, membershipRole, children }) {
+export default function SubscriberPortalShell({ navigation, organisationName, userName, membershipRole, listenHref, children }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [theme, setTheme] = useState("dark");
@@ -97,6 +97,7 @@ export default function SubscriberPortalShell({ navigation, organisationName, us
           <span>{organisationName}</span>
           <small>{membershipRole.replaceAll("_", " ").toLowerCase()}</small>
         </div>
+        {listenHref ? <Link href={listenHref} className={styles.listenLink} target="_blank" rel="noopener noreferrer" aria-label="Listen to your Online Radio station in a new tab">▶ Listen</Link> : null}
         <button
           type="button"
           className={styles.themeToggle}
@@ -127,6 +128,7 @@ export default function SubscriberPortalShell({ navigation, organisationName, us
             >
               <span>Overview</span><b aria-hidden="true">⌂</b>
             </Link>
+            {listenHref ? <Link href={listenHref} className={styles.listenSidebar} target="_blank" rel="noopener noreferrer" onClick={() => setOpen(false)}>▶ Listen to your station</Link> : null}
             {topLevelItems.map((item) => {
               const active = item.available !== false && matchesPath(pathname, item.href);
               return (
