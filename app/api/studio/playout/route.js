@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireActiveStudio } from "@/lib/studio-access";
 import { ORGANISATION_CONTENT_ROLES } from "@/lib/permissions.mjs";
 import { fallbackForQueue, normalizePreparedItem, playoutModeTransition, safeEndManualSession, studioQueueReadiness } from "@/lib/studio-playout.mjs";
+import { mergeStudioLibraryAssets, studioProgrammePackScope } from "@/lib/studio-library-workspace.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -29,9 +30,15 @@ async function workspace(access) {
     prisma.studioPlayoutSession.findMany({ where: { organisationId }, include: sessionInclude, orderBy: { updatedAt: "desc" }, take: 20 }),
     prisma.channel.findMany({ where: { organisationId, status: "ACTIVE" }, include: { autoDjPolicy: { select: { id: true, enabled: true, state: true } }, station: { select: { id: true, name: true } } }, orderBy: { name: "asc" } }),
     prisma.mediaAsset.findMany({ where: { status: "READY", OR: [{ organisationId }, ...(access.entitlements.licensedMusicCatalogueEnabled ? [{ organisationId: null, libraryType: "RUVANAS_CATALOGUE", track: { status: "READY", OR: [{ licenceExpiresAt: null }, { licenceExpiresAt: { gte: new Date() } }] } }] : [])] }, include: { track: { select: { title: true, artist: true, status: true, licenceExpiresAt: true } } }, orderBy: { createdAt: "desc" }, take: 300 }),
-    prisma.studioProgrammePack.findMany({ where: { organisationId }, include: { items: { orderBy: { position: "asc" } } }, orderBy: { updatedAt: "desc" } })
+    prisma.studioProgrammePack.findMany({ where: studioProgrammePackScope(organisationId, access.entitlements.planProductFamily), include: { items: { orderBy: { position: "asc" } } }, orderBy: { updatedAt: "desc" } })
   ]);
-  return { organisation: { id: organisationId, name: access.organisation.name }, studioLevel: access.entitlements.studioLevel, productFamily: access.entitlements.planProductFamily, sessions, channels, assets: assets.map((asset) => ({ id: asset.id, name: asset.name, mediaType: asset.mediaType, libraryType: asset.libraryType, durationSeconds: asset.durationSeconds, licensed: !asset.organisationId, artist: asset.track?.artist || null, title: asset.track?.title || null })), packs };
+  const packMediaIds = [...new Set(packs.flatMap((pack) => pack.items.map((item) => item.mediaAssetId)))];
+  const packAssets = packMediaIds.length ? await prisma.mediaAsset.findMany({
+    where: { id: { in: packMediaIds }, status: "READY", OR: [{ organisationId }, ...(access.entitlements.licensedMusicCatalogueEnabled ? [{ organisationId: null, libraryType: "RUVANAS_CATALOGUE", track: { status: "READY", OR: [{ licenceExpiresAt: null }, { licenceExpiresAt: { gte: new Date() } }] } }] : [])] },
+    include: { track: { select: { title: true, artist: true, status: true, licenceExpiresAt: true } } }
+  }) : [];
+  const availableAssets = mergeStudioLibraryAssets(assets, packAssets);
+  return { organisation: { id: organisationId, name: access.organisation.name }, studioLevel: access.entitlements.studioLevel, productFamily: access.entitlements.planProductFamily, sessions, channels, assets: availableAssets.map((asset) => ({ id: asset.id, name: asset.name, mediaType: asset.mediaType, libraryType: asset.libraryType, durationSeconds: asset.durationSeconds, licensed: !asset.organisationId, artist: asset.track?.artist || null, title: asset.track?.title || null })), packs };
 }
 
 export async function GET() {
@@ -80,7 +87,7 @@ export async function POST(request) {
       return NextResponse.json({ pack }, { status: 201 });
     }
     if (input.action === "ADD_PACK_ITEM") {
-      const [pack, asset] = await Promise.all([prisma.studioProgrammePack.findFirst({ where: { id: input.packId, organisationId: access.organisation.id } }), prisma.mediaAsset.findFirst({ where: { id: input.mediaAssetId, OR: [{ organisationId: access.organisation.id }, { organisationId: null, libraryType: "RUVANAS_CATALOGUE" }] }, include: { track: true } })]);
+      const [pack, asset] = await Promise.all([prisma.studioProgrammePack.findFirst({ where: { id: input.packId, ...studioProgrammePackScope(access.organisation.id, access.entitlements.planProductFamily) } }), prisma.mediaAsset.findFirst({ where: { id: input.mediaAssetId, OR: [{ organisationId: access.organisation.id }, { organisationId: null, libraryType: "RUVANAS_CATALOGUE" }] }, include: { track: true } })]);
       if (!pack || !asset) throw new Error("Choose an available programme pack and protected media item.");
       const readiness = studioQueueReadiness(asset, access.entitlements); if (!readiness.ready) throw new Error(readiness.reason);
       const position = await prisma.studioProgrammePackItem.count({ where: { packId: pack.id } });
