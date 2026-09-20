@@ -78,13 +78,14 @@ export async function POST(_request, { params }) {
           }
           const draft = await tx.channel.findFirst({ where: { stationId: station.id, organisationId: station.organisationId }, orderBy: { createdAt: "asc" } });
           const channel = draft
-            ? await tx.channel.update({ where: { id: draft.id }, data: { status: "ACTIVE" } })
+            ? await tx.channel.update({ where: { id: draft.id }, data: { status: "ACTIVE", musicRightsUse: "ONLINE_RADIO" } })
             : await tx.channel.create({ data: {
                 organisationId: station.organisationId,
                 stationId: station.id,
                 name: station.name,
                 slug: `online-${station.slug}`,
-                status: "ACTIVE"
+                status: "ACTIVE",
+                musicRightsUse: "ONLINE_RADIO"
               } });
           await tx.auditLog.create({ data: {
             organisationId: station.organisationId,

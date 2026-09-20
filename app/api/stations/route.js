@@ -72,17 +72,19 @@ export async function POST(request) {
   }
 
   const station = await prisma.$transaction(async (tx) => {
+    const stationSlug = slugify(name) + "-" + Math.random().toString(36).slice(2, 7);
     const createdStation = await tx.station.create({
       data: {
         organisationId: org.id,
         productFamily: "ONLINE",
         name,
         description: description || null,
-        slug: slugify(name) + "-" + Math.random().toString(36).slice(2, 7),
+        slug: stationSlug,
         status: "PENDING_SETUP",
         listenerLimit: entitlements.listenerLimit,
         storageLimitGb: entitlements.storageLimitGb,
-        maxBitrateKbps: entitlements.maxBitrateKbps
+        maxBitrateKbps: entitlements.maxBitrateKbps,
+        channels: { create: { name, slug: `online-${stationSlug}`, status: "DRAFT", musicRightsUse: "ONLINE_RADIO", organisation: { connect: { id: org.id } } } }
       }
     });
 
@@ -96,6 +98,7 @@ export async function POST(request) {
         details: {
           name: createdStation.name,
           slug: createdStation.slug,
+          channelRegistered: true,
           planCode: entitlements.planCode
         }
       }

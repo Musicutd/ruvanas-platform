@@ -886,6 +886,11 @@ enum SmartPlaylistStatus {
   ARCHIVED
 }
 
+enum SimplePlaylistBuildMode {
+  RANDOM_GENRE_POOL
+  GENRE_SEQUENCE
+}
+
 enum SmartPlaylistSort {
   ARTIST_TITLE
   RELEASE_YEAR_DESC
@@ -1695,6 +1700,7 @@ model User {
   redeemedComplimentaryAccessCodes       ComplimentaryAccessCode[]        @relation("ComplimentaryAccessRedeemedBy")
   revokedComplimentaryAccessCodes        ComplimentaryAccessCode[]        @relation("ComplimentaryAccessRevokedBy")
   createdSmartPlaylists                  SmartPlaylist[]                  @relation("SmartPlaylistCreatedBy")
+  createdSubscriberPlaylistEvents        SubscriberPlaylistEvent[]
   publishedSmartPlaylists                SmartPlaylist[]                  @relation("SmartPlaylistPublishedBy")
   createdRadioClocks                     RadioClock[]                     @relation("RadioClockCreatedBy")
   publishedRadioClocks                   RadioClock[]                     @relation("RadioClockPublishedBy")
@@ -1753,6 +1759,7 @@ model Organisation {
   players                            Player[]
   musicModes                         MusicMode[]
   smartPlaylists                     SmartPlaylist[]
+  subscriberPlaylistEvents           SubscriberPlaylistEvent[]
   radioClocks                        RadioClock[]
   programmeSchedules                 ProgrammeSchedule[]
   programmeScheduleVersions          ProgrammeScheduleVersion[]
@@ -2671,6 +2678,7 @@ model Channel {
   organisationId String
   brandId        String?
   stationId      String?
+  musicRightsUse MusicRightsUse?
   name           String
   slug           String
   description    String?
@@ -2687,6 +2695,7 @@ model Channel {
   proofOfPlayEvents                 ProofOfPlayEvent[]
   liveStudioSessions                LiveStudioSession[]
   autoDjPolicy                      AutoDjPolicy?
+  subscriberPlaylistEvents          SubscriberPlaylistEvent[]
   programmeSchedule                 ProgrammeSchedule?
   externalLiveSources               ExternalLiveSource[]
   djAccessGrants                    DjAccessGrant[]
@@ -3912,18 +3921,45 @@ model SmartPlaylist {
   publishedAt           DateTime?
   createdAt             DateTime            @default(now())
   updatedAt             DateTime            @updatedAt
+  simpleBuildMode       SimplePlaylistBuildMode?
+  durationMinutes       Int?
+  genreCodes            Json?
 
   organisation Organisation        @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   musicMode    MusicMode           @relation("SmartPlaylistMusicMode", fields: [musicModeId, organisationId], references: [id, organisationId], onDelete: Cascade)
   createdBy    User                @relation("SmartPlaylistCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
   publishedBy  User?               @relation("SmartPlaylistPublishedBy", fields: [publishedByUserId], references: [id], onDelete: SetNull)
   rules        SmartPlaylistRule[]
+  subscriberEvents SubscriberPlaylistEvent[]
 
   @@unique([id, organisationId])
   @@unique([musicModeId, organisationId])
   @@index([organisationId, status, updatedAt])
   @@index([createdByUserId, createdAt])
   @@index([publishedByUserId, publishedAt])
+}
+
+model SubscriberPlaylistEvent {
+  id               String   @id @default(cuid())
+  organisationId   String
+  channelId        String
+  smartPlaylistId  String
+  startsAt         DateTime
+  endsAt           DateTime
+  timezone         String
+  createdByUserId  String
+  cancelledAt      DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  channel Channel @relation(fields: [channelId, organisationId], references: [id, organisationId], onDelete: Cascade)
+  smartPlaylist SmartPlaylist @relation(fields: [smartPlaylistId, organisationId], references: [id, organisationId], onDelete: Restrict)
+  createdBy User @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@unique([id, organisationId])
+  @@index([organisationId, channelId, startsAt, endsAt])
+  @@index([smartPlaylistId, endsAt])
 }
 
 model SmartPlaylistRule {

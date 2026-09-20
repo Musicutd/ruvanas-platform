@@ -11,7 +11,8 @@ export default async function AdminStationsPage() {
   const stations = await prisma.station.findMany({
     include: {
       organisation: true,
-      streamConfig: true
+      streamConfig: true,
+      channels: { select: { id: true, autoDjPolicy: { select: { enabled: true } } } }
     },
     orderBy: {
       createdAt: "desc"
@@ -49,8 +50,10 @@ export default async function AdminStationsPage() {
                 <tr>
                   <th scope="col" style={styles.tableHeader}>Station</th>
                   <th scope="col" style={styles.tableHeader}>Organisation</th>
+                  <th scope="col" style={styles.tableHeader}>Pillar</th>
                   <th scope="col" style={styles.tableHeader}>Status</th>
                   <th scope="col" style={styles.tableHeader}>Streaming</th>
+                  <th scope="col" style={styles.tableHeader}>AutoDJ</th>
                   <th scope="col" style={styles.tableHeader}>Created</th>
                   <th scope="col" style={styles.tableHeader}>Action</th>
                 </tr>
@@ -65,6 +68,8 @@ export default async function AdminStationsPage() {
                       {station.organisation?.name || "Unknown organisation"}
                     </td>
 
+                    <td style={styles.tableCell}>{station.productFamily || "Retail"}</td>
+
                     <td style={styles.tableCell}>
                       <span style={styles.statusBadge}>{station.status}</span>
                     </td>
@@ -73,9 +78,11 @@ export default async function AdminStationsPage() {
                       {station.streamConfig ? (
                         <span style={styles.configured}>Configured</span>
                       ) : (
-                        <span style={styles.notConfigured}>Not configured</span>
+                        <span style={styles.notConfigured}>Pending manual configuration</span>
                       )}
                     </td>
+
+                    <td style={styles.tableCell}>{station.channels.some((channel) => channel.autoDjPolicy?.enabled) ? "Non-Stop on" : "Off"}</td>
 
                     <td style={styles.tableCell}>
                       {new Date(station.createdAt).toLocaleDateString()}

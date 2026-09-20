@@ -22,7 +22,7 @@ export async function PUT(request, { params }) {
     if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 });
     const organisationId = context.membership.organisationId;
     const existing = await prisma.smartPlaylist.findFirst({
-      where: { id: params.smartPlaylistId, organisationId },
+      where: { id: params.smartPlaylistId, organisationId, simpleBuildMode: null },
       select: { id: true, status: true, musicModeId: true, version: true }
     });
     if (!existing) return NextResponse.json({ error: "Smart Playlist not found." }, { status: 404 });

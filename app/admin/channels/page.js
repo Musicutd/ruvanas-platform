@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import ChannelStatusButton from "./ChannelStatusButton";
+import ChannelRightsProfile from "./ChannelRightsProfile";
 
 export default async function AdminChannelsPage() {
   const channels = await prisma.channel.findMany({
@@ -101,6 +102,7 @@ export default async function AdminChannelsPage() {
                 <th style={{ padding: 8 }}>Organisation</th>
                 <th style={{ padding: 8 }}>Brand</th>
                 <th style={{ padding: 8 }}>Technical station</th>
+                <th style={{ padding: 8 }}>Music rights</th>
                 <th style={{ padding: 8 }}>Stream</th>
                 <th style={{ padding: 8 }}>Assigned zones</th>
                 <th style={{ padding: 8 }}>Status</th>
@@ -146,6 +148,10 @@ export default async function AdminChannelsPage() {
 
                     <td style={{ padding: 8 }}>
                       {channel.station?.name ?? "Not linked"}
+                    </td>
+
+                    <td style={{ padding: 8 }}>
+                      {channel.musicRightsUse || (channel.stationId ? "Station profile pending" : <ChannelRightsProfile channelId={channel.id} />)}
                     </td>
 
                     <td style={{ padding: 8 }}>

@@ -10,7 +10,9 @@ import { PrismaClient } from "@prisma/client";
 import { decryptSecret } from "../lib/crypto.js";
 import { resolveEntitlements } from "../lib/entitlements.mjs";
 import { isPrivateNetworkAddress } from "../lib/stream-source-health.mjs";
-import { eligibleOnlineRadioRotation, liquidsoapScript, rotationFingerprint } from "../lib/online-radio-output.mjs";
+import { boundEncoderCache, eligibleOnlineRadioRotation, eligibleScheduledOnlineRotation, liquidsoapScript, rotationFingerprint } from "../lib/online-radio-output.mjs";
+import { loadEligibleSubscriberMusic } from "../lib/subscriber-playlist-service.mjs";
+import { buildGenreRotation } from "../lib/subscriber-playlists.mjs";
 
 const stationId = String(process.env.RUVANAS_AUTODJ_STATION_ID || "");
 if (!/^c[a-z0-9]{10,40}$/i.test(stationId)) throw new Error("RUVANAS_AUTODJ_STATION_ID must identify one Online Radio station.");
@@ -77,11 +79,39 @@ async function readRotation() {
   if (!station) return { ready: false, reason: "STATION_NOT_FOUND" };
   const entitlements = resolveEntitlements(station.organisation.subscription);
   const genres = await prisma.mediaGenre.findMany({ where: { active: true }, select: { name: true, slug: true, active: true, minimumCatalogueLevel: true }, take: 250 });
-  const rotation = eligibleOnlineRadioRotation(station, entitlements, new Date(), genres);
-  if (!rotation.ready) return rotation;
+  const now = new Date();
+  const nonStopChannel = station.channels?.length === 1 ? station.channels[0] : null;
+  if (nonStopChannel?.autoDjPolicy?.defaultMusicMode?.slug === `nonstop-${nonStopChannel.id}`) {
+    const policy = nonStopChannel.autoDjPolicy;
+    const entries = await loadEligibleSubscriberMusic(prisma, { organisationId: station.organisationId, requiredUse: "ONLINE_RADIO", territory: policy.territory, catalogueLevel: entitlements.licensedMusicCatalogueLevel, instant: now, configuredGenres: genres, sourceScopes: Array.isArray(policy.sourceScopes) ? policy.sourceScopes : null });
+    const rotation = buildGenreRotation({ entries, genreCodes: Array.isArray(policy.selectedGenreCodes) ? policy.selectedGenreCodes : [], durationMinutes: 90, seed: `${station.id}:${now.toISOString().slice(0, 10)}` });
+    policy.defaultMusicMode.tracks = boundEncoderCache(rotation.entries).map((entry, position) => ({ track: entry.track, weight: 100, position }));
+  }
+  let rotation = eligibleOnlineRadioRotation(station, entitlements, now, genres);
+  const activeChannel = station.channels?.length === 1 ? station.channels[0] : null;
+  let nextEventStartsAt = null;
+  if (activeChannel) {
+    const playlistEvent = await prisma.subscriberPlaylistEvent.findFirst({
+      where: { organisationId: station.organisationId, channelId: activeChannel.id, cancelledAt: null, startsAt: { lte: now }, endsAt: { gt: now } },
+      include: { smartPlaylist: true }, orderBy: { startsAt: "desc" }
+    });
+    if (playlistEvent) {
+      const entries = await loadEligibleSubscriberMusic(prisma, { organisationId: station.organisationId, requiredUse: "ONLINE_RADIO", catalogueLevel: entitlements.licensedMusicCatalogueLevel, instant: now, configuredGenres: genres, sourceScopes: ["SUBSCRIBER_LIBRARY", "RUVANAS_CORE"] });
+      const scheduled = eligibleScheduledOnlineRotation(station, entitlements, playlistEvent, entries, now);
+      if (scheduled.ready) rotation = scheduled;
+      else event("scheduled_playlist_unavailable", { reason: scheduled.reason, playlistEventId: playlistEvent.id });
+    } else {
+      const nextEvent = await prisma.subscriberPlaylistEvent.findFirst({
+        where: { organisationId: station.organisationId, channelId: activeChannel.id, cancelledAt: null, startsAt: { gt: now } },
+        select: { startsAt: true }, orderBy: { startsAt: "asc" }
+      });
+      nextEventStartsAt = nextEvent?.startsAt || null;
+    }
+  }
+  if (!rotation.ready) return { ...rotation, nextEventStartsAt };
   const bitrateKbps = station.streamConfig.bitrateKbps || Math.min(128, station.maxBitrateKbps, entitlements.maxBitrateKbps || 128);
   if (bitrateKbps > station.maxBitrateKbps || bitrateKbps > (entitlements.maxBitrateKbps || 0)) return { ready: false, reason: "BITRATE_NOT_ALLOWED" };
-  return { ...rotation, bitrateKbps, fingerprint: rotationFingerprint(rotation) };
+  return { ...rotation, bitrateKbps, fingerprint: rotationFingerprint({ ...rotation, bitrateKbps }), entitlements, configuredGenres: genres, nextEventStartsAt };
 }
 
 async function claimLease() {
@@ -150,8 +180,9 @@ async function startOutput(rotation) {
 event("worker_ready");
 try {
   while (!stopping) {
+    let rotation = null;
     try {
-      const rotation = await readRotation();
+      rotation = await readRotation();
       if (!rotation.ready) {
         await stopOutput();
         if (lastWaitingReason !== rotation.reason) event("waiting_for_configuration", { reason: rotation.reason });
@@ -171,7 +202,11 @@ try {
       await stopOutput();
       event("encoder_scan_failed", { code: String(error?.code || error?.name || "UNKNOWN").slice(0, 80) });
     }
-    if (!stopping) await new Promise((resolve) => setTimeout(resolve, scanMs));
+    if (!stopping) {
+      const boundaries = [rotation?.scheduleEndsAt, rotation?.nextEventStartsAt].filter(Boolean).map((date) => date.getTime() - Date.now());
+      const delay = Math.max(100, Math.min(scanMs, ...boundaries));
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
   }
 } finally {
   await stopOutput();

@@ -22,6 +22,12 @@ function cleanOptionalText(value) {
   return cleaned || null;
 }
 
+const RIGHTS_BY_FAMILY = Object.freeze({
+  RETAIL: "RETAIL_RADIO", SCHOOL: "SCHOOL_RADIO", ONLINE: "ONLINE_RADIO",
+  HEALTH: "HEALTH_RADIO", FAITH: "FAITH_RADIO", ORGANISATIONS: "ORGANISATIONS_RADIO"
+});
+const RIGHTS_USES = new Set(Object.values(RIGHTS_BY_FAMILY));
+
 export async function POST(request) {
   try {
     const access = await requirePlatformAdmin();
@@ -38,6 +44,10 @@ export async function POST(request) {
     const name = cleanOptionalText(body.name);
     const submittedSlug = cleanOptionalText(body.slug);
     const description = cleanOptionalText(body.description);
+    const submittedRightsUse = cleanOptionalText(body.musicRightsUse);
+    if (submittedRightsUse && !RIGHTS_USES.has(submittedRightsUse)) {
+      return NextResponse.json({ error: "Choose a valid music-rights profile." }, { status: 400 });
+    }
 
     if (!organisationId) {
       return NextResponse.json(
@@ -91,8 +101,9 @@ export async function POST(request) {
       }
     }
 
+    let station = null;
     if (stationId) {
-      const station = await prisma.station.findFirst({
+      station = await prisma.station.findFirst({
         where: {
           id: stationId,
           organisationId
@@ -107,6 +118,9 @@ export async function POST(request) {
           },
           { status: 400 }
         );
+      }
+      if (submittedRightsUse && submittedRightsUse !== RIGHTS_BY_FAMILY[station.productFamily]) {
+        return NextResponse.json({ error: "The music-rights profile must match the linked station's pillar." }, { status: 400 });
       }
     }
 
@@ -135,6 +149,7 @@ export async function POST(request) {
           organisationId,
           brandId: brandId || null,
           stationId: stationId || null,
+          musicRightsUse: station ? RIGHTS_BY_FAMILY[station.productFamily] || null : submittedRightsUse,
           name,
           slug,
           description,
