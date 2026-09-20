@@ -37,3 +37,22 @@ test("public player preview is unavailable until activation and publication", as
   assert.match(settings, /Preview available after station activation and publication/);
   assert.match(settings, /setPublished\(enabled\)/);
 });
+
+test("Super Admin manual setup keeps the essential Centova fields visible and advanced controls secondary", async () => {
+  const [listPage, setupPage, adminForm] = await Promise.all([
+    readFile(new URL("../app/admin/stations/page.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/admin/stations/[stationId]/setup/page.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/admin/stations/[stationId]/setup/AdminStationSetupForm.js", import.meta.url), "utf8")
+  ]);
+  assert.match(listPage, /stationsInSetupOrder/);
+  assert.match(listPage, /Add streaming details/);
+  assert.match(setupPage, /No Streamerr account is created by this form/);
+  assert.match(adminForm, /Public stream URL \(HTTPS preferred\)/);
+  assert.match(adminForm, /Live-source port/);
+  assert.match(adminForm, /Centova source password/);
+  assert.match(adminForm, /<details style=\{styles\.advanced\}>/);
+  assert.match(adminForm, /Advanced settings \(usually leave unchanged\)/);
+  assert.match(adminForm, /outboundAutoDjEnabled: initialData\?\.outboundAutoDjEnabled === true/);
+  assert.match(adminForm, /Leave this off until the Online Radio channel/);
+  assert.match(adminForm, /Check stream and activate station/);
+});

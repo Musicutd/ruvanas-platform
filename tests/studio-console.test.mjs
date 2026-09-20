@@ -93,10 +93,22 @@ test("presenter cards expose handle-only same-section drag while monitor stays r
   assert.match(ui, /draggedCard\?\.section !== section/);
   assert.match(ui, /reorderStudioConsolePanel\(data\.layout, draggedCard\.id, id\)/);
   assert.match(ui, /save\("SAVE_LAYOUT", \{ preset: layout\.preset, panels: layout\.panels, sizes: layout\.sizes \}\)/);
-  assert.match(ui, /!monitor \? <span className=\{styles\.cardDragHandle\}/);
+  assert.match(ui, /!monitor && showFullConsole \? <span className=\{styles\.cardDragHandle\}/);
   assert.doesNotMatch(ui, /<article[^>]*draggable=/);
   assert.match(css, /\.cardDragHandle\{/);
   assert.match(css, /data-drop-panel="ON_AIR"/);
+});
+
+test("Console starts with a temporary simple view without replacing the saved presenter layout", async () => {
+  const ui = await readFile(new URL("../app/dashboard/studio/BroadcastConsoleClient.js", import.meta.url), "utf8");
+  assert.match(ui, /const \[showFullConsole, setShowFullConsole\] = useState\(false\)/);
+  assert.match(ui, /showFullConsole \? data\?\.layout\?\.panels : \["ON_AIR", "DAILY_LOG", "OUTPUT_HEALTH"\]/);
+  assert.match(ui, /layoutPanels=\{monitor \? null : visiblePanels\}/);
+  assert.match(ui, /aria-pressed=\{!showFullConsole\} onClick=\{\(\) => setShowFullConsole\(false\)\}>Simple view/);
+  assert.match(ui, /aria-pressed=\{showFullConsole\} onClick=\{\(\) => setShowFullConsole\(true\)\}>Full console/);
+  assert.match(ui, /Your saved presenter layout is unchanged/);
+  assert.match(ui, /!monitor && showFullConsole \? <ConsolePanelGrid/);
+  assert.match(ui, /if \(monitor \|\| !showFullConsole \|\| busy/);
 });
 
 test("mix points reject out of bounds and safely fall back", () => {
@@ -273,7 +285,7 @@ test("commercial spot board exposes scoped approval records without inventing re
   assert.match(route, /where: \{ organisationId, campaign: \{ targets: \{ some: \{ OR: targetScopes \} \} \} \}/);
   assert.match(route, /targetType: "CHANNEL", channelId: channel\.id/);
   assert.match(route, /targetType: "STATION", stationId: channel\.stationId/);
-  assert.match(ui, /!monitor && data\.spotBoard/);
+  assert.match(ui, /!monitor && showFullConsole && data\.spotBoard/);
   assert.match(ui, /not a timed playout list or proof that an advert reached listeners/);
 });
 
@@ -322,7 +334,8 @@ test("live commands cannot mark an item on air or start distribution without a b
   assert.match(playout, /assertStudioManualOutputBridge\(\)/);
   assert.doesNotMatch(playout, /status: "ON_AIR", startedAt/);
   assert.match(broadcast, /if \(input\.action === "START_BROADCAST"\) \{\s*assertStudioManualOutputBridge\(\)/);
-  assert.match(manualUi, /disabled=\{busy \|\| !manualOutputConnected\}/);
+  assert.match(manualUi, /manualOutputConnected \? <div className=\{styles\.actions\}>/);
+  assert.match(manualUi, /Live controls will appear only after Ruvanas verifies Studio output/);
   assert.match(broadcastUi, /disabled=\{busy\|\|!selected\.length\|\|!data\.manualOutput\?\.connected\}/);
 });
 

@@ -1,6 +1,8 @@
 # Studio Basic + Pro + Broadcast Console local release gate
 
-This is a local implementation checkpoint against fetched `origin/main` `6656757a2f9ead6d693b8e3262a2fdae395818fa`, not publication approval. The branch incorporates that main commit through a **local-only merge**. No push, pull request, remote merge or deploy was performed.
+This implementation started against fetched `origin/main` `6656757a2f9ead6d693b8e3262a2fdae395818fa` and incorporated it through a local merge. It is now tracked in draft PR #182. Updating that draft is for review and CI only; it is not approval to merge, deploy or enable live Studio output.
+
+The 2026-09-20 usability continuation keeps streaming setup manual: Super Admin stations needing stream details appear first, essential Centova inputs are visible and health/fallback settings are secondary. In Studio Pro Manual Playout, the core private path is Preview → Send to Next, while cue/fade editing and programme packs are under expandable advanced sections. Unverified live start/fade/skip buttons are hidden, not merely disabled. The Broadcast Console now opens in a temporary simple view with output status, Daily Log and source health; Full console restores the saved presenter panels and advanced tools without overwriting their layout. These changes affect presentation only: no source switch, station activation, listener proof, automatic Streamerr provisioning or deployment was performed. The full local suite passed 931/939 with 8 environment-gated skips, static integrity passed, and the production build exited successfully with the expected missing-local-`DATABASE_URL` prerender warnings. The isolated Manual-to-Centova and listener-output release gates below remain open.
 
 ## Reuse and implementation
 

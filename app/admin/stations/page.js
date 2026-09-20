@@ -6,6 +6,19 @@ import EmptyState from "@/app/components/EmptyState";
 import { interfaceMessages } from "@/lib/interface-guidance.mjs";
 import { getAdminUser } from "@/lib/requireAdmin";
 
+const stationStatusLabels = {
+  DRAFT: "Draft",
+  PENDING_SETUP: "Setup needed",
+  ACTIVE: "Active",
+  PAUSED: "Paused",
+  SUSPENDED: "Suspended",
+  CANCELLED: "Cancelled"
+};
+
+function needsStreamingDetails(station) {
+  return station.status !== "CANCELLED" && !station.streamConfig?.streamUrl;
+}
+
 export default async function AdminStationsPage() {
   const adminUser = await getAdminUser();
   const stations = await prisma.station.findMany({
@@ -17,26 +30,31 @@ export default async function AdminStationsPage() {
       createdAt: "desc"
     }
   });
+  const stationsNeedingDetails = stations.filter(needsStreamingDetails).length;
+  const stationsInSetupOrder = [...stations].sort(
+    (left, right) => Number(needsStreamingDetails(right)) - Number(needsStreamingDetails(left))
+  );
 
   return (
     <main style={styles.page}>
       <PageHeader
         eyebrow="Radio control"
         title={interfaceMessages.stations.title}
-        description="Create stations, add their private streaming connections and review source reliability separately from player health."
+        description="When a subscriber creates a station, add its Centova details here. Streaming is entered manually by a Ruvanas Super Admin; saving details does not start or activate audio."
       >
         <Link href="/admin/stations/new" style={styles.addButton}>
           Add station
         </Link>
-        {adminUser?.role === "SUPER_ADMIN" ? <Link href="/admin/radio-stream-pool" style={styles.addButton}>
-          Prepared stream pool
-        </Link> : null}
       </PageHeader>
 
-      <StreamSourceOperations />
+      {adminUser?.role === "SUPER_ADMIN" && stationsNeedingDetails > 0 ? (
+        <p style={styles.todoNotice}>
+          {stationsNeedingDetails} {stationsNeedingDetails === 1 ? "station needs" : "stations need"} streaming details. Open “Add streaming details” in the list below.
+        </p>
+      ) : null}
 
       <section style={styles.section}>
-        <h2 style={styles.sectionTitle}>Existing stations</h2>
+        <h2 style={styles.sectionTitle}>Stations · those needing setup first</h2>
 
         {stations.length === 0 ? (
           <EmptyState
@@ -60,7 +78,7 @@ export default async function AdminStationsPage() {
               </thead>
 
               <tbody>
-                {stations.map((station) => (
+                {stationsInSetupOrder.map((station) => (
                   <tr key={station.id} style={styles.tableRow}>
                     <td style={styles.tableCellStrong}>{station.name}</td>
 
@@ -69,14 +87,18 @@ export default async function AdminStationsPage() {
                     </td>
 
                     <td style={styles.tableCell}>
-                      <span style={styles.statusBadge}>{station.status}</span>
+                      <span style={{ ...styles.statusBadge, ...(station.status === "ACTIVE" ? styles.activeStatus : styles.inactiveStatus) }}>
+                        {stationStatusLabels[station.status] || station.status}
+                      </span>
                     </td>
 
                     <td style={styles.tableCell}>
-                      {station.streamConfig ? (
-                        <span style={styles.configured}>Configured</span>
+                      {station.streamConfig?.streamUrl ? (
+                        <span style={styles.configured}>Details saved</span>
+                      ) : station.status === "CANCELLED" ? (
+                        <span style={styles.notConfigured}>Not applicable</span>
                       ) : (
-                        <span style={styles.notConfigured}>Not configured</span>
+                        <span style={styles.notConfigured}>Needs stream details</span>
                       )}
                     </td>
 
@@ -85,12 +107,12 @@ export default async function AdminStationsPage() {
                     </td>
 
                     <td style={styles.tableCell}>
-                      {adminUser?.role === "SUPER_ADMIN" ? <Link
+                      {adminUser?.role === "SUPER_ADMIN" && station.status !== "CANCELLED" ? <Link
                         href={`/admin/stations/${station.id}/setup`}
                         style={styles.setupLink}
                       >
-                        Configure streaming
-                      </Link> : <span>Super Admin only</span>}
+                        {station.streamConfig?.streamUrl ? "Review streaming" : "Add streaming details"}
+                      </Link> : <span>{station.status === "CANCELLED" ? "—" : "Super Admin only"}</span>}
                     </td>
                   </tr>
                 ))}
@@ -99,6 +121,8 @@ export default async function AdminStationsPage() {
           </div>
         )}
       </section>
+
+      <StreamSourceOperations />
     </main>
   );
 }
@@ -148,6 +172,16 @@ const styles = {
     fontSize: 14,
     fontWeight: 900,
     textDecoration: "none"
+  },
+  todoNotice: {
+    margin: "0 0 20px",
+    border: "1px solid #f59e0b",
+    borderRadius: 9,
+    background: "#fffbeb",
+    color: "#78350f",
+    padding: "12px 16px",
+    fontSize: 14,
+    fontWeight: 700
   },
   section: {
     padding: 24,
@@ -212,10 +246,16 @@ const styles = {
     display: "inline-block",
     padding: "4px 8px",
     borderRadius: 5,
-    background: "#dcfce7",
-    color: "#166534",
     fontSize: 12,
     fontWeight: 900
+  },
+  activeStatus: {
+    background: "#dcfce7",
+    color: "#166534"
+  },
+  inactiveStatus: {
+    background: "#e2e8f0",
+    color: "#334155"
   },
   configured: {
     display: "inline-block",

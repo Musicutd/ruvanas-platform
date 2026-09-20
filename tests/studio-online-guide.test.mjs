@@ -33,3 +33,14 @@ test("Online Studio opens a simple first screen while retaining direct advanced 
   assert.match(guide, /independent listener audio check/);
   assert.doesNotMatch(guide, /START_BROADCAST|START_NEXT/);
 });
+
+test("Manual Playout keeps preparation simple without suggesting unverified live output", async () => {
+  const playout = await readFile(new URL("../app/dashboard/studio/ManualPlayoutClient.js", import.meta.url), "utf8");
+  assert.match(playout, /Preview privately/);
+  assert.match(playout, /Send to Next/);
+  assert.match(playout, /<details className=\{styles\.advancedEditor\}>/);
+  assert.match(playout, /Edit title, cue, fades and gain/);
+  assert.match(playout, /Programme packs \(advanced\)/);
+  assert.match(playout, /Live controls will appear only after Ruvanas verifies Studio output/);
+  assert.match(playout, /manualOutputConnected \? <div className=\{styles\.actions\}>/);
+});
