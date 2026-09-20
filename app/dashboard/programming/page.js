@@ -15,6 +15,7 @@ import VoiceTrackingWorkspace from "./VoiceTrackingWorkspace";
 import AudioProcessingWorkspace from "./AudioProcessingWorkspace";
 import AutoDjExpansionWorkspace from "./AutoDjExpansionWorkspace";
 import WorkspaceTabs from "../WorkspaceTabs";
+import SimplePlaylistWorkspace from "./SimplePlaylistWorkspace";
 import styles from "./programming.module.css";
 
 export const dynamic = "force-dynamic";
@@ -35,6 +36,7 @@ export default async function SubscriberProgrammingPage() {
     orderBy: { createdAt: "asc" }
   }) : null;
   const tabs = [
+    { id: "simple", label: "Playlists & AutoDJ", description: "Start, save and schedule music" },
     { id: "schedule", label: "Schedule", description: "Now, AutoDJ and weekly plans" },
     { id: "automation", label: "Automation", description: "Playlists, clocks and advanced rules" },
     { id: "live", label: "Live radio", description: "Studio, sources and failover" },
@@ -52,12 +54,10 @@ export default async function SubscriberProgrammingPage() {
       <section className={styles.shell} id="main-content">
         <div className={styles.hero}>
           <div>
-            <p className={styles.eyebrow}>RADIO PROGRAMMING</p>
-            <h1>{onlineOnly ? "Programme your online station" : "Plan your week with confidence"}</h1>
+            <p className={styles.eyebrow}>MUSIC & PLAYLISTS</p>
+            <h1>Start music in three steps</h1>
             <p className={styles.intro}>
-              {onlineOnly
-                ? `Choose approved music for ${context.membership.organisation.name}, switch on Continuous AutoDJ for your station channel, and schedule timed programmes there.`
-                : `Choose approved music for ${context.membership.organisation.name}, switch on Continuous AutoDJ for a channel, or build a weekly plan for a listening area.`}
+              Switch on AutoDJ Non-Stop, save a playlist, or choose when it plays for {context.membership.organisation.name}. Advanced tools remain available if you need them.
             </p>
           </div>
           <div className={styles.safetyNote}>
@@ -66,9 +66,10 @@ export default async function SubscriberProgrammingPage() {
           </div>
         </div>
         {onlineRadioStation ? <div className={styles.notice} role="status">
-          Scheduling {onlineRadioStation.name}? <a href={`/dashboard/radio/schedule/${onlineRadioStation.id}`}>Open its station-channel schedule</a>. For the live stream rotation, use Continuous AutoDJ in the Schedule tab.
+          Need detailed programming for {onlineRadioStation.name}? <a href={`/dashboard/radio/schedule/${onlineRadioStation.id}`}>Open its station-channel schedule</a>. For everyday music, use Playlists &amp; AutoDJ below.
         </div> : null}
         <WorkspaceTabs label="Programming tools" intro="Open only the part of radio programming you need right now." tabs={tabs}>
+          <div className={styles.workspace}><SimplePlaylistWorkspace /></div>
           <div className={styles.workspace}><ProgrammingWorkspace organisationName={context.membership.organisation.name} onlineOnly={onlineOnly} /></div>
           <div className={styles.workspace}><AutoDjExpansionWorkspace /><SmartPlaylistsWorkspace /><RadioClocksWorkspace /><AdvancedSchedulerWorkspace /></div>
           <div className={styles.workspace}><ExternalLiveWorkspace /><LiveFailoverWorkspace /><BrowserLiveStudioWorkspace /></div>

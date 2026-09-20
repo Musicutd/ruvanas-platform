@@ -7,6 +7,7 @@ const defaultForm = {
   organisationId: "",
   brandId: "",
   stationId: "",
+  musicRightsUse: "RETAIL_RADIO",
   name: "",
   slug: "",
   description: ""
@@ -58,6 +59,14 @@ export default function NewChannelForm({ organisations }) {
       if (name === "organisationId") {
         next.brandId = "";
         next.stationId = "";
+      }
+
+      if (name === "stationId" && value) {
+        const family = availableStations.find((station) => station.id === value)?.productFamily;
+        next.musicRightsUse = {
+          RETAIL: "RETAIL_RADIO", SCHOOL: "SCHOOL_RADIO", ONLINE: "ONLINE_RADIO",
+          HEALTH: "HEALTH_RADIO", FAITH: "FAITH_RADIO", ORGANISATIONS: "ORGANISATIONS_RADIO"
+        }[family] || "";
       }
 
       if (name === "name") {
@@ -224,6 +233,20 @@ export default function NewChannelForm({ organisations }) {
             }}
           />
         </label>
+
+        <label style={styles.label}>
+          Music-rights profile
+          <select name="musicRightsUse" value={form.musicRightsUse} onChange={updateField} style={styles.input} disabled={Boolean(form.stationId)} required>
+            <option value="">Choose a pillar</option>
+            <option value="RETAIL_RADIO">Retail</option>
+            <option value="SCHOOL_RADIO">School</option>
+            <option value="ONLINE_RADIO">Online Radio</option>
+            <option value="HEALTH_RADIO">Health</option>
+            <option value="FAITH_RADIO">Faith</option>
+            <option value="ORGANISATIONS_RADIO">Organisations</option>
+          </select>
+        </label>
+        <p style={styles.helpText}>A linked station sets this automatically. Subscriber playlists only use music approved for the selected pillar.</p>
       </section>
 
       <section style={styles.section}>

@@ -98,6 +98,11 @@ jobs:
           INTEGRATION_BASE_URL: http://127.0.0.1:3100
         run: npm run test:acceptance
 
+      - name: Run subscriber playlist integration
+        env:
+          INTEGRATION_BASE_URL: http://127.0.0.1:3100
+        run: node --test tests/integration/subscriber-simple-playlists.test.mjs
+
       - name: Show application logs after failure
         if: failure()
         run: cat /tmp/ruvanas-next.log || true

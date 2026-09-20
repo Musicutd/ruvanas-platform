@@ -19,6 +19,7 @@ export default async function NewAdminChannelPage() {
           name: true,
           slug: true,
           status: true,
+          productFamily: true,
           streamConfig: {
             select: {
               streamUrl: true

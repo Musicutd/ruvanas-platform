@@ -27,8 +27,8 @@ export async function POST(_request, { params }) {
       if (activeCount >= entitlements.streamLimit) throw Object.assign(new Error("The plan's active-channel limit has been reached."), { code: "CHANNEL_LIMIT_REACHED" });
       const draft = await tx.channel.findFirst({ where: { organisationId: station.organisationId, stationId: station.id }, orderBy: { createdAt: "asc" } });
       const channel = draft
-        ? await tx.channel.update({ where: { id: draft.id }, data: { status: "ACTIVE" } })
-        : await tx.channel.create({ data: { organisationId: station.organisationId, stationId: station.id, name: station.name, slug: `online-${station.slug}`, status: "ACTIVE" } });
+        ? await tx.channel.update({ where: { id: draft.id }, data: { status: "ACTIVE", musicRightsUse: "ONLINE_RADIO" } })
+        : await tx.channel.create({ data: { organisationId: station.organisationId, stationId: station.id, name: station.name, slug: `online-${station.slug}`, status: "ACTIVE", musicRightsUse: "ONLINE_RADIO" } });
       await tx.auditLog.create({ data: { organisationId: station.organisationId, actorUserId: access.user.id, action: "ONLINE_RADIO_CHANNEL_PREPARED", entityType: "Channel", entityId: channel.id, details: { stationId: station.id, stationStatus: station.status, priorStatus: draft?.status || null } } });
       return channel;
     });
