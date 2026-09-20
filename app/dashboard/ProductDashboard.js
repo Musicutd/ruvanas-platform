@@ -2,7 +2,7 @@ import Link from "next/link";
 import styles from "./product-dashboard.module.css";
 import WorkspaceTabs from "./WorkspaceTabs";
 
-export default function ProductDashboard({ eyebrow, title, description, status, statusTone = "healthy", metrics, primaryAction, sections, complimentary, onboarding, quickTasks = [] }) {
+export default function ProductDashboard({ eyebrow, title, description, status, statusTone = "healthy", metrics, primaryAction, listenAction, sections, complimentary, onboarding, quickTasks = [] }) {
   const heroAction = onboarding && !onboarding.complete ? onboarding.nextAction : primaryAction;
 
   return (
@@ -14,6 +14,7 @@ export default function ProductDashboard({ eyebrow, title, description, status, 
           <p>{description}</p>
           <div className={styles.heroActions}>
             <Link href={heroAction.href} className={styles.primary}>{heroAction.label}</Link>
+            {listenAction ? <Link href={listenAction.href} className={styles.secondary} target="_blank" rel="noopener noreferrer">▶ {listenAction.label}</Link> : null}
             <Link href="/dashboard/how-it-works" className={styles.secondary}>How it works</Link>
             <Link href="/dashboard" className={styles.secondary}>All products</Link>
           </div>
