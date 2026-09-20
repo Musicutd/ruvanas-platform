@@ -8,8 +8,10 @@ import {
   expandRadioClock,
   formatClockOffset,
   parseRadioClockInput,
+  reorderRadioClockDraftItems,
   radioClockSlug,
-  radioClockTimeline
+  radioClockTimeline,
+  reviewRadioClockDraft
 } from "../lib/radio-clocks.mjs";
 
 const exactHour = {
@@ -68,6 +70,25 @@ test("timeline offsets account for overlap and require an exact hour", () => {
   assert.equal(short.ok, true);
   assert.throws(() => assertRadioClockPublishable({ items: short.data.items, durationSeconds: 3600 }), /exactly one hour/i);
   assert.match(parseRadioClockInput({ ...exactHour, items: [{ ...exactHour.items[0], durationSeconds: 3600 }, { ...exactHour.items[1], transition: "CLEAN", transitionSeconds: 0 }] }).error, /overruns/i);
+});
+
+test("draft drag order previews timing conflicts without changing the published clock", async () => {
+  const original = exactHour.items;
+  assert.deepEqual(reviewRadioClockDraft(original).warnings, []);
+  const reordered = reorderRadioClockDraftItems(original, 1, 0);
+  assert.deepEqual(reordered.map((item) => item.label), ["Station ident", "Opening music", "Feature block"]);
+  assert.equal(original[0].label, "Opening music");
+  const review = reviewRadioClockDraft(reordered);
+  assert.equal(review.timeline.plannedSeconds, 3602);
+  assert.match(review.warnings.join(" "), /overruns the hour by 2 seconds/i);
+  assert.deepEqual(reorderRadioClockDraftItems(original, -1, 2), original);
+  assert.deepEqual(reorderRadioClockDraftItems(original, 0, 3), original);
+  assert.match(reviewRadioClockDraft([{ ...original[0], transition: "CROSSFADE", transitionSeconds: 1800 }]).warnings.join(" "), /mix must be shorter/i);
+  const component = await readFile(new URL("../app/dashboard/programming/RadioClocksWorkspace.js", import.meta.url), "utf8");
+  assert.match(component, /onDragStart=/);
+  assert.match(component, /onDrop=/);
+  assert.match(component, /setPreview\(null\)/);
+  assert.match(component, /reorderRadioClockDraftItems\(current\.items, from, to\)/);
 });
 
 test("a published clock expands deterministically across a full week", () => {

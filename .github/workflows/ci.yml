@@ -115,3 +115,6 @@ jobs:
 
       - name: Build and validate Online Radio encoder image
         run: docker build --file Dockerfile.online-radio-worker --tag ruvanas-online-radio-encoder:ci .
+
+      - name: Verify isolated timed-playlist MP3 file output
+        run: docker build --file Dockerfile.studio-timed-mp3-test --tag ruvanas-studio-timed-mp3-test:ci .

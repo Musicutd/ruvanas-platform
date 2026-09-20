@@ -50,8 +50,8 @@ export default async function AdminStationSetupPage({ params }) {
         Configure streaming for {station.name}
       </h1>
 
-      <p style={{ color: "#9fb3c8", marginBottom: 24 }}>
-        Super Admin controls the private Centova or generic HTTP stream. Save the connection, then activate the station only after a live-source check succeeds. Leave a password blank to keep it unchanged.
+      <p style={{ color: "#9fb3c8", marginBottom: 24, lineHeight: 1.5 }}>
+        Enter this station’s streaming details manually. The subscriber manages music in Ruvanas; only a Super Admin saves the private Centova connection. Save the details first, then check live audio before activating. No Streamerr account is created by this form.
       </p>
 
       <AdminStationSetupForm

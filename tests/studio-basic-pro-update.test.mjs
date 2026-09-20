@@ -4,7 +4,7 @@ import test from "node:test";
 import { resolveEntitlements, studioExternalDestinationLimit, studioLevelForTier } from "../lib/entitlements.mjs";
 import { assertStudioMultitrackWriteAllowed, splitMultitrackClip, studioMultitrackTrackLimit } from "../lib/multitrack-studio.mjs";
 import { assertStudioWaveformWriteAllowed } from "../lib/waveform-editor.mjs";
-import { fallbackForQueue, playoutModeTransition, studioQueueReadiness } from "../lib/studio-playout.mjs";
+import { assertStudioManualOutputBridge, fallbackForQueue, nextStudioQueuePosition, planStudioFutureReorder, planStudioFutureReplacement, playoutModeTransition, studioQueueReadiness } from "../lib/studio-playout.mjs";
 import { assertDestinationCapacity, broadcastMetadata, safeStudioDestination } from "../lib/studio-broadcast.mjs";
 
 function plan(tierNumber, productFamily = "RETAIL") {
@@ -48,9 +48,11 @@ test("Manual Playout requires fallback and returns to AutoDJ when its queue empt
 });
 
 test("catalogue use, external destination caps, safe credentials and metadata are explicit", () => {
-  const catalogueAsset = { status: "READY", organisationId: null, libraryType: "RUVANAS_CATALOGUE", track: { status: "READY", licenceExpiresAt: null } };
-  assert.equal(studioQueueReadiness(catalogueAsset, { licensedMusicCatalogueEnabled: false }).ready, false);
-  assert.equal(studioQueueReadiness(catalogueAsset, { licensedMusicCatalogueEnabled: true }).ready, true);
+  const catalogueAsset = { status: "READY", organisationId: null, libraryType: "RUVANAS_CATALOGUE", licensedCatalogue: true, mediaType: "MUSIC", genres: [{ mediaGenre: { slug: "pop" } }], track: { status: "READY", rightsReviewStatus: "APPROVED", permittedUses: ["ONLINE_RADIO"], permittedTerritories: "MT", licenceExpiresAt: null } };
+  const context = { organisationId: "tenant-1", productFamily: "ONLINE", territory: "MT" };
+  assert.equal(studioQueueReadiness(catalogueAsset, context).ready, false);
+  assert.equal(studioQueueReadiness(catalogueAsset, { ...context, licensedMusicCatalogueLevel: "FOCUSED" }).ready, true);
+  assert.equal(studioQueueReadiness(catalogueAsset, { ...context, licensedMusicCatalogueLevel: "FOCUSED", territory: "GB" }).ready, false);
   assert.deepEqual([1, 2, 3, 4, 5].map((tier) => studioExternalDestinationLimit(tier)), [0, 0, 2, 5, 10]);
   assert.throws(() => assertDestinationCapacity({ tierNumber: 3, activeCount: 1, requestedCount: 2 }), /2 simultaneous/);
   assert.equal(assertDestinationCapacity({ tierNumber: 5, customLimit: 14, activeCount: 10, requestedCount: 4 }), 14);
@@ -74,7 +76,8 @@ test("shared Studio APIs enforce idempotency, optimistic concurrency and worker-
   assert.match(playout, /Idempotency-Key/);
   assert.match(playout, /expectedRevision/);
   assert.match(playout, /CREATE_PACK/);
-  assert.match(playout, /SCHEDULED_PRIORITY/);
+  assert.match(playout, /assertStudioManualOutputBridge/);
+  assert.match(playout, /revision: session\.revision/);
   assert.match(playout, /SEND_NEXT/);
   assert.match(broadcast, /Idempotency-Key/);
   assert.match(broadcast, /activeExternalLinks/);
@@ -87,4 +90,55 @@ test("shared Studio APIs enforce idempotency, optimistic concurrency and worker-
   assert.match(schema, /model StudioBroadcastCommand/);
   assert.match(hub, /HEALTH:/);
   assert.match(hub, /FAITH:/);
+});
+
+test("Studio Manual Playout never claims broadcast output before an authoritative bridge exists", () => {
+  assert.throws(() => assertStudioManualOutputBridge(), /not connected to a verified player or encoder/);
+});
+
+test("future queue reorder keeps dense order and does not cross locks or played items", () => {
+  const items = [
+    { id: "played", area: "PLAYED", status: "PLAYED", position: 0 },
+    { id: "a", area: "LIVE", status: "READY", position: 0 },
+    { id: "b", area: "LIVE", status: "READY", position: 1 },
+    { id: "c", area: "LIVE", status: "READY", position: 2 }
+  ];
+  assert.deepEqual(planStudioFutureReorder(items, "c", 0), [{ id: "c", position: 0 }, { id: "a", position: 1 }, { id: "b", position: 2 }]);
+  assert.deepEqual(planStudioFutureReorder(items, "a", 0), []);
+  assert.throws(() => planStudioFutureReorder(items, "played", 0), /future playlist/);
+  assert.throws(() => planStudioFutureReorder(items, "c", 3), /valid future playlist position/);
+  assert.throws(() => planStudioFutureReorder(items.map((item) => item.id === "b" ? { ...item, locked: true } : item), "c", 0), /intervening/);
+  assert.equal(nextStudioQueuePosition(items, "LIVE"), 3);
+  assert.equal(nextStudioQueuePosition([{ id: "gap", area: "LIVE", status: "READY", position: 7 }], "LIVE"), 8);
+});
+
+test("future Manual replacement preserves position and refuses locked, played or stale items", () => {
+  const items = [
+    { id: "on-air", area: "LIVE", status: "ON_AIR", position: 0 },
+    { id: "future", area: "LIVE", status: "READY", position: 1, estimatedStartAt: null },
+    { id: "prepared", area: "PREPARE", status: "READY", position: 2 }
+  ];
+  assert.deepEqual(planStudioFutureReplacement(items, "future", "prepared"), {
+    outgoing: { id: "future", area: "PREPARE", position: 3, estimatedStartAt: null },
+    incoming: { id: "prepared", area: "LIVE", position: 1, estimatedStartAt: null }
+  });
+  assert.throws(() => planStudioFutureReplacement(items, "on-air", "prepared"), /future Manual queue/);
+  assert.throws(() => planStudioFutureReplacement(items.map((item) => item.id === "future" ? { ...item, locked: true } : item), "future", "prepared"), /locked future/);
+  assert.throws(() => planStudioFutureReplacement(items, "future", "on-air"), /private Prepare area/);
+  assert.throws(() => planStudioFutureReplacement(items.map((item) => item.id === "future" ? { ...item, estimatedStartAt: "2020-01-01T00:00:00Z" } : item), "future", "prepared"), /no longer in the future/);
+});
+
+test("Studio music queue rechecks product, tenant, review and licence window", () => {
+  const asset = {
+    id: "media-1", status: "READY", organisationId: "tenant-1", libraryType: "ORGANISATION_MUSIC", mediaType: "MUSIC",
+    track: { status: "READY", rightsReviewStatus: "APPROVED", rightsConfirmedAt: new Date("2026-01-01"), rightsHolder: "Owner", rightsReference: "Agreement", rightsBasis: "OWNED_MASTER", permittedTerritories: "MT", permittedUses: ["ONLINE_RADIO"], licenceExpiresAt: new Date("2026-12-31") }
+  };
+  const context = { organisationId: "tenant-1", productFamily: "ONLINE", rightsUse: "ONLINE_RADIO", territory: "MT", instant: new Date("2026-09-18") };
+  assert.equal(studioQueueReadiness(asset, context).ready, true);
+  assert.equal(studioQueueReadiness(asset, { ...context, organisationId: "tenant-2" }).ready, false);
+  assert.equal(studioQueueReadiness(asset, { ...context, productFamily: "RETAIL" }).ready, false);
+  assert.equal(studioQueueReadiness(asset, { ...context, territory: "GB" }).ready, false);
+  assert.match(studioQueueReadiness(asset, { ...context, territory: null }).reason, /channel territory/);
+  assert.equal(studioQueueReadiness({ ...asset, track: { ...asset.track, rightsReviewStatus: "REJECTED" } }, context).ready, false);
+  assert.equal(studioQueueReadiness(asset, { ...context, instant: new Date("2027-01-01") }).ready, false);
 });

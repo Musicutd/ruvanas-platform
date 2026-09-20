@@ -193,44 +193,32 @@ export default function AdminStationSetupForm({
   return (
     <form onSubmit={handleSubmit} style={styles.form}>
       <section style={styles.section}>
-        <h2 style={styles.sectionTitle}>Stream connection</h2>
+        <h2 style={styles.sectionTitle}>1. Add the stream details</h2>
+        <p style={styles.helpText}>Copy these values from this station’s Centova Quick Links and Stream settings. This saves the connection only; it does not start broadcasting.</p>
 
         <label style={styles.label}>
-          Stream URL
+          Public stream URL (HTTPS preferred)
           <input
             style={styles.input}
             type="url"
             name="streamUrl"
             value={form.streamUrl}
             onChange={updateField}
-            placeholder="https://stream.example.com/live"
+            placeholder="https://your-station.radioca.st/stream"
             disabled={saving}
             required={form.providerKey === "CENTOVA_CAST"}
           />
         </label>
 
         <label style={styles.label}>
-          Mount point
-          <input
-            style={styles.input}
-            type="text"
-            name="mountPoint"
-            value={form.mountPoint}
-            onChange={updateField}
-            placeholder="/live"
-            disabled={saving}
-          />
-        </label>
-
-        <label style={styles.label}>
-          Server host
+          {form.providerKey === "CENTOVA_CAST" ? "Centova server host" : "Server host (optional)"}
           <input
             style={styles.input}
             type="text"
             name="serverHost"
             value={form.serverHost}
             onChange={updateField}
-            placeholder="stream.example.com"
+            placeholder="pollux.shoutca.st"
             disabled={saving}
             required={form.providerKey === "CENTOVA_CAST"}
           />
@@ -238,7 +226,7 @@ export default function AdminStationSetupForm({
 
         <div style={styles.row}>
           <label style={styles.label}>
-            Server port
+            {form.providerKey === "CENTOVA_CAST" ? "Listener/server port" : "Server port (optional)"}
             <input
               style={styles.input}
               type="number"
@@ -249,72 +237,16 @@ export default function AdminStationSetupForm({
               min="1"
               max="65535"
               disabled={saving}
-              required
+              required={form.providerKey === "CENTOVA_CAST"}
             />
           </label>
 
-          <label style={styles.label}>
-            Bitrate (kbps)
-            <input
-              style={styles.input}
-              type="number"
-              name="bitrateKbps"
-              value={form.bitrateKbps}
-              onChange={updateField}
-              placeholder="128"
-              min="1"
-              disabled={saving}
-            />
-          </label>
+          {form.providerKey === "CENTOVA_CAST" ? <label style={styles.label}>Live-source port<input style={styles.input} type="number" name="sourcePort" value={form.sourcePort} onChange={updateField} min="1" max="65535" disabled={saving} placeholder="From Live Source Connections" /></label> : null}
         </div>
-        {form.providerKey === "CENTOVA_CAST" ? <p style={styles.helpText}>The listener and live-source ports are separate settings; Centova may give them the same number. Use the exact values in Live Source Connections below.</p> : null}
-      </section>
-
-      <section style={styles.section}>
-        <h2 style={styles.sectionTitle}>Provider and source health</h2>
-
+        {form.providerKey === "CENTOVA_CAST" ? <p style={styles.helpText}>Centova may use the same number for both ports. Use the exact “When the autoDJ is not running” live-source port, not the DJ-account port.</p> : null}
+        {form.providerKey === "CENTOVA_CAST" ? <>
         <label style={styles.label}>
-          Provider adapter
-          <select style={styles.input} name="providerKey" value={form.providerKey} onChange={updateField} disabled={saving}>
-            <option value="CENTOVA_CAST">Centova Cast</option>
-            <option value="GENERIC_HTTP">Generic HTTP stream</option>
-          </select>
-        </label>
-
-        <label style={styles.label}>
-          Backup stream URL <span style={styles.optional}>(recorded for controlled fallback; not switched automatically)</span>
-          <input style={styles.input} type="url" name="backupStreamUrl" value={form.backupStreamUrl} onChange={updateField} placeholder="https://backup.example.com/live" disabled={saving} />
-        </label>
-
-        <label style={styles.checkLabel}>
-          <input type="checkbox" name="probeEnabled" checked={form.probeEnabled} onChange={updateField} disabled={saving} />
-          Monitor the public stream source independently from player heartbeats
-        </label>
-
-        <div style={styles.row}>
-          <label style={styles.label}>
-            Probe interval (seconds)
-            <input style={styles.input} type="number" name="probeIntervalSeconds" value={form.probeIntervalSeconds} onChange={updateField} min="30" max="3600" disabled={saving} required />
-          </label>
-          <label style={styles.label}>
-            Probe timeout (milliseconds)
-            <input style={styles.input} type="number" name="probeTimeoutMs" value={form.probeTimeoutMs} onChange={updateField} min="1000" max="30000" disabled={saving} required />
-          </label>
-        </div>
-
-        <p style={styles.helpText}>Ruvanas samples health every five minutes and opens an incident only after repeated failures. Private-network and redirect targets are not followed.</p>
-      </section>
-
-      {form.providerKey === "CENTOVA_CAST" ? <section style={styles.section}>
-        <h2 style={styles.sectionTitle}>Centova credentials</h2>
-        <p style={styles.helpText}>For Ruvanas AutoDJ as the source, use Centova Cast → Quick Links → Live Source Connections → “When the autoDJ is not running”. Do not use the DJ-account connection intended to interrupt Centova AutoDJ. Stop Centova AutoDJ before connecting Ruvanas.</p>
-        <label style={styles.label}>Live-source port<input style={styles.input} type="number" name="sourcePort" value={form.sourcePort} onChange={updateField} min="1" max="65535" disabled={saving} placeholder="From Live Source Connections" /></label>
-        <label style={styles.label}>Live-source username <span style={styles.optional}>(only if Centova supplies one; leave blank for source-password-only Shoutcast v1)</span><input style={styles.input} type="text" name="sourceUsername" value={form.sourceUsername} onChange={updateField} maxLength={120} disabled={saving} placeholder="Optional" /></label>
-        <label style={styles.checkLabel}><input type="checkbox" name="outboundAutoDjEnabled" checked={form.outboundAutoDjEnabled} onChange={updateField} disabled={saving} />Allow the dedicated Ruvanas AutoDJ worker to connect to this Centova stream</label>
-        <p style={styles.helpText}>Enabling this setting does not start audio by itself. A dedicated Ruvanas encoder worker, an active Online Radio channel and a rights-approved Continuous AutoDJ mode are also required.</p>
-
-        <label style={styles.label}>
-          Centova account username (for admin reference, not the Shoutcast source login)
+          Centova account username
           <input
             style={styles.input}
             type="text"
@@ -328,7 +260,7 @@ export default function AdminStationSetupForm({
         </label>
 
         <label style={styles.label}>
-          Source password{" "}
+          Centova source password{" "}
           <span style={styles.optional}>
             (leave blank to keep the existing value)
           </span>
@@ -343,11 +275,32 @@ export default function AdminStationSetupForm({
           />
         </label>
 
-        <p style={styles.helpText}>
-          The administrator password is not stored in Ruvanas. Use Centova
-          directly to manage the account password.
-        </p>
+        <p style={styles.helpText}>This is the source password, not the Centova administrator password. Leave it blank to keep a password already saved in Ruvanas.</p>
+        </> : null}
+      </section>
+
+      {form.providerKey === "CENTOVA_CAST" ? <section style={styles.section}>
+        <h2 style={styles.sectionTitle}>2. Allow Ruvanas audio when ready</h2>
+        <label style={styles.checkLabel}><input type="checkbox" name="outboundAutoDjEnabled" checked={form.outboundAutoDjEnabled} onChange={updateField} disabled={saving} />Allow the dedicated Ruvanas AutoDJ worker to connect to this Centova stream</label>
+        <p style={styles.helpText}>Leave this off until the Online Radio channel, rights-approved music mode and dedicated encoder worker are ready. Turning it on does not start audio by itself. Stop Centova AutoDJ before Ruvanas connects as the source.</p>
       </section> : null}
+
+      <details style={styles.advanced}>
+        <summary style={styles.advancedSummary}>Advanced settings (usually leave unchanged)</summary>
+        <div style={styles.advancedContent}>
+          <label style={styles.label}>Provider adapter<select style={styles.input} name="providerKey" value={form.providerKey} onChange={updateField} disabled={saving}><option value="CENTOVA_CAST">Centova Cast</option><option value="GENERIC_HTTP">Generic HTTP stream</option></select></label>
+          <label style={styles.label}>Mount point <span style={styles.optional}>(only if supplied by the provider)</span><input style={styles.input} type="text" name="mountPoint" value={form.mountPoint} onChange={updateField} placeholder="/stream" disabled={saving} /></label>
+          <label style={styles.label}>Bitrate (kbps) <span style={styles.optional}>(optional)</span><input style={styles.input} type="number" name="bitrateKbps" value={form.bitrateKbps} onChange={updateField} placeholder="128" min="8" max="320" disabled={saving} /></label>
+          {form.providerKey === "CENTOVA_CAST" ? <label style={styles.label}>Live-source username <span style={styles.optional}>(only if Centova supplies one)</span><input style={styles.input} type="text" name="sourceUsername" value={form.sourceUsername} onChange={updateField} maxLength={120} disabled={saving} placeholder="Leave blank for source-password-only Shoutcast v1" /></label> : null}
+          <label style={styles.label}>Backup stream URL <span style={styles.optional}>(recorded only; no automatic switch)</span><input style={styles.input} type="url" name="backupStreamUrl" value={form.backupStreamUrl} onChange={updateField} placeholder="https://backup.example.com/live" disabled={saving} /></label>
+          <label style={styles.checkLabel}><input type="checkbox" name="probeEnabled" checked={form.probeEnabled} onChange={updateField} disabled={saving} />Monitor the public stream source</label>
+          <div style={styles.row}>
+            <label style={styles.label}>Probe interval (seconds)<input style={styles.input} type="number" name="probeIntervalSeconds" value={form.probeIntervalSeconds} onChange={updateField} min="30" max="3600" disabled={saving} required /></label>
+            <label style={styles.label}>Probe timeout (milliseconds)<input style={styles.input} type="number" name="probeTimeoutMs" value={form.probeTimeoutMs} onChange={updateField} min="1000" max="30000" disabled={saving} required /></label>
+          </div>
+          <p style={styles.helpText}>Private-network and redirect targets are not followed. Ruvanas opens incidents only after repeated failures.</p>
+        </div>
+      </details>
 
       {message.text ? (
         <p
@@ -366,7 +319,7 @@ export default function AdminStationSetupForm({
         {saving ? "Saving…" : "Save configuration"}
       </button>
       <section style={styles.section}>
-        <h2 style={styles.sectionTitle}>Station activation</h2>
+        <h2 style={styles.sectionTitle}>3. Check audio and activate</h2>
         {productFamily === "ONLINE" ? <><p style={styles.helpText}>Step 1: Prepare the Online Radio channel. Step 2: The subscriber selects a rights-approved music mode and enables Continuous AutoDJ. Step 3: Once the dedicated encoder sends audio to Centova, check the stream and activate the station.</p><button type="button" style={styles.button} disabled={!configured || dirty || saving || preparing} onClick={prepareChannel}>{preparing ? "Preparing channel…" : "Prepare Online Radio channel"}</button></> : null}
         {productFamily === "ONLINE" ? <p style={styles.helpText}>Encoder worker lease: {initialData.encoderLeaseUntil && new Date(initialData.encoderLeaseUntil) > new Date() ? "active (connection not yet verified)" : "not active"}. A lease means a worker is assigned, not that Centova is receiving audio.</p> : null}
         <p style={styles.helpText}>Last stream check: {initialData.sourceConnectionStatus}{initialData.lastProbeHttpStatus ? ` · HTTP ${initialData.lastProbeHttpStatus}` : ""}{initialData.lastError === "REDIRECT_NOT_FOLLOWED" ? " · the URL redirected instead of returning audio" : ""}.</p>
@@ -402,6 +355,23 @@ const styles = {
     margin: 0,
     textTransform: "uppercase",
     letterSpacing: 0.8
+  },
+  advanced: {
+    background: "#182235",
+    border: "1px solid #2b3a54",
+    borderRadius: 14,
+    padding: 24
+  },
+  advancedSummary: {
+    color: "#d8e0ec",
+    cursor: "pointer",
+    fontSize: 14,
+    fontWeight: 800
+  },
+  advancedContent: {
+    display: "grid",
+    gap: 18,
+    marginTop: 20
   },
   label: {
     display: "grid",

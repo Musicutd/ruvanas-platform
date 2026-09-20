@@ -2926,6 +2926,33 @@ model StationStreamConfig {
   @@index([outboundAutoDjEnabled, encoderLeaseUntil])
 }
 
+// Provider accounts are prepared outside Ruvanas and only claimed here after
+// verification. stationId is intentionally not a foreign key: deleting a
+// subscriber station must never silently return its stream credentials to the
+// available pool. Reclaiming a slot requires a separate audited workflow.
+model PreprovisionedRadioStream {
+  id                      String    @id @default(cuid())
+  providerKey             String    @default("CENTOVA_CAST")
+  centovaUsername         String    @unique
+  streamUrl               String    @unique
+  serverHost              String
+  serverPort              Int
+  sourcePort              Int
+  sourceUsername          String?
+  sourcePasswordEncrypted String?
+  listenerLimit           Int
+  maxBitrateKbps          Int
+  status                  String    @default("QUARANTINED")
+  verifiedAt              DateTime?
+  stationId               String?   @unique
+  claimedAt               DateTime?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  @@unique([serverHost, sourcePort])
+  @@index([status, maxBitrateKbps, listenerLimit])
+}
+
 model StationStreamHealthSample {
   id             String            @id @default(cuid())
   organisationId String
@@ -7565,4 +7592,87 @@ model StudioBroadcastSessionDestination {
 
   @@id([sessionId, destinationId])
   @@index([destinationId, state])
+}
+
+model StudioConsolePreference {
+  id             String   @id @default(cuid())
+  organisationId String
+  userId         String
+  contextKey     String   @default("GLOBAL")
+  preset         String   @default("PRESENTER")
+  panels         Json     @default("[]")
+  sizes          Json     @default("{}")
+  updatedAt      DateTime @updatedAt
+
+  @@unique([organisationId, userId, contextKey])
+  @@index([organisationId, updatedAt])
+}
+
+model StudioCartBank {
+  id              String            @id @default(cuid())
+  organisationId  String
+  channelId       String?
+  productFamily   PlanProductFamily
+  name            String
+  createdByUserId String
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  carts StudioCart[]
+
+  @@unique([organisationId, name, channelId])
+  @@index([organisationId, channelId, updatedAt])
+}
+
+model StudioCart {
+  id             String   @id @default(cuid())
+  bankId         String
+  organisationId String
+  mediaAssetId   String
+  label          String
+  position       Int
+  shortcut       String?
+  behaviour      String   @default("PLAY_ONCE")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  bank StudioCartBank @relation(fields: [bankId], references: [id], onDelete: Cascade)
+
+  @@unique([bankId, position])
+  @@index([organisationId, mediaAssetId])
+}
+
+model StudioMixPoint {
+  id              String   @id @default(cuid())
+  organisationId  String
+  mediaAssetId    String
+  type            String
+  positionMs      Int
+  provenance      String   @default("MANUAL")
+  version         Int      @default(1)
+  updatedByUserId String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([organisationId, mediaAssetId, type])
+  @@index([organisationId, mediaAssetId])
+}
+
+model StudioPresenterNote {
+  id                   String    @id @default(cuid())
+  organisationId       String
+  channelId            String
+  playoutSessionId     String?
+  programmeScheduleId  String?
+  title                String
+  body                 String
+  alertAt              DateTime?
+  acknowledgedAt       DateTime?
+  acknowledgedByUserId String?
+  createdByUserId      String
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  @@index([organisationId, channelId, alertAt])
+  @@index([organisationId, playoutSessionId])
 }

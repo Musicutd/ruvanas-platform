@@ -11,6 +11,8 @@ import { decryptSecret } from "../lib/crypto.js";
 import { resolveEntitlements } from "../lib/entitlements.mjs";
 import { isPrivateNetworkAddress } from "../lib/stream-source-health.mjs";
 import { eligibleOnlineRadioRotation, liquidsoapScript, rotationFingerprint } from "../lib/online-radio-output.mjs";
+import { loadStudioOnlineAdmission } from "../lib/studio-online-admission.mjs";
+import { createStudioShadowScan } from "../lib/studio-shadow-scan.mjs";
 
 const stationId = String(process.env.RUVANAS_AUTODJ_STATION_ID || "");
 if (!/^c[a-z0-9]{10,40}$/i.test(stationId)) throw new Error("RUVANAS_AUTODJ_STATION_ID must identify one Online Radio station.");
@@ -27,6 +29,8 @@ const storage = new S3Client({ region: "auto", endpoint: process.env.R2_ENDPOINT
 const owner = `${String(process.env.RENDER_INSTANCE_ID || hostname()).slice(0, 70)}-${process.pid}`;
 const scanMs = 15_000;
 const leaseMs = 45_000;
+// Opt-in diagnostics only: no queue push, source switch, or Studio command.
+const studioShadowEnabled = process.env.RUVANAS_STUDIO_HANDOFF_SHADOW === "1";
 let stopping = false;
 let running = null;
 let lastWaitingReason = null;
@@ -35,6 +39,11 @@ for (const signal of ["SIGTERM", "SIGINT"]) process.once(signal, () => { stoppin
 function event(name, details = {}) {
   console.log(JSON.stringify({ service: "ONLINE_RADIO_ENCODER", event: name, stationId, ...details }));
 }
+
+const shadowScan = createStudioShadowScan({
+  inspect: (input) => loadStudioOnlineAdmission(prisma, input),
+  report: (state) => event("studio_handoff_shadow", state)
+});
 
 async function stopOutput() {
   const current = running;
@@ -81,7 +90,7 @@ async function readRotation() {
   if (!rotation.ready) return rotation;
   const bitrateKbps = station.streamConfig.bitrateKbps || Math.min(128, station.maxBitrateKbps, entitlements.maxBitrateKbps || 128);
   if (bitrateKbps > station.maxBitrateKbps || bitrateKbps > (entitlements.maxBitrateKbps || 0)) return { ready: false, reason: "BITRATE_NOT_ALLOWED" };
-  return { ...rotation, bitrateKbps, fingerprint: rotationFingerprint(rotation) };
+  return { ...rotation, bitrateKbps, fingerprint: rotationFingerprint({ ...rotation, bitrateKbps }), entitlements, configuredGenres: genres };
 }
 
 async function claimLease() {
@@ -152,11 +161,12 @@ try {
   while (!stopping) {
     try {
       const rotation = await readRotation();
+      let leaseHeld = false;
       if (!rotation.ready) {
         await stopOutput();
         if (lastWaitingReason !== rotation.reason) event("waiting_for_configuration", { reason: rotation.reason });
         lastWaitingReason = rotation.reason;
-      } else if (!await claimLease()) {
+      } else if (!(leaseHeld = await claimLease())) {
         await stopOutput();
         if (lastWaitingReason !== "ENCODER_LEASE_BUSY") event("waiting_for_encoder_lease");
         lastWaitingReason = "ENCODER_LEASE_BUSY";
@@ -167,6 +177,11 @@ try {
       } else {
         lastWaitingReason = null;
       }
+      if (studioShadowEnabled && leaseHeld && !stopping) {
+        // Re-read all admission inputs in one read-only snapshot. The diagnostic
+        // never blocks AutoDJ renewal or changes the encoder source.
+        shadowScan.start({ stationId, workerOwner: owner });
+      }
     } catch (error) {
       await stopOutput();
       event("encoder_scan_failed", { code: String(error?.code || error?.name || "UNKNOWN").slice(0, 80) });
@@ -176,6 +191,7 @@ try {
 } finally {
   await stopOutput();
   await releaseLease().catch(() => undefined);
+  await shadowScan.close();
   await prisma.$disconnect();
   storage.destroy();
 }

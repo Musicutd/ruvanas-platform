@@ -21,7 +21,7 @@ test("ORG.0 dependency and ORG.1 catalogue establish six products and thirty pla
   ]);
   assert.equal(plans[4].enterpriseContactRequired, true);
   const schema = await readFile(new URL("../prisma/schema.prisma", import.meta.url), "utf8");
-  assert.match(schema, /HEALTH\n\s+FAITH\n\s+ORGANISATIONS/);
+  assert.match(schema, /HEALTH\r?\n\s+FAITH\r?\n\s+ORGANISATIONS/);
   assert.match(schema, /organisationsEnabled\s+Boolean/);
 });
 
