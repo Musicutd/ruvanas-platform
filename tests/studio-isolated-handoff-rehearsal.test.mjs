@@ -63,6 +63,7 @@ test("priority rehearsal needs audible AutoDJ, Manual, protected and resumed Aut
   for (const labels of [
     ["AUTODJ", "AUTODJ", "MANUAL", "MANUAL", "AUTODJ", "AUTODJ", "PROTECTED", "PROTECTED"],
     ["AUTODJ", "AUTODJ", "PROTECTED", "PROTECTED", "MANUAL", "MANUAL", "AUTODJ", "AUTODJ"],
+    ["AUTODJ", "AUTODJ", "MANUAL", "MANUAL", "PROTECTED", "PROTECTED", "MANUAL", "MANUAL", "AUTODJ", "AUTODJ"],
     ["AUTODJ", "AUTODJ", "MANUAL", "MANUAL", "MANUAL", "MANUAL", "MANUAL", "MANUAL", "MANUAL", "MANUAL", "PROTECTED", "PROTECTED", "AUTODJ", "AUTODJ"],
     ["AUTODJ", "AUTODJ", "MANUAL", "MANUAL", "PROTECTED", "PROTECTED", "SILENCE", "SILENCE", "AUTODJ", "AUTODJ"],
     ["AUTODJ", "AUTODJ", "MANUAL", "MANUAL", "UNKNOWN", "UNKNOWN", "AUTODJ", "AUTODJ"]
@@ -88,5 +89,7 @@ test("the file-only handoff graph cannot be reached by the live worker", async (
   const runner = await readFile(new URL("../scripts/run-studio-isolated-handoff-linux.mjs", import.meta.url), "utf8");
   assert.match(runner, /matchesIsolatedStudioPriorityHandoff/);
   assert.match(runner, /studio_protected\.push/);
+  assert.match(runner, /studio_manual\.skip/);
+  assert.match(runner, /manualSkipAcknowledged/);
   assert.doesNotMatch(runner, /output\.(?:shoutcast|icecast|harbor)|STUDIO_TEST_SOURCE_PASSWORD|RUVANAS_AUTODJ_STATION_ID/i);
 });

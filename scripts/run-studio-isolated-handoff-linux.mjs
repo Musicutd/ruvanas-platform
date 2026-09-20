@@ -41,9 +41,9 @@ async function stopChild(child) {
   if (child.exitCode === null) child.kill("SIGKILL");
 }
 
-// Only this synthetic, file-output test sends the protected fixture command.
-// The production transport deliberately accepts studio_manual.push only.
-function pushProtectedTestTone(socketPath, protectedPath) {
+// Only this synthetic, file-output test sends protected/skip commands. The
+// production transport deliberately accepts studio_manual.push only.
+function sendTestFixtureCommand(socketPath, command, parseReply) {
   return new Promise((resolve, reject) => {
     const connection = createConnection(socketPath);
     let settled = false;
@@ -54,20 +54,35 @@ function pushProtectedTestTone(socketPath, protectedPath) {
       connection.destroy();
       if (error) reject(error); else resolve(value);
     };
-    connection.setTimeout(3000, () => finish(new Error("The protected fixture queue timed out.")));
-    connection.on("connect", () => connection.write(`studio_protected.push ${protectedPath}\n`));
+    connection.setTimeout(3000, () => finish(new Error("The isolated fixture command timed out.")));
+    connection.on("connect", () => connection.write(command));
     connection.on("data", (chunk) => {
       response += chunk.toString("utf8");
-      if (response.length > 1024) return finish(new Error("The protected fixture response was too large."));
+      if (response.length > 1024) return finish(new Error("The isolated fixture response was too large."));
       if (/(?:^|\n)END\r?\n?$/.test(response)) {
-        try { finish(null, parseStudioQueuePushReply(response)); }
+        try { finish(null, parseReply(response)); }
         catch (error) { finish(error); }
       }
     });
     connection.on("error", (error) => finish(error));
     connection.on("end", () => {
-      if (!settled) finish(new Error("The protected fixture queue closed without an acknowledgement."));
+      if (!settled) finish(new Error("The isolated fixture command closed without an acknowledgement."));
     });
+  });
+}
+
+function pushProtectedTestTone(socketPath, protectedPath) {
+  return sendTestFixtureCommand(socketPath, `studio_protected.push ${protectedPath}\n`, parseStudioQueuePushReply);
+}
+
+function skipInterruptedManualTestTone(socketPath) {
+  return sendTestFixtureCommand(socketPath, "studio_manual.skip\n", (reply) => {
+    const lines = String(reply).replaceAll("\r", "").trim().split("\n");
+    if (lines.at(-1) !== "END" || lines.length < 2 ||
+        lines.slice(0, -1).some((line) => /error|unknown|invalid/i.test(line))) {
+      throw new Error("The isolated Manual skip was not acknowledged.");
+    }
+    return { acknowledged: true, listenerVerified: false };
   });
 }
 
@@ -97,6 +112,7 @@ async function runFileOnlyScenario(priority) {
     const child = spawn("liquidsoap", [scriptPath], { cwd: directory, stdio: "ignore" });
     let manualAck;
     let protectedAck;
+    let manualSkipAck;
     try {
       await waitForSocket(socketPath, child);
       await sleep(2000); // Hear AutoDJ before the Manual request is added.
@@ -104,7 +120,8 @@ async function runFileOnlyScenario(priority) {
       if (priority) {
         await sleep(3000); // Hear Manual before protected programming interrupts it.
         protectedAck = await pushProtectedTestTone(socketPath, protectedPath);
-        await sleep(14_000); // Allow the protected tone and any remaining Manual audio to finish.
+        manualSkipAck = await skipInterruptedManualTestTone(socketPath);
+        await sleep(14_000); // Check protected audio and automatic return to AutoDJ.
       } else {
         await sleep(9500); // Allow Manual to finish and AutoDJ to return.
       }
@@ -115,6 +132,7 @@ async function runFileOnlyScenario(priority) {
     if (!output?.isFile() || output.size < 20_000 || output.size > 3_000_000) {
       return { passed: false, stage: "FILE_ONLY_OUTPUT_MISSING_OR_OVERSIZED",
         queueAcknowledged: Boolean(manualAck), protectedQueueAcknowledged: Boolean(protectedAck),
+        manualSkipAcknowledged: Boolean(manualSkipAck),
         sourceCommandAllowed: false, listenerVerified: false };
     }
     const pcmPath = path.join(directory, "file-sample.s16le");
@@ -124,9 +142,10 @@ async function runFileOnlyScenario(priority) {
     const labels = analyzeStudioListenerPcm(await readFile(pcmPath)).oneSecondWindows;
     const matched = priority ? matchesIsolatedStudioPriorityHandoff(labels) : matchesIsolatedStudioHandoff(labels);
     const passed = matched && manualAck?.listenerVerified === false &&
-      (!priority || protectedAck?.listenerVerified === false);
+      (!priority || protectedAck?.listenerVerified === false && manualSkipAck?.acknowledged === true);
     return { passed, stage: passed ? priority ? "FILE_ONLY_PROTECTED_PRIORITY" : "FILE_ONLY_AUTODJ_MANUAL_AUTODJ" : "FILE_ONLY_HANDOFF_MISMATCH",
       oneSecondWindows: labels, queueAcknowledged: Boolean(manualAck), protectedQueueAcknowledged: Boolean(protectedAck),
+      manualSkipAcknowledged: Boolean(manualSkipAck),
       sourceCommandAllowed: false, listenerVerified: false };
   } finally {
     await rm(directory, { recursive: true, force: true });
