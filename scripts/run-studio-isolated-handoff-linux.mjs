@@ -1,12 +1,13 @@
 import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { createConnection } from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import ffmpegPath from "ffmpeg-static";
-import { matchesIsolatedStudioHandoff, renderIsolatedStudioHandoffRehearsal } from "../lib/studio-isolated-handoff-rehearsal.mjs";
+import { matchesIsolatedStudioHandoff, matchesIsolatedStudioPriorityHandoff, renderIsolatedStudioHandoffRehearsal } from "../lib/studio-isolated-handoff-rehearsal.mjs";
 import { analyzeStudioListenerPcm } from "../lib/studio-listener-audio-sample.mjs";
-import { sendStudioQueuePush, studioQueuePushCommand } from "../lib/studio-encoder-transport.mjs";
+import { parseStudioQueuePushReply, sendStudioQueuePush, studioQueuePushCommand } from "../lib/studio-encoder-transport.mjs";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -40,8 +41,98 @@ async function stopChild(child) {
   if (child.exitCode === null) child.kill("SIGKILL");
 }
 
+// Only this synthetic, file-output test sends the protected fixture command.
+// The production transport deliberately accepts studio_manual.push only.
+function pushProtectedTestTone(socketPath, protectedPath) {
+  return new Promise((resolve, reject) => {
+    const connection = createConnection(socketPath);
+    let settled = false;
+    let response = "";
+    const finish = (error, value) => {
+      if (settled) return;
+      settled = true;
+      connection.destroy();
+      if (error) reject(error); else resolve(value);
+    };
+    connection.setTimeout(3000, () => finish(new Error("The protected fixture queue timed out.")));
+    connection.on("connect", () => connection.write(`studio_protected.push ${protectedPath}\n`));
+    connection.on("data", (chunk) => {
+      response += chunk.toString("utf8");
+      if (response.length > 1024) return finish(new Error("The protected fixture response was too large."));
+      if (/(?:^|\n)END\r?\n?$/.test(response)) {
+        try { finish(null, parseStudioQueuePushReply(response)); }
+        catch (error) { finish(error); }
+      }
+    });
+    connection.on("error", (error) => finish(error));
+    connection.on("end", () => {
+      if (!settled) finish(new Error("The protected fixture queue closed without an acknowledgement."));
+    });
+  });
+}
+
 // Runs only in the test derivative of the encoder image. The only Liquidsoap
 // destination is a private local MP3 file; this cannot reach a stream server.
+async function runFileOnlyScenario(priority) {
+  const directory = `/tmp/ruvanas-studio-handoff-${randomBytes(6).toString("hex")}`;
+  await mkdir(directory, { mode: 0o700 });
+  try {
+    const autodjPath = encodeTone(directory, "autodj.mp3", 440, 8);
+    const manualPath = encodeTone(directory, "manual.mp3", 660, priority ? 8 : 4);
+    const protectedPath = priority ? encodeTone(directory, "protected.mp3", 880, 3) : null;
+    const playlistPath = path.join(directory, "autodj.m3u");
+    const outputPath = path.join(directory, "file-sample.mp3");
+    const socketPath = path.join(directory, "control.sock");
+    const scriptPath = path.join(directory, "handoff.liq");
+    const bundle = renderIsolatedStudioHandoffRehearsal({
+      privateDirectory: directory, autodjPath, manualPath, protectedPath, playlistPath, outputPath, socketPath
+    });
+    await writeFile(playlistPath, bundle.playlistText, { flag: "wx", mode: 0o600 });
+    await writeFile(scriptPath, bundle.liquidsoapText, { flag: "wx", mode: 0o600 });
+    const checked = run("liquidsoap", ["--check", scriptPath], directory);
+    if (checked.status !== 0) return { passed: false, stage: "FILE_ONLY_GRAPH_CHECK_FAILED",
+      diagnostic: String(checked.stderr || checked.stdout || "").slice(-1000),
+      sourceCommandAllowed: false, listenerVerified: false };
+
+    const child = spawn("liquidsoap", [scriptPath], { cwd: directory, stdio: "ignore" });
+    let manualAck;
+    let protectedAck;
+    try {
+      await waitForSocket(socketPath, child);
+      await sleep(2000); // Hear AutoDJ before the Manual request is added.
+      manualAck = await sendStudioQueuePush(socketPath, studioQueuePushCommand(manualPath, directory));
+      if (priority) {
+        await sleep(3000); // Hear Manual before protected programming interrupts it.
+        protectedAck = await pushProtectedTestTone(socketPath, protectedPath);
+        await sleep(14_000); // Allow the protected tone and any remaining Manual audio to finish.
+      } else {
+        await sleep(9500); // Allow Manual to finish and AutoDJ to return.
+      }
+    } finally {
+      await stopChild(child);
+    }
+    const output = await stat(outputPath).catch(() => null);
+    if (!output?.isFile() || output.size < 20_000 || output.size > 3_000_000) {
+      return { passed: false, stage: "FILE_ONLY_OUTPUT_MISSING_OR_OVERSIZED",
+        queueAcknowledged: Boolean(manualAck), protectedQueueAcknowledged: Boolean(protectedAck),
+        sourceCommandAllowed: false, listenerVerified: false };
+    }
+    const pcmPath = path.join(directory, "file-sample.s16le");
+    const decoded = run(ffmpegPath, ["-nostdin", "-hide_banner", "-loglevel", "error", "-f", "mp3",
+      "-i", outputPath, "-t", "30", "-ar", "16000", "-ac", "1", "-f", "s16le", "-n", pcmPath], directory);
+    if (decoded.status !== 0) throw new Error("The local handoff file could not be decoded.");
+    const labels = analyzeStudioListenerPcm(await readFile(pcmPath)).oneSecondWindows;
+    const matched = priority ? matchesIsolatedStudioPriorityHandoff(labels) : matchesIsolatedStudioHandoff(labels);
+    const passed = matched && manualAck?.listenerVerified === false &&
+      (!priority || protectedAck?.listenerVerified === false);
+    return { passed, stage: passed ? priority ? "FILE_ONLY_PROTECTED_PRIORITY" : "FILE_ONLY_AUTODJ_MANUAL_AUTODJ" : "FILE_ONLY_HANDOFF_MISMATCH",
+      oneSecondWindows: labels, queueAcknowledged: Boolean(manualAck), protectedQueueAcknowledged: Boolean(protectedAck),
+      sourceCommandAllowed: false, listenerVerified: false };
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
 export async function runIsolatedStudioHandoffRehearsal() {
   if (process.platform !== "linux" || !ffmpegPath) {
     throw new Error("The isolated handoff check requires the Linux test image.");
@@ -50,49 +141,10 @@ export async function runIsolatedStudioHandoffRehearsal() {
   if (version.status !== 0 || !String(version.stdout).includes("Liquidsoap 2.1.3")) {
     throw new Error("The isolated handoff check requires encoder Liquidsoap 2.1.3.");
   }
-  const directory = `/tmp/ruvanas-studio-handoff-${randomBytes(6).toString("hex")}`;
-  await mkdir(directory, { mode: 0o700 });
-  const autodjPath = encodeTone(directory, "autodj.mp3", 440, 8);
-  const manualPath = encodeTone(directory, "manual.mp3", 660, 4);
-  const playlistPath = path.join(directory, "autodj.m3u");
-  const outputPath = path.join(directory, "file-sample.mp3");
-  const socketPath = path.join(directory, "control.sock");
-  const scriptPath = path.join(directory, "handoff.liq");
-  const bundle = renderIsolatedStudioHandoffRehearsal({
-    privateDirectory: directory, autodjPath, manualPath, playlistPath, outputPath, socketPath
-  });
-  await writeFile(playlistPath, bundle.playlistText, { flag: "wx", mode: 0o600 });
-  await writeFile(scriptPath, bundle.liquidsoapText, { flag: "wx", mode: 0o600 });
-  const checked = run("liquidsoap", ["--check", scriptPath], directory);
-  if (checked.status !== 0) return { passed: false, stage: "FILE_ONLY_GRAPH_CHECK_FAILED",
-    diagnostic: String(checked.stderr || checked.stdout || "").slice(-1000),
-    sourceCommandAllowed: false, listenerVerified: false };
-
-  const child = spawn("liquidsoap", [scriptPath], { cwd: directory, stdio: "ignore" });
-  let acknowledgement;
-  try {
-    await waitForSocket(socketPath, child);
-    await sleep(2000); // Hear AutoDJ before the Manual request is added.
-    acknowledgement = await sendStudioQueuePush(socketPath,
-      studioQueuePushCommand(manualPath, directory));
-    await sleep(9500); // Allow the four-second Manual tone to end and AutoDJ to return.
-  } finally {
-    await stopChild(child);
-  }
-  const output = await stat(outputPath).catch(() => null);
-  if (!output?.isFile() || output.size < 20_000 || output.size > 3_000_000) {
-    return { passed: false, stage: "FILE_ONLY_OUTPUT_MISSING_OR_OVERSIZED",
-      queueAcknowledged: Boolean(acknowledgement), sourceCommandAllowed: false, listenerVerified: false };
-  }
-  const pcmPath = path.join(directory, "file-sample.s16le");
-  const decoded = run(ffmpegPath, ["-nostdin", "-hide_banner", "-loglevel", "error", "-f", "mp3",
-    "-i", outputPath, "-t", "20", "-ar", "16000", "-ac", "1", "-f", "s16le", "-n", pcmPath], directory);
-  if (decoded.status !== 0) throw new Error("The local handoff file could not be decoded.");
-  const analysis = analyzeStudioListenerPcm(await readFile(pcmPath));
-  const labels = analysis.oneSecondWindows;
-  const passed = matchesIsolatedStudioHandoff(labels) && acknowledgement?.listenerVerified === false;
-  return { passed, stage: passed ? "FILE_ONLY_AUTODJ_MANUAL_AUTODJ" : "FILE_ONLY_HANDOFF_MISMATCH",
-    oneSecondWindows: labels, queueAcknowledged: Boolean(acknowledgement),
+  const baseline = await runFileOnlyScenario(false);
+  if (!baseline.passed) return { passed: false, baseline, sourceCommandAllowed: false, listenerVerified: false };
+  const protectedPriority = await runFileOnlyScenario(true);
+  return { passed: protectedPriority.passed, baseline, protectedPriority,
     sourceCommandAllowed: false, listenerVerified: false };
 }
 
