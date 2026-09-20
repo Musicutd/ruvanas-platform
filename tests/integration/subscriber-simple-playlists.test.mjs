@@ -5,7 +5,9 @@ import { PrismaClient } from "@prisma/client";
 
 const baseUrl = process.env.INTEGRATION_BASE_URL || "http://127.0.0.1:3100";
 const db = new PrismaClient();
-const api = (path, { method = "GET", body, cookie } = {}) => fetch(`${baseUrl}${path}`, { method, headers: { origin: baseUrl, ...(process.env.INTERNAL_REGISTRATION_TEST_KEY ? { "x-ruvanas-registration-test-key": process.env.INTERNAL_REGISTRATION_TEST_KEY } : {}), ...(cookie ? { cookie } : {}), ...(body !== undefined ? { "content-type": "application/json" } : {}) }, body: body === undefined ? undefined : JSON.stringify(body), redirect: "manual" });
+// Keep this journey's registration bucket independent from other integration
+// suites that deliberately exercise the shared-IP production rate limit.
+const api = (path, { method = "GET", body, cookie } = {}) => fetch(`${baseUrl}${path}`, { method, headers: { origin: baseUrl, "cf-connecting-ip": "203.0.113.201", ...(process.env.INTERNAL_REGISTRATION_TEST_KEY ? { "x-ruvanas-registration-test-key": process.env.INTERNAL_REGISTRATION_TEST_KEY } : {}), ...(cookie ? { cookie } : {}), ...(body !== undefined ? { "content-type": "application/json" } : {}) }, body: body === undefined ? undefined : JSON.stringify(body), redirect: "manual" });
 const sessionCookie = (response) => response.headers.get("set-cookie")?.split(";")[0] || "";
 
 async function register(label) {
