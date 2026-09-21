@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { CATALOGUE_TERRITORY_PRESETS } from "@/lib/catalogue-territories.mjs";
 
 const USES = ["RETAIL_RADIO", "SCHOOL_RADIO", "ONLINE_RADIO", "HEALTH_RADIO", "FAITH_RADIO", "ORGANISATIONS_RADIO"];
 const initial = { name: "", providerKey: "", apiBaseUrl: "", tokenUrl: "", cataloguePath: "/v1/catalogue", usageReportPath: "", clientId: "", clientSecret: "", oauthScopes: "catalogue.read usage.write", defaultMinimumCatalogueLevel: "FOCUSED", defaultPermittedTerritories: "", defaultPermittedUses: [...USES], syncIntervalMinutes: 60 };
@@ -82,17 +83,21 @@ export default function MusicDistributorConsole({ initialConnections }) {
         <label style={s.label}>OAuth client secret<input style={s.input} required type="password" autoComplete="new-password" minLength="12" value={form.clientSecret} onChange={(e) => setForm({ ...form, clientSecret: e.target.value })} /></label>
         <label style={s.label}>OAuth scopes<input style={s.input} value={form.oauthScopes} onChange={(e) => setForm({ ...form, oauthScopes: e.target.value })} /></label>
         <label style={s.label}>Default catalogue tier<select style={s.input} value={form.defaultMinimumCatalogueLevel} onChange={(e) => setForm({ ...form, defaultMinimumCatalogueLevel: e.target.value })}><option>FOCUSED</option><option>PROFESSIONAL</option><option>PREMIUM</option></select></label>
-        <label style={s.label}>Territories<input style={s.input} value={form.defaultPermittedTerritories} onChange={(e) => setForm({ ...form, defaultPermittedTerritories: e.target.value })} placeholder="MT, GB or WORLDWIDE" /></label>
+        <div style={s.label}>Contract-approved territories
+          <div style={s.scopes}>{CATALOGUE_TERRITORY_PRESETS.map((preset) => <label key={preset.code} style={s.scope}><input type="checkbox" checked={form.defaultPermittedTerritories.split(/[ ,]+/).includes(preset.code)} onChange={(e) => { const codes = form.defaultPermittedTerritories.split(/[ ,]+/).filter(Boolean); setForm({ ...form, defaultPermittedTerritories: (e.target.checked ? [...codes, preset.code] : codes.filter((code) => code !== preset.code)).join(", ") }); }} /> {preset.label}</label>)}</div>
+          <input style={s.input} value={form.defaultPermittedTerritories} onChange={(e) => setForm({ ...form, defaultPermittedTerritories: e.target.value.toUpperCase() })} placeholder="EUROPE, US, CA (or exact country codes)" />
+          <small style={s.muted}>Europe means EU/EEA, UK and Switzerland. Select only territories confirmed in the signed agreement; API data cannot expand this limit.</small>
+        </div>
         <label style={s.label}>Sync every minutes<input style={s.input} type="number" min="15" max="10080" value={form.syncIntervalMinutes} onChange={(e) => setForm({ ...form, syncIntervalMinutes: Number(e.target.value) })} /></label>
       </div>
       <div style={s.scopes}>{USES.map((use) => <label key={use} style={s.scope}><input type="checkbox" checked={form.defaultPermittedUses.includes(use)} onChange={() => toggleUse(use)} /> {use.replaceAll("_", " ")}</label>)}</div>
-      <button style={s.primary} disabled={busy === "create" || !form.defaultPermittedUses.length}>{busy === "create" ? "Creating…" : "Create draft connection"}</button>
+      <button style={s.primary} disabled={busy === "create" || !form.defaultPermittedUses.length || !form.defaultPermittedTerritories.trim()}>{busy === "create" ? "Creating…" : "Create draft connection"}</button>
     </form>
 
     {!connections.length ? <div style={s.empty}><strong>No distributors configured</strong><span>Create a Draft only after the distributor supplies sandbox credentials and API documentation.</span></div> : null}
     {connections.map((connection) => <section key={connection.id} style={s.card}>
       <div style={s.heading}><div><p style={s.eyebrow}>{connection.providerKey}</p><h2 style={s.h2}>{connection.name}</h2><p style={s.muted}>{new URL(connection.apiBaseUrl).origin} · OAuth client credentials protected</p></div><span style={{ ...s.badge, ...(connection.status === "ACTIVE" ? s.good : connection.status === "DEGRADED" ? s.bad : {}) }}>{connection.status}</span></div>
-      <div style={s.summary}><span><strong>{connection._count.tracks}</strong> tracks</span><span><strong>{connection._count.releases}</strong> releases</span><span><strong>{connection._count.collections}</strong> collections</span><span><strong>{connection.defaultMinimumCatalogueLevel}</strong> default tier</span><span><strong>{date(connection.lastSuccessfulSyncAt)}</strong> last sync</span><span><strong>{connection.consecutiveFailures}</strong> failures</span></div>
+      <div style={s.summary}><span><strong>{connection._count.tracks}</strong> tracks</span><span><strong>{connection._count.releases}</strong> releases</span><span><strong>{connection._count.collections}</strong> collections</span><span><strong>{connection.defaultMinimumCatalogueLevel}</strong> default tier</span><span><strong>{connection.defaultPermittedTerritories.join(", ") || "None"}</strong> territory limit</span><span><strong>{date(connection.lastSuccessfulSyncAt)}</strong> last sync</span><span><strong>{connection.consecutiveFailures}</strong> failures</span></div>
       <div style={s.actions}>
         <button style={s.secondary} disabled={Boolean(busy)} onClick={() => action(connection, "TEST")}>Test OAuth</button>
         {connection.status === "DRAFT" || connection.status === "PAUSED" || connection.status === "DEGRADED" ? <button style={s.primarySmall} disabled={Boolean(busy)} onClick={() => action(connection, "ACTIVATE")}>Activate</button> : null}

@@ -1,4 +1,5 @@
 "use client";
+import { CATALOGUE_TERRITORY_PRESETS } from "@/lib/catalogue-territories.mjs";
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -86,9 +87,13 @@ export default function CatalogueBulkUploadForm() {
         <div style={styles.grid}>
           <label style={styles.label}>Rights holder or licensor<input name="rightsHolder" required maxLength={200} style={styles.input} /></label>
           <label style={styles.label}>Licence or rights reference<input name="rightsReference" required maxLength={500} style={styles.input} /></label>
-          <label style={styles.label}>Permitted territories<input name="permittedTerritories" required maxLength={500} style={styles.input} placeholder="For example: Worldwide or Malta and EU" /></label>
           <label style={styles.label}>Licence expiry (optional)<input name="licenceExpiresAt" type="date" style={styles.input} /></label>
         </div>
+        <div style={{ ...styles.checkboxGrid, marginTop: 14 }}>
+          {CATALOGUE_TERRITORY_PRESETS.map((region) => <label key={region.code} style={styles.checkLabel}><input type="checkbox" name="territoryRegions" value={region.code} />{region.label}</label>)}
+        </div>
+        <label style={{ ...styles.label, marginTop: 12 }}>Other contract-approved country codes (optional)<input name="permittedTerritories" maxLength={500} style={styles.input} placeholder="For example: MT, GB, or WORLDWIDE only if licensed" /></label>
+        <p style={styles.hint}>Europe currently means EU/EEA countries, the UK and Switzerland. Select only what the signed agreement covers.</p>
       </fieldset>
 
       <fieldset style={styles.fieldset} disabled={Boolean(working)}>

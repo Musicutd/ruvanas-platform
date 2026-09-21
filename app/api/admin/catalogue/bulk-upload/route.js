@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { NextResponse } from "next/server";
+import { catalogueTerritoriesFromForm } from "@/lib/catalogue-territories.mjs";
 import { prisma } from "@/lib/prisma";
 import { requirePlatformAdmin } from "@/lib/access-control";
 import { accessDenied } from "@/lib/api-response";
@@ -67,11 +68,13 @@ export async function POST(request) {
     if (!['validate', 'import'].includes(mode)) {
       return NextResponse.json({ error: "Choose whether to check or import the batch." }, { status: 400 });
     }
+    const territories = catalogueTerritoriesFromForm(formData);
+    if (!territories.ok) return NextResponse.json({ error: territories.error }, { status: 400 });
 
     const settings = parseCatalogueBatchSettings({
       rightsHolder: formData.get("rightsHolder"),
       rightsReference: formData.get("rightsReference"),
-      permittedTerritories: formData.get("permittedTerritories"),
+      permittedTerritories: territories.codes.join(","),
       licenceExpiresAt: formData.get("licenceExpiresAt"),
       rightsConfirmed: formData.get("rightsConfirmed"),
       publishNow: formData.get("publishNow"),

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { CATALOGUE_TERRITORY_PRESETS } from "@/lib/catalogue-territories.mjs";
 
 const panel = { border: "1px solid #cbd5e1", borderRadius: 12, padding: 18, background: "#f8fafc", marginTop: 18 };
 const button = { border: "1px solid #475569", borderRadius: 7, background: "#fff", color: "#172033", padding: "8px 11px", fontWeight: 800, cursor: "pointer" };
@@ -15,6 +16,14 @@ export default function PromoOnlyConsole({ initial }) {
   const { config, connection, runs, feedItems, tracks, mappings, genres, configError } = initial;
   const [busy, setBusy] = useState("");
   const [notice, setNotice] = useState("");
+  const [trackTerritories, setTrackTerritories] = useState({});
+
+  function toggleTrackTerritory(trackId, code) {
+    setTrackTerritories((current) => {
+      const values = current[trackId] || [];
+      return { ...current, [trackId]: values.includes(code) ? values.filter((value) => value !== code) : [...values, code] };
+    });
+  }
 
   async function post(path, body = undefined, method = "POST") {
     setBusy(path); setNotice("");
@@ -52,21 +61,21 @@ export default function PromoOnlyConsole({ initial }) {
       <td style={cell}>{track.label || "—"}<br />{track.durationSeconds ? `${track.durationSeconds}s` : "—"} · {track.releaseDate ? formatDate(track.releaseDate) : "—"}<br />{track.isExplicit ? "Explicit" : track.contentWarning || "—"}</td>
       <td style={cell}>{track.canonicalGenre?.name || "Unmapped"}<br />Original: {track.sourceGenre || "—"}</td>
       <td style={cell}>Track {track.externalTrackId}<br />Title {track.externalTitleId || "—"}<br />Release {track.release?.externalReleaseId || "—"}</td>
-      <td style={cell}>{track.importState}<br />{track.audioStatus}<br />{track.track?.rightsReviewStatus || "No audio"}<br />AutoDJ {track.autoDjReady ? "eligible" : "off"}</td>
+      <td style={cell}>{track.importState}<br />{track.audioStatus}<br />{track.track?.rightsReviewStatus || "No audio"}<br />Territories: {track.permittedTerritories?.join(", ") || "not approved"}<br />AutoDJ {track.autoDjReady ? "eligible" : "off"}</td>
       <td style={cell}><select aria-label={`Tier for ${track.title}`} defaultValue={track.minimumCatalogueLevel} onChange={(e) => trackAction(track, "SET_TIER", { minimumCatalogueLevel: e.target.value })} disabled={Boolean(busy)}>{["FOCUSED", "PROFESSIONAL", "PREMIUM"].map((level) => <option key={level}>{level}</option>)}</select></td>
       <td style={cell}><div style={{ display: "grid", gap: 6 }}>
         <button style={button} disabled={Boolean(busy) || !config.credentialsConfigured} onClick={() => trackAction(track, "REFRESH_METADATA")}>Refresh metadata</button>
         {!track.trackId && config.mode === "AUDIO_TEST" && config.audioDownloadEnabled ? <button style={button} disabled={Boolean(busy) || track.status !== "ACTIVE" || !track.canonicalGenre?.active} onClick={() => post(`/api/admin/promo-only/tracks/${track.id}/download`)}>Import test audio</button> : null}
         {!track.trackId && track.audioStatus.startsWith("FAILED") ? <button style={button} disabled={Boolean(busy)} onClick={() => trackAction(track, "RETRY_DOWNLOAD")}>Retry failed import</button> : null}
-        {track.trackId && !track.autoDjReady && track.status === "ACTIVE" ? <button style={button} disabled={Boolean(busy)} onClick={() => {
+        {track.trackId && !track.autoDjReady && track.status === "ACTIVE" ? <div style={{ display: "grid", gap: 5 }}><strong>Licence territories</strong>{CATALOGUE_TERRITORY_PRESETS.map((preset) => <label key={preset.code}><input type="checkbox" checked={(trackTerritories[track.id] || []).includes(preset.code)} onChange={() => toggleTrackTerritory(track.id, preset.code)} /> {preset.label}</label>)}<button style={button} disabled={Boolean(busy) || !(trackTerritories[track.id] || []).length} onClick={() => {
           const rightsReference = window.prompt("Enter the reviewed licence/rights reference. API access is not proof of a broadcast licence:");
           if (!rightsReference) return;
           const entered = window.prompt("Enter only the contract-approved Ruvanas uses, separated by commas (RETAIL_RADIO, SCHOOL_RADIO, ONLINE_RADIO, HEALTH_RADIO, FAITH_RADIO, ORGANISATIONS_RADIO):");
           if (!entered) return;
           const permittedUses = [...new Set(entered.split(",").map((value) => value.trim().toUpperCase()).filter(Boolean))];
-          const permittedTerritories = window.prompt("Enter the territories explicitly covered by this licence (for example MT, or WORLDWIDE only if agreed):");
-          if (permittedTerritories && window.confirm(`Approve ${track.title} for ${permittedUses.join(", ")} in ${permittedTerritories}?`)) trackAction(track, "ENABLE", { rightsReference, permittedUses, permittedTerritories });
-        }}>Approve rights and enable</button> : null}
+          const permittedTerritories = (trackTerritories[track.id] || []).join(", ");
+          if (window.confirm(`Approve ${track.title} for ${permittedUses.join(", ")} in ${permittedTerritories}? Confirm this is covered by the signed licence.`)) trackAction(track, "ENABLE", { rightsReference, permittedUses, permittedTerritories });
+        }}>Approve rights and enable</button><small>Europe means EU/EEA, UK and Switzerland. Select only signed-agreement territories.</small></div> : null}
         {track.status === "ACTIVE" ? <button style={button} disabled={Boolean(busy)} onClick={() => window.confirm("Quarantine this track and remove it from playback eligibility?") && trackAction(track, "QUARANTINE")}>Quarantine</button> : null}
       </div></td>
     </tr>)}</tbody></table></div>{!tracks.length ? <p>No provider metadata yet. Start with DISCOVERY and then METADATA.</p> : null}</section>

@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { CATALOGUE_TERRITORY_PRESETS } from "@/lib/catalogue-territories.mjs";
 
 export default function CatalogueUploadForm({ genres }) {
   const router = useRouter();
@@ -172,15 +173,26 @@ export default function CatalogueUploadForm({ genres }) {
         </label>
 
         <label style={styles.label}>
-          Permitted territories
-          <input name="permittedTerritories" required maxLength={500} disabled={uploading} style={styles.input} placeholder="For example: Worldwide or Malta and EU" />
-        </label>
-
-        <label style={styles.label}>
           Licence expiry (optional)
           <input name="licenceExpiresAt" type="date" disabled={uploading} style={styles.input} />
         </label>
       </div>
+
+      <fieldset style={styles.fieldset} disabled={uploading}>
+        <legend style={styles.legend}>Territories covered by this track's licence</legend>
+        <div style={styles.checkboxGrid}>
+          {CATALOGUE_TERRITORY_PRESETS.map((region) => (
+            <label key={region.code} style={styles.checkLabel}>
+              <input type="checkbox" name="territoryRegions" value={region.code} />{region.label}
+            </label>
+          ))}
+        </div>
+        <label style={{ ...styles.label, marginTop: 12 }}>
+          Other contract-approved country codes (optional)
+          <input name="permittedTerritories" maxLength={500} disabled={uploading} style={styles.input} placeholder="For example: MT, GB, or WORLDWIDE only if licensed" />
+        </label>
+        <p style={{ ...styles.hint, marginTop: 8 }}>Europe currently means EU/EEA countries, the UK and Switzerland. Select only what the signed agreement actually covers; API or spreadsheet metadata is not a licence.</p>
+      </fieldset>
 
       {previewing ? <p role="status" style={styles.hint}>Matching the song to the spreadsheet…</p> : null}
       {metadataError ? <div role="alert" style={styles.error}>{metadataError} <button type="button" onClick={matchMetadata}>Try again</button></div> : null}
@@ -272,4 +284,3 @@ const styles = {
   metadataStatus: { padding: 12, border: "1px solid #93c5fd", borderRadius: 7, background: "#eff6ff", color: "#1e3a8a", fontWeight: 700, lineHeight: 1.5 },
   button: { justifySelf: "start", border: 0, borderRadius: 7, background: "#f4b942", color: "#172033", padding: "12px 17px", fontWeight: 900, cursor: "pointer" }
 };
-
