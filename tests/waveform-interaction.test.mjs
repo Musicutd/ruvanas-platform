@@ -37,4 +37,7 @@ test("waveform offers pointer selection and direct cut, delete, silence actions"
   assert.match(source, /Apply dB change/);
   assert.match(source, /onPointerDown=\{onGainPointerDown\}/);
   assert.match(source, /role="slider"/);
+  assert.match(source, /gainEnabled && hasSelection && canEdit \? <div style=\{s\.waveGainHud\}/);
+  assert.match(source, /gainEnabled \? <div style=\{s\.gainPanel\}/);
+  assert.match(source, /Amplitude adjustment is included with Studio Pro/);
 });
