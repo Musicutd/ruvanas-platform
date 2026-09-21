@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { adjustSelection, copySelection, deleteSelection, duplicateSelection, normalizeEditorState, pasteSelection, silenceSelection, splitAt, timelineDuration, trimToSelection } from "../lib/waveform-editor.mjs";
+import { adjustSelection, changeSelectionGain, copySelection, deleteSelection, duplicateSelection, normalizeEditorState, pasteSelection, silenceSelection, splitAt, timelineDuration, trimToSelection } from "../lib/waveform-editor.mjs";
 
 const source = { clientId: "source", kind: "SOURCE", mediaAssetId: "media-1", sourceStartMs: 0, sourceEndMs: 10_000, timelineStartMs: 0, gainDb: 0, fadeInMs: 0, fadeOutMs: 0, fadeInCurve: "linear", fadeOutCurve: "linear", locked: false };
 let nextId = 0;
@@ -28,6 +28,24 @@ test("waveform selection operations create non-destructive edit decisions", () =
   assert.equal(adjusted[0].fadeInMs, 10_000);
 });
 
+test("gain adjustment splits a partial selection and leaves surrounding audio unchanged", () => {
+  const raised = changeSelectionGain([source], 2_000, 4_000, 6, id);
+  assert.deepEqual(raised.map((clip) => [clip.timelineStartMs, clip.sourceStartMs, clip.sourceEndMs, clip.gainDb]), [
+    [0, 0, 2_000, 0], [2_000, 2_000, 4_000, 6], [4_000, 4_000, 10_000, 0]
+  ]);
+  const lowered = changeSelectionGain(raised, 4_000, 2_000, -9, id);
+  assert.deepEqual(lowered.map((clip) => clip.gainDb), [0, -3, 0]);
+  assert.equal(timelineDuration(lowered), 10_000);
+});
+
+test("gain adjustment respects locked clips, silence, limits and invalid selection", () => {
+  const clips = [{ ...source, locked: true }, { ...source, clientId: "other", timelineStartMs: 10_000, gainDb: 17 }];
+  const adjusted = changeSelectionGain(clips, 0, 20_000, 6, id);
+  assert.deepEqual(adjusted.map((clip) => clip.gainDb), [0, 18]);
+  assert.equal(changeSelectionGain(clips, 0, 0, 6, id), clips);
+  assert.equal(changeSelectionGain(clips, 0, 20_000, Number.NaN, id), clips);
+});
+
 test("waveform state normalises untrusted clips and markers", () => {
   const state = normalizeEditorState({ clips: [{ ...source, gainDb: -99 }], markers: [{ positionMs: 500, type: "NOPE", label: " note " }], targetLufs: -23 });
   assert.equal(state.clips[0].gainDb, -36);
@@ -45,4 +63,3 @@ test("waveform clipboard crops source safely and ripples pasted audio", () => {
   assert.equal(timelineDuration(pasted), 13_000);
   assert.equal(pasted.filter((clip) => clip.mediaAssetId === source.mediaAssetId).length, 3);
 });
-
