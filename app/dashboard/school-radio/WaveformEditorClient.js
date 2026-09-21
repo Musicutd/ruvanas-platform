@@ -7,7 +7,7 @@ import {
 } from "@/lib/waveform-editor.mjs";
 import { applyVoiceCleanupPreset, normalizeVoiceCleanup, voiceCleanupLabel } from "@/lib/voice-cleanup.mjs";
 import { applyStudioEffectPreset, applyStudioMasteringPreset, normalizeStudioEffects, normalizeStudioMastering, studioEffectLabel, studioMasteringLabel } from "@/lib/studio-effects-mastering.mjs";
-import { waveformDragSelection, waveformTimeAtPointer } from "@/lib/waveform-interaction.mjs";
+import { gainDbFromVerticalDrag, waveformDragSelection, waveformTimeAtPointer } from "@/lib/waveform-interaction.mjs";
 
 const newId = () => crypto.randomUUID();
 const seconds = (milliseconds) => (Number(milliseconds || 0) / 1000).toFixed(2);
@@ -48,6 +48,7 @@ export default function WaveformEditorClient({ requestedProjectId = "", experien
   const canvasRef = useRef(null);
   const audioRef = useRef(null);
   const dragRef = useRef(null);
+  const gainDragRef = useRef(null);
 
   const durationMs = useMemo(() => timelineDuration(state.clips), [state.clips]);
   const sourceTake = useMemo(() => editor?.takes.find((take) => state.clips.some((clip) => clip.mediaAssetId === take.mediaAsset.id)) || editor?.takes[0], [editor, state.clips]);
@@ -126,7 +127,10 @@ export default function WaveformEditorClient({ requestedProjectId = "", experien
         const fraction = index / samples;
         const sourceMs = clip.sourceStartMs + fraction * (clip.sourceEndMs - clip.sourceStartMs);
         const peakIndex = Math.min(peaks.length - 1, Math.max(0, Math.round(sourceMs / takeDuration * (peaks.length - 1))));
-        const gainMultiplier = Math.pow(10, Number(clip.gainDb || 0) / 20);
+        const timelineMs = clip.timelineStartMs + fraction * (clip.sourceEndMs - clip.sourceStartMs);
+        const previewDb = advanced && hasSelection && !clip.locked && timelineMs >= Math.min(selection.startMs, selection.endMs) && timelineMs < Math.max(selection.startMs, selection.endMs) ? gainAdjustmentDb : 0;
+        const gainDb = Math.min(18, Math.max(-36, Number(clip.gainDb || 0) + previewDb));
+        const gainMultiplier = Math.pow(10, gainDb / 20);
         const amplitude = Math.min(1, Math.abs(Number(peaks[peakIndex]) || 0) * gainMultiplier) * height * .42;
         const x = left + fraction * (right - left);
         context.moveTo(x, height / 2 - amplitude); context.lineTo(x, height / 2 + amplitude);
@@ -146,7 +150,7 @@ export default function WaveformEditorClient({ requestedProjectId = "", experien
     }
     const cursorX = durationMs ? (cursorMs / durationMs) * width : 0;
     context.strokeStyle = "#fff"; context.beginPath(); context.moveTo(cursorX, 0); context.lineTo(cursorX, height); context.stroke();
-  }, [cursorMs, durationMs, editor?.takes, selection, state.clips, state.markers, zoom]);
+  }, [advanced, cursorMs, durationMs, editor?.takes, gainAdjustmentDb, hasSelection, selection, state.clips, state.markers, zoom]);
 
   function commit(next, label = "Edit") {
     setHistory((items) => pushHistory(items, state)); setFuture([]); setState(next); setLastAction(label);
@@ -229,6 +233,33 @@ export default function WaveformEditorClient({ requestedProjectId = "", experien
     setEditTool("SELECT");
     setSelection({ startMs: 0, endMs: durationMs });
     setCursorMs(0);
+  }
+
+  function onGainPointerDown(event) {
+    if (event.button !== 0 || !canEdit) return;
+    event.preventDefault();
+    event.stopPropagation();
+    gainDragRef.current = { pointerId: event.pointerId, startY: event.clientY, startDb: gainAdjustmentDb };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function onGainPointerMove(event) {
+    const drag = gainDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    setGainAdjustmentDb(gainDbFromVerticalDrag(drag.startDb, drag.startY, event.clientY));
+  }
+
+  function onGainPointerUp(event) {
+    if (gainDragRef.current?.pointerId !== event.pointerId) return;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    gainDragRef.current = null;
+  }
+
+  function onGainKeyDown(event) {
+    const adjustment = { ArrowUp: 0.5, ArrowRight: 0.5, ArrowDown: -0.5, ArrowLeft: -0.5, PageUp: 3, PageDown: -3 }[event.key];
+    if (adjustment == null && event.key !== "Home") return;
+    event.preventDefault();
+    setGainAdjustmentDb((value) => event.key === "Home" ? 0 : Math.min(18, Math.max(-36, value + adjustment)));
   }
 
   function applyGainAdjustment() {
@@ -367,7 +398,14 @@ export default function WaveformEditorClient({ requestedProjectId = "", experien
       <div style={s.toolbar} aria-label="Waveform tools"><button type="button" style={s.primary} onClick={playFromCursor}>▶ Play / pause</button><button type="button" aria-pressed={editTool === "SELECT"} style={editTool === "SELECT" ? s.active : s.secondary} onClick={() => setEditTool("SELECT")}>╎ Select</button>{advanced ? <button type="button" aria-pressed={editTool === "BLADE"} style={editTool === "BLADE" ? s.active : s.secondary} onClick={() => setEditTool("BLADE")}>✂ Blade</button> : null}<button type="button" style={s.secondary} onClick={selectWholeWave}>Select whole wave</button><button type="button" style={looping ? s.active : s.secondary} onClick={() => setLooping(!looping)}>↻ Loop</button><button type="button" style={s.secondary} disabled={!history.length || !canEdit} onClick={undo}>↶ Undo</button><button type="button" style={s.secondary} disabled={!future.length || !canEdit} onClick={redo}>↷ Redo</button><button type="button" style={s.secondary} onClick={() => setZoom(1)}>Fit wave</button><label style={s.inline}>Zoom <input type="range" min="1" max="5" step=".5" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} /></label></div>
       <p style={s.dragHint}>{editTool === "BLADE" ? "✂ Click the wave where you want to split it. Switch to Select to highlight audio." : "╎ Drag to highlight part of the wave, or double-click to highlight the whole wave."}</p>
       <p style={s.history}>Edit history: {history.length} undo step{history.length === 1 ? "" : "s"} · {future.length} redo step{future.length === 1 ? "" : "s"} · Latest: {lastAction}</p>
-      <div style={s.canvasWrap}><canvas ref={canvasRef} role="img" aria-label={`${editTool === "BLADE" ? "Blade: click to split" : "Select: drag to highlight; double-click to select the whole wave"} on the waveform. Time fields below allow precise adjustment.`} style={{ cursor: editTool === "BLADE" ? "crosshair" : "text", touchAction: "none" }} onPointerDown={onWavePointerDown} onPointerMove={onWavePointerMove} onPointerUp={onWavePointerUp} onPointerCancel={() => { dragRef.current = null; }} onDoubleClick={selectWholeWave} /></div>
+      <div style={s.waveStage}>
+        <div style={s.canvasWrap}><canvas ref={canvasRef} role="img" aria-label={`${editTool === "BLADE" ? "Blade: click to split" : "Select: drag to highlight; double-click to select the whole wave"} on the waveform. Time fields below allow precise adjustment.`} style={{ cursor: editTool === "BLADE" ? "crosshair" : "text", touchAction: "none" }} onPointerDown={onWavePointerDown} onPointerMove={onWavePointerMove} onPointerUp={onWavePointerUp} onPointerCancel={() => { dragRef.current = null; }} onDoubleClick={selectWholeWave} /></div>
+        {advanced && hasSelection && canEdit ? <div style={s.waveGainHud} role="group" aria-label="Selected audio amplitude">
+          <button type="button" role="slider" aria-label="Drag up to amplify or down to reduce selected audio" aria-valuemin={-36} aria-valuemax={18} aria-valuenow={gainAdjustmentDb} aria-valuetext={`${gainAdjustmentDb > 0 ? "+" : ""}${gainAdjustmentDb} decibels`} style={s.waveGainKnob} onPointerDown={onGainPointerDown} onPointerMove={onGainPointerMove} onPointerUp={onGainPointerUp} onPointerCancel={onGainPointerUp} onKeyDown={onGainKeyDown}><span style={{ ...s.waveGainNeedle, transform: `rotate(${gainAdjustmentDb * 5}deg)` }} /></button>
+          <div style={s.waveGainReadout}><strong>Amplitude</strong><label><input aria-label="Selected audio gain change in dB" style={s.waveGainInput} type="number" min="-36" max="18" step="0.5" value={gainAdjustmentDb} onChange={(event) => setGainAdjustmentDb(Math.min(18, Math.max(-36, Number(event.target.value) || 0)))} /> dB</label><small>Drag knob ↑ louder · ↓ quieter</small></div>
+          <button type="button" style={s.waveGainApply} disabled={gainAdjustmentDb === 0} onClick={applyGainAdjustment}>Apply</button>
+        </div> : null}
+      </div>
       <div style={s.selectionBar} aria-live="polite"><div style={s.selectionSummary}><strong>{hasSelection ? `${seconds(Math.abs(selection.endMs - selection.startMs))} seconds selected` : "Select part of the wave"}</strong><span>{hasSelection ? `${seconds(Math.min(selection.startMs, selection.endMs))}–${seconds(Math.max(selection.startMs, selection.endMs))} s · Choose an edit below.` : "Drag from left to right—or right to left—then choose an edit."}</span></div><div style={s.selectionActions}><button type="button" style={{ ...s.cutButton, opacity: hasSelection && canEdit ? 1 : .48 }} disabled={!hasSelection || !canEdit} onClick={cutCurrentSelection}>✂ Cut selection</button><button type="button" style={{ ...s.deleteButton, opacity: hasSelection && canEdit ? 1 : .48 }} disabled={!hasSelection || !canEdit} onClick={() => deleteCurrentSelection()}>⌫ Delete selection</button><button type="button" style={{ ...s.silenceButton, opacity: hasSelection && canEdit ? 1 : .48 }} disabled={!hasSelection || !canEdit} onClick={silenceCurrentSelection}>◌ Silence selection</button></div></div>
       {advanced ? <div style={s.gainPanel}><div><strong>Amplify or reduce</strong><p style={s.gainHint}>Adjust only the highlighted audio. Positive dB raises it; negative dB reduces it. The wave updates when applied; create a review render to hear the result. Final mastering may rebalance overall loudness.</p></div><label style={s.gainControl}>Gain change <output>{gainAdjustmentDb > 0 ? "+" : ""}{gainAdjustmentDb} dB</output><input aria-label="Gain change in decibels" type="range" min="-36" max="18" step="0.5" value={gainAdjustmentDb} onChange={(event) => setGainAdjustmentDb(Number(event.target.value))} /></label><input aria-label="Gain change number in decibels" style={s.gainNumber} type="number" min="-36" max="18" step="0.5" value={gainAdjustmentDb} onChange={(event) => setGainAdjustmentDb(Math.min(18, Math.max(-36, Number(event.target.value) || 0)))} /><button type="button" style={s.primary} disabled={!hasSelection || !canEdit || gainAdjustmentDb === 0} onClick={applyGainAdjustment}>Apply dB change</button></div> : null}
       {sourceTake ? <audio ref={audioRef} src={`/api/media/${sourceTake.mediaAsset.id}/stream`} onTimeUpdate={onAudioTime} onEnded={() => setCursorMs(0)} preload="metadata" /> : null}
@@ -480,6 +518,13 @@ const s = {
   gainHint: { maxWidth: 380, margin: "4px 0 0", color: "var(--rv-text-muted)", fontSize: 12, lineHeight: 1.4 },
   gainControl: { display: "grid", gap: 4, minWidth: 220, flex: "1 1 220px", fontWeight: 800, fontSize: 13 },
   gainNumber: { width: 78, border: "1px solid var(--rv-border)", borderRadius: 7, background: "var(--rv-input-bg)", color: "var(--rv-input-text)", padding: "9px 7px", font: "inherit" },
+  waveStage: { position: "relative" },
+  waveGainHud: { position: "absolute", top: 13, left: "50%", transform: "translateX(-50%)", zIndex: 2, display: "flex", alignItems: "center", gap: 9, maxWidth: "calc(100% - 20px)", padding: "7px 9px", border: "1px solid #7dd3fc", borderRadius: 10, background: "rgba(8,17,31,.94)", color: "#f8fafc", boxShadow: "0 10px 25px rgba(0,0,0,.4)" },
+  waveGainKnob: { position: "relative", flex: "0 0 31px", width: 31, height: 31, borderRadius: "50%", border: "2px solid #7dd3fc", background: "#183549", cursor: "ns-resize", touchAction: "none" },
+  waveGainNeedle: { position: "absolute", left: "50%", top: 3, width: 2, height: 8, marginLeft: -1, borderRadius: 2, background: "#f8c45d", transformOrigin: "1px 11px" },
+  waveGainReadout: { display: "grid", gap: 1, fontSize: 11, whiteSpace: "nowrap" },
+  waveGainInput: { width: 48, border: 0, borderBottom: "1px solid #7dd3fc", background: "transparent", color: "#f8fafc", font: "inherit", fontWeight: 900, textAlign: "right" },
+  waveGainApply: { border: 0, borderRadius: 7, background: "#f8c45d", color: "#17243b", padding: "7px 9px", fontWeight: 900, cursor: "pointer" },
   moreTools: { marginTop: 12, border: "1px solid var(--rv-border)", borderRadius: 10, padding: "10px 13px", color: "var(--rv-text)", fontWeight: 800 },
   panel: { border: "1px solid var(--rv-border)", borderRadius: 16, background: "var(--rv-surface)", padding: 22, marginBottom: 22 }, heading: { display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: 16, marginBottom: 16 }, eyebrow: { color: "#f4b942", fontSize: 12, fontWeight: 900, letterSpacing: 1.1, margin: "0 0 7px" }, title: { margin: "0 0 8px", fontSize: 28 }, cardTitle: { margin: "0 0 6px", fontSize: 20 }, sectionTitle: { margin: "18px 0 8px", fontSize: 15, color: "var(--rv-warning-text)" }, hint: { color: "var(--rv-text-muted)", lineHeight: 1.5, fontSize: 13 }, label: { display: "grid", gap: 6, color: "var(--rv-text)", fontWeight: 800, fontSize: 13 }, input: { width: "100%", boxSizing: "border-box", border: "1px solid var(--rv-border)", borderRadius: 7, background: "var(--rv-input-bg)", color: "var(--rv-input-text)", padding: "10px 11px", font: "inherit" }, compact: { border: "1px solid var(--rv-border)", borderRadius: 7, background: "var(--rv-input-bg)", padding: "7px" }, primary: { border: 0, borderRadius: 7, background: "#f4b942", color: "#101827", padding: "10px 13px", fontWeight: 900, cursor: "pointer" }, secondary: { border: "1px solid var(--rv-border)", borderRadius: 7, background: "transparent", color: "var(--rv-text)", padding: "9px 12px", fontWeight: 800, cursor: "pointer" }, active: { border: "1px solid #60a5fa", borderRadius: 7, background: "#1d4ed8", color: "#fff", padding: "9px 12px", fontWeight: 800 }, actions: { display: "flex", flexWrap: "wrap", gap: 8 }, toolbar: { display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", margin: "16px 0 10px" }, paneTabs: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 8, marginTop: 16 }, paneTab: { display: "grid", gap: 3, textAlign: "left", border: "1px solid var(--rv-border)", borderRadius: 9, background: "var(--rv-surface-muted)", color: "var(--rv-text)", padding: 12, cursor: "pointer" }, paneActive: { display: "grid", gap: 3, textAlign: "left", border: "2px solid #f4b942", borderRadius: 9, background: "var(--rv-warning-bg)", color: "var(--rv-text)", padding: 11, cursor: "pointer" }, history: { color: "var(--rv-info-text)", fontSize: 12, margin: "0 0 10px" }, inline: { display: "flex", gap: 8, alignItems: "center", color: "var(--rv-text)", fontWeight: 800, fontSize: 13 }, canvasWrap: { overflowX: "auto", border: "1px solid var(--rv-border)", borderRadius: 10, touchAction: "pan-x" }, timeGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 10, margin: "12px 0" }, duration: { color: "var(--rv-text-muted)", alignSelf: "end", padding: 8 }, advanced: { border: "1px solid #334155", background: "var(--rv-surface)", borderRadius: 10, padding: 14, marginTop: 12 }, markerRow: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 8 }, markerList: { display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }, marker: { background: "var(--rv-surface)", border: "1px solid var(--rv-border)", color: "var(--rv-info-text)", borderRadius: 999, padding: "6px 10px" }, cleanup: { border: "1px solid #49617e", background: "var(--rv-surface-muted)", borderRadius: 12, padding: 16, marginTop: 16 }, cleanupHeading: { display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: 12 }, cleanupOn: { alignSelf: "start", borderRadius: 999, background: "var(--rv-success-bg)", color: "var(--rv-success-text)", padding: "6px 10px", fontSize: 12, fontWeight: 900 }, cleanupOff: { alignSelf: "start", borderRadius: 999, background: "var(--rv-surface)", color: "var(--rv-text)", padding: "6px 10px", fontSize: 12, fontWeight: 900 }, presetGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(155px,1fr))", gap: 9, marginTop: 12 }, preset: { display: "grid", gap: 5, textAlign: "left", border: "1px solid var(--rv-border)", borderRadius: 9, background: "var(--rv-surface)", color: "var(--rv-text)", padding: 12, cursor: "pointer" }, presetActive: { display: "grid", gap: 5, textAlign: "left", border: "2px solid #f4b942", borderRadius: 9, background: "var(--rv-warning-bg)", color: "var(--rv-text)", padding: 11, cursor: "pointer" }, cleanupControls: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 12, borderTop: "1px solid #334155", marginTop: 14, paddingTop: 14 }, previewActions: { display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center", marginTop: 14 }, comparison: { borderTop: "1px solid #334155", marginTop: 14, paddingTop: 2 }, finish: { display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", borderTop: "1px solid #334155", marginTop: 16, paddingTop: 16 }, check: { display: "flex", gap: 7, alignItems: "center", color: "var(--rv-text)", fontWeight: 800, fontSize: 13 }, shortcuts: { color: "var(--rv-text-muted)", fontSize: 12 }, empty: { border: "1px dashed var(--rv-border)", borderRadius: 10, padding: 16, marginTop: 14 }, notice: { border: "1px solid #22c55e", background: "var(--rv-success-bg)", color: "var(--rv-success-text)", borderRadius: 8, padding: 12, marginBottom: 14 }, error: { border: "1px solid #ef4444", background: "var(--rv-error-bg)", color: "var(--rv-error-text)", borderRadius: 8, padding: 12, marginBottom: 14 }, renders: { marginTop: 16, background: "var(--rv-surface-muted)", borderRadius: 10, padding: 14 }, renderRow: { display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", borderTop: "1px solid #26364f", padding: "10px 0" }, qualityMuted: { display: "block", color: "var(--rv-text-muted)", marginTop: 4 }, qualityReady: { display: "block", color: "var(--rv-success-text)", marginTop: 4 }, qualityWarning: { display: "block", color: "var(--rv-warning-text)", marginTop: 4 }, qualityFindings: { display: "block", color: "var(--rv-warning-text)", marginTop: 3, maxWidth: 620 }, safety: { color: "var(--rv-text-muted)", fontSize: 12, margin: "16px 0 0" }
 };
