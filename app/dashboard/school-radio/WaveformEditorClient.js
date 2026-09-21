@@ -416,9 +416,9 @@ export default function WaveformEditorClient({ requestedProjectId = "", experien
     {editor && !state.clips.length ? <div style={s.empty}><p style={s.hint}>{history.length ? "The timeline is empty. Undo the edit to restore your wave, or start again from a protected take." : "Choose a protected take to place it on the timeline. Its source file will remain unchanged."}</p><div style={s.actions}>{history.length ? <button type="button" style={s.secondary} disabled={!canEdit} onClick={undo}>↶ Undo and restore wave</button> : null}{editor.takes.map((take) => <button key={take.id} style={s.primary} disabled={working || editor.restrictedReadOnly || !take.durationMs} onClick={() => send("INITIALIZE", { takeId: take.id })}>Use {take.mediaAsset.name} {take.waveformStatus === "READY" ? "· waveform ready" : "· analysing"}</button>)}</div></div> : null}
     {state.clips.length ? <>
       <div style={s.paneTabs} role="tablist" aria-label="Waveform workflow">
-        <button type="button" role="tab" aria-selected={activePane === "EDIT"} style={{ ...(activePane === "EDIT" ? s.paneActive : s.paneTab), ...s.paneVisual }} onClick={() => setActivePane("EDIT")}><span style={s.paneIcon} aria-hidden="true">✂</span><strong>Edit audio</strong><small>Cut and arrange</small></button>
-        <button type="button" role="tab" aria-selected={activePane === "CLEAN"} style={{ ...(activePane === "CLEAN" ? s.paneActive : s.paneTab), ...s.paneVisual }} onClick={() => setActivePane("CLEAN")}><span style={{ ...s.paneIcon, background: "linear-gradient(135deg,#53dfc8,#66aef2)" }} aria-hidden="true">✦</span><strong>Clean voice</strong><small>Repair sound</small></button>
-        <button type="button" role="tab" aria-selected={activePane === "MASTER"} style={{ ...(activePane === "MASTER" ? s.paneActive : s.paneTab), ...s.paneVisual }} onClick={() => setActivePane("MASTER")}><span style={{ ...s.paneIcon, background: "linear-gradient(135deg,#b38dff,#f29ac1)" }} aria-hidden="true">◉</span><strong>Effects & master</strong><small>Polish output</small></button>
+        <button type="button" role="tab" aria-selected={activePane === "EDIT"} style={workflowTabStyle(activePane === "EDIT", "EDIT")} onClick={() => setActivePane("EDIT")}><span style={s.paneIcon} aria-hidden="true">✂</span><strong>Edit audio</strong><small>Cut and arrange</small></button>
+        <button type="button" role="tab" aria-selected={activePane === "CLEAN"} style={workflowTabStyle(activePane === "CLEAN", "CLEAN")} onClick={() => setActivePane("CLEAN")}><span style={{ ...s.paneIcon, background: "linear-gradient(135deg,#53dfc8,#66aef2)" }} aria-hidden="true">✦</span><strong>Clean voice</strong><small>Repair sound</small></button>
+        <button type="button" role="tab" aria-selected={activePane === "MASTER"} style={workflowTabStyle(activePane === "MASTER", "MASTER")} onClick={() => setActivePane("MASTER")}><span style={{ ...s.paneIcon, background: "linear-gradient(135deg,#b38dff,#f29ac1)" }} aria-hidden="true">◉</span><strong>Effects & master</strong><small>Polish output</small></button>
       </div>
       {activePane === "EDIT" ? <>
       <div style={s.toolbar} aria-label="Waveform tools"><button type="button" style={s.primary} onClick={playFromCursor}>▶ Play / pause</button><button type="button" aria-pressed={editTool === "SELECT"} style={editTool === "SELECT" ? s.active : s.secondary} onClick={() => setEditTool("SELECT")}>╎ Select</button>{advanced ? <button type="button" aria-pressed={editTool === "BLADE"} style={editTool === "BLADE" ? s.active : s.secondary} onClick={() => setEditTool("BLADE")}>✂ Blade</button> : null}<button type="button" style={s.secondary} onClick={selectWholeWave}>Select whole wave</button><button type="button" style={looping ? s.active : s.secondary} onClick={() => setLooping(!looping)}>↻ Loop</button><button type="button" style={s.secondary} disabled={!history.length || !canEdit} onClick={undo}>↶ Undo</button><button type="button" style={s.secondary} disabled={!future.length || !canEdit} onClick={redo}>↷ Redo</button><button type="button" style={s.secondary} onClick={() => setZoom(1)}>Fit wave</button><label style={s.inline}>Zoom <input type="range" min="1" max="5" step=".5" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} /></label></div>
@@ -447,7 +447,7 @@ export default function WaveformEditorClient({ requestedProjectId = "", experien
       </> : activePane === "CLEAN" ? <section style={s.cleanup} aria-labelledby="voice-cleanup-title">
         <div style={s.cleanupHeading}><div><p style={s.eyebrow}>CLEAN VOICE</p><h3 id="voice-cleanup-title" style={s.cardTitle}>Repair common voice problems safely</h3><p style={s.hint}>Choose a starting point, then compare protected server previews. Your original recording never changes.</p></div><span style={cleanup.enabled ? s.cleanupOn : s.cleanupOff}>{voiceCleanupLabel(cleanup)}</span></div>
         <div style={s.presetGrid}>
-          {[{ id: "OFF", title: "Off", text: "Keep the edited audio unchanged." }, { id: "GENTLE", title: "Gentle repair", text: "Light background cleanup for a good recording." }, { id: "CLEAN_DIALOGUE", title: "Clean dialogue", text: "Stronger repair for interviews and spoken audio." }, { id: "BROADCAST", title: "Broadcast voice", text: "Clear, level speech with a broadcast tone." }].map((preset) => <button type="button" key={preset.id} aria-pressed={cleanup.preset === preset.id} style={cleanup.preset === preset.id ? s.presetActive : s.preset} onClick={() => chooseCleanupPreset(preset.id)}><strong>{preset.title}</strong><span>{preset.text}</span></button>)}
+          {[{ id: "OFF", title: "Off", text: "Keep the edited audio unchanged." }, { id: "GENTLE", title: "Gentle repair", text: "Light background cleanup for a good recording." }, { id: "CLEAN_DIALOGUE", title: "Clean dialogue", text: "Stronger repair for interviews and spoken audio." }, { id: "BROADCAST", title: "Broadcast voice", text: "Clear, level speech with a broadcast tone." }].map((preset) => <button type="button" key={preset.id} aria-pressed={cleanup.preset === preset.id} style={presetCardStyle(cleanup.preset === preset.id, preset.id)} onClick={() => chooseCleanupPreset(preset.id)}>{presetCardContent(preset.id, preset.title, preset.text, cleanup.preset === preset.id)}</button>)}
         </div>
         {advanced && cleanup.enabled ? <div style={s.cleanupControls}>
           <label style={s.label}>Background noise <span>{cleanup.noiseReduction}%</span><input type="range" min="0" max="100" step="5" value={cleanup.noiseReduction} onChange={(event) => changeCleanup({ noiseReduction: Number(event.target.value) }, "Adjust background cleanup")} /></label>
@@ -463,7 +463,7 @@ export default function WaveformEditorClient({ requestedProjectId = "", experien
       </section> : <section style={s.cleanup} aria-labelledby="effects-master-title">
         <div style={s.cleanupHeading}><div><p style={s.eyebrow}>EFFECTS & MASTER</p><h3 id="effects-master-title" style={s.cardTitle}>Choose a sound, then check delivery quality</h3><p style={s.hint}>Curated effects stay editable until the protected worker renders them. Mastering reports measured LUFS, True Peak and loudness range.</p></div><span style={s.cleanupOn}>{studioEffectLabel(effects)} · {studioMasteringLabel(mastering)}</span></div>
         <h4 style={s.sectionTitle}>1 · Sound preset</h4>
-        <div style={s.presetGrid}>{effectPresets.map(([id, title, text]) => <button type="button" key={id} aria-pressed={effects.preset === id} style={effects.preset === id ? s.presetActive : s.preset} onClick={() => chooseEffectPreset(id)}><strong>{title}</strong><span>{text}</span></button>)}</div>
+        <div style={s.presetGrid}>{effectPresets.map(([id, title, text]) => <button type="button" key={id} aria-pressed={effects.preset === id} style={presetCardStyle(effects.preset === id, id)} onClick={() => chooseEffectPreset(id)}>{presetCardContent(id, title, text, effects.preset === id)}</button>)}</div>
         {advanced && effects.enabled ? <div style={s.cleanupControls}>
           <label style={s.label}>Tone<select style={s.input} value={effects.tone} onChange={(event) => changeEffects({ tone: event.target.value }, "Adjust effects tone")}><option value="NEUTRAL">Neutral</option><option value="WARM">Warm</option><option value="BRIGHT">Bright</option><option value="BROADCAST">Broadcast</option><option value="TELEPHONE">Telephone</option></select></label>
           <label style={s.label}>Compression <span>{effects.compression}%</span><input type="range" min="0" max="100" step="5" value={effects.compression} onChange={(event) => changeEffects({ compression: Number(event.target.value) }, "Adjust compression")} /></label>
@@ -475,7 +475,7 @@ export default function WaveformEditorClient({ requestedProjectId = "", experien
           <label style={s.check}><input type="checkbox" checked={effects.hardLimiter} onChange={(event) => changeEffects({ hardLimiter: event.target.checked }, "Adjust effects limiter")} /> Hard limiter in effects rack</label>
         </div> : null}
         <h4 style={s.sectionTitle}>2 · Delivery preset</h4>
-        <div style={s.presetGrid}>{masteringPresets.map(([id, title, text]) => <button type="button" key={id} aria-pressed={mastering.preset === id} style={mastering.preset === id ? s.presetActive : s.preset} onClick={() => chooseMasteringPreset(id)}><strong>{title}</strong><span>{text}</span></button>)}</div>
+        <div style={s.presetGrid}>{masteringPresets.map(([id, title, text]) => <button type="button" key={id} aria-pressed={mastering.preset === id} style={presetCardStyle(mastering.preset === id, id)} onClick={() => chooseMasteringPreset(id)}>{presetCardContent(id, title, text, mastering.preset === id)}</button>)}</div>
         {advanced ? <div style={s.cleanupControls}>
           <label style={s.label}>Target loudness (LUFS)<input style={s.input} type="number" min="-24" max="-9" step="0.5" value={mastering.targetLufs} onChange={(event) => changeMastering({ targetLufs: Number(event.target.value), enabled: true }, "Adjust loudness target")} /></label>
           <label style={s.label}>True Peak ceiling (dBTP)<input style={s.input} type="number" min="-3" max="-0.5" step="0.1" value={mastering.truePeakDbfs} onChange={(event) => changeMastering({ truePeakDbfs: Number(event.target.value), enabled: true }, "Adjust True Peak ceiling")} /></label>
@@ -531,7 +531,53 @@ function QualitySummary({ report }) {
   </small>;
 }
 
+const choiceDecor = {
+  EDIT: ["✂", "#f4b942"], CLEAN: ["✦", "#43d9c3"], MASTER: ["◉", "#bd94ff"],
+  OFF: ["○", "#94a3b8"], GENTLE: ["✧", "#43d9c3"], CLEAN_DIALOGUE: ["◈", "#66b5f2"], BROADCAST: ["◉", "#f4b942"],
+  NONE: ["○", "#94a3b8"], BROADCAST_VOICE: ["◉", "#f4b942"], PODCAST_VOICE: ["◌", "#bd94ff"],
+  PROMO_VOICE: ["✦", "#f59abf"], TELEPHONE_VOICE: ["⌁", "#66b5f2"], WARM_VOICE: ["☀", "#f3aa72"],
+  CLEAN_INTERVIEW: ["◇", "#43d9c3"], PODCAST: ["◌", "#bd94ff"], ONLINE_RADIO: ["◉", "#66b5f2"],
+  RETAIL_PROMO: ["✦", "#f59abf"], SCHOOL_PROGRAMME: ["✧", "#43d9c3"]
+};
+
+function workflowTabStyle(selected, id) {
+  const accent = choiceDecor[id][1];
+  return {
+    ...(selected ? s.paneActive : s.paneTab), ...s.paneVisual,
+    border: `1px solid ${selected ? accent : `${accent}66`}`,
+    borderLeft: `4px solid ${accent}`,
+    background: `linear-gradient(115deg, ${accent}${selected ? "36" : "19"}, var(--rv-surface) 76%)`,
+    boxShadow: selected ? `0 0 0 1px ${accent}66, 0 10px 24px rgba(0,0,0,.14)` : "none",
+    padding: "13px 15px", transition: "background .2s, border-color .2s, box-shadow .2s"
+  };
+}
+
+function presetCardStyle(selected, id) {
+  const accent = (choiceDecor[id] || choiceDecor.NONE)[1];
+  return {
+    ...(selected ? s.presetActive : s.preset),
+    minHeight: 92, padding: "12px 13px", borderRadius: 12,
+    border: `1px solid ${selected ? accent : `${accent}66`}`,
+    borderLeft: `4px solid ${accent}`,
+    background: `linear-gradient(135deg, ${accent}${selected ? "36" : "18"}, var(--rv-surface) 78%)`,
+    boxShadow: selected ? `0 0 0 1px ${accent}66, 0 8px 20px rgba(0,0,0,.12)` : "none",
+    transition: "background .2s, border-color .2s, box-shadow .2s"
+  };
+}
+
+function presetCardContent(id, title, description, selected) {
+  const [symbol, accent] = choiceDecor[id] || choiceDecor.NONE;
+  return <>
+    <span style={s.presetHead}><span aria-hidden="true" style={{ ...s.presetIcon, background: accent }}>{symbol}</span><strong>{title}</strong>{selected ? <small style={s.presetSelected}>✓ Selected</small> : null}</span>
+    <span style={s.presetDescription}>{description}</span>
+  </>;
+}
+
 const s = {
+  presetHead: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" },
+  presetIcon: { display: "grid", placeItems: "center", flex: "0 0 25px", width: 25, height: 25, borderRadius: 8, color: "#142033", fontSize: 17, fontWeight: 900 },
+  presetSelected: { marginLeft: "auto", color: "var(--rv-text)", fontWeight: 900, fontSize: 11 },
+  presetDescription: { color: "var(--rv-text-muted)", fontSize: 12, lineHeight: 1.35 },
   paneVisual: { display: "grid", gridTemplateColumns: "42px minmax(0,1fr)", gridTemplateRows: "auto auto", alignItems: "center", columnGap: 10, minHeight: 72, backgroundImage: "linear-gradient(115deg,rgba(70,134,173,.08),transparent)" },
   paneIcon: { display: "grid", gridRow: "1 / 3", placeItems: "center", width: 38, height: 38, borderRadius: 11, background: "linear-gradient(135deg,#f8c95e,#ed8b5a)", color: "#17243b", fontSize: 22, boxShadow: "0 7px 20px rgba(244,185,66,.22)" },
   dragHint: { borderLeft: "4px solid #2dd4bf", background: "linear-gradient(90deg,rgba(45,212,191,.14),rgba(96,165,250,.06))", borderRadius: 9, padding: "10px 13px", color: "var(--rv-text)", fontSize: 13, fontWeight: 800, margin: "4px 0 10px" },
