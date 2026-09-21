@@ -36,6 +36,8 @@ test("gain adjustment splits a partial selection and leaves surrounding audio un
   const lowered = changeSelectionGain(raised, 4_000, 2_000, -9, id);
   assert.deepEqual(lowered.map((clip) => clip.gainDb), [0, -3, 0]);
   assert.equal(timelineDuration(lowered), 10_000);
+  const savedState = normalizeEditorState({ clips: raised });
+  assert.deepEqual(savedState.clips.map((clip) => clip.gainDb), [0, 6, 0]);
 });
 
 test("gain adjustment respects locked clips, silence, limits and invalid selection", () => {
