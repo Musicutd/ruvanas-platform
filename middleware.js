@@ -40,6 +40,16 @@ export async function middleware(request) {
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-request-id", requestId);
 
+  const contentLength = Number(request.headers.get("content-length") || 0);
+  const singleCatalogueUpload = request.nextUrl.pathname === "/api/admin/catalogue/upload";
+  const maxRequestBytes = singleCatalogueUpload ? 55 * 1024 * 1024 : 10 * 1024 * 1024;
+  if (Number.isFinite(contentLength) && contentLength > maxRequestBytes) {
+    return NextResponse.json(
+      { error: singleCatalogueUpload ? "The single-track upload exceeds the 50 MB audio limit." : "This request exceeds the 10 MB request limit." },
+      { status: 413, headers: { "x-request-id": requestId } }
+    );
+  }
+
   if (!SAFE_METHODS.has(request.method) && !isServiceAccountApiRequest(request)) {
     const origin = request.headers.get("origin");
 

@@ -6,9 +6,49 @@ import { useRouter } from "next/navigation";
 export default function CatalogueUploadForm({ genres }) {
   const router = useRouter();
   const formRef = useRef(null);
+  const previewRequest = useRef(0);
+  const [previewing, setPreviewing] = useState(false);
+  const [metadataPreview, setMetadataPreview] = useState(null);
+  const [metadataError, setMetadataError] = useState("");
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+
+  async function matchMetadata() {
+    const form = formRef.current;
+    const audio = form?.elements.namedItem("file")?.files?.[0];
+    const spreadsheet = form?.elements.namedItem("metadataSpreadsheet")?.files?.[0];
+    const requestNumber = ++previewRequest.current;
+    setMetadataPreview(null);
+    setMetadataError("");
+    if (!audio || !spreadsheet) return;
+    if (spreadsheet.size > 10 * 1024 * 1024) {
+      setMetadataError("The metadata spreadsheet must be 10 MB or smaller.");
+      return;
+    }
+    setPreviewing(true);
+    try {
+      const data = new FormData();
+      data.set("audioFileName", audio.name);
+      data.set("spreadsheet", spreadsheet);
+      const response = await fetch("/api/admin/catalogue/metadata-preview", { method: "POST", body: data });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || "The spreadsheet could not be matched.");
+      if (requestNumber !== previewRequest.current) return;
+      for (const name of ["title", "artist", "album", "mixName", "bpm", "releaseYear", "durationSeconds"]) {
+        form.elements.namedItem(name).value = body.metadata[name] ?? "";
+      }
+      form.elements.namedItem("isExplicit").checked = body.metadata.isExplicit;
+      for (const box of form.querySelectorAll('input[name="genreIds"]')) {
+        box.checked = body.metadata.genreIds.includes(box.value);
+      }
+      setMetadataPreview(body.metadata);
+    } catch (previewError) {
+      if (requestNumber === previewRequest.current) setMetadataError(previewError instanceof Error ? previewError.message : "The spreadsheet could not be matched.");
+    } finally {
+      if (requestNumber === previewRequest.current) setPreviewing(false);
+    }
+  }
 
   async function submit(event) {
     event.preventDefault();
@@ -16,10 +56,19 @@ export default function CatalogueUploadForm({ genres }) {
     setError("");
     setSuccess("");
 
+    const spreadsheet = formRef.current?.elements.namedItem("metadataSpreadsheet")?.files?.[0];
+    if (spreadsheet && !metadataPreview) {
+      setUploading(false);
+      setError("Match the metadata spreadsheet to the music file before uploading, or remove the spreadsheet.");
+      return;
+    }
+
     try {
+      const uploadData = new FormData(event.currentTarget);
+      uploadData.delete("metadataSpreadsheet");
       const response = await fetch("/api/admin/catalogue/upload", {
         method: "POST",
-        body: new FormData(event.currentTarget)
+        body: uploadData
       });
       const body = await response.json();
 
@@ -31,6 +80,8 @@ export default function CatalogueUploadForm({ genres }) {
         `${body.track.artist} — ${body.track.title} was uploaded as ${body.track.status.toLowerCase()}.`
       );
       formRef.current?.reset();
+      setMetadataPreview(null);
+      setMetadataError("");
       router.refresh();
     } catch (submitError) {
       setError(
@@ -54,10 +105,26 @@ export default function CatalogueUploadForm({ genres }) {
             accept=".mp3,.wav,.ogg,.m4a,audio/mpeg,audio/wav,audio/ogg,audio/mp4"
             required
             disabled={uploading}
+            onChange={matchMetadata}
             style={styles.input}
           />
           <span style={styles.hint}>MP3, WAV, OGG, or M4A; maximum 50 MB.</span>
         </label>
+
+        <label style={styles.label}>
+          Metadata spreadsheet (optional)
+          <input
+            name="metadataSpreadsheet"
+            type="file"
+            accept=".csv,.xlsx"
+            disabled={uploading}
+            onChange={matchMetadata}
+            style={styles.input}
+          />
+          <span style={styles.hint}>CSV or XLSX, up to 10 MB. Choose the song file as well; we will match its row and fill the fields below.</span>
+        </label>
+
+        <input type="hidden" name="newGenres" value={JSON.stringify(metadataPreview?.newGenreNames || [])} />
 
         <label style={styles.label}>
           Track title
@@ -115,6 +182,18 @@ export default function CatalogueUploadForm({ genres }) {
         </label>
       </div>
 
+      {previewing ? <p role="status" style={styles.hint}>Matching the song to the spreadsheet…</p> : null}
+      {metadataError ? <div role="alert" style={styles.error}>{metadataError} <button type="button" onClick={matchMetadata}>Try again</button></div> : null}
+      {metadataPreview ? (
+        <div role="status" style={styles.metadataStatus}>
+          Matched spreadsheet row {metadataPreview.sheetRow}. Check the filled details before uploading.
+          {metadataPreview.newGenreNames.length ? (
+            <span> New genre{metadataPreview.newGenreNames.length > 1 ? "s" : ""}: {metadataPreview.newGenreNames.join(", ")}. These will be added to the catalogue at the Premium level when you upload; this track will stay in Draft for review.</span>
+          ) : null}
+          <span> Rights, territories and licensed product use are not taken from the spreadsheet. Confirm those yourself.</span>
+        </div>
+      ) : null}
+
       {genres.length > 0 ? (
         <fieldset style={styles.fieldset} disabled={uploading}>
           <legend style={styles.legend}>Genres (up to 10)</legend>
@@ -169,7 +248,7 @@ export default function CatalogueUploadForm({ genres }) {
       {error ? <div role="alert" style={styles.error}>{error}</div> : null}
       {success ? <div role="status" style={styles.success}>{success}</div> : null}
 
-      <button type="submit" disabled={uploading} style={styles.button}>
+      <button type="submit" disabled={uploading || previewing} style={styles.button}>
         {uploading ? "Uploading securely…" : "Upload catalogue track"}
       </button>
     </form>
@@ -190,6 +269,7 @@ const styles = {
   checkLabelStrong: { display: "flex", alignItems: "flex-start", gap: 9, color: "#78350f", fontSize: 14, fontWeight: 900, lineHeight: 1.45 },
   error: { padding: 12, border: "1px solid #fca5a5", borderRadius: 7, background: "#fef2f2", color: "#991b1b", fontWeight: 700 },
   success: { padding: 12, border: "1px solid #86efac", borderRadius: 7, background: "#f0fdf4", color: "#166534", fontWeight: 700 },
+  metadataStatus: { padding: 12, border: "1px solid #93c5fd", borderRadius: 7, background: "#eff6ff", color: "#1e3a8a", fontWeight: 700, lineHeight: 1.5 },
   button: { justifySelf: "start", border: 0, borderRadius: 7, background: "#f4b942", color: "#172033", padding: "12px 17px", fontWeight: 900, cursor: "pointer" }
 };
 

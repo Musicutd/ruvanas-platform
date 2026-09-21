@@ -5,6 +5,7 @@ import { accessDenied } from "@/lib/api-response";
 import { MAX_CATALOGUE_FILE_SIZE_BYTES, parseCatalogueMetadata } from "@/lib/catalogue-upload.mjs";
 import { CatalogueTrackStorageError, storeCatalogueTrack } from "@/lib/catalogue-track-storage";
 import { securityLog } from "@/lib/security-log";
+import { parseNewCatalogueGenreNames } from "@/lib/catalogue-single-metadata.mjs";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -53,8 +54,12 @@ export async function POST(request) {
     });
     if (!metadata.ok) return NextResponse.json({ error: metadata.error }, { status: 400 });
 
+    const newGenres = parseNewCatalogueGenreNames(formData.get("newGenres"), metadata.data.genreIds.length);
+    if (!newGenres.ok) return NextResponse.json({ error: newGenres.error }, { status: 400 });
+    if (newGenres.names.length) metadata.data.status = "DRAFT";
+
     const genres = metadata.data.genreIds.length
-      ? await prisma.mediaGenre.findMany({ where: { id: { in: metadata.data.genreIds }, active: true }, select: { id: true } })
+      ? await prisma.mediaGenre.findMany({ where: { id: { in: metadata.data.genreIds }, active: true, providerReviewStatus: "APPROVED" }, select: { id: true } })
       : [];
     if (genres.length !== metadata.data.genreIds.length) {
       return NextResponse.json({ error: "One or more selected genres are unavailable." }, { status: 400 });
@@ -65,7 +70,8 @@ export async function POST(request) {
       fileName: file.name,
       claimedType: file.type,
       metadata: metadata.data,
-      actorUserId: access.user.id
+      actorUserId: access.user.id,
+      newGenreNames: newGenres.names
     });
     securityLog("info", "CATALOGUE_UPLOAD_SUCCEEDED", request, {
       actorUserId: access.user.id,
@@ -78,8 +84,9 @@ export async function POST(request) {
       track: { id: stored.track.id, title: stored.track.title, artist: stored.track.artist, status: stored.track.status }
     }, { status: 201 });
   } catch (error) {
-    const status = error instanceof CatalogueTrackStorageError ? error.status : 500;
-    const message = error instanceof CatalogueTrackStorageError
+    const genreUnavailable = error?.code === "CATALOGUE_GENRE_UNAVAILABLE";
+    const status = error instanceof CatalogueTrackStorageError ? error.status : genreUnavailable ? 400 : 500;
+    const message = error instanceof CatalogueTrackStorageError || genreUnavailable
       ? error.message
       : "The catalogue track could not be uploaded. Please try again.";
     securityLog(status >= 500 ? "error" : "warn", "CATALOGUE_UPLOAD_ERROR", request, {
