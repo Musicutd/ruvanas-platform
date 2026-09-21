@@ -8,6 +8,7 @@ import {
 import { applyVoiceCleanupPreset, normalizeVoiceCleanup, voiceCleanupLabel } from "@/lib/voice-cleanup.mjs";
 import { applyStudioEffectPreset, applyStudioMasteringPreset, normalizeStudioEffects, normalizeStudioMastering, studioEffectLabel, studioMasteringLabel } from "@/lib/studio-effects-mastering.mjs";
 import { gainDbFromVerticalDrag, waveformDragSelection, waveformTimeAtPointer } from "@/lib/waveform-interaction.mjs";
+import { waveformPrimaryShortcut } from "@/lib/waveform-shortcuts.mjs";
 
 const newId = () => crypto.randomUUID();
 const seconds = (milliseconds) => (Number(milliseconds || 0) / 1000).toFixed(2);
@@ -43,8 +44,13 @@ export default function WaveformEditorClient({ requestedProjectId = "", experien
   const [clipboard, setClipboard] = useState({ durationMs: 0, clips: [] });
   const [lastAction, setLastAction] = useState("Project loaded");
   const [message, setMessage] = useState("");
+  const [saveFeedback, setSaveFeedback] = useState("");
   const [error, setError] = useState("");
   const [working, setWorking] = useState(false);
+  const [workingAction, setWorkingAction] = useState("");
+  const sectionRef = useRef(null);
+  const stateRef = useRef(state);
+  const requestInFlightRef = useRef(false);
   const canvasRef = useRef(null);
   const audioRef = useRef(null);
   const dragRef = useRef(null);
@@ -77,7 +83,7 @@ export default function WaveformEditorClient({ requestedProjectId = "", experien
     const response = await fetch(`/api/school-radio/audio-lab/projects/${projectId}/editor`, { cache: "no-store" });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || "The waveform editor could not be loaded.");
-    setEditor(payload); setState(payload.state); setHistory([]); setFuture([]); setLastAction("Project loaded");
+    setEditor(payload); stateRef.current = payload.state; setState(payload.state); setHistory([]); setFuture([]); setLastAction("Project loaded"); setSaveFeedback("");
     setCursorMs(0); setSelection({ startMs: 0, endMs: 0 });
   }, [projectId]);
 
@@ -154,7 +160,7 @@ export default function WaveformEditorClient({ requestedProjectId = "", experien
   }, [cursorMs, durationMs, editor?.takes, gainAdjustmentDb, gainEnabled, hasSelection, selection, state.clips, state.markers, zoom]);
 
   function commit(next, label = "Edit") {
-    setHistory((items) => pushHistory(items, state)); setFuture([]); setState(next); setLastAction(label);
+    setHistory((items) => pushHistory(items, state)); setFuture([]); stateRef.current = next; setState(next); setLastAction(label); setSaveFeedback("");
   }
   function chooseCleanupPreset(preset) {
     const voiceCleanup = applyVoiceCleanupPreset(preset);
@@ -181,11 +187,11 @@ export default function WaveformEditorClient({ requestedProjectId = "", experien
   }
   function undo() {
     if (!canEdit || !history.length) return;
-    setFuture((items) => pushHistory(items, state)); setState(history.at(-1)); setHistory((items) => items.slice(0, -1)); setLastAction("Undo");
+    setFuture((items) => pushHistory(items, state)); stateRef.current = history.at(-1); setState(stateRef.current); setHistory((items) => items.slice(0, -1)); setLastAction("Undo"); setSaveFeedback("");
   }
   function redo() {
     if (!canEdit || !future.length) return;
-    setHistory((items) => pushHistory(items, state)); setState(future.at(-1)); setFuture((items) => items.slice(0, -1)); setLastAction("Redo");
+    setHistory((items) => pushHistory(items, state)); stateRef.current = future.at(-1); setState(stateRef.current); setFuture((items) => items.slice(0, -1)); setLastAction("Redo"); setSaveFeedback("");
   }
   function editClips(operation, label = "Timeline edit") {
     if (!canEdit) return;
@@ -200,6 +206,7 @@ export default function WaveformEditorClient({ requestedProjectId = "", experien
   function onWavePointerDown(event) {
     if (event.button !== 0 || !durationMs || event.detail >= 2) return;
     event.preventDefault();
+    event.currentTarget.focus();
     const position = wavePosition(event);
     dragRef.current = { pointerId: event.pointerId, startMs: position, startX: event.clientX, moved: false };
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -270,6 +277,7 @@ export default function WaveformEditorClient({ requestedProjectId = "", experien
       commit({ ...state, clips }, `${gainAdjustmentDb > 0 ? "+" : ""}${gainAdjustmentDb} dB on selection`);
       setGainAdjustmentDb(0);
       setError("");
+      canvasRef.current?.focus();
     } catch (gainError) { setError(gainError.message); }
   }
 
@@ -332,10 +340,22 @@ export default function WaveformEditorClient({ requestedProjectId = "", experien
 
   useEffect(() => {
     const onKey = (event) => {
-      if (["INPUT", "SELECT", "TEXTAREA", "BUTTON"].includes(event.target?.tagName) || event.target?.isContentEditable || undoOrRedo(event)) return;
-      if (event.code === "Space") { event.preventDefault(); playFromCursor(); }
+      const root = sectionRef.current;
+      if (!root?.getClientRects().length) return;
+      if (event.target?.nodeType && ![document.body, document.documentElement].includes(event.target) && !root.contains(event.target)) return;
+      const shortcut = waveformPrimaryShortcut(event, { visible: true, canEdit: Boolean(editor && canEdit), hasSelection });
+      if (shortcut) {
+        event.preventDefault();
+        if (shortcut === "SAVE") send("SAVE", { reason: "Manual waveform snapshot" });
+        if (shortcut === "PLAY_PAUSE") playFromCursor();
+        if (shortcut === "DELETE_SELECTION" || shortcut === "DELETE_KEEP_GAP") deleteCurrentSelection(shortcut === "DELETE_KEEP_GAP" && advanced);
+        return;
+      }
+      if (["INPUT", "SELECT", "TEXTAREA", "BUTTON"].includes(event.target?.tagName) || event.target?.isContentEditable) return;
+      if (undoOrRedo(event)) return;
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
       if (event.key.toLowerCase() === "s" && canEdit) editClips((clips) => splitAt(clips, cursorMs, newId), "Split at cursor");
-      if (event.key === "Backspace" || event.key === "Delete") { event.preventDefault(); deleteCurrentSelection(event.shiftKey && advanced); }
+      if (event.key === "Backspace") { event.preventDefault(); deleteCurrentSelection(); }
       if (event.key.toLowerCase() === "l") setLooping((value) => !value);
     };
     window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey);
@@ -356,16 +376,21 @@ export default function WaveformEditorClient({ requestedProjectId = "", experien
   }
 
   async function send(action, extra = {}) {
-    if (!projectId) return;
-    setWorking(true); setError(""); setMessage("");
+    if (!projectId || requestInFlightRef.current) return;
+    requestInFlightRef.current = true;
+    setWorking(true); setWorkingAction(action); setError(""); setMessage("");
     try {
-      const response = await fetch(`/api/school-radio/audio-lab/projects/${projectId}/editor`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, state, ...extra }) });
+      const response = await fetch(`/api/school-radio/audio-lab/projects/${projectId}/editor`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, state: stateRef.current, ...extra }) });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || "The waveform action failed.");
-      setEditor(payload); setState(payload.state); setHistory([]); setFuture([]);
+      setEditor(payload); stateRef.current = payload.state; setState(payload.state); setHistory([]); setFuture([]);
+      if (action === "SAVE") setSaveFeedback(`Saved version ${payload.currentVersion}. Your edits are retained.`);
       setMessage(action === "QUEUE_RENDER" ? "Final render queued. The background audio worker will prepare the review copy." : action === "QUEUE_CLEANUP_PREVIEW" ? "Before and After previews queued. They will appear together when the protected worker finishes." : action === "QUEUE_MASTER_PREVIEW" ? "Effects and mastering preview queued. Its quality report will appear when processing finishes." : action === "INITIALIZE" ? "The source take is ready in the non-destructive timeline." : `Project saved as version ${payload.currentVersion}.`);
       window.dispatchEvent(new CustomEvent("ruvanas:studio-projects-refresh"));
-    } catch (actionError) { setError(actionError.message); } finally { setWorking(false); }
+    } catch (actionError) {
+      setError(actionError.message);
+      if (action === "SAVE") setSaveFeedback(`Save failed: ${actionError.message}`);
+    } finally { requestInFlightRef.current = false; setWorking(false); setWorkingAction(""); }
   }
 
   function addMarker() {
@@ -383,7 +408,7 @@ export default function WaveformEditorClient({ requestedProjectId = "", experien
   }
 
   if (!projects.length) return <section style={s.panel}><p style={s.hint}>{error || "Create and upload an AudioLab take to unlock the waveform editor."}</p></section>;
-  return <section style={s.panel} aria-labelledby="waveform-title">
+  return <section ref={sectionRef} style={s.panel} aria-labelledby="waveform-title">
     <div style={s.heading}><div><p style={s.eyebrow}>WAVEFORM · STUDIO {editor?.studioLevel || "BASIC"}</p><h2 id="waveform-title" style={s.title}>Shape the programme without touching the source</h2><p style={s.hint}>Cached waveform peaks, versioned edits, markers, undo/redo, and server-rendered review copies.</p></div><button type="button" style={s.secondary} disabled={!editor?.studioProEnabled} title={!editor?.studioProEnabled ? "Studio Pro is included with Tiers 3–5." : undefined} onClick={() => { const next = advanced ? "BEGINNER" : "ADVANCED"; setLocalMode(next); onExperienceModeChange?.(next); }}>{editor?.studioProEnabled ? (advanced ? "Use Basic tools" : "Use Pro tools") : "Basic tools"}</button></div>
     {error ? <div style={s.error}>{error}</div> : null}{message ? <div style={s.notice}>{message}</div> : null}
     {editor?.restrictedReadOnly ? <div style={s.error}>This project contains Studio Pro edits. They remain intact, but editing and rendering are read-only on the current Basic plan.</div> : null}
@@ -400,7 +425,7 @@ export default function WaveformEditorClient({ requestedProjectId = "", experien
       <p style={s.dragHint}>{editTool === "BLADE" ? "✂ Click the wave where you want to split it. Switch to Select to highlight audio." : "╎ Drag to highlight part of the wave, or double-click to highlight the whole wave."}</p>
       <p style={s.history}>Edit history: {history.length} undo step{history.length === 1 ? "" : "s"} · {future.length} redo step{future.length === 1 ? "" : "s"} · Latest: {lastAction}</p>
       <div style={s.waveStage}>
-        <div style={s.canvasWrap}><canvas ref={canvasRef} role="img" aria-label={`${editTool === "BLADE" ? "Blade: click to split" : "Select: drag to highlight; double-click to select the whole wave"} on the waveform. Time fields below allow precise adjustment.`} style={{ cursor: editTool === "BLADE" ? "crosshair" : "text", touchAction: "none" }} onPointerDown={onWavePointerDown} onPointerMove={onWavePointerMove} onPointerUp={onWavePointerUp} onPointerCancel={() => { dragRef.current = null; }} onDoubleClick={selectWholeWave} /></div>
+        <div style={s.canvasWrap}><canvas ref={canvasRef} tabIndex={0} role="img" aria-label={`${editTool === "BLADE" ? "Blade: click to split" : "Select: drag to highlight; double-click to select the whole wave"} on the waveform. Time fields below allow precise adjustment.`} style={{ cursor: editTool === "BLADE" ? "crosshair" : "text", touchAction: "none" }} onPointerDown={onWavePointerDown} onPointerMove={onWavePointerMove} onPointerUp={onWavePointerUp} onPointerCancel={() => { dragRef.current = null; }} onDoubleClick={selectWholeWave} /></div>
         {gainEnabled && hasSelection && canEdit ? <div style={s.waveGainHud} role="group" aria-label="Selected audio amplitude">
           <button type="button" role="slider" aria-label="Drag up to amplify or down to reduce selected audio" aria-valuemin={-36} aria-valuemax={18} aria-valuenow={gainAdjustmentDb} aria-valuetext={`${gainAdjustmentDb > 0 ? "+" : ""}${gainAdjustmentDb} decibels`} style={s.waveGainKnob} onPointerDown={onGainPointerDown} onPointerMove={onGainPointerMove} onPointerUp={onGainPointerUp} onPointerCancel={onGainPointerUp} onKeyDown={onGainKeyDown}><span style={{ ...s.waveGainNeedle, transform: `rotate(${gainAdjustmentDb * 5}deg)` }} /></button>
           <div style={s.waveGainReadout}><strong>Amplitude</strong><label><input aria-label="Selected audio gain change in dB" style={s.waveGainInput} type="number" min="-36" max="18" step="0.5" value={gainAdjustmentDb} onChange={(event) => setGainAdjustmentDb(Math.min(18, Math.max(-36, Number(event.target.value) || 0)))} /> dB</label><small>Drag knob ↑ louder · ↓ quieter</small></div>
@@ -418,7 +443,7 @@ export default function WaveformEditorClient({ requestedProjectId = "", experien
         <div style={s.markerRow}><input style={s.input} value={markerLabel} onChange={(event) => setMarkerLabel(event.target.value)} placeholder="Marker or region name" /><select style={s.input} value={markerType} onChange={(event) => setMarkerType(event.target.value)}>{MARKER_TYPES.map((type) => <option key={type} value={type}>{type.replaceAll("_", " ")}</option>)}</select><button style={s.secondary} onClick={addMarker}>Add marker</button><button style={s.secondary} disabled={!hasSelection} onClick={addRegion}>Add named region</button></div>
         <div style={s.markerList}>{state.markers.map((marker) => <button key={marker.clientId} style={s.marker} onClick={() => setCursorMs(marker.positionMs)}>{seconds(marker.positionMs)} · {marker.type.replaceAll("_", " ")} · {marker.label}</button>)}</div>
       </div> : null}
-      <p style={s.shortcuts}>Keyboard: Space play/pause · S split · Backspace ripple delete · Delete keep gap · L loop · Ctrl/Cmd+C/X/V copy, cut and paste · Ctrl/Cmd+Z/Y undo and redo.</p>
+      <p style={s.shortcuts}>Keyboard: Space play/pause · Delete selected audio · Shift+Delete keep gap in Pro · Ctrl/Cmd+S save · S split · L loop · Ctrl/Cmd+C/X/V copy, cut and paste · Ctrl/Cmd+Z/Y undo and redo.</p>
       </> : activePane === "CLEAN" ? <section style={s.cleanup} aria-labelledby="voice-cleanup-title">
         <div style={s.cleanupHeading}><div><p style={s.eyebrow}>CLEAN VOICE</p><h3 id="voice-cleanup-title" style={s.cardTitle}>Repair common voice problems safely</h3><p style={s.hint}>Choose a starting point, then compare protected server previews. Your original recording never changes.</p></div><span style={cleanup.enabled ? s.cleanupOn : s.cleanupOff}>{voiceCleanupLabel(cleanup)}</span></div>
         <div style={s.presetGrid}>
@@ -460,7 +485,8 @@ export default function WaveformEditorClient({ requestedProjectId = "", experien
         <div style={s.previewActions}><button type="button" style={s.primary} disabled={working || (!effects.enabled && !mastering.enabled)} onClick={() => send("QUEUE_MASTER_PREVIEW")}>Create mastered preview</button><span style={s.hint}>The worker measures the rendered result; it does not estimate a pass in the browser.</span></div>
         {masterPreview ? <MasterPreview render={masterPreview} /> : null}
       </section>}
-      <div style={s.finish}><span style={s.hint}>Current finish: {studioEffectLabel(effects)} · {mastering.enabled ? `${mastering.targetLufs} LUFS · ${mastering.truePeakDbfs} dBTP` : "loudness matching off"}</span><button style={s.secondary} disabled={working || editor.restrictedReadOnly} onClick={() => send("SAVE", { reason: "Manual waveform snapshot" })}>Save version</button><button style={s.primary} disabled={working || editor.restrictedReadOnly} onClick={() => send("QUEUE_RENDER", { preset: "SCHOOL_RADIO_MP3" })}>Create review render</button></div>
+      <div style={s.finish}><span style={s.hint}>Current finish: {studioEffectLabel(effects)} · {mastering.enabled ? `${mastering.targetLufs} LUFS · ${mastering.truePeakDbfs} dBTP` : "loudness matching off"}</span><button type="button" style={s.secondary} disabled={working || editor.restrictedReadOnly} onClick={() => send("SAVE", { reason: "Manual waveform snapshot" })}>{workingAction === "SAVE" ? "Saving…" : "Save version"}</button><button type="button" style={s.primary} disabled={working || editor.restrictedReadOnly} onClick={() => send("QUEUE_RENDER", { preset: "SCHOOL_RADIO_MP3" })}>Create review render</button></div>
+      {saveFeedback ? <p role="status" aria-live="polite" style={saveFeedback.startsWith("Save failed:") ? s.error : s.notice}>{saveFeedback}</p> : null}
       {editor.renders?.some((render) => !render.resultJson?.studioPreview) ? <div style={s.renders}><h3 style={{ marginTop: 0 }}>Recent renders</h3>{editor.renders.filter((render) => !render.resultJson?.studioPreview).map((render) => <div key={render.id} style={s.renderRow}><div><strong>{render.preset.replaceAll("_", " ")} · {render.status}</strong><QualitySummary report={render.resultJson} /></div>{render.streamUrl ? <audio controls src={render.streamUrl} /> : null}{render.errorMessage ? <span style={{ color: "#fecaca" }}>{render.errorMessage}</span> : null}</div>)}</div> : null}
     </> : null}
     <p style={s.safety}>The waveform uses cached peaks. The original recording is never changed or publicly shared; every save creates a recoverable project version.</p>
