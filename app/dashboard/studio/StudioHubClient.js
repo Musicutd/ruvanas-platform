@@ -9,11 +9,11 @@ import ProductionServiceClient from "./StudioClient";
 import styles from "./studio-pro.module.css";
 
 const tabs = [
-  ["create", "Create & edit", "Projects, Waveform and Multitrack"],
-  ["library", "Music library", "Find music without downloading"],
-  ["playout", "Manual Playout", "Live Playlist, Prepare and Library"],
-  ["broadcast", "Broadcast", "Managed and external destinations"],
-  ["service", "Production service", "Request work from the Ruvanas team"]
+  ["create", "Create & edit", "Record · shape", "✦"],
+  ["library", "Music library", "Explore tracks", "♫"],
+  ["playout", "Manual Playout", "Cue · play", "▶"],
+  ["broadcast", "Broadcast", "Go live", "◉"],
+  ["service", "Production", "Get support", "✧"]
 ];
 
 const productGuidance = Object.freeze({
@@ -31,7 +31,7 @@ export default function StudioHubClient({ entitlements }) {
     <a href="/dashboard" className={styles.back}>← Dashboard</a>
     <header className={styles.hero}><div className={styles.heroContent}><p>RUVANAS STUDIO · {entitlements.studioLevel}</p><h1>Make your next sound unforgettable.</h1><span>Record a voice, explore your music, shape a show and bring it to your audience—all in one creative space.</span><div className={styles.heroActions}><button type="button" onClick={() => setTab("create")}>Start creating <span aria-hidden="true">↗</span></button><button type="button" onClick={() => setTab("library")}>Explore music <span aria-hidden="true">♪</span></button></div><small>{productGuidance[entitlements.planProductFamily] || "The subscriber operates and approves its own service; Ruvanas supplies the technology."}</small></div><div className={styles.heroArt} aria-hidden="true"><div className={styles.disc}><div /></div><div className={styles.soundBars}><i /><i /><i /><i /><i /><i /><i /><i /><i /><i /><i /></div><span>CREATE · CURATE · GO LIVE</span></div><strong className={styles.planBadge}>{entitlements.planName}</strong></header>
     <p className={styles.tierNote}>Studio Basic is included with Tiers 1–2; Studio Pro with Tiers 3–5. Music availability still follows your plan and licence rights.</p>
-    <nav className={styles.tabs} role="tablist" aria-label="Ruvanas Studio workspaces">{tabs.map(([id, label, description]) => <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)}><strong>{label}</strong><small>{description}</small>{["playout", "broadcast"].includes(id) && !entitlements.studioProEnabled ? <em>PRO</em> : null}</button>)}</nav>
+    <nav className={styles.tabs} role="tablist" aria-label="Ruvanas Studio workspaces">{tabs.map(([id, label, description, icon]) => <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)}><span className={styles.tabIcon} aria-hidden="true">{icon}</span><span className={styles.tabText}><strong>{label}</strong><small>{description}</small></span>{["playout", "broadcast"].includes(id) && !entitlements.studioProEnabled ? <em>PRO</em> : null}</button>)}</nav>
     <section role="tabpanel" hidden={tab !== "create"}><StudioWorkspaceClient /></section>
     <section role="tabpanel" hidden={tab !== "library"}><StudioLibraryClient active={tab === "library"} /></section>
     <section role="tabpanel" hidden={tab !== "playout"}><ManualPlayoutClient enabled={entitlements.studioProEnabled} /></section>
