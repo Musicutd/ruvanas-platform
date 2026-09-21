@@ -21,6 +21,7 @@ export async function PATCH(request, { params }) {
   if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message || "Choose a valid distributor action." }, { status: 400 });
   const connection = await prisma.musicDistributorConnection.findUnique({ where: { id: params.connectionId } });
   if (!connection) return NextResponse.json({ error: "Music distributor not found." }, { status: 404 });
+  if (connection.providerKey === "PROMO_ONLY") return NextResponse.json({ error: "Manage Promo Only through its separate testing controls and server-side feature gates." }, { status: 409 });
   if (connection.status === "REVOKED" && parsed.data.action !== "TEST") return NextResponse.json({ error: "A revoked distributor connection cannot be changed." }, { status: 409 });
   try {
     if (parsed.data.action === "TEST") {

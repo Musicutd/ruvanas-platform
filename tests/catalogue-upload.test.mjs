@@ -10,6 +10,8 @@ const validMetadata = {
   title: "Rights-cleared track",
   artist: "Ruvanas Artist",
   album: "Catalogue Vol. 1",
+  mixName: "Clean",
+  bpm: "121",
   releaseYear: "2026",
   durationSeconds: "180",
   isExplicit: "false",
@@ -40,8 +42,18 @@ test("catalogue metadata defaults a reviewed upload to draft", () => {
   assert.equal(parsed.data.status, "DRAFT");
   assert.equal(parsed.data.releaseYear, 2026);
   assert.equal(parsed.data.durationSeconds, 180);
+  assert.equal(parsed.data.mixName, "Clean");
+  assert.equal(parsed.data.bpm, 121);
   assert.equal(parsed.data.licenceExpiresAt, null);
   assert.deepEqual(parsed.data.permittedUses, ["RETAIL_RADIO", "SCHOOL_RADIO", "ONLINE_RADIO"]);
+});
+
+test("catalogue metadata validates BPM while keeping Mix optional", () => {
+  assert.equal(parseCatalogueMetadata({ ...validMetadata, bpm: "19" }).ok, false);
+  const parsed = parseCatalogueMetadata({ ...validMetadata, mixName: "", bpm: "" });
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.data.mixName, null);
+  assert.equal(parsed.data.bpm, null);
 });
 
 test("catalogue metadata requires at least one licensed product use", () => {

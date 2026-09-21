@@ -75,6 +75,16 @@ export default function CatalogueUploadForm({ genres }) {
         </label>
 
         <label style={styles.label}>
+          Mix (optional)
+          <input name="mixName" maxLength={120} disabled={uploading} style={styles.input} placeholder="For example: Clean, Radio Edit or Remix" />
+        </label>
+
+        <label style={styles.label}>
+          BPM (optional)
+          <input name="bpm" type="number" min={20} max={300} disabled={uploading} style={styles.input} />
+        </label>
+
+        <label style={styles.label}>
           Release year (optional)
           <input name="releaseYear" type="number" min={1877} max={2200} disabled={uploading} style={styles.input} />
         </label>

@@ -22,7 +22,7 @@ export async function PUT(request) {
     if (genreCodes.some((code) => !allowedCodes.has(code))) return NextResponse.json({ error: "Choose only active music genres." }, { status: 400 });
     const rightsUse = rightsUseForChannel(channel);
     if (!rightsUse) return NextResponse.json({ error: "This channel needs a music-rights profile before AutoDJ can be enabled." }, { status: 409 });
-    const scopes = rightsUse === "ONLINE_RADIO" ? ["SUBSCRIBER_LIBRARY", "RUVANAS_CORE"] : ["SUBSCRIBER_LIBRARY", "RUVANAS_CORE", "LICENSED_CATALOGUE"];
+    const scopes = ["SUBSCRIBER_LIBRARY", "RUVANAS_CORE", "LICENSED_CATALOGUE"];
     const entries = parsed.data.enabled ? await loadEligibleSubscriberMusic(prisma, {
       organisationId, requiredUse: rightsUse, catalogueLevel: access.entitlements.licensedMusicCatalogueLevel,
       configuredGenres, sourceScopes: scopes

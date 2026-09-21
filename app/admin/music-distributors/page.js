@@ -14,6 +14,7 @@ export default async function MusicDistributorsPage() {
   if (!user) redirect("/login");
   if (user.role !== "SUPER_ADMIN") redirect("/admin");
   const connections = await prisma.musicDistributorConnection.findMany({
+    where: { providerKey: { not: "PROMO_ONLY" } },
     include: {
       _count: { select: { releases: true, tracks: true, collections: true, syncRuns: true, usageDeliveries: true } },
       tracks: { select: { id: true, externalTrackId: true, isrc: true, title: true, artist: true, minimumCatalogueLevel: true, permittedTerritories: true, permittedUses: true, status: true, takenDownAt: true, updatedAt: true }, orderBy: { updatedAt: "desc" }, take: 25 },

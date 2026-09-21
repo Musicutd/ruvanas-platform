@@ -35,22 +35,26 @@
     "@aws-sdk/client-s3": "^3.0.0",
     "@prisma/client": "6.12.0",
     "bcryptjs": "^2.4.3",
+    "exceljs": "^4.4.0",
     "ffmpeg-static": "^5.2.0",
     "ffprobe-static": "^3.1.0",
     "next": "15.5.24",
     "react": "18.3.1",
     "react-dom": "18.3.1",
+    "saxes": "^5.0.1",
+    "yauzl": "^3.4.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "jszip": "^3.10.2",
     "prisma": "6.12.0"
   },
   "overrides": {
     "postcss": "8.5.26",
-    "sharp": "0.35.4"
+    "sharp": "0.35.4",
+    "uuid": "11.1.1"
   },
   "engines": {
     "node": ">=20"
   }
 }
-

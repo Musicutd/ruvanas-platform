@@ -75,6 +75,12 @@ export default function SimplePlaylistWorkspace() {
   function toggleGenre(code) {
     setPlaylist((current) => ({ ...current, genreCodes: current.genreCodes.includes(code) ? current.genreCodes.filter((item) => item !== code) : [...current.genreCodes, code] }));
   }
+  function revealSection(id) {
+    const section = document.getElementById(id);
+    const disclosure = section?.closest("details");
+    if (disclosure) disclosure.open = true;
+    section?.scrollIntoView({ behavior: "smooth" });
+  }
   function moveSlot(from, to) {
     if (to < 0 || to >= playlist.genreCodes.length || from === to) return;
     setPlaylist((current) => { const genreCodes = [...current.genreCodes]; genreCodes.splice(to, 0, genreCodes.splice(from, 1)[0]); return { ...current, genreCodes }; });
@@ -90,7 +96,7 @@ export default function SimplePlaylistWorkspace() {
     setEditingId(item.id);
     setPlaylistChannelId(data.channels.find((channel) => channel.rightsUse === item.rightsUse)?.id || playlistChannelId);
     setPlaylist({ name: item.name, durationValue: item.durationMinutes % 1440 === 0 ? item.durationMinutes / 1440 : item.durationMinutes / 60, durationUnit: item.durationMinutes % 1440 === 0 ? "DAYS" : "HOURS", buildMode: item.buildMode, genreCodes: item.genreCodes });
-    document.getElementById("simple-playlist-builder")?.scrollIntoView({ behavior: "smooth" });
+    revealSection("simple-playlist-builder");
   }
   async function duplicatePlaylist(item) {
     try { await send(`/api/programming/simple/${item.id}`, { method: "POST", body: JSON.stringify({ action: "duplicate" }) }); setMessage(`Copied “${item.name}”.`); } catch (issue) { setError(issue.message); }
@@ -117,7 +123,7 @@ export default function SimplePlaylistWorkspace() {
   function editSchedule(item) {
     setEditingEventId(item.id);
     setSchedule({ channelId: item.channelId, playlistId: item.playlistId, startsAt: zonedInput(item.startsAt, item.timezone), endsAt: zonedInput(item.endsAt, item.timezone), timezone: item.timezone });
-    document.getElementById("simple-playlist-schedule")?.scrollIntoView({ behavior: "smooth" });
+    revealSection("simple-playlist-schedule");
   }
   async function cancelSchedule(item) {
     if (!window.confirm(`Cancel “${item.playlistName}” on ${item.channelName}?`)) return;
@@ -129,17 +135,20 @@ export default function SimplePlaylistWorkspace() {
   return <div className={styles.layout}>
     {message && <p className={styles.success} role="status">{message}</p>}
     {error && <p className={styles.error} role="alert">{error}</p>}
-    {!data.channels.length && <section className={styles.panel}><h2>Create a channel first</h2><p>Your playlists will belong to your organisation and can be scheduled on its channels. You can prepare them before streaming details are entered.</p><a href="/dashboard">Open your product dashboard</a></section>}
+    {!data.channels.length && <section className={styles.panel}><h2>Music setup is not ready yet</h2><p>A playback channel is needed before you can switch on Non-Stop music. For Online Radio, Ruvanas prepares that channel; other services may first need a location or listening area.</p><a href="/dashboard">See your next setup step</a></section>}
     {data.channels.length > 0 && <>
       <section className={styles.panel} aria-labelledby="nonstop-title">
         <p className={styles.kicker}>1 · SIMPLE CONTINUOUS MUSIC</p><h2 id="nonstop-title">AutoDJ Non-Stop</h2>
         <p>Keep approved music playing when no scheduled programme is active. Streaming connection details remain with Ruvanas.</p>
+        <p className={styles.hint}>If you want music playing all day, start here. Playlists and timed slots below are optional.</p>
         <label>Channel<select value={channelId} onChange={(event) => chooseChannel(event.target.value)}>{data.channels.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.productFamily}</option>)}</select></label>
         <p className={styles.hint}>{channel?.streamingStatus === "RIGHTS_PROFILE_REQUIRED" ? "Ask Ruvanas to classify this channel's music-rights pillar before using playlists." : channel?.streamingStatus === "CONFIGURED" ? "Streaming details saved" : channel?.streamingStatus === "RUVANAS_PLAYBACK" ? "Ruvanas playback channel ready for music setup" : "Pending manual streaming configuration · you can prepare music now"}</p>
         <label className={styles.toggle}><input type="checkbox" checked={nonStopEnabled} disabled={!data.canManage || busy || !channel?.rightsUse} onChange={(event) => { setNonStopEnabled(event.target.checked); saveNonStop(event.target.checked); }} /> AutoDJ Non-Stop {nonStopEnabled ? "ON" : "OFF"}</label>
         <details><summary>Limit music to selected genres (optional)</summary><p>Leave all unchecked to use every eligible genre.</p><div className={styles.genreGrid}>{data.genres.map((genre) => <label key={genre.id}><input type="checkbox" checked={nonStopGenres.includes(genre.code)} disabled={!data.canManage || busy} onChange={() => setNonStopGenres((current) => current.includes(genre.code) ? current.filter((code) => code !== genre.code) : [...current, genre.code])} />{genre.name}</label>)}</div></details>
         <button type="button" disabled={!data.canManage || busy || !channel?.rightsUse} onClick={() => saveNonStop()}>Save genre choices</button>
       </section>
+      <details className={styles.taskDetails}>
+        <summary><span>2 · OPTIONAL</span><strong>Create or manage playlists{data.playlists.length ? ` · ${data.playlists.length} saved` : ""}</strong><small>Save a reusable mix for a time of day or a special programme.</small></summary>
       <section className={styles.panel} id="simple-playlist-builder" aria-labelledby="builder-title">
         <p className={styles.kicker}>2 · REUSABLE MUSIC</p><h2 id="builder-title">Saved Playlists</h2>
         <p>Choose a duration and genre pattern. Ruvanas chooses rights-approved songs when playback runs.</p>
@@ -150,11 +159,14 @@ export default function SimplePlaylistWorkspace() {
         {playlist.buildMode === "RANDOM_GENRE_POOL" ? <div className={styles.genreGrid}>{data.genres.map((genre) => <label key={genre.id}><input type="checkbox" checked={playlist.genreCodes.includes(genre.code)} disabled={!data.canManage || busy} onChange={() => toggleGenre(genre.code)} />{genre.name}</label>)}</div> : <div><div className={styles.row}><label>Add a genre slot<select value="" disabled={!data.canManage || busy} onChange={(event) => setPlaylist((current) => ({ ...current, genreCodes: [...current.genreCodes, event.target.value] }))}><option value="">Choose genre…</option>{data.genres.map((genre) => <option key={genre.id} value={genre.code}>{genre.name}</option>)}</select></label></div><ol className={styles.sequence}>{playlist.genreCodes.map((code, index) => <li key={`${index}-${code}`} draggable={data.canManage && !busy} onDragStart={() => setDragged(index)} onDragOver={(event) => event.preventDefault()} onDrop={() => { moveSlot(dragged, index); setDragged(null); }}><span>{genreName(code)}</span><div><button type="button" aria-label={`Move ${genreName(code)} up`} disabled={index === 0 || busy} onClick={() => moveSlot(index, index - 1)}>↑</button><button type="button" aria-label={`Move ${genreName(code)} down`} disabled={index === playlist.genreCodes.length - 1 || busy} onClick={() => moveSlot(index, index + 1)}>↓</button><button type="button" aria-label={`Duplicate ${genreName(code)}`} disabled={busy} onClick={() => setPlaylist((current) => ({ ...current, genreCodes: current.genreCodes.flatMap((item, position) => position === index ? [item, item] : [item]) }))}>Duplicate</button><button type="button" aria-label={`Remove ${genreName(code)}`} disabled={busy} onClick={() => setPlaylist((current) => ({ ...current, genreCodes: current.genreCodes.filter((_, position) => position !== index) }))}>Remove</button></div></li>)}</ol></div>}
         <p className={styles.summary}><strong>Preview:</strong> {playlist.name || "Untitled"} · {playlist.durationValue} {playlist.durationUnit.toLowerCase()} · {playlist.buildMode === "GENRE_SEQUENCE" ? "Genre Sequence" : "Random Genre Mix"} · {playlist.genreCodes.length ? playlist.genreCodes.map(genreName).join(" → ") : "Choose genres"}</p>
         <div className={styles.actions}><button type="button" disabled={!data.canManage || busy || !playlistChannel?.rightsUse || !playlist.name.trim() || !playlist.genreCodes.length} onClick={savePlaylist}>{editingId ? "Save changes" : "Save playlist"}</button>{editingId && <button type="button" className={styles.secondary} onClick={() => { setEditingId(null); setPlaylist(emptyPlaylist); }}>Cancel edit</button>}</div>
-        <div className={styles.cards}>{data.playlists.map((item) => <article key={item.id} className={styles.card}><h3>{item.name}</h3><p>{item.durationMinutes % 1440 === 0 ? `${item.durationMinutes / 1440} day(s)` : `${item.durationMinutes / 60} hour(s)`} · {item.buildMode === "GENRE_SEQUENCE" ? "Genre Sequence" : "Random Genre Mix"}</p><small>{item.genreCodes.map(genreName).join(" · ")}</small><div className={styles.actions}><button type="button" className={styles.secondary} disabled={!data.canManage || busy} onClick={() => { setSchedule((current) => ({ ...current, playlistId: item.id })); document.getElementById("simple-playlist-schedule")?.scrollIntoView({ behavior: "smooth" }); }}>Schedule</button><button type="button" className={styles.secondary} disabled={!data.canManage || busy} onClick={() => editPlaylist(item)}>Edit</button><button type="button" className={styles.secondary} disabled={!data.canManage || busy} onClick={() => duplicatePlaylist(item)}>Duplicate</button><button type="button" className={styles.danger} disabled={!data.canManage || busy} onClick={() => archivePlaylist(item)}>Archive</button></div></article>)}</div>
+        <div className={styles.cards}>{data.playlists.map((item) => <article key={item.id} className={styles.card}><h3>{item.name}</h3><p>{item.durationMinutes % 1440 === 0 ? `${item.durationMinutes / 1440} day(s)` : `${item.durationMinutes / 60} hour(s)`} · {item.buildMode === "GENRE_SEQUENCE" ? "Genre Sequence" : "Random Genre Mix"}</p><small>{item.genreCodes.map(genreName).join(" · ")}</small><div className={styles.actions}><button type="button" className={styles.secondary} disabled={!data.canManage || busy} onClick={() => { setSchedule((current) => ({ ...current, playlistId: item.id })); revealSection("simple-playlist-schedule"); }}>Schedule</button><button type="button" className={styles.secondary} disabled={!data.canManage || busy} onClick={() => editPlaylist(item)}>Edit</button><button type="button" className={styles.secondary} disabled={!data.canManage || busy} onClick={() => duplicatePlaylist(item)}>Duplicate</button><button type="button" className={styles.danger} disabled={!data.canManage || busy} onClick={() => archivePlaylist(item)}>Archive</button></div></article>)}</div>
       </section>
+      </details>
+      <details className={styles.taskDetails}>
+        <summary><span>3 · OPTIONAL</span><strong>Choose when a playlist plays{data.events.length ? ` · ${data.events.length} upcoming` : ""}</strong><small>Schedule a saved playlist for a specific date and time.</small></summary>
       <section className={styles.panel} id="simple-playlist-schedule" aria-labelledby="schedule-title">
         <p className={styles.kicker}>3 · PLAN A TIME SLOT</p>
-        <h2 id="schedule-title">Advanced AutoDJ Schedule</h2>
+        <h2 id="schedule-title">Plan a playlist time</h2>
         <p>Place a saved playlist on one of your channels. At the end, Non-Stop resumes if it is on.</p>
         <div className={styles.row}>
           <label>Channel<select value={schedule.channelId} disabled={!data.canManage || busy} onChange={(event) => { const selected = data.channels.find((item) => item.id === event.target.value); setSchedule((current) => ({ ...current, channelId: event.target.value, playlistId: "", timezone: selected?.timezone || "Europe/Malta" })); }}>{data.channels.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
@@ -170,6 +182,7 @@ export default function SimplePlaylistWorkspace() {
         <h3>Upcoming schedule</h3>
         {data.events.length ? <ul className={styles.events}>{data.events.map((item) => <li key={item.id}><div><strong>{item.playlistName}</strong> · {item.channelName}<br /><small>{new Date(item.startsAt).toLocaleString("en-GB", { timeZone: item.timezone })} – {new Date(item.endsAt).toLocaleString("en-GB", { timeZone: item.timezone })} ({item.timezone})</small></div><div className={styles.actions}><button type="button" className={styles.secondary} disabled={!data.canManage || busy} onClick={() => editSchedule(item)}>Edit</button><button type="button" className={styles.danger} disabled={!data.canManage || busy} onClick={() => cancelSchedule(item)}>Cancel</button></div></li>)}</ul> : <p>No upcoming playlist times yet.</p>}
       </section>
+      </details>
     </>}
   </div>;
 }

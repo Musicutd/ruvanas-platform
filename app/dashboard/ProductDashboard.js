@@ -4,6 +4,9 @@ import WorkspaceTabs from "./WorkspaceTabs";
 
 export default function ProductDashboard({ eyebrow, title, description, status, statusTone = "healthy", metrics, primaryAction, listenAction, sections, complimentary, onboarding, quickTasks = [] }) {
   const heroAction = onboarding && !onboarding.complete ? onboarding.nextAction : primaryAction;
+  const currentStep = onboarding?.steps.find((step) => step.status === "CURRENT") || null;
+  const waitingOnRuvanas = Boolean(currentStep?.owner?.startsWith("Ruvanas"));
+  const waitingForLiveCheck = currentStep?.owner === "Live evidence";
 
   return (
     <main className={styles.page} id="main-content">
@@ -33,9 +36,10 @@ export default function ProductDashboard({ eyebrow, title, description, status, 
         <section className={styles.onboarding} aria-labelledby="product-onboarding-title">
           <div className={styles.onboardingHeading}>
             <div>
-              <p className={styles.eyebrow}>GUIDED LAUNCH · YOUR NEXT STEP</p>
+              <p className={styles.eyebrow}>{waitingOnRuvanas ? "RUVANAS IS HANDLING THIS STEP" : waitingForLiveCheck ? "READY FOR A LISTENING CHECK" : "GUIDED LAUNCH · YOUR NEXT STEP"}</p>
               <h2 id="product-onboarding-title">{onboarding.complete ? `${onboarding.product} is ready` : onboarding.nextAction.title}</h2>
               <p>{onboarding.nextAction.description}</p>
+              {waitingOnRuvanas ? <p className={styles.waitingNote}>This step is with Ruvanas. You can leave it to us and use the available tasks below while we finish.</p> : null}
             </div>
             <div className={styles.progressBlock}>
               <strong>{onboarding.completedCount} of {onboarding.totalCount}</strong>
@@ -65,8 +69,8 @@ export default function ProductDashboard({ eyebrow, title, description, status, 
 
       {quickTasks.length ? <section className={styles.quickTasks} aria-labelledby="product-quick-tasks-title">
         <div>
-          <p className={styles.eyebrow}>COMMON TASKS</p>
-          <h2 id="product-quick-tasks-title">What would you like to do?</h2>
+          <p className={styles.eyebrow}>{waitingOnRuvanas ? "YOU CAN DO THIS NOW" : "COMMON TASKS"}</p>
+          <h2 id="product-quick-tasks-title">{waitingOnRuvanas ? "While Ruvanas prepares your service" : "What would you like to do?"}</h2>
         </div>
         <div className={styles.quickTaskGrid}>
           {quickTasks.slice(0, 3).map((task) => <Link href={task.href} key={task.href} className={styles.quickTask}>

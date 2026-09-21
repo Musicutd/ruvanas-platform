@@ -19,6 +19,7 @@ const commandSchema = z.object({
 });
 
 const sessionInclude = { items: { orderBy: [{ area: "asc" }, { position: "asc" }, { createdAt: "asc" }] } };
+const assetInclude = { track: { include: { distributorItems: { select: { status: true, autoDjReady: true, canonicalGenre: { select: { active: true, providerReviewStatus: true, minimumCatalogueLevel: true } } } } } } };
 
 function requirePro(access) {
   if (!access.entitlements.studioProEnabled) throw Object.assign(new Error("Studio Pro is required for Manual Playout."), { status: 403 });
@@ -29,15 +30,15 @@ async function workspace(access) {
   const [sessions, channels, assets, packs] = await Promise.all([
     prisma.studioPlayoutSession.findMany({ where: { organisationId }, include: sessionInclude, orderBy: { updatedAt: "desc" }, take: 20 }),
     prisma.channel.findMany({ where: { organisationId, status: "ACTIVE" }, include: { autoDjPolicy: { select: { id: true, enabled: true, state: true } }, station: { select: { id: true, name: true } } }, orderBy: { name: "asc" } }),
-    prisma.mediaAsset.findMany({ where: { status: "READY", OR: [{ organisationId }, ...(access.entitlements.licensedMusicCatalogueEnabled ? [{ organisationId: null, libraryType: "RUVANAS_CATALOGUE", track: { status: "READY", OR: [{ licenceExpiresAt: null }, { licenceExpiresAt: { gte: new Date() } }] } }] : [])] }, include: { track: { select: { title: true, artist: true, status: true, licenceExpiresAt: true } } }, orderBy: { createdAt: "desc" }, take: 300 }),
+    prisma.mediaAsset.findMany({ where: { status: "READY", OR: [{ organisationId }, ...(access.entitlements.licensedMusicCatalogueEnabled ? [{ organisationId: null, libraryType: "RUVANAS_CATALOGUE", track: { status: "READY", OR: [{ licenceExpiresAt: null }, { licenceExpiresAt: { gte: new Date() } }] } }] : [])] }, include: assetInclude, orderBy: { createdAt: "desc" }, take: 300 }),
     prisma.studioProgrammePack.findMany({ where: studioProgrammePackScope(organisationId, access.entitlements.planProductFamily), include: { items: { orderBy: { position: "asc" } } }, orderBy: { updatedAt: "desc" } })
   ]);
   const packMediaIds = [...new Set(packs.flatMap((pack) => pack.items.map((item) => item.mediaAssetId)))];
   const packAssets = packMediaIds.length ? await prisma.mediaAsset.findMany({
     where: { id: { in: packMediaIds }, status: "READY", OR: [{ organisationId }, ...(access.entitlements.licensedMusicCatalogueEnabled ? [{ organisationId: null, libraryType: "RUVANAS_CATALOGUE", track: { status: "READY", OR: [{ licenceExpiresAt: null }, { licenceExpiresAt: { gte: new Date() } }] } }] : [])] },
-    include: { track: { select: { title: true, artist: true, status: true, licenceExpiresAt: true } } }
+    include: assetInclude
   }) : [];
-  const availableAssets = mergeStudioLibraryAssets(assets, packAssets);
+  const availableAssets = mergeStudioLibraryAssets(assets, packAssets).filter((asset) => studioQueueReadiness(asset, access.entitlements).ready);
   return { organisation: { id: organisationId, name: access.organisation.name }, studioLevel: access.entitlements.studioLevel, productFamily: access.entitlements.planProductFamily, sessions, channels, assets: availableAssets.map((asset) => ({ id: asset.id, name: asset.name, mediaType: asset.mediaType, libraryType: asset.libraryType, durationSeconds: asset.durationSeconds, licensed: !asset.organisationId, artist: asset.track?.artist || null, title: asset.track?.title || null })), packs };
 }
 
@@ -87,7 +88,7 @@ export async function POST(request) {
       return NextResponse.json({ pack }, { status: 201 });
     }
     if (input.action === "ADD_PACK_ITEM") {
-      const [pack, asset] = await Promise.all([prisma.studioProgrammePack.findFirst({ where: { id: input.packId, ...studioProgrammePackScope(access.organisation.id, access.entitlements.planProductFamily) } }), prisma.mediaAsset.findFirst({ where: { id: input.mediaAssetId, OR: [{ organisationId: access.organisation.id }, { organisationId: null, libraryType: "RUVANAS_CATALOGUE" }] }, include: { track: true } })]);
+      const [pack, asset] = await Promise.all([prisma.studioProgrammePack.findFirst({ where: { id: input.packId, ...studioProgrammePackScope(access.organisation.id, access.entitlements.planProductFamily) } }), prisma.mediaAsset.findFirst({ where: { id: input.mediaAssetId, OR: [{ organisationId: access.organisation.id }, { organisationId: null, libraryType: "RUVANAS_CATALOGUE" }] }, include: assetInclude })]);
       if (!pack || !asset) throw new Error("Choose an available programme pack and protected media item.");
       const readiness = studioQueueReadiness(asset, access.entitlements); if (!readiness.ready) throw new Error(readiness.reason);
       const position = await prisma.studioProgrammePackItem.count({ where: { packId: pack.id } });
@@ -99,7 +100,7 @@ export async function POST(request) {
       const session = await findSession(tx, access, input);
       let payload = {};
       if (["ADD_PREPARE", "ADD_LIVE"].includes(input.action)) {
-        const asset = await tx.mediaAsset.findFirst({ where: { id: input.mediaAssetId, OR: [{ organisationId: access.organisation.id }, { organisationId: null, libraryType: "RUVANAS_CATALOGUE" }] }, include: { track: true } });
+        const asset = await tx.mediaAsset.findFirst({ where: { id: input.mediaAssetId, OR: [{ organisationId: access.organisation.id }, { organisationId: null, libraryType: "RUVANAS_CATALOGUE" }] }, include: assetInclude });
         if (!asset) throw new Error("Choose protected media available to this organisation.");
         const readiness = studioQueueReadiness(asset, access.entitlements);
         const prepared = normalizePreparedItem(input, asset, { studioLevel: access.entitlements.studioLevel, readiness });
@@ -110,7 +111,7 @@ export async function POST(request) {
       } else if (input.action === "UPDATE_PREPARE") {
         const item = session.items.find((candidate) => candidate.id === input.itemId && candidate.area === "PREPARE");
         if (!item) throw new Error("Choose an item in the private Prepare area.");
-        const asset = await tx.mediaAsset.findFirst({ where: { id: item.mediaAssetId, OR: [{ organisationId: access.organisation.id }, { organisationId: null, libraryType: "RUVANAS_CATALOGUE" }] }, include: { track: true } });
+        const asset = await tx.mediaAsset.findFirst({ where: { id: item.mediaAssetId, OR: [{ organisationId: access.organisation.id }, { organisationId: null, libraryType: "RUVANAS_CATALOGUE" }] }, include: assetInclude });
         if (!asset) throw new Error("The protected source is no longer available.");
         const readiness = studioQueueReadiness(asset, access.entitlements);
         const prepared = normalizePreparedItem({ ...item, ...input }, asset, { studioLevel: access.entitlements.studioLevel, readiness });

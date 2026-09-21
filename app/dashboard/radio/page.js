@@ -34,6 +34,15 @@ export default async function OnlineRadioDashboard() {
     publicPlayerEnabled: Boolean(firstStation?.publicPlayerEnabled),
     activePublicListeners: publicListeners
   });
+  const stationReady = firstStation?.status === "ACTIVE" && Boolean(firstStation?.streamConfig?.streamUrl);
+  const quickTasks = !firstStation ? [] : stationReady ? [
+    { href: "/dashboard/programming#workspace-simple", label: "Music & schedule", description: "Start 24/7 music first; add playlists and timed shows when you need them." },
+    { href: `/stations/${firstStation.id}/public-player`, label: "Your listening page", description: "Preview or publish the page you will share with listeners." },
+    { href: "/dashboard/media", label: "Add your own audio", description: "Prepare station-owned tracks, jingles and spoken content." }
+  ] : [
+    { href: "/dashboard/media", label: "Prepare your audio", description: "Add station-owned audio while Ruvanas prepares the broadcast connection." },
+    { href: "/dashboard/support", label: "Ask Ruvanas", description: "Send a question and follow the answer in one place." }
+  ];
 
   return <ProductDashboard
     eyebrow="Online Radio dashboard"
@@ -45,11 +54,7 @@ export default async function OnlineRadioDashboard() {
     onboarding={onboarding}
     primaryAction={{ href: firstStation ? `/stations/${firstStation.id}` : "/stations/new", label: firstStation ? "Open station" : "Create station" }}
     listenAction={listenStation ? { href: onlineRadioListenHref(listenStation.id), label: listenStation.status === "ACTIVE" && listenStation.publicPlayerEnabled ? "Listen live" : "Listen to test stream" } : null}
-    quickTasks={[
-      { href: "/dashboard/programming#workspace-schedule", label: "Start continuous music", description: "Choose the approved mode for this station's 24/7 AutoDJ rotation." },
-      { href: "/dashboard/media", label: "Add station audio", description: "Prepare your own tracks, imaging or spoken content." },
-      { href: "/dashboard/player-sessions", label: "Check live listening", description: "See current stream sessions and player activity." }
-    ]}
+    quickTasks={quickTasks}
     metrics={[
       { label: "Stations", value: `${organisation.stations.length} / ${entitlements.stationLimit}`, detail: "Online services configured" },
       { label: "Connected players", value: players, detail: "Secure listening endpoints" },

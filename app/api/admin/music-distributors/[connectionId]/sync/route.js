@@ -13,6 +13,8 @@ export async function POST(request, { params }) {
   if (access.user.role !== "SUPER_ADMIN") return NextResponse.json({ error: "Only a Ruvanas Super Admin can synchronise music distributors." }, { status: 403 });
   const parsed = schema.safeParse(await request.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: "Choose a valid synchronisation mode." }, { status: 400 });
+  const connection = await prisma.musicDistributorConnection.findUnique({ where: { id: params.connectionId }, select: { providerKey: true } });
+  if (connection?.providerKey === "PROMO_ONLY") return NextResponse.json({ error: "Use the Promo Only testing sync with server-side mode gates." }, { status: 409 });
   try {
     const result = await syncMusicDistributorConnection(prisma, params.connectionId, { kind: parsed.data.kind });
     return NextResponse.json({ result, notice: "Distributor catalogue synchronisation completed." });
