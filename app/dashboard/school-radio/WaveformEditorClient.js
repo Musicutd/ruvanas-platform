@@ -52,7 +52,8 @@ export default function WaveformEditorClient({ requestedProjectId = "", experien
 
   const durationMs = useMemo(() => timelineDuration(state.clips), [state.clips]);
   const sourceTake = useMemo(() => editor?.takes.find((take) => state.clips.some((clip) => clip.mediaAssetId === take.mediaAsset.id)) || editor?.takes[0], [editor, state.clips]);
-  const advanced = editor?.studioProEnabled && (experienceMode || localMode) === "ADVANCED";
+  const gainEnabled = editor?.studioProEnabled === true;
+  const advanced = gainEnabled && (experienceMode || localMode) === "ADVANCED";
   const hasSelection = Math.max(selection.startMs, selection.endMs) > Math.min(selection.startMs, selection.endMs);
   const canEdit = !editor?.restrictedReadOnly && !working;
   const cleanup = normalizeVoiceCleanup(state.voiceCleanup, state.noiseCleanup);
@@ -128,7 +129,7 @@ export default function WaveformEditorClient({ requestedProjectId = "", experien
         const sourceMs = clip.sourceStartMs + fraction * (clip.sourceEndMs - clip.sourceStartMs);
         const peakIndex = Math.min(peaks.length - 1, Math.max(0, Math.round(sourceMs / takeDuration * (peaks.length - 1))));
         const timelineMs = clip.timelineStartMs + fraction * (clip.sourceEndMs - clip.sourceStartMs);
-        const previewDb = advanced && hasSelection && !clip.locked && timelineMs >= Math.min(selection.startMs, selection.endMs) && timelineMs < Math.max(selection.startMs, selection.endMs) ? gainAdjustmentDb : 0;
+        const previewDb = gainEnabled && hasSelection && !clip.locked && timelineMs >= Math.min(selection.startMs, selection.endMs) && timelineMs < Math.max(selection.startMs, selection.endMs) ? gainAdjustmentDb : 0;
         const gainDb = Math.min(18, Math.max(-36, Number(clip.gainDb || 0) + previewDb));
         const gainMultiplier = Math.pow(10, gainDb / 20);
         const amplitude = Math.min(1, Math.abs(Number(peaks[peakIndex]) || 0) * gainMultiplier) * height * .42;
@@ -150,7 +151,7 @@ export default function WaveformEditorClient({ requestedProjectId = "", experien
     }
     const cursorX = durationMs ? (cursorMs / durationMs) * width : 0;
     context.strokeStyle = "#fff"; context.beginPath(); context.moveTo(cursorX, 0); context.lineTo(cursorX, height); context.stroke();
-  }, [advanced, cursorMs, durationMs, editor?.takes, gainAdjustmentDb, hasSelection, selection, state.clips, state.markers, zoom]);
+  }, [cursorMs, durationMs, editor?.takes, gainAdjustmentDb, gainEnabled, hasSelection, selection, state.clips, state.markers, zoom]);
 
   function commit(next, label = "Edit") {
     setHistory((items) => pushHistory(items, state)); setFuture([]); setState(next); setLastAction(label);
@@ -263,7 +264,7 @@ export default function WaveformEditorClient({ requestedProjectId = "", experien
   }
 
   function applyGainAdjustment() {
-    if (!advanced || !canEdit || !hasSelection || !gainAdjustmentDb) return;
+    if (!gainEnabled || !canEdit || !hasSelection || !gainAdjustmentDb) return;
     try {
       const clips = changeSelectionGain(state.clips, selection.startMs, selection.endMs, gainAdjustmentDb, newId);
       commit({ ...state, clips }, `${gainAdjustmentDb > 0 ? "+" : ""}${gainAdjustmentDb} dB on selection`);
@@ -400,14 +401,14 @@ export default function WaveformEditorClient({ requestedProjectId = "", experien
       <p style={s.history}>Edit history: {history.length} undo step{history.length === 1 ? "" : "s"} · {future.length} redo step{future.length === 1 ? "" : "s"} · Latest: {lastAction}</p>
       <div style={s.waveStage}>
         <div style={s.canvasWrap}><canvas ref={canvasRef} role="img" aria-label={`${editTool === "BLADE" ? "Blade: click to split" : "Select: drag to highlight; double-click to select the whole wave"} on the waveform. Time fields below allow precise adjustment.`} style={{ cursor: editTool === "BLADE" ? "crosshair" : "text", touchAction: "none" }} onPointerDown={onWavePointerDown} onPointerMove={onWavePointerMove} onPointerUp={onWavePointerUp} onPointerCancel={() => { dragRef.current = null; }} onDoubleClick={selectWholeWave} /></div>
-        {advanced && hasSelection && canEdit ? <div style={s.waveGainHud} role="group" aria-label="Selected audio amplitude">
+        {gainEnabled && hasSelection && canEdit ? <div style={s.waveGainHud} role="group" aria-label="Selected audio amplitude">
           <button type="button" role="slider" aria-label="Drag up to amplify or down to reduce selected audio" aria-valuemin={-36} aria-valuemax={18} aria-valuenow={gainAdjustmentDb} aria-valuetext={`${gainAdjustmentDb > 0 ? "+" : ""}${gainAdjustmentDb} decibels`} style={s.waveGainKnob} onPointerDown={onGainPointerDown} onPointerMove={onGainPointerMove} onPointerUp={onGainPointerUp} onPointerCancel={onGainPointerUp} onKeyDown={onGainKeyDown}><span style={{ ...s.waveGainNeedle, transform: `rotate(${gainAdjustmentDb * 5}deg)` }} /></button>
           <div style={s.waveGainReadout}><strong>Amplitude</strong><label><input aria-label="Selected audio gain change in dB" style={s.waveGainInput} type="number" min="-36" max="18" step="0.5" value={gainAdjustmentDb} onChange={(event) => setGainAdjustmentDb(Math.min(18, Math.max(-36, Number(event.target.value) || 0)))} /> dB</label><small>Drag knob ↑ louder · ↓ quieter</small></div>
           <button type="button" style={s.waveGainApply} disabled={gainAdjustmentDb === 0} onClick={applyGainAdjustment}>Apply</button>
         </div> : null}
       </div>
       <div style={s.selectionBar} aria-live="polite"><div style={s.selectionSummary}><strong>{hasSelection ? `${seconds(Math.abs(selection.endMs - selection.startMs))} seconds selected` : "Select part of the wave"}</strong><span>{hasSelection ? `${seconds(Math.min(selection.startMs, selection.endMs))}–${seconds(Math.max(selection.startMs, selection.endMs))} s · Choose an edit below.` : "Drag from left to right—or right to left—then choose an edit."}</span></div><div style={s.selectionActions}><button type="button" style={{ ...s.cutButton, opacity: hasSelection && canEdit ? 1 : .48 }} disabled={!hasSelection || !canEdit} onClick={cutCurrentSelection}>✂ Cut selection</button><button type="button" style={{ ...s.deleteButton, opacity: hasSelection && canEdit ? 1 : .48 }} disabled={!hasSelection || !canEdit} onClick={() => deleteCurrentSelection()}>⌫ Delete selection</button><button type="button" style={{ ...s.silenceButton, opacity: hasSelection && canEdit ? 1 : .48 }} disabled={!hasSelection || !canEdit} onClick={silenceCurrentSelection}>◌ Silence selection</button></div></div>
-      {advanced ? <div style={s.gainPanel}><div><strong>Amplify or reduce</strong><p style={s.gainHint}>Adjust only the highlighted audio. Positive dB raises it; negative dB reduces it. The wave updates when applied; create a review render to hear the result. Final mastering may rebalance overall loudness.</p></div><label style={s.gainControl}>Gain change <output>{gainAdjustmentDb > 0 ? "+" : ""}{gainAdjustmentDb} dB</output><input aria-label="Gain change in decibels" type="range" min="-36" max="18" step="0.5" value={gainAdjustmentDb} onChange={(event) => setGainAdjustmentDb(Number(event.target.value))} /></label><input aria-label="Gain change number in decibels" style={s.gainNumber} type="number" min="-36" max="18" step="0.5" value={gainAdjustmentDb} onChange={(event) => setGainAdjustmentDb(Math.min(18, Math.max(-36, Number(event.target.value) || 0)))} /><button type="button" style={s.primary} disabled={!hasSelection || !canEdit || gainAdjustmentDb === 0} onClick={applyGainAdjustment}>Apply dB change</button></div> : null}
+      {gainEnabled ? <div style={s.gainPanel}><div><strong>Amplify or reduce</strong><p style={s.gainHint}>Adjust only the highlighted audio. Positive dB raises it; negative dB reduces it. The wave updates when applied; create a review render to hear the result. Final mastering may rebalance overall loudness.</p></div><label style={s.gainControl}>Gain change <output>{gainAdjustmentDb > 0 ? "+" : ""}{gainAdjustmentDb} dB</output><input aria-label="Gain change in decibels" type="range" min="-36" max="18" step="0.5" value={gainAdjustmentDb} onChange={(event) => setGainAdjustmentDb(Number(event.target.value))} /></label><input aria-label="Gain change number in decibels" style={s.gainNumber} type="number" min="-36" max="18" step="0.5" value={gainAdjustmentDb} onChange={(event) => setGainAdjustmentDb(Math.min(18, Math.max(-36, Number(event.target.value) || 0)))} /><button type="button" style={s.primary} disabled={!hasSelection || !canEdit || gainAdjustmentDb === 0} onClick={applyGainAdjustment}>Apply dB change</button></div> : editor && hasSelection ? <p style={s.gainLocked}>Amplitude adjustment is included with Studio Pro (tiers 3–5). Your current plan has Studio Basic, so gain editing is unavailable here.</p> : null}
       {sourceTake ? <audio ref={audioRef} src={`/api/media/${sourceTake.mediaAsset.id}/stream`} onTimeUpdate={onAudioTime} onEnded={() => setCursorMs(0)} preload="metadata" /> : null}
       <div style={s.timeGrid}><label style={s.label}>Cursor (seconds)<input style={s.input} type="number" min="0" max={seconds(durationMs)} step=".01" value={seconds(cursorMs)} onChange={(event) => setCursorMs(milliseconds(event.target.value))} /></label><label style={s.label}>Selection start<input style={s.input} type="number" min="0" max={seconds(durationMs)} step=".01" value={seconds(selection.startMs)} onChange={(event) => setSelection({ ...selection, startMs: milliseconds(event.target.value) })} /></label><label style={s.label}>Selection end<input style={s.input} type="number" min="0" max={seconds(durationMs)} step=".01" value={seconds(selection.endMs)} onChange={(event) => setSelection({ ...selection, endMs: milliseconds(event.target.value) })} /></label><div style={s.duration}>Selection duration<br /><strong>{seconds(Math.abs(selection.endMs-selection.startMs))} s</strong></div><div style={s.duration}>Project length<br /><strong>{seconds(durationMs)} s</strong></div></div>
       <details style={s.moreTools}><summary>More edit tools</summary><div style={s.actions}><button type="button" style={s.secondary} disabled={!canEdit} onClick={() => editClips((clips) => splitAt(clips, cursorMs, newId), "Split at cursor")}>Split at cursor</button><button type="button" style={s.secondary} disabled={!hasSelection} onClick={copyCurrentSelection}>Copy</button><button type="button" style={s.secondary} disabled={!clipboard.clips.length || !canEdit} onClick={pasteAtCursor}>Paste at cursor</button><button type="button" style={s.secondary} disabled={!hasSelection} onClick={() => setZoom(Math.min(5, Math.max(1, durationMs / Math.max(1, Math.abs(selection.endMs-selection.startMs)))))}>Fit selection</button><button type="button" style={s.secondary} disabled={!hasSelection || !canEdit} onClick={() => editClips((clips) => trimToSelection(clips, selection.startMs, selection.endMs, newId), "Crop to selection")}>Crop to selection</button></div></details>
@@ -515,6 +516,7 @@ const s = {
   deleteButton: { border: 0, borderRadius: 9, padding: "10px 13px", background: "#ff9a89", color: "#17243b", fontWeight: 900, cursor: "pointer" },
   silenceButton: { border: 0, borderRadius: 9, padding: "10px 13px", background: "#54ddcc", color: "#17243b", fontWeight: 900, cursor: "pointer" },
   gainPanel: { display: "flex", flexWrap: "wrap", alignItems: "center", gap: 14, marginTop: 10, padding: "14px 16px", border: "1px solid #9d78df", borderRadius: 13, background: "linear-gradient(110deg,rgba(119,83,194,.2),rgba(71,143,196,.12))", color: "var(--rv-text)" },
+  gainLocked: { margin: "10px 0 0", padding: "10px 13px", border: "1px solid var(--rv-border)", borderRadius: 9, background: "var(--rv-surface-muted)", color: "var(--rv-text-muted)", fontSize: 13 },
   gainHint: { maxWidth: 380, margin: "4px 0 0", color: "var(--rv-text-muted)", fontSize: 12, lineHeight: 1.4 },
   gainControl: { display: "grid", gap: 4, minWidth: 220, flex: "1 1 220px", fontWeight: 800, fontSize: 13 },
   gainNumber: { width: 78, border: "1px solid var(--rv-border)", borderRadius: 7, background: "var(--rv-input-bg)", color: "var(--rv-input-text)", padding: "9px 7px", font: "inherit" },
