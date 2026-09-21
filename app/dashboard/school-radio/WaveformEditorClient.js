@@ -7,6 +7,7 @@ import {
 } from "@/lib/waveform-editor.mjs";
 import { applyVoiceCleanupPreset, normalizeVoiceCleanup, voiceCleanupLabel } from "@/lib/voice-cleanup.mjs";
 import { applyStudioEffectPreset, applyStudioMasteringPreset, normalizeStudioEffects, normalizeStudioMastering, studioEffectLabel, studioMasteringLabel } from "@/lib/studio-effects-mastering.mjs";
+import { waveformDragSelection, waveformTimeAtPointer } from "@/lib/waveform-interaction.mjs";
 
 const newId = () => crypto.randomUUID();
 const seconds = (milliseconds) => (Number(milliseconds || 0) / 1000).toFixed(2);
@@ -45,12 +46,13 @@ export default function WaveformEditorClient({ requestedProjectId = "", experien
   const [working, setWorking] = useState(false);
   const canvasRef = useRef(null);
   const audioRef = useRef(null);
+  const dragRef = useRef(null);
 
   const durationMs = useMemo(() => timelineDuration(state.clips), [state.clips]);
   const sourceTake = useMemo(() => editor?.takes.find((take) => state.clips.some((clip) => clip.mediaAssetId === take.mediaAsset.id)) || editor?.takes[0], [editor, state.clips]);
-  const peaks = sourceTake?.waveformPeaks || [];
   const advanced = editor?.studioProEnabled && (experienceMode || localMode) === "ADVANCED";
   const hasSelection = Math.max(selection.startMs, selection.endMs) > Math.min(selection.startMs, selection.endMs);
+  const canEdit = !editor?.restrictedReadOnly && !working;
   const cleanup = normalizeVoiceCleanup(state.voiceCleanup, state.noiseCleanup);
   const effects = normalizeStudioEffects(state.effects);
   const mastering = normalizeStudioMastering(state.mastering, state);
@@ -100,24 +102,49 @@ export default function WaveformEditorClient({ requestedProjectId = "", experien
     const height = 210;
     canvas.width = width * ratio; canvas.height = height * ratio;
     canvas.style.width = `${width}px`; canvas.style.height = `${height}px`;
-    context.scale(ratio, ratio); context.fillStyle = "#08111f"; context.fillRect(0, 0, width, height);
-    const startX = durationMs ? (Math.min(selection.startMs, selection.endMs) / durationMs) * width : 0;
-    const endX = durationMs ? (Math.max(selection.startMs, selection.endMs) / durationMs) * width : 0;
-    context.fillStyle = "rgba(59,130,246,.25)"; context.fillRect(startX, 0, Math.max(0, endX - startX), height);
-    context.strokeStyle = "#f4b942"; context.lineWidth = 2; context.beginPath();
-    if (peaks.length) {
-      peaks.forEach((peak, index) => { const x = (index / Math.max(1, peaks.length - 1)) * width; const amplitude = peak * (height * 0.43); context.moveTo(x, height / 2 - amplitude); context.lineTo(x, height / 2 + amplitude); });
-    } else {
-      context.moveTo(0, height / 2); context.lineTo(width, height / 2);
+    context.scale(ratio, ratio);
+    context.fillStyle = "#08111f"; context.fillRect(0, 0, width, height);
+    context.strokeStyle = "#2b425e"; context.lineWidth = 1; context.beginPath(); context.moveTo(0, height / 2); context.lineTo(width, height / 2); context.stroke();
+    const takesByAsset = new Map((editor?.takes || []).map((take) => [take.mediaAsset.id, take]));
+    for (const clip of state.clips) {
+      const left = durationMs ? clip.timelineStartMs / durationMs * width : 0;
+      const right = durationMs ? (clip.timelineStartMs + clip.sourceEndMs - clip.sourceStartMs) / durationMs * width : 0;
+      if (clip.kind === "SILENCE") {
+        context.fillStyle = "rgba(148,163,184,.12)"; context.fillRect(left, 0, Math.max(0, right - left), height);
+        continue;
+      }
+      const take = takesByAsset.get(clip.mediaAssetId);
+      const peaks = take?.waveformPeaks || [];
+      const takeDuration = Number(take?.durationMs || take?.mediaAsset?.durationMs || clip.sourceEndMs);
+      if (!peaks.length || !(takeDuration > 0)) continue;
+      context.strokeStyle = clip.locked ? "#94a3b8" : "#37e4c2";
+      context.lineWidth = 1.5;
+      context.beginPath();
+      const samples = Math.max(1, Math.ceil((right - left) / 2));
+      for (let index = 0; index <= samples; index++) {
+        const fraction = index / samples;
+        const sourceMs = clip.sourceStartMs + fraction * (clip.sourceEndMs - clip.sourceStartMs);
+        const peakIndex = Math.min(peaks.length - 1, Math.max(0, Math.round(sourceMs / takeDuration * (peaks.length - 1))));
+        const amplitude = Math.min(1, Math.abs(Number(peaks[peakIndex]) || 0)) * height * .42;
+        const x = left + fraction * (right - left);
+        context.moveTo(x, height / 2 - amplitude); context.lineTo(x, height / 2 + amplitude);
+      }
+      context.stroke();
+      context.strokeStyle = "rgba(255,255,255,.25)"; context.beginPath(); context.moveTo(left, 0); context.lineTo(left, height); context.stroke();
     }
-    context.stroke();
+    const startX = durationMs ? Math.min(selection.startMs, selection.endMs) / durationMs * width : 0;
+    const endX = durationMs ? Math.max(selection.startMs, selection.endMs) / durationMs * width : 0;
+    if (endX > startX) {
+      context.fillStyle = "rgba(56,189,248,.28)"; context.fillRect(startX, 0, endX - startX, height);
+      context.strokeStyle = "#7dd3fc"; context.lineWidth = 2; context.strokeRect(startX, 1, endX - startX, height - 2);
+    }
     for (const marker of state.markers) {
       const x = durationMs ? (marker.positionMs / durationMs) * width : 0;
       context.strokeStyle = marker.type === "TEACHER_FEEDBACK" ? "#ef4444" : "#60a5fa"; context.beginPath(); context.moveTo(x, 0); context.lineTo(x, height); context.stroke();
     }
     const cursorX = durationMs ? (cursorMs / durationMs) * width : 0;
     context.strokeStyle = "#fff"; context.beginPath(); context.moveTo(cursorX, 0); context.lineTo(cursorX, height); context.stroke();
-  }, [cursorMs, durationMs, peaks, selection, state.markers, zoom]);
+  }, [cursorMs, durationMs, editor?.takes, selection, state.clips, state.markers, zoom]);
 
   function commit(next, label = "Edit") {
     setHistory((items) => pushHistory(items, state)); setFuture([]); setState(next); setLastAction(label);
@@ -146,14 +173,54 @@ export default function WaveformEditorClient({ requestedProjectId = "", experien
     commit({ ...state, mastering: nextMastering, normalize: nextMastering.enabled, targetLufs: nextMastering.targetLufs }, label);
   }
   function undo() {
-    if (!history.length) return;
+    if (!canEdit || !history.length) return;
     setFuture((items) => pushHistory(items, state)); setState(history.at(-1)); setHistory((items) => items.slice(0, -1)); setLastAction("Undo");
   }
   function redo() {
-    if (!future.length) return;
+    if (!canEdit || !future.length) return;
     setHistory((items) => pushHistory(items, state)); setState(future.at(-1)); setFuture((items) => items.slice(0, -1)); setLastAction("Redo");
   }
-  function editClips(operation, label = "Timeline edit") { commit({ ...state, clips: operation(state.clips) }, label); }
+  function editClips(operation, label = "Timeline edit") {
+    if (!canEdit) return;
+    commit({ ...state, clips: operation(state.clips) }, label);
+  }
+
+  function wavePosition(event) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    return waveformTimeAtPointer(event.clientX, rect.left, rect.width, durationMs);
+  }
+
+  function onWavePointerDown(event) {
+    if (event.button !== 0 || !durationMs) return;
+    event.preventDefault();
+    const position = wavePosition(event);
+    dragRef.current = { pointerId: event.pointerId, startMs: position, startX: event.clientX, moved: false };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setCursorMs(position);
+    if (editTool === "SELECT") setSelection({ startMs: position, endMs: position });
+  }
+
+  function onWavePointerMove(event) {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId || editTool !== "SELECT") return;
+    if (Math.abs(event.clientX - drag.startX) >= 3) drag.moved = true;
+    if (drag.moved) setSelection(waveformDragSelection(drag.startMs, wavePosition(event)));
+  }
+
+  function onWavePointerUp(event) {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const position = wavePosition(event);
+    if (editTool === "SELECT") {
+      setSelection(drag.moved ? waveformDragSelection(drag.startMs, position) : { startMs: position, endMs: position });
+      setCursorMs(drag.moved ? Math.min(drag.startMs, position) : position);
+    } else if (advanced && canEdit) {
+      editClips((clips) => splitAt(clips, position, newId), "Blade at cursor");
+      setCursorMs(position);
+    }
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    dragRef.current = null;
+  }
 
   function copyCurrentSelection() {
     const copied = copySelection(state.clips, selection.startMs, selection.endMs);
@@ -162,10 +229,27 @@ export default function WaveformEditorClient({ requestedProjectId = "", experien
   }
 
   function cutCurrentSelection() {
+    if (!canEdit || !hasSelection) return;
     const copied = copySelection(state.clips, selection.startMs, selection.endMs);
     if (!copied.clips.length) return;
     setClipboard(copied);
     editClips((clips) => deleteSelection(clips, selection.startMs, selection.endMs, true, newId), "Cut selection");
+    const start = Math.min(selection.startMs, selection.endMs);
+    setSelection({ startMs: start, endMs: start }); setCursorMs(start);
+  }
+
+  function deleteCurrentSelection(keepGap = false) {
+    if (!canEdit || !hasSelection) return;
+    editClips((clips) => deleteSelection(clips, selection.startMs, selection.endMs, !keepGap, newId), keepGap ? "Delete and keep gap" : "Delete selection");
+    const start = Math.min(selection.startMs, selection.endMs);
+    setSelection({ startMs: start, endMs: start }); setCursorMs(start);
+  }
+
+  function silenceCurrentSelection() {
+    if (!canEdit || !hasSelection) return;
+    editClips((clips) => silenceSelection(clips, selection.startMs, selection.endMs, newId), "Silence selection");
+    const start = Math.min(selection.startMs, selection.endMs);
+    setSelection({ startMs: start, endMs: start }); setCursorMs(start);
   }
 
   function pasteAtCursor() {
@@ -174,6 +258,7 @@ export default function WaveformEditorClient({ requestedProjectId = "", experien
   }
 
   function moveSelection(direction) {
+    if (!canEdit || !hasSelection) return;
     const start = Math.min(selection.startMs, selection.endMs);
     const end = Math.max(selection.startMs, selection.endMs);
     const ordered = [...state.clips].sort((a, b) => a.timelineStartMs - b.timelineStartMs);
@@ -196,11 +281,10 @@ export default function WaveformEditorClient({ requestedProjectId = "", experien
 
   useEffect(() => {
     const onKey = (event) => {
-      if (["INPUT", "SELECT", "TEXTAREA"].includes(event.target?.tagName) || undoOrRedo(event)) return;
+      if (["INPUT", "SELECT", "TEXTAREA", "BUTTON"].includes(event.target?.tagName) || event.target?.isContentEditable || undoOrRedo(event)) return;
       if (event.code === "Space") { event.preventDefault(); playFromCursor(); }
-      if (event.key.toLowerCase() === "s") editClips((clips) => splitAt(clips, cursorMs, newId), "Split at cursor");
-      if (event.key === "Backspace") { event.preventDefault(); editClips((clips) => deleteSelection(clips, selection.startMs, selection.endMs, true, newId), "Ripple delete"); }
-      if (event.key === "Delete") editClips((clips) => deleteSelection(clips, selection.startMs, selection.endMs, false, newId), "Delete and keep gap");
+      if (event.key.toLowerCase() === "s" && canEdit) editClips((clips) => splitAt(clips, cursorMs, newId), "Split at cursor");
+      if (event.key === "Backspace" || event.key === "Delete") { event.preventDefault(); deleteCurrentSelection(event.shiftKey && advanced); }
       if (event.key.toLowerCase() === "l") setLooping((value) => !value);
     };
     window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey);
@@ -253,22 +337,24 @@ export default function WaveformEditorClient({ requestedProjectId = "", experien
     {error ? <div style={s.error}>{error}</div> : null}{message ? <div style={s.notice}>{message}</div> : null}
     {editor?.restrictedReadOnly ? <div style={s.error}>This project contains Studio Pro edits. They remain intact, but editing and rendering are read-only on the current Basic plan.</div> : null}
     <label style={s.label}>AudioLab project<select style={s.input} value={projectId} onChange={(event) => setProjectId(event.target.value)}>{projects.map((project) => <option key={project.id} value={project.id}>{project.title}</option>)}</select></label>
-    {editor && !state.clips.length ? <div style={s.empty}><p style={s.hint}>Choose a protected take to place it on the timeline. Its source file will remain unchanged.</p><div style={s.actions}>{editor.takes.map((take) => <button key={take.id} style={s.primary} disabled={working || !take.durationMs} onClick={() => send("INITIALIZE", { takeId: take.id })}>Use {take.mediaAsset.name} {take.waveformStatus === "READY" ? "· waveform ready" : "· analysing"}</button>)}</div></div> : null}
+    {editor && !state.clips.length ? <div style={s.empty}><p style={s.hint}>{history.length ? "The timeline is empty. Undo the edit to restore your wave, or start again from a protected take." : "Choose a protected take to place it on the timeline. Its source file will remain unchanged."}</p><div style={s.actions}>{history.length ? <button type="button" style={s.secondary} disabled={!canEdit} onClick={undo}>↶ Undo and restore wave</button> : null}{editor.takes.map((take) => <button key={take.id} style={s.primary} disabled={working || editor.restrictedReadOnly || !take.durationMs} onClick={() => send("INITIALIZE", { takeId: take.id })}>Use {take.mediaAsset.name} {take.waveformStatus === "READY" ? "· waveform ready" : "· analysing"}</button>)}</div></div> : null}
     {state.clips.length ? <>
       <div style={s.paneTabs} role="tablist" aria-label="Waveform workflow">
-        <button type="button" role="tab" aria-selected={activePane === "EDIT"} style={activePane === "EDIT" ? s.paneActive : s.paneTab} onClick={() => setActivePane("EDIT")}><strong>Edit audio</strong><span>Timeline and precision tools</span></button>
-        <button type="button" role="tab" aria-selected={activePane === "CLEAN"} style={activePane === "CLEAN" ? s.paneActive : s.paneTab} onClick={() => setActivePane("CLEAN")}><strong>Clean voice</strong><span>Repair and compare</span></button>
-        <button type="button" role="tab" aria-selected={activePane === "MASTER"} style={activePane === "MASTER" ? s.paneActive : s.paneTab} onClick={() => setActivePane("MASTER")}><strong>Effects & master</strong><span>Style, loudness and quality</span></button>
+        <button type="button" role="tab" aria-selected={activePane === "EDIT"} style={{ ...(activePane === "EDIT" ? s.paneActive : s.paneTab), ...s.paneVisual }} onClick={() => setActivePane("EDIT")}><span style={s.paneIcon} aria-hidden="true">✂</span><strong>Edit audio</strong><small>Cut and arrange</small></button>
+        <button type="button" role="tab" aria-selected={activePane === "CLEAN"} style={{ ...(activePane === "CLEAN" ? s.paneActive : s.paneTab), ...s.paneVisual }} onClick={() => setActivePane("CLEAN")}><span style={{ ...s.paneIcon, background: "linear-gradient(135deg,#53dfc8,#66aef2)" }} aria-hidden="true">✦</span><strong>Clean voice</strong><small>Repair sound</small></button>
+        <button type="button" role="tab" aria-selected={activePane === "MASTER"} style={{ ...(activePane === "MASTER" ? s.paneActive : s.paneTab), ...s.paneVisual }} onClick={() => setActivePane("MASTER")}><span style={{ ...s.paneIcon, background: "linear-gradient(135deg,#b38dff,#f29ac1)" }} aria-hidden="true">◉</span><strong>Effects & master</strong><small>Polish output</small></button>
       </div>
       {activePane === "EDIT" ? <>
-      <div style={s.toolbar}><button style={s.primary} onClick={playFromCursor}>▶ Play / pause</button>{advanced ? <><button aria-pressed={editTool === "SELECT"} style={editTool === "SELECT" ? s.active : s.secondary} onClick={() => setEditTool("SELECT")}>Select tool</button><button aria-pressed={editTool === "BLADE"} style={editTool === "BLADE" ? s.active : s.secondary} onClick={() => setEditTool("BLADE")}>✂ Blade tool</button></> : null}<button style={looping ? s.active : s.secondary} onClick={() => setLooping(!looping)}>↻ Loop selection</button><button style={s.secondary} disabled={!hasSelection} onClick={copyCurrentSelection}>Copy</button><button style={s.secondary} disabled={!hasSelection} onClick={cutCurrentSelection}>Cut</button><button style={s.secondary} disabled={!clipboard.clips.length} onClick={pasteAtCursor}>Paste at cursor</button><button style={s.secondary} disabled={!history.length} onClick={undo}>Undo</button><button style={s.secondary} disabled={!future.length} onClick={redo}>Redo</button><button style={s.secondary} onClick={() => setZoom(1)}>Fit Project</button><button style={s.secondary} disabled={!hasSelection} onClick={() => setZoom(Math.min(5, Math.max(1, durationMs / Math.max(1, Math.abs(selection.endMs-selection.startMs)))))}>Fit Selection</button><label style={s.inline}>Zoom <input type="range" min="1" max="5" step=".5" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} /></label></div>
+      <div style={s.toolbar} aria-label="Waveform tools"><button type="button" style={s.primary} onClick={playFromCursor}>▶ Play / pause</button><button type="button" aria-pressed={editTool === "SELECT"} style={editTool === "SELECT" ? s.active : s.secondary} onClick={() => setEditTool("SELECT")}>╎ Select</button>{advanced ? <button type="button" aria-pressed={editTool === "BLADE"} style={editTool === "BLADE" ? s.active : s.secondary} onClick={() => setEditTool("BLADE")}>✂ Blade</button> : null}<button type="button" style={looping ? s.active : s.secondary} onClick={() => setLooping(!looping)}>↻ Loop</button><button type="button" style={s.secondary} disabled={!history.length || !canEdit} onClick={undo}>↶ Undo</button><button type="button" style={s.secondary} disabled={!future.length || !canEdit} onClick={redo}>↷ Redo</button><button type="button" style={s.secondary} onClick={() => setZoom(1)}>Fit wave</button><label style={s.inline}>Zoom <input type="range" min="1" max="5" step=".5" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} /></label></div>
+      <p style={s.dragHint}>{editTool === "BLADE" ? "✂ Click the wave where you want to split it." : "╎ Hold the left mouse button and drag across the wave to highlight a section."}</p>
       <p style={s.history}>Edit history: {history.length} undo step{history.length === 1 ? "" : "s"} · {future.length} redo step{future.length === 1 ? "" : "s"} · Latest: {lastAction}</p>
-      <div style={s.canvasWrap}><canvas ref={canvasRef} role="img" aria-label={`${editTool === "BLADE" ? "Blade" : "Select"} tool on detailed waveform timeline. Use the time fields and keyboard controls for precise editing.`} onClick={(event) => { const rect = event.currentTarget.getBoundingClientRect(); const position = Math.round(((event.clientX - rect.left) / rect.width) * durationMs); setCursorMs(position); if (advanced && editTool === "BLADE") editClips((clips) => hasSelection ? splitAt(splitAt(clips, Math.min(selection.startMs, selection.endMs), newId), Math.max(selection.startMs, selection.endMs), newId) : splitAt(clips, position, newId), hasSelection ? "Blade at selection boundaries" : "Blade at cursor"); }} /></div>
+      <div style={s.canvasWrap}><canvas ref={canvasRef} role="img" aria-label={`${editTool === "BLADE" ? "Blade: click to split" : "Select: drag to highlight"} on the waveform. Time fields below allow precise adjustment.`} style={{ cursor: editTool === "BLADE" ? "crosshair" : "text", touchAction: "none" }} onPointerDown={onWavePointerDown} onPointerMove={onWavePointerMove} onPointerUp={onWavePointerUp} onPointerCancel={() => { dragRef.current = null; }} /></div>
+      <div style={s.selectionBar} aria-live="polite"><div style={s.selectionSummary}><strong>{hasSelection ? `${seconds(Math.abs(selection.endMs - selection.startMs))} seconds selected` : "Select part of the wave"}</strong><span>{hasSelection ? `${seconds(Math.min(selection.startMs, selection.endMs))}–${seconds(Math.max(selection.startMs, selection.endMs))} s · Choose an edit below.` : "Drag from left to right—or right to left—then choose an edit."}</span></div><div style={s.selectionActions}><button type="button" style={{ ...s.cutButton, opacity: hasSelection && canEdit ? 1 : .48 }} disabled={!hasSelection || !canEdit} onClick={cutCurrentSelection}>✂ Cut selection</button><button type="button" style={{ ...s.deleteButton, opacity: hasSelection && canEdit ? 1 : .48 }} disabled={!hasSelection || !canEdit} onClick={() => deleteCurrentSelection()}>⌫ Delete selection</button><button type="button" style={{ ...s.silenceButton, opacity: hasSelection && canEdit ? 1 : .48 }} disabled={!hasSelection || !canEdit} onClick={silenceCurrentSelection}>◌ Silence selection</button></div></div>
       {sourceTake ? <audio ref={audioRef} src={`/api/media/${sourceTake.mediaAsset.id}/stream`} onTimeUpdate={onAudioTime} onEnded={() => setCursorMs(0)} preload="metadata" /> : null}
       <div style={s.timeGrid}><label style={s.label}>Cursor (seconds)<input style={s.input} type="number" min="0" max={seconds(durationMs)} step=".01" value={seconds(cursorMs)} onChange={(event) => setCursorMs(milliseconds(event.target.value))} /></label><label style={s.label}>Selection start<input style={s.input} type="number" min="0" max={seconds(durationMs)} step=".01" value={seconds(selection.startMs)} onChange={(event) => setSelection({ ...selection, startMs: milliseconds(event.target.value) })} /></label><label style={s.label}>Selection end<input style={s.input} type="number" min="0" max={seconds(durationMs)} step=".01" value={seconds(selection.endMs)} onChange={(event) => setSelection({ ...selection, endMs: milliseconds(event.target.value) })} /></label><div style={s.duration}>Selection duration<br /><strong>{seconds(Math.abs(selection.endMs-selection.startMs))} s</strong></div><div style={s.duration}>Project length<br /><strong>{seconds(durationMs)} s</strong></div></div>
-      <div style={s.actions}><button style={s.secondary} onClick={() => editClips((clips) => splitAt(clips, cursorMs, newId), "Split at cursor")}>Split at cursor</button><button style={s.secondary} disabled={!hasSelection} onClick={() => editClips((clips) => deleteSelection(clips, selection.startMs, selection.endMs, true, newId), "Ripple delete")}>Ripple delete</button><button style={s.secondary} disabled={!hasSelection} onClick={() => editClips((clips) => silenceSelection(clips, selection.startMs, selection.endMs, newId), "Replace with silence")}>Replace with silence</button><button style={s.secondary} disabled={!hasSelection} onClick={() => editClips((clips) => trimToSelection(clips, selection.startMs, selection.endMs, newId), "Crop to selection")}>Crop / trim to selection</button></div>
+      <details style={s.moreTools}><summary>More edit tools</summary><div style={s.actions}><button type="button" style={s.secondary} disabled={!canEdit} onClick={() => editClips((clips) => splitAt(clips, cursorMs, newId), "Split at cursor")}>Split at cursor</button><button type="button" style={s.secondary} disabled={!hasSelection} onClick={copyCurrentSelection}>Copy</button><button type="button" style={s.secondary} disabled={!clipboard.clips.length || !canEdit} onClick={pasteAtCursor}>Paste at cursor</button><button type="button" style={s.secondary} disabled={!hasSelection} onClick={() => setZoom(Math.min(5, Math.max(1, durationMs / Math.max(1, Math.abs(selection.endMs-selection.startMs)))))}>Fit selection</button><button type="button" style={s.secondary} disabled={!hasSelection || !canEdit} onClick={() => editClips((clips) => trimToSelection(clips, selection.startMs, selection.endMs, newId), "Crop to selection")}>Crop to selection</button></div></details>
       {advanced ? <div style={s.advanced}>
-        <div style={s.actions}><button style={s.secondary} disabled={!hasSelection} onClick={() => editClips((clips) => duplicateSelection(clips, selection.startMs, selection.endMs, newId), "Duplicate selection")}>Duplicate selection</button><button style={s.secondary} onClick={() => moveSelection(-1)}>Move earlier</button><button style={s.secondary} onClick={() => moveSelection(1)}>Move later</button><button style={s.secondary} disabled={!hasSelection} onClick={() => editClips((clips) => deleteSelection(clips, selection.startMs, selection.endMs, false, newId), "Delete and keep gap")}>Delete, keep gap</button></div>
+        <div style={s.actions}><button style={s.secondary} disabled={!hasSelection || !canEdit} onClick={() => editClips((clips) => duplicateSelection(clips, selection.startMs, selection.endMs, newId), "Duplicate selection")}>Duplicate selection</button><button style={s.secondary} disabled={!canEdit} onClick={() => moveSelection(-1)}>Move earlier</button><button style={s.secondary} disabled={!canEdit} onClick={() => moveSelection(1)}>Move later</button><button style={s.secondary} disabled={!hasSelection || !canEdit} onClick={() => deleteCurrentSelection(true)}>Delete, keep gap</button></div>
         <div style={s.timeGrid}><label style={s.label}>Selection gain (dB)<input style={s.input} type="number" min="-36" max="18" step=".5" defaultValue="0" onBlur={(event) => editClips((clips) => adjustSelection(clips, selection.startMs, selection.endMs, { gainDb: Number(event.target.value) }))} /></label><label style={s.label}>Fade-in handle<input aria-label="Fade-in handle" type="range" min="0" max={Math.min(60000, Math.abs(selection.endMs-selection.startMs))} step="10" defaultValue="0" onChange={(event) => editClips((clips) => adjustSelection(clips, selection.startMs, selection.endMs, { fadeInMs: Number(event.target.value) }))} /></label><label style={s.label}>Fade-out handle<input aria-label="Fade-out handle" type="range" min="0" max={Math.min(60000, Math.abs(selection.endMs-selection.startMs))} step="10" defaultValue="0" onChange={(event) => editClips((clips) => adjustSelection(clips, selection.startMs, selection.endMs, { fadeOutMs: Number(event.target.value) }))} /></label></div>
         <div style={s.markerRow}><input style={s.input} value={markerLabel} onChange={(event) => setMarkerLabel(event.target.value)} placeholder="Marker or region name" /><select style={s.input} value={markerType} onChange={(event) => setMarkerType(event.target.value)}>{MARKER_TYPES.map((type) => <option key={type} value={type}>{type.replaceAll("_", " ")}</option>)}</select><button style={s.secondary} onClick={addMarker}>Add marker</button><button style={s.secondary} disabled={!hasSelection} onClick={addRegion}>Add named region</button></div>
         <div style={s.markerList}>{state.markers.map((marker) => <button key={marker.clientId} style={s.marker} onClick={() => setCursorMs(marker.positionMs)}>{seconds(marker.positionMs)} · {marker.type.replaceAll("_", " ")} · {marker.label}</button>)}</div>
@@ -361,6 +447,15 @@ function QualitySummary({ report }) {
 }
 
 const s = {
+  paneVisual: { display: "grid", gridTemplateColumns: "42px minmax(0,1fr)", gridTemplateRows: "auto auto", alignItems: "center", columnGap: 10, minHeight: 72, backgroundImage: "linear-gradient(115deg,rgba(70,134,173,.08),transparent)" },
+  paneIcon: { display: "grid", gridRow: "1 / 3", placeItems: "center", width: 38, height: 38, borderRadius: 11, background: "linear-gradient(135deg,#f8c95e,#ed8b5a)", color: "#17243b", fontSize: 22, boxShadow: "0 7px 20px rgba(244,185,66,.22)" },
+  dragHint: { borderLeft: "4px solid #2dd4bf", background: "linear-gradient(90deg,rgba(45,212,191,.14),rgba(96,165,250,.06))", borderRadius: 9, padding: "10px 13px", color: "var(--rv-text)", fontSize: 13, fontWeight: 800, margin: "4px 0 10px" },
+  selectionBar: { display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 14, marginTop: 12, padding: 16, border: "1px solid #3c6477", borderRadius: 13, background: "linear-gradient(110deg,#142638,#20324e)", color: "#fff" },
+  selectionSummary: { display: "grid", gap: 4, fontSize: 13 },
+  selectionActions: { display: "flex", flexWrap: "wrap", gap: 8 },
+  cutButton: { border: 0, borderRadius: 9, padding: "10px 13px", background: "#f8c45d", color: "#17243b", fontWeight: 900, cursor: "pointer" },
+  deleteButton: { border: 0, borderRadius: 9, padding: "10px 13px", background: "#ff9a89", color: "#17243b", fontWeight: 900, cursor: "pointer" },
+  silenceButton: { border: 0, borderRadius: 9, padding: "10px 13px", background: "#54ddcc", color: "#17243b", fontWeight: 900, cursor: "pointer" },
+  moreTools: { marginTop: 12, border: "1px solid var(--rv-border)", borderRadius: 10, padding: "10px 13px", color: "var(--rv-text)", fontWeight: 800 },
   panel: { border: "1px solid var(--rv-border)", borderRadius: 16, background: "var(--rv-surface)", padding: 22, marginBottom: 22 }, heading: { display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: 16, marginBottom: 16 }, eyebrow: { color: "#f4b942", fontSize: 12, fontWeight: 900, letterSpacing: 1.1, margin: "0 0 7px" }, title: { margin: "0 0 8px", fontSize: 28 }, cardTitle: { margin: "0 0 6px", fontSize: 20 }, sectionTitle: { margin: "18px 0 8px", fontSize: 15, color: "var(--rv-warning-text)" }, hint: { color: "var(--rv-text-muted)", lineHeight: 1.5, fontSize: 13 }, label: { display: "grid", gap: 6, color: "var(--rv-text)", fontWeight: 800, fontSize: 13 }, input: { width: "100%", boxSizing: "border-box", border: "1px solid var(--rv-border)", borderRadius: 7, background: "var(--rv-input-bg)", color: "var(--rv-input-text)", padding: "10px 11px", font: "inherit" }, compact: { border: "1px solid var(--rv-border)", borderRadius: 7, background: "var(--rv-input-bg)", padding: "7px" }, primary: { border: 0, borderRadius: 7, background: "#f4b942", color: "#101827", padding: "10px 13px", fontWeight: 900, cursor: "pointer" }, secondary: { border: "1px solid var(--rv-border)", borderRadius: 7, background: "transparent", color: "var(--rv-text)", padding: "9px 12px", fontWeight: 800, cursor: "pointer" }, active: { border: "1px solid #60a5fa", borderRadius: 7, background: "#1d4ed8", color: "#fff", padding: "9px 12px", fontWeight: 800 }, actions: { display: "flex", flexWrap: "wrap", gap: 8 }, toolbar: { display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", margin: "16px 0 10px" }, paneTabs: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 8, marginTop: 16 }, paneTab: { display: "grid", gap: 3, textAlign: "left", border: "1px solid var(--rv-border)", borderRadius: 9, background: "var(--rv-surface-muted)", color: "var(--rv-text)", padding: 12, cursor: "pointer" }, paneActive: { display: "grid", gap: 3, textAlign: "left", border: "2px solid #f4b942", borderRadius: 9, background: "var(--rv-warning-bg)", color: "var(--rv-text)", padding: 11, cursor: "pointer" }, history: { color: "var(--rv-info-text)", fontSize: 12, margin: "0 0 10px" }, inline: { display: "flex", gap: 8, alignItems: "center", color: "var(--rv-text)", fontWeight: 800, fontSize: 13 }, canvasWrap: { overflowX: "auto", border: "1px solid var(--rv-border)", borderRadius: 10, touchAction: "pan-x" }, timeGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 10, margin: "12px 0" }, duration: { color: "var(--rv-text-muted)", alignSelf: "end", padding: 8 }, advanced: { border: "1px solid #334155", background: "var(--rv-surface)", borderRadius: 10, padding: 14, marginTop: 12 }, markerRow: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 8 }, markerList: { display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }, marker: { background: "var(--rv-surface)", border: "1px solid var(--rv-border)", color: "var(--rv-info-text)", borderRadius: 999, padding: "6px 10px" }, cleanup: { border: "1px solid #49617e", background: "var(--rv-surface-muted)", borderRadius: 12, padding: 16, marginTop: 16 }, cleanupHeading: { display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: 12 }, cleanupOn: { alignSelf: "start", borderRadius: 999, background: "var(--rv-success-bg)", color: "var(--rv-success-text)", padding: "6px 10px", fontSize: 12, fontWeight: 900 }, cleanupOff: { alignSelf: "start", borderRadius: 999, background: "var(--rv-surface)", color: "var(--rv-text)", padding: "6px 10px", fontSize: 12, fontWeight: 900 }, presetGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(155px,1fr))", gap: 9, marginTop: 12 }, preset: { display: "grid", gap: 5, textAlign: "left", border: "1px solid var(--rv-border)", borderRadius: 9, background: "var(--rv-surface)", color: "var(--rv-text)", padding: 12, cursor: "pointer" }, presetActive: { display: "grid", gap: 5, textAlign: "left", border: "2px solid #f4b942", borderRadius: 9, background: "var(--rv-warning-bg)", color: "var(--rv-text)", padding: 11, cursor: "pointer" }, cleanupControls: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 12, borderTop: "1px solid #334155", marginTop: 14, paddingTop: 14 }, previewActions: { display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center", marginTop: 14 }, comparison: { borderTop: "1px solid #334155", marginTop: 14, paddingTop: 2 }, finish: { display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", borderTop: "1px solid #334155", marginTop: 16, paddingTop: 16 }, check: { display: "flex", gap: 7, alignItems: "center", color: "var(--rv-text)", fontWeight: 800, fontSize: 13 }, shortcuts: { color: "var(--rv-text-muted)", fontSize: 12 }, empty: { border: "1px dashed var(--rv-border)", borderRadius: 10, padding: 16, marginTop: 14 }, notice: { border: "1px solid #22c55e", background: "var(--rv-success-bg)", color: "var(--rv-success-text)", borderRadius: 8, padding: 12, marginBottom: 14 }, error: { border: "1px solid #ef4444", background: "var(--rv-error-bg)", color: "var(--rv-error-text)", borderRadius: 8, padding: 12, marginBottom: 14 }, renders: { marginTop: 16, background: "var(--rv-surface-muted)", borderRadius: 10, padding: 14 }, renderRow: { display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", borderTop: "1px solid #26364f", padding: "10px 0" }, qualityMuted: { display: "block", color: "var(--rv-text-muted)", marginTop: 4 }, qualityReady: { display: "block", color: "var(--rv-success-text)", marginTop: 4 }, qualityWarning: { display: "block", color: "var(--rv-warning-text)", marginTop: 4 }, qualityFindings: { display: "block", color: "var(--rv-warning-text)", marginTop: 3, maxWidth: 620 }, safety: { color: "var(--rv-text-muted)", fontSize: 12, margin: "16px 0 0" }
 };
-

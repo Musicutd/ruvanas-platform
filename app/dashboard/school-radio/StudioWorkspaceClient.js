@@ -8,10 +8,10 @@ import MultitrackStudioClient from "./MultitrackStudioClient";
 import styles from "./studio-workspace.module.css";
 
 const tools = [
-  { id: "projects", label: "Projects", description: "Recent work and progress" },
-  { id: "record", label: "Record", description: "Create or retake audio" },
-  { id: "waveform", label: "Waveform", description: "Precision single-file edits" },
-  { id: "multitrack", label: "Multitrack", description: "Voice, music and jingles" }
+  { id: "projects", label: "Projects", description: "Your work", icon: "▦" },
+  { id: "record", label: "Record", description: "Capture audio", icon: "●" },
+  { id: "waveform", label: "Waveform", description: "Cut & polish", icon: "〰" },
+  { id: "multitrack", label: "Multitrack", description: "Layer sounds", icon: "≋" }
 ];
 
 const projectTypeLabels = {
@@ -124,7 +124,8 @@ export default function StudioWorkspaceClient() {
             onClick={() => selectTool(tool.id)}
             onKeyDown={(event) => handleTabKeyDown(event, index)}
           >
-            <span>{tool.label}</span>
+            <span className={styles.tabIcon} aria-hidden="true">{tool.icon}</span>
+            <span className={styles.tabTitle}>{tool.label}</span>
             <small>{tool.description}</small>
           </button>;
         })}

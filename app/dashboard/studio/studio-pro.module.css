@@ -22,3 +22,13 @@
 @media(max-width:700px){.hero{min-height:0;padding:25px}.heroArt{display:none}.planBadge{position:static;align-self:start}.tabs{grid-template-columns:repeat(2,minmax(0,1fr))}.libraryIntro{display:grid;padding:19px}.libraryProtection{max-width:none}.libraryControls{grid-template-columns:1fr}.libraryTrack{grid-template-columns:50px minmax(0,1fr);gap:10px}.trackArtwork{width:50px;height:50px}.trackFacts{grid-column:2;display:flex;align-items:center;justify-items:start;gap:9px}}
 @media(max-width:430px){.tabs{grid-template-columns:1fr}.heroActions{display:grid}.heroActions button{width:100%}}
 @media(prefers-reduced-motion:reduce){.heroActions button,.tabs button,.libraryTrack{transition:none}.heroActions button:hover,.tabs button:hover,.libraryTrack:hover{transform:none}}
+
+/* Icon-led Studio navigation keeps the labels short and the workspaces distinct. */
+.tabs button{display:flex;align-items:center;gap:12px;min-height:88px}
+.tabs button:before{display:none}
+.tabIcon{display:grid;flex:none;place-items:center;width:46px;height:46px;border-radius:14px;background:var(--tab-accent);color:#142039;font-size:25px;font-weight:900;box-shadow:0 8px 22px color-mix(in srgb,var(--tab-accent) 30%,transparent)}
+.tabText{display:grid;gap:4px;min-width:0}
+.tabText strong{font-size:14px;line-height:1.15}
+.tabText small{font-size:11px;color:var(--rv-text-muted)}
+.tabs button[aria-selected="true"]{background:color-mix(in srgb,var(--tab-accent) 13%,var(--rv-surface))}
+@media(max-width:700px){.tabs button{min-height:76px}.tabIcon{width:39px;height:39px;font-size:21px}}

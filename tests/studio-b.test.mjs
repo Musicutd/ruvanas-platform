@@ -33,7 +33,9 @@ test("Studio B connects recording and precision editing to protected existing sy
   assert.match(recorder, />Retake</);
   assert.match(recorder, /targetTrackId/);
   assert.match(waveform, />Copy</);
-  assert.match(waveform, />Cut</);
+  assert.match(waveform, /Cut selection/);
+  assert.match(waveform, /onPointerDown=\{onWavePointerDown\}/);
+  assert.match(waveform, /Silence selection/);
   assert.match(waveform, /Paste at cursor/);
   assert.match(waveform, /Add named region/);
   assert.match(waveform, /Edit history:/);
