@@ -107,3 +107,26 @@ test("complimentary snapshots preserve product and catalogue authority", () => {
   assert.equal(cleared.complimentaryOnlineRadioEnabled, null);
   assert.equal(cleared.complimentaryLicensedMusicCatalogueLevel, null);
 });
+
+
+test("Online Network complimentary access unlocks Studio Pro without changing billing", () => {
+  const network = { ...tier, code: "ONLINE_NETWORK", name: "Online Network", productFamily: "ONLINE", tierNumber: 5 };
+  const subscription = {
+    status: "SUSPENDED",
+    plan: { ...network, code: "ONLINE_START", tierNumber: 1 },
+    complimentaryAccessActive: true,
+    ...complimentaryPlanSnapshot(network)
+  };
+  const access = resolveEntitlements(subscription);
+  assert.equal(access.accessReason, "COMPLIMENTARY_ACCESS");
+  assert.equal(access.planTierNumber, 5);
+  assert.equal(access.planProductFamily, "ONLINE");
+  assert.equal(access.studioProEnabled, true);
+  assert.equal(access.studioExternalDestinationLimit, 10);
+
+  const legacy = { ...subscription, complimentaryPlanTierNumber: null, complimentaryPlanProductFamily: null };
+  assert.equal(resolveEntitlements(legacy).studioProEnabled, true);
+
+  const unknown = { ...legacy, complimentaryPlanCode: "CUSTOM_UNKNOWN", plan: { ...network, code: "OTHER" } };
+  assert.equal(resolveEntitlements(unknown).studioProEnabled, false);
+});

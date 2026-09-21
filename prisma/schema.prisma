@@ -2350,6 +2350,9 @@ model Subscription {
   complimentaryAccessActivatedAt             DateTime?
   complimentaryPlanName                      String?
   complimentaryPlanCode                      String?
+  complimentaryPlanTierNumber                Int?
+  complimentaryPlanProductFamily             PlanProductFamily?
+  complimentaryStudioExternalDestinationLimit Int?
   complimentaryStationLimit                  Int?
   complimentaryStorageLimitGb                Int?
   complimentaryListenerLimit                 Int?
