@@ -7,6 +7,7 @@ import { readPromoOnlyConfig } from "@/lib/promo-only.mjs";
 import { PromoOnlyApiClient } from "@/lib/promo-only-client.mjs";
 import { promoOnlyPayloadHash } from "@/lib/promo-only.mjs";
 import { syncPromoOnlyGenre } from "@/lib/provider-genre-service";
+import { parseCatalogueTerritories } from "@/lib/catalogue-territories.mjs";
 
 const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("SET_TIER"), minimumCatalogueLevel: z.enum(["FOCUSED", "PROFESSIONAL", "PREMIUM"]) }).strict(),
@@ -58,9 +59,11 @@ export async function PATCH(request, { params }) {
       });
     } else if (action === "ENABLE") {
       if (!item.trackId || item.status !== "ACTIVE" || !item.canonicalGenre?.active || item.canonicalGenre.providerReviewStatus !== "APPROVED") return NextResponse.json({ error: "Import audio, approve the genre and confirm the provider is active first." }, { status: 409 });
+      const territories = parseCatalogueTerritories(parsed.data.permittedTerritories, { allowWorldwide: false });
+      if (!territories.ok) return NextResponse.json({ error: territories.error }, { status: 400 });
       await prisma.$transaction(async (tx) => {
-        await tx.track.update({ where: { id: item.trackId }, data: { status: "READY", rightsReference: parsed.data.rightsReference, permittedUses: parsed.data.permittedUses, permittedTerritories: parsed.data.permittedTerritories, rightsReviewStatus: "APPROVED", rightsReviewedAt: new Date(), rightsReviewedById: access.user.id, rightsConfirmedAt: new Date(), rightsConfirmedById: access.user.id } });
-        await tx.musicDistributorTrack.update({ where: { id: item.id }, data: { permittedUses: parsed.data.permittedUses, permittedTerritories: parsed.data.permittedTerritories.split(/[,;\n]/).map((value) => value.trim()).filter(Boolean), autoDjReady: true, importState: "AUTODJ_READY", audioStatus: "READY" } });
+        await tx.track.update({ where: { id: item.trackId }, data: { status: "READY", rightsReference: parsed.data.rightsReference, permittedUses: parsed.data.permittedUses, permittedTerritories: territories.codes.join(", "), rightsReviewStatus: "APPROVED", rightsReviewedAt: new Date(), rightsReviewedById: access.user.id, rightsConfirmedAt: new Date(), rightsConfirmedById: access.user.id } });
+        await tx.musicDistributorTrack.update({ where: { id: item.id }, data: { permittedUses: parsed.data.permittedUses, permittedTerritories: territories.codes, autoDjReady: true, importState: "AUTODJ_READY", audioStatus: "READY" } });
       });
     } else if (action === "RETRY_DOWNLOAD") {
       if (item.trackId || !["FAILED_RETRYABLE", "FAILED_PERMANENT"].includes(item.audioStatus)) return NextResponse.json({ error: "Only failed, unlinked audio can be retried." }, { status: 409 });

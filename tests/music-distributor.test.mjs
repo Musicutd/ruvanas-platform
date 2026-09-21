@@ -96,8 +96,21 @@ test("collection grants provide tier, territory and product-use defaults to thei
   }, connection);
   assert.equal(result.ok, true);
   assert.equal(result.data.tracks[0].minimumCatalogueLevel, "PREMIUM");
-  assert.deepEqual(result.data.tracks[0].permittedTerritories, ["US"]);
+  assert.deepEqual(result.data.tracks[0].permittedTerritories, []);
   assert.deepEqual(result.data.tracks[0].permittedUses, ["ONLINE_RADIO"]);
+});
+
+test("supplier territories cannot expand a Super Admin connection approval", () => {
+  const result = parseDistributorCataloguePage({ tracks: [track({ permittedTerritories: ["WORLDWIDE"] })] }, {
+    ...connection, defaultPermittedTerritories: ["EUROPE", "US", "CA"]
+  });
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.data.tracks[0].permittedTerritories, ["EUROPE", "US", "CA"]);
+  assert.equal(distributorTrackDecision(result.data.tracks[0], { catalogueLevel: "FOCUSED", territory: "MT" }).playable, true);
+  assert.equal(distributorTrackDecision(result.data.tracks[0], { catalogueLevel: "FOCUSED", territory: "US" }).playable, true);
+  assert.equal(distributorTrackDecision(result.data.tracks[0], { catalogueLevel: "FOCUSED", territory: "CA" }).playable, true);
+  assert.equal(distributorTrackDecision(result.data.tracks[0], { catalogueLevel: "FOCUSED", territory: "AU" }).reason, "TERRITORY_NOT_PERMITTED");
+  assert.equal(distributorTrackDecision(result.data.tracks[0], { catalogueLevel: "FOCUSED" }).reason, "TERRITORY_REQUIRED");
 });
 
 test("invalid rights windows and duplicate payload identifiers fail closed", () => {

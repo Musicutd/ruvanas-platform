@@ -6,6 +6,7 @@ import { MAX_CATALOGUE_FILE_SIZE_BYTES, parseCatalogueMetadata } from "@/lib/cat
 import { CatalogueTrackStorageError, storeCatalogueTrack } from "@/lib/catalogue-track-storage";
 import { securityLog } from "@/lib/security-log";
 import { parseNewCatalogueGenreNames } from "@/lib/catalogue-single-metadata.mjs";
+import { catalogueTerritoriesFromForm } from "@/lib/catalogue-territories.mjs";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -32,6 +33,8 @@ export async function POST(request) {
     if (file.size > MAX_CATALOGUE_FILE_SIZE_BYTES) {
       return NextResponse.json({ error: "The music file exceeds the 50 MB upload limit." }, { status: 413 });
     }
+    const territories = catalogueTerritoriesFromForm(formData);
+    if (!territories.ok) return NextResponse.json({ error: territories.error }, { status: 400 });
 
     const metadata = parseCatalogueMetadata({
       title: formData.get("title"),
@@ -44,7 +47,7 @@ export async function POST(request) {
       isExplicit: formData.get("isExplicit"),
       rightsHolder: formData.get("rightsHolder"),
       rightsReference: formData.get("rightsReference"),
-      permittedTerritories: formData.get("permittedTerritories"),
+      permittedTerritories: territories.codes.join(","),
       licenceExpiresAt: formData.get("licenceExpiresAt"),
       rightsConfirmed: formData.get("rightsConfirmed"),
       publishNow: formData.get("publishNow"),
