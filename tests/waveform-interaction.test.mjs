@@ -23,4 +23,8 @@ test("waveform offers pointer selection and direct cut, delete, silence actions"
   assert.match(source, /Cut selection/);
   assert.match(source, /Delete selection/);
   assert.match(source, /Silence selection/);
+  assert.match(source, /onDoubleClick=\{selectWholeWave\}/);
+  assert.match(source, /setSelection\(\{ startMs: 0, endMs: durationMs \}\)/);
+  assert.match(source, /Gain change in decibels/);
+  assert.match(source, /Apply dB change/);
 });
