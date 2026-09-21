@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getActiveOrganisationContext } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { cataloguePlaybackTrackInclude } from "@/lib/catalogue-playback-include";
 import { resolveEntitlements } from "@/lib/entitlements.mjs";
 import { canManageSubscriberProgramming } from "@/lib/subscriber-programming.mjs";
 import { musicModeIsPlayable } from "@/lib/music-mode-playback.mjs";
@@ -27,7 +28,7 @@ const policySchema = z.object({
 });
 
 const playbackModeInclude = {
-  tracks: { include: { track: { include: { mediaAsset: { include: { genres: { include: { mediaGenre: true } } } } } } } }
+  tracks: { include: { track: { include: cataloguePlaybackTrackInclude } } }
 };
 
 export async function PUT(request) {

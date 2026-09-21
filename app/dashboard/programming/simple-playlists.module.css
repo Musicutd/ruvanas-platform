@@ -3,6 +3,18 @@
 .panel h2, .panel h3, .panel p { margin: 0; }
 .panel h2 { font-size: clamp(24px, 3vw, 30px); }
 .panel p { line-height: 1.55; }
+.taskDetails { border: 1px solid var(--rv-border); border-radius: 16px; background: var(--rv-surface); }
+.taskDetails > summary { display: grid; grid-template-columns: 1fr auto; gap: 5px 12px; padding: 19px 22px; cursor: pointer; list-style: none; }
+.taskDetails > summary::-webkit-details-marker { display: none; }
+.taskDetails > summary span, .taskDetails > summary strong, .taskDetails > summary small { grid-column: 1; }
+.taskDetails > summary span { color: var(--rv-accent-text); font-size: 11px; font-weight: 900; letter-spacing: .08em; }
+.taskDetails > summary strong { font-size: 19px; }
+.taskDetails > summary small { color: var(--rv-text-muted); font-size: 13px; line-height: 1.4; }
+.taskDetails > summary::after { content: "+"; grid-column: 2; grid-row: 1 / 4; align-self: center; color: var(--rv-accent-text); font-size: 25px; font-weight: 700; }
+.taskDetails[open] > summary::after { content: "−"; }
+.taskDetails > summary:hover { background: var(--rv-surface-hover); }
+.taskDetails > summary:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+.taskDetails > .panel { margin: 0 14px 14px; }
 .kicker { color: #946000; font-size: 12px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
 .row { display: flex; flex-wrap: wrap; gap: 14px; }
 .row > label { flex: 1 1 190px; }
@@ -38,4 +50,4 @@
 .success, .error { padding: 12px 15px; border-radius: 8px; font-weight: 700; }
 .success { color: var(--rv-success-text); background: var(--rv-success-bg); }
 .error { color: var(--rv-error-text); background: var(--rv-error-bg); }
-@media (max-width: 540px) { .panel { padding: 16px; } .row { display: grid; } .cards, .methods { grid-template-columns: 1fr; } }
+@media (max-width: 540px) { .panel { padding: 16px; } .taskDetails > summary { padding: 16px; } .taskDetails > .panel { margin: 0 8px 8px; } .row { display: grid; } .cards, .methods { grid-template-columns: 1fr; } }

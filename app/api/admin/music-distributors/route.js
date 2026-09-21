@@ -12,6 +12,7 @@ export async function POST(request) {
   if (access.user.role !== "SUPER_ADMIN") return NextResponse.json({ error: "Only a Ruvanas Super Admin can configure music distributors." }, { status: 403 });
   const parsed = parseDistributorConnection(await request.json().catch(() => null));
   if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 });
+  if (parsed.data.providerKey === "PROMO_ONLY") return NextResponse.json({ error: "Promo Only is reserved for the gated testing integration." }, { status: 409 });
   try {
     const { clientId, clientSecret, ...settings } = parsed.data;
     const connection = await prisma.$transaction(async (tx) => {

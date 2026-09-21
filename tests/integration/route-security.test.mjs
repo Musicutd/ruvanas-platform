@@ -653,6 +653,12 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
   );
   assert.equal(unauthenticatedCatalogueUpload.status, 401);
 
+  const unauthenticatedCatalogueBulkUpload = await fetch(
+    `${baseUrl}/api/admin/catalogue/bulk-upload`,
+    { method: "POST", headers: { origin: baseUrl }, body: new FormData() }
+  );
+  assert.equal(unauthenticatedCatalogueBulkUpload.status, 401);
+
   const station = await api("/api/stations", {
     method: "POST",
     cookie: cookieA,
@@ -807,6 +813,12 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
     }
   );
   assert.equal(ownerCatalogueUploadAttempt.status, 403);
+
+  const ownerCatalogueBulkUploadAttempt = await fetch(
+    `${baseUrl}/api/admin/catalogue/bulk-upload`,
+    { method: "POST", headers: { origin: baseUrl, cookie: cookieA }, body: new FormData() }
+  );
+  assert.equal(ownerCatalogueBulkUploadAttempt.status, 403);
 
   const ownerSchoolEntitlementAttempt = await api(
     `/api/admin/organisations/${accountABody.organisation.id}/school-radio`,

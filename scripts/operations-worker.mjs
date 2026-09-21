@@ -16,6 +16,7 @@ import { expirePublicListenerLeases } from "../lib/public-player.mjs";
 import { deploymentIdentity, safeOperationalErrorCode, structuredServiceLog } from "../lib/operational-observability.mjs";
 import { recordServiceHeartbeat } from "../lib/operational-observability-service.js";
 import { processDueMusicDistributorSyncs, processDueMusicDistributorUsageDeliveries } from "../lib/music-distributor-service.js";
+import { processDuePromoOnlySync } from "../lib/promo-only-service.js";
 
 let stopping = false;
 let lastListenerRetentionAt = 0;
@@ -36,6 +37,8 @@ while (!stopping) {
     if (webhooks.claimed > 0) writeLog(webhooks.abandoned > 0 ? "error" : webhooks.failed > 0 ? "warn" : "info", "webhook_batch_processed", webhooks);
     const distributorSyncs = await processDueMusicDistributorSyncs(prisma, { workerId });
     if (distributorSyncs.claimed > 0) writeLog(distributorSyncs.failed > 0 ? "warn" : "info", "music_distributor_syncs_processed", distributorSyncs);
+    const promoOnlySync = await processDuePromoOnlySync(prisma, { workerId });
+    if (promoOnlySync.claimed > 0 || promoOnlySync.failed > 0) writeLog(promoOnlySync.failed > 0 ? "warn" : "info", "promo_only_sync_processed", promoOnlySync);
     const distributorUsage = await processDueMusicDistributorUsageDeliveries(prisma);
     if (distributorUsage.claimed > 0) writeLog(distributorUsage.failed > 0 ? "warn" : "info", "music_distributor_usage_processed", distributorUsage);
     const result = await scanPlayerHealth(prisma);

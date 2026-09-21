@@ -80,11 +80,11 @@ export default function NewStationPage() {
 
         <ContextHelp
           title="What happens after I create the station?"
-          introduction="Creating the station saves its public identity. Streaming, shop programming and player activation remain controlled follow-up steps."
+          introduction="Creating the station saves its identity. Ruvanas prepares the private streaming connection; you can then choose music and preview the listener page."
           items={[
             { title: "Name", description: "Use the name customers or staff should recognise." },
             { title: "Description", description: "Add a short purpose or music style; you can refine it later." },
-            { title: "Next step", description: "After creation, connect the approved streaming service and return to your setup guide." }
+            { title: "Next step", description: "Ruvanas will prepare the streaming connection. You can return to your dashboard to follow its progress." }
           ]}
           articleHref="/dashboard/help#station-setup"
           articleLabel="Open the station guide"

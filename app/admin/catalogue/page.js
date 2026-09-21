@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import CatalogueBulkUploadForm from "./CatalogueBulkUploadForm";
 import CatalogueUploadForm from "./CatalogueUploadForm";
 import GenreTierControl from "./GenreTierControl";
 import { CANONICAL_AUTODJ_GENRES, normaliseGenreCode } from "@/lib/autodj-genre-entitlements.mjs";
@@ -41,13 +42,13 @@ export default async function AdminCataloguePage() {
   }
 
   const genres = await prisma.mediaGenre.findMany({
-    where: { active: true },
+    include: { _count: { select: { mediaAssets: true, distributorTracks: true } } },
     orderBy: {
       name: "asc"
     }
   });
 
-  const catalogueAssets = await prisma.mediaAsset.findMany({
+  const [catalogueAssets, providerTracks] = await Promise.all([prisma.mediaAsset.findMany({
     where: {
       libraryType: "RUVANAS_CATALOGUE",
       status: {
@@ -65,7 +66,12 @@ export default async function AdminCataloguePage() {
     orderBy: {
       createdAt: "desc"
     }
-  });
+  }), prisma.musicDistributorTrack.findMany({
+    where: { connection: { providerKey: "PROMO_ONLY" } },
+    include: { release: { select: { externalReleaseId: true } }, canonicalGenre: { select: { name: true, active: true } }, track: { select: { id: true, status: true, rightsReviewStatus: true } } },
+    orderBy: { updatedAt: "desc" },
+    take: 250
+  })]);
 
   const visibleGenres =
     genres.length > 0
@@ -74,11 +80,18 @@ export default async function AdminCataloguePage() {
           name: genre.name,
           description: "Configured Ruvanas catalogue genre.",
           minimumCatalogueLevel: genre.minimumCatalogueLevel,
+          sourceProvider: genre.sourceProvider,
+          sourceExternalValue: genre.sourceExternalValue,
+          autoCreated: genre.autoCreated,
+          providerReviewStatus: genre.providerReviewStatus,
+          active: genre.active,
+          trackCount: genre._count.mediaAssets + genre._count.distributorTracks,
+          updatedAt: genre.updatedAt,
           fixedCatalogueLevel: CANONICAL_AUTODJ_GENRES.find((item) => item.code === normaliseGenreCode(genre.slug || genre.name))?.minimumLevel || null
         }))
       : plannedGenres;
 
-  const uploadGenres = genres.map(({ id, name }) => ({ id, name }));
+  const uploadGenres = genres.filter((genre) => genre.active && genre.providerReviewStatus === "APPROVED").map(({ id, name }) => ({ id, name }));
 
   return (
     <main style={styles.page}>
@@ -112,14 +125,30 @@ export default async function AdminCataloguePage() {
       <section style={styles.section}>
         <div style={styles.sectionHeader}>
           <div>
-            <h2 style={styles.sectionTitle}>Upload catalogue music</h2>
+            <h2 style={styles.sectionTitle}>Bulk upload catalogue music</h2>
             <p style={styles.sectionDescription}>
-              Files are signature-checked, stored privately, checksum-addressed,
-              and recorded with the rights declaration and uploader audit trail.
+              Upload one ZIP of music with one CSV or XLSX metadata sheet. Check
+              every match before the import writes anything.
             </p>
           </div>
 
           <span style={styles.countBadge}>Super Admin only</span>
+        </div>
+
+        <CatalogueBulkUploadForm />
+      </section>
+
+      <section style={styles.section}>
+        <div style={styles.sectionHeader}>
+          <div>
+            <h2 style={styles.sectionTitle}>Upload one catalogue track</h2>
+            <p style={styles.sectionDescription}>
+              Add a single recording and its metadata. Files are signature-checked,
+              stored privately, checksum-addressed and recorded in the audit trail.
+            </p>
+          </div>
+
+          <span style={styles.countBadge}>Single upload</span>
         </div>
 
         <CatalogueUploadForm genres={uploadGenres} />
@@ -145,6 +174,7 @@ export default async function AdminCataloguePage() {
             <article key={genre.name} style={styles.genreCard}>
               <h3 style={styles.genreName}>{genre.name}</h3>
               <p style={styles.genreDescription}>{genre.description}</p>
+              {genre.sourceProvider ? <p style={styles.genreDescription}>Provider: {genre.sourceProvider} · Original: {genre.sourceExternalValue || "—"}<br />{genre.autoCreated ? "Auto-created" : "Mapped"} · {genre.providerReviewStatus} · {genre.active ? "Active" : "Inactive"} · {genre.trackCount} track links<br />Updated {new Date(genre.updatedAt).toLocaleDateString()}</p> : null}
               {genre.id ? <GenreTierControl genre={genre} /> : null}
             </article>
           ))}
@@ -182,6 +212,7 @@ export default async function AdminCataloguePage() {
                 <tr>
                   <th style={styles.tableHeader}>Track</th>
                   <th style={styles.tableHeader}>Artist</th>
+                  <th style={styles.tableHeader}>Mix / BPM</th>
                   <th style={styles.tableHeader}>Genres</th>
                   <th style={styles.tableHeader}>Type</th>
                   <th style={styles.tableHeader}>Status</th>
@@ -202,6 +233,10 @@ export default async function AdminCataloguePage() {
 
                     <td style={styles.tableCell}>
                       {asset.track?.artist || "Metadata pending"}
+                    </td>
+
+                    <td style={styles.tableCell}>
+                      {asset.track ? `${asset.track.mixName || "—"} / ${asset.track.bpm || "—"}` : "—"}
                     </td>
 
                     <td style={styles.tableCell}>
@@ -240,6 +275,27 @@ export default async function AdminCataloguePage() {
             </table>
           </div>
         )}
+      </section>
+
+      <section style={styles.section}>
+        <div style={styles.sectionHeader}>
+          <div>
+            <h2 style={styles.sectionTitle}>Promo Only provider records</h2>
+            <p style={styles.sectionDescription}>Metadata-only records remain here in the Super Admin master catalogue. Audio is not playable until a separately authorised test import, rights review and tier approval.</p>
+          </div>
+          <span style={styles.countBadge}>{providerTracks.length} recent records</span>
+        </div>
+        <div style={styles.tableWrapper}><table style={styles.table}><thead><tr>{["Artist / title", "Mix / BPM", "Canonical / source genre", "Provider IDs", "Release / label", "Content", "Import / audio", "Tier / AutoDJ"].map((header) => <th key={header} style={styles.tableHeader}>{header}</th>)}</tr></thead><tbody>{providerTracks.map((item) => <tr key={item.id} style={styles.tableRow}>
+          <td style={styles.tableCellStrong}>{item.artist} — {item.title}</td>
+          <td style={styles.tableCell}>{item.mixName || "—"} / {item.bpm || "—"}</td>
+          <td style={styles.tableCell}>{item.canonicalGenre?.name || "Unmapped"}<br /><small>Original: {item.sourceGenre || "—"}</small></td>
+          <td style={styles.tableCell}>Track {item.externalTrackId}<br />Title {item.externalTitleId || "—"}<br />Release {item.release?.externalReleaseId || "—"}</td>
+          <td style={styles.tableCell}>{item.releaseDate?.toLocaleDateString() || "—"}<br />{item.label || "—"}<br />{item.durationSeconds ? `${item.durationSeconds}s` : "—"}</td>
+          <td style={styles.tableCell}>{item.isExplicit ? "Explicit" : "Clean/unspecified"}<br />{item.contentWarning || "—"}</td>
+          <td style={styles.tableCell}>{item.importState}<br />{item.audioStatus}<br />{item.track?.rightsReviewStatus || "Not imported"}</td>
+          <td style={styles.tableCell}>{item.minimumCatalogueLevel}<br />{item.autoDjReady ? "Ready" : "Not eligible"}</td>
+        </tr>)}</tbody></table>{!providerTracks.length ? <p style={styles.emptyText}>No Promo Only metadata has been synchronised.</p> : null}</div>
+        <p style={styles.sectionDescription}><Link href="/admin/promo-only">Open Promo Only testing controls, genre mappings and tier availability</Link></p>
       </section>
     </main>
   );

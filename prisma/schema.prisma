@@ -117,6 +117,17 @@ enum MusicDistributorUsageDeliveryStatus {
   ABANDONED
 }
 
+enum MusicProviderGenreMappingType {
+  EXACT
+  ALIAS
+  MANUAL
+}
+
+enum MusicProviderGenreReviewStatus {
+  APPROVED
+  PENDING
+}
+
 enum RadioDistributionKind {
   DIRECTORY
   STREAM_CDN
@@ -1696,7 +1707,7 @@ model User {
   updatedRecoveryControls                RecoveryControl[]                @relation("RecoveryControlUpdatedBy")
   recordedRecoveryEvidence               RecoveryEvidence[]               @relation("RecoveryEvidenceRecordedBy")
   createdComplimentaryAccessCodes        ComplimentaryAccessCode[]        @relation("ComplimentaryAccessCreatedBy")
-  createdPartnerDemoInvitations           PartnerDemoInvitation[]         @relation("PartnerDemoInvitationCreatedBy")
+  createdPartnerDemoInvitations          PartnerDemoInvitation[]          @relation("PartnerDemoInvitationCreatedBy")
   redeemedComplimentaryAccessCodes       ComplimentaryAccessCode[]        @relation("ComplimentaryAccessRedeemedBy")
   revokedComplimentaryAccessCodes        ComplimentaryAccessCode[]        @relation("ComplimentaryAccessRevokedBy")
   createdSmartPlaylists                  SmartPlaylist[]                  @relation("SmartPlaylistCreatedBy")
@@ -2674,7 +2685,7 @@ model Zone {
 }
 
 model Channel {
-  id             String        @id @default(cuid())
+  id             String          @id @default(cuid())
   organisationId String
   brandId        String?
   stationId      String?
@@ -2682,9 +2693,9 @@ model Channel {
   name           String
   slug           String
   description    String?
-  status         ChannelStatus @default(DRAFT)
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  status         ChannelStatus   @default(DRAFT)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
 
   organisation                      Organisation                       @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   brand                             Brand?                             @relation(fields: [brandId], references: [id], onDelete: SetNull)
@@ -2888,17 +2899,17 @@ model StationStreamConfig {
   id        String @id @default(cuid())
   stationId String @unique
 
-  centovaUsername String?
-  streamUrl       String?
-  mountPoint      String?
-  serverHost      String?
-  serverPort      Int?
-  sourcePort      Int?
-  sourceUsername  String?
-  outboundAutoDjEnabled Boolean @default(false)
-  encoderLeaseOwner String?
-  encoderLeaseUntil DateTime?
-  bitrateKbps     Int?
+  centovaUsername       String?
+  streamUrl             String?
+  mountPoint            String?
+  serverHost            String?
+  serverPort            Int?
+  sourcePort            Int?
+  sourceUsername        String?
+  outboundAutoDjEnabled Boolean   @default(false)
+  encoderLeaseOwner     String?
+  encoderLeaseUntil     DateTime?
+  bitrateKbps           Int?
 
   serverType     StreamServerType @default(SHOUTCAST_V2)
   outputCodec    AudioCodec       @default(MP3)
@@ -3829,29 +3840,36 @@ model DigitalSignageDeliveryProof {
 }
 
 model Track {
-  id                   String                  @id @default(cuid())
-  mediaAssetId         String                  @unique
-  title                String
-  artist               String
-  album                String?
-  releaseYear          Int?
-  isExplicit           Boolean                 @default(false)
-  status               TrackStatus             @default(DRAFT)
-  rightsHolder         String?
-  rightsReference      String?
-  rightsBasis          MusicRightsBasis?
-  permittedTerritories String?
-  permittedUses        MusicRightsUse[]        @default([])
-  licenceStartsAt      DateTime?               @db.Date
-  licenceExpiresAt     DateTime?               @db.Date
-  rightsConfirmedAt    DateTime?
-  rightsConfirmedById  String?
-  rightsReviewStatus   MusicRightsReviewStatus @default(DRAFT)
-  rightsReviewNotes    String?
-  rightsReviewedAt     DateTime?
-  rightsReviewedById   String?
-  createdAt            DateTime                @default(now())
-  updatedAt            DateTime                @updatedAt
+  id                    String                      @id @default(cuid())
+  mediaAssetId          String                      @unique
+  title                 String
+  artist                String
+  album                 String?
+  mixName               String?
+  bpm                   Int?
+  releaseYear           Int?
+  releaseDate           DateTime?                   @db.Date
+  recordLabel           String?
+  contentWarning        String?
+  catalogueProvider     String?
+  minimumCatalogueLevel LicensedMusicCatalogueLevel @default(NONE)
+  isExplicit            Boolean                     @default(false)
+  status                TrackStatus                 @default(DRAFT)
+  rightsHolder          String?
+  rightsReference       String?
+  rightsBasis           MusicRightsBasis?
+  permittedTerritories  String?
+  permittedUses         MusicRightsUse[]            @default([])
+  licenceStartsAt       DateTime?                   @db.Date
+  licenceExpiresAt      DateTime?                   @db.Date
+  rightsConfirmedAt     DateTime?
+  rightsConfirmedById   String?
+  rightsReviewStatus    MusicRightsReviewStatus     @default(DRAFT)
+  rightsReviewNotes     String?
+  rightsReviewedAt      DateTime?
+  rightsReviewedById    String?
+  createdAt             DateTime                    @default(now())
+  updatedAt             DateTime                    @updatedAt
 
   mediaAsset               MediaAsset               @relation(fields: [mediaAssetId], references: [id], onDelete: Cascade)
   rightsConfirmedBy        User?                    @relation("TrackRightsConfirmedBy", fields: [rightsConfirmedById], references: [id], onDelete: SetNull)
@@ -3903,33 +3921,33 @@ model MusicMode {
 }
 
 model SmartPlaylist {
-  id                    String              @id @default(cuid())
+  id                    String                   @id @default(cuid())
   organisationId        String
-  musicModeId           String              @unique
-  status                SmartPlaylistStatus @default(DRAFT)
-  version               Int                 @default(1)
-  materializedVersion   Int                 @default(0)
-  maxTracks             Int                 @default(250)
-  defaultWeight         Int                 @default(100)
-  sort                  SmartPlaylistSort   @default(ARTIST_TITLE)
-  rightsUse             MusicRightsUse      @default(ONLINE_RADIO)
+  musicModeId           String                   @unique
+  status                SmartPlaylistStatus      @default(DRAFT)
+  version               Int                      @default(1)
+  materializedVersion   Int                      @default(0)
+  maxTracks             Int                      @default(250)
+  defaultWeight         Int                      @default(100)
+  sort                  SmartPlaylistSort        @default(ARTIST_TITLE)
+  rightsUse             MusicRightsUse           @default(ONLINE_RADIO)
   territory             String?
   lastMaterializedAt    DateTime?
-  lastMaterializedCount Int                 @default(0)
+  lastMaterializedCount Int                      @default(0)
   createdByUserId       String
   publishedByUserId     String?
   publishedAt           DateTime?
-  createdAt             DateTime            @default(now())
-  updatedAt             DateTime            @updatedAt
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
   simpleBuildMode       SimplePlaylistBuildMode?
   durationMinutes       Int?
   genreCodes            Json?
 
-  organisation Organisation        @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  musicMode    MusicMode           @relation("SmartPlaylistMusicMode", fields: [musicModeId, organisationId], references: [id, organisationId], onDelete: Cascade)
-  createdBy    User                @relation("SmartPlaylistCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  publishedBy  User?               @relation("SmartPlaylistPublishedBy", fields: [publishedByUserId], references: [id], onDelete: SetNull)
-  rules        SmartPlaylistRule[]
+  organisation     Organisation              @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  musicMode        MusicMode                 @relation("SmartPlaylistMusicMode", fields: [musicModeId, organisationId], references: [id, organisationId], onDelete: Cascade)
+  createdBy        User                      @relation("SmartPlaylistCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  publishedBy      User?                     @relation("SmartPlaylistPublishedBy", fields: [publishedByUserId], references: [id], onDelete: SetNull)
+  rules            SmartPlaylistRule[]
   subscriberEvents SubscriberPlaylistEvent[]
 
   @@unique([id, organisationId])
@@ -3940,22 +3958,22 @@ model SmartPlaylist {
 }
 
 model SubscriberPlaylistEvent {
-  id               String   @id @default(cuid())
-  organisationId   String
-  channelId        String
-  smartPlaylistId  String
-  startsAt         DateTime
-  endsAt           DateTime
-  timezone         String
-  createdByUserId  String
-  cancelledAt      DateTime?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id              String    @id @default(cuid())
+  organisationId  String
+  channelId       String
+  smartPlaylistId String
+  startsAt        DateTime
+  endsAt          DateTime
+  timezone        String
+  createdByUserId String
+  cancelledAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  channel Channel @relation(fields: [channelId, organisationId], references: [id, organisationId], onDelete: Cascade)
+  organisation  Organisation  @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  channel       Channel       @relation(fields: [channelId, organisationId], references: [id, organisationId], onDelete: Cascade)
   smartPlaylist SmartPlaylist @relation(fields: [smartPlaylistId, organisationId], references: [id, organisationId], onDelete: Restrict)
-  createdBy User @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  createdBy     User          @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
 
   @@unique([id, organisationId])
   @@index([organisationId, channelId, startsAt, endsAt])
@@ -5727,15 +5745,24 @@ model ScheduleSlot {
 }
 
 model MediaGenre {
-  id                    String                      @id @default(cuid())
-  name                  String                      @unique
-  slug                  String                      @unique
-  active                Boolean                     @default(true)
-  minimumCatalogueLevel LicensedMusicCatalogueLevel @default(PREMIUM)
-  createdAt             DateTime                    @default(now())
-  updatedAt             DateTime                    @updatedAt
+  id                    String                         @id @default(cuid())
+  name                  String                         @unique
+  slug                  String                         @unique
+  normalizedKey         String?                        @unique
+  active                Boolean                        @default(true)
+  minimumCatalogueLevel LicensedMusicCatalogueLevel    @default(PREMIUM)
+  sourceProvider        String?
+  sourceExternalValue   String?
+  autoCreated           Boolean                        @default(false)
+  providerReviewStatus  MusicProviderGenreReviewStatus @default(APPROVED)
+  createdAt             DateTime                       @default(now())
+  updatedAt             DateTime                       @updatedAt
 
-  mediaAssets MediaAssetGenre[]
+  mediaAssets       MediaAssetGenre[]
+  providerMappings  MusicProviderGenreMapping[]
+  distributorTracks MusicDistributorTrack[]     @relation("DistributorTrackCanonicalGenre")
+
+  @@index([sourceProvider, active])
 }
 
 model GeneratedPlaylist {
@@ -6313,6 +6340,7 @@ model MusicDistributorConnection {
   syncRuns        MusicDistributorSyncRun[]
   reconciliation  MusicDistributorReconciliationEvent[]
   usageDeliveries MusicDistributorUsageDelivery[]
+  feedItems       MusicProviderFeedItem[]
 
   @@index([status, nextSyncAt])
   @@index([syncLeaseUntil])
@@ -6367,13 +6395,24 @@ model MusicDistributorTrack {
   trackId               String?
   externalTrackId       String
   externalRecordingId   String?
+  externalTitleId       String?
   isrc                  String?
   title                 String
   artist                String
   album                 String?
   label                 String?
+  mixName               String?
+  bpm                   Int?
+  durationSeconds       Int?
+  releaseDate           DateTime?                    @db.Date
   genreCodes            String[]                     @default([])
+  sourceGenre           String?
+  canonicalGenreId      String?
   isExplicit            Boolean                      @default(false)
+  contentWarning        String?
+  endType               String?
+  mediaType             String?
+  providerMetadata      Json?
   deliveryMode          MusicDistributorDeliveryMode
   sourceUrlEncrypted    String?
   sourceChecksumSha256  String?                      @db.Char(64)
@@ -6392,12 +6431,19 @@ model MusicDistributorTrack {
   metadataChecksum      String                       @db.Char(64)
   lastSeenAt            DateTime                     @default(now())
   revision              Int                          @default(1)
+  importState           String                       @default("METADATA_READY")
+  audioStatus           String                       @default("NOT_REQUESTED")
+  autoDjReady           Boolean                      @default(false)
+  downloadRetryCount    Int                          @default(0)
+  lastImportErrorCode   String?
+  sourceModifiedAt      DateTime?
   createdAt             DateTime                     @default(now())
   updatedAt             DateTime                     @updatedAt
 
   connection     MusicDistributorConnection            @relation(fields: [connectionId], references: [id], onDelete: Cascade)
   release        MusicDistributorRelease?              @relation(fields: [releaseId], references: [id], onDelete: SetNull)
   track          Track?                                @relation(fields: [trackId], references: [id], onDelete: SetNull)
+  canonicalGenre MediaGenre?                           @relation("DistributorTrackCanonicalGenre", fields: [canonicalGenreId], references: [id], onDelete: SetNull)
   collections    MusicDistributorCollectionTrack[]
   reconciliation MusicDistributorReconciliationEvent[]
 
@@ -6407,6 +6453,8 @@ model MusicDistributorTrack {
   @@index([trackId])
   @@index([licenceExpiresAt])
   @@index([minimumCatalogueLevel, status])
+  @@index([canonicalGenreId, status])
+  @@index([importState, audioStatus])
 }
 
 model MusicDistributorCollectionTrack {
@@ -6426,6 +6474,9 @@ model MusicDistributorSyncRun {
   connectionId     String
   kind             MusicDistributorSyncKind
   status           IntegrationSyncRunStatus @default(PENDING)
+  trigger          String                   @default("SCHEDULED")
+  mode             String?
+  correlationId    String?                  @unique
   cursorBefore     String?
   cursorAfter      String?
   releasesReceived Int                      @default(0)
@@ -6435,6 +6486,9 @@ model MusicDistributorSyncRun {
   unchangedCount   Int                      @default(0)
   takenDownCount   Int                      @default(0)
   rejectedCount    Int                      @default(0)
+  fetchedCount     Int                      @default(0)
+  enrichedCount    Int                      @default(0)
+  downloadedCount  Int                      @default(0)
   attempt          Int                      @default(0)
   nextRetryAt      DateTime?
   safeErrorCode    String?
@@ -6447,6 +6501,52 @@ model MusicDistributorSyncRun {
 
   @@index([connectionId, status, createdAt])
   @@index([status, nextRetryAt])
+}
+
+model MusicProviderFeedItem {
+  id                String    @id @default(cuid())
+  connectionId      String
+  idempotencyKey    String
+  externalGuid      String?
+  sourceUrl         String?
+  publishedAt       DateTime?
+  rawHash           String    @db.Char(64)
+  normalizedPayload Json
+  externalReleaseId String?
+  externalTrackId   String?
+  status            String    @default("DISCOVERED")
+  firstSeenAt       DateTime  @default(now())
+  lastSeenAt        DateTime  @default(now())
+  lastErrorCode     String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  connection MusicDistributorConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@unique([connectionId, idempotencyKey])
+  @@index([connectionId, status, lastSeenAt])
+  @@index([externalTrackId])
+  @@index([externalReleaseId])
+}
+
+model MusicProviderGenreMapping {
+  id                    String                         @id @default(cuid())
+  provider              String
+  sourceGenre           String
+  normalizedSourceGenre String
+  catalogGenreId        String
+  mappingType           MusicProviderGenreMappingType  @default(EXACT)
+  reviewStatus          MusicProviderGenreReviewStatus @default(APPROVED)
+  autoCreated           Boolean                        @default(false)
+  active                Boolean                        @default(true)
+  createdAt             DateTime                       @default(now())
+  updatedAt             DateTime                       @updatedAt
+
+  catalogGenre MediaGenre @relation(fields: [catalogGenreId], references: [id], onDelete: Restrict)
+
+  @@unique([provider, normalizedSourceGenre])
+  @@index([catalogGenreId, active])
+  @@index([provider, reviewStatus])
 }
 
 model MusicDistributorReconciliationEvent {

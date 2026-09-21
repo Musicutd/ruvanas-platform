@@ -41,7 +41,7 @@ test("station page checks tenant and Online Radio family; draft and publish rema
   assert.match(page, /organisationId: context\.membership\.organisationId, productFamily: "ONLINE"/);
   assert.match(page, /AdvancedSchedulerWorkspace stationId=\{station\.id\}/);
   assert.match(scheduler, /scopeStationScheduleData\(payload, stationId\)/);
-  assert.match(source("../app/dashboard/programming/page.js"), /Open its station-channel schedule/);
+  assert.match(source("../app/dashboard/programming/page.js"), /Open the station programme schedule/);
   assert.match(source("../app/dashboard/programming/page.js"), /onlineOnly=\{onlineOnly\}/);
   assert.match(source("../app/dashboard/programming/ProgrammingWorkspace.js"), /channels: payload\.channels\.filter\(\(channel\) => channel\.productFamily === "ONLINE"\)/);
   assert.match(source("../app/dashboard/programming/ProgrammingWorkspace.js"), /!onlineOnly \? <section className=\{styles\.panel\} aria-labelledby="planner-heading"/);

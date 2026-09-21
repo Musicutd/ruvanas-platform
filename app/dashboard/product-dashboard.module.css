@@ -16,6 +16,7 @@
 .onboarding { margin-top: 16px; border: 1px solid var(--rv-border); border-radius: 18px; background: linear-gradient(135deg, var(--rv-surface-muted), var(--rv-surface-raised)); color: var(--rv-text); padding: 21px; }
 .onboardingHeading { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
 .onboardingHeading h2 { margin: 0; font-size: 27px; }.onboardingHeading > div:first-child > p:last-child { max-width: 710px; margin: 9px 0 0; color: var(--rv-text-muted); line-height: 1.55; }
+.waitingNote { max-width: 710px; border-left: 3px solid #f4b942; padding: 8px 12px; background: var(--rv-warning-bg); color: var(--rv-text) !important; font-size: 13px; }
 .progressBlock { min-width: 210px; display: grid; gap: 5px; }.progressBlock strong { font-size: 24px; }.progressBlock span { color: var(--rv-text-muted); font-size: 12px; }.progressBlock progress { width: 100%; height: 9px; margin-top: 6px; accent-color: #f4b942; }
 .setupDetails, .extraTasks { margin-top: 18px; border-top: 1px solid var(--rv-border-soft); padding-top: 13px; }
 .setupDetails summary, .extraTasks summary, .metricsDetails summary { width: fit-content; cursor: pointer; color: var(--rv-accent-text); font-size: 13px; font-weight: 850; }

@@ -102,7 +102,7 @@ test("a published station schedule alone does not make the Centova rotation read
     publishedScheduleCount: 1
   });
   assert.equal(scheduleOnly.steps.find((step) => step.id === "PROGRAMMING").complete, false);
-  assert.equal(scheduleOnly.nextAction.href, "/dashboard/programming#workspace-schedule");
+  assert.equal(scheduleOnly.nextAction.href, "/dashboard/programming#workspace-simple");
 });
 
 test("viewers receive status actions rather than configuration authority", () => {
