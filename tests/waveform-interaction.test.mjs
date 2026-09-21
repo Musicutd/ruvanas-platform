@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { waveformDragSelection, waveformTimeAtPointer } from "../lib/waveform-interaction.mjs";
+import { gainDbFromVerticalDrag, waveformDragSelection, waveformTimeAtPointer } from "../lib/waveform-interaction.mjs";
 
 test("waveform pointer maps into timeline time and clamps outside the wave", () => {
   assert.equal(waveformTimeAtPointer(350, 100, 500, 10000), 5000);
@@ -13,6 +13,14 @@ test("waveform pointer maps into timeline time and clamps outside the wave", () 
 test("drag selection works in either direction", () => {
   assert.deepEqual(waveformDragSelection(8000, 2000), { startMs: 2000, endMs: 8000 });
   assert.deepEqual(waveformDragSelection(2000, 8000), { startMs: 2000, endMs: 8000 });
+});
+
+test("in-wave gain handle drags upward to boost and downward to reduce in half-dB steps", () => {
+  assert.equal(gainDbFromVerticalDrag(0, 100, 84), 2);
+  assert.equal(gainDbFromVerticalDrag(0, 100, 116), -2);
+  assert.equal(gainDbFromVerticalDrag(1, 100, 96), 1.5);
+  assert.equal(gainDbFromVerticalDrag(0, 100, -1000), 18);
+  assert.equal(gainDbFromVerticalDrag(0, 100, 1000), -36);
 });
 
 test("waveform offers pointer selection and direct cut, delete, silence actions", async () => {
@@ -27,4 +35,6 @@ test("waveform offers pointer selection and direct cut, delete, silence actions"
   assert.match(source, /setSelection\(\{ startMs: 0, endMs: durationMs \}\)/);
   assert.match(source, /Gain change in decibels/);
   assert.match(source, /Apply dB change/);
+  assert.match(source, /onPointerDown=\{onGainPointerDown\}/);
+  assert.match(source, /role="slider"/);
 });
