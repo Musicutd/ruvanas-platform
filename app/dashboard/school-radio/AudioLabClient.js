@@ -396,6 +396,33 @@ export default function AudioLabClient({ requestedProjectId = "", experienceMode
     } catch (submitError) { setError(submitError.message); } finally { setWorking(false); }
   }
 
+  async function changeRecording(takeId, action) {
+    const permanent = action === "DELETE_PERMANENTLY";
+    const prompt = permanent
+      ? "Permanently delete this recording? The protected audio file cannot be restored."
+      : action === "TRASH"
+        ? "Move this recording to Trash? You can restore it for 30 days."
+        : null;
+    if (prompt && !window.confirm(prompt)) return;
+    setWorking(true); setError(""); setNotice("");
+    try {
+      const response = await fetch(`/api/school-radio/audio-lab/takes/${takeId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "The recording action could not be completed.");
+      setNotice(payload.message || "Recording updated.");
+      await load();
+      window.dispatchEvent(new CustomEvent("ruvanas:studio-projects-refresh"));
+    } catch (actionError) {
+      setError(actionError.message);
+    } finally {
+      setWorking(false);
+    }
+  }
+
   if (!data) return <section style={s.panel}><p style={s.hint}>{error || "Loading AudioLab…"}</p></section>;
   return <section id="audio-lab-quick-record" style={s.panel}>
     <div style={s.heading}><div><p style={s.eyebrow}>RECORD</p><h2 style={s.title}>Record safely in the browser</h2><p style={s.hint}>Immutable source takes, local recovery, resumable protected uploads, non-destructive edits, and controlled preview.</p></div><span style={s.autosave}>{experienceMode === "ADVANCED" ? "Advanced" : "Beginner"} · {autosave}</span></div>
@@ -447,6 +474,17 @@ export default function AudioLabClient({ requestedProjectId = "", experienceMode
         {serverTake || selected.takes[0] ? <><p style={s.ready}>Protected take ready · audio review {(serverTake?.reviewStatus || selected.takes[0]?.promoVersion?.status || "PENDING").replaceAll("_", " ")}</p><button style={s.primary} disabled={working || !projectForm.episodeId} onClick={submitTake}>Submit to linked episode</button>{!projectForm.episodeId ? <p style={s.hint}>Link this project to a draft episode to submit it.</p> : null}</> : null}
       </section>
     </div></> : null}
+    <section style={{ ...s.card, marginTop: 16 }} aria-labelledby="recording-library-title">
+      <div style={s.libraryHeading}><div><p style={s.eyebrow}>RECORDING LIBRARY</p><h3 id="recording-library-title" style={s.cardTitle}>Protected recordings</h3><p style={s.hint}>Remove a recording from timelines or programme items first. Trash keeps the source recoverable for 30 days.</p></div><span style={s.libraryCount}>{selected?.takes?.length || 0} ready · {data.trash?.length || 0} in Trash</span></div>
+      {!selected ? <p style={s.hint}>Choose a project to manage its recordings.</p> : !selected.takes.length ? <p style={s.hint}>This project has no ready recordings.</p> : <div style={s.recordingList}>{selected.takes.map((take) => <div key={take.id} style={s.recordingRow}><div><strong>{take.mediaAsset.name}</strong><small>{take.mediaAsset.originalName} · {durationLabel(take.durationMs || 0)} · {new Date(take.createdAt).toLocaleString()}</small></div><audio controls preload="none" src={`/api/media/${take.mediaAsset.id}/stream`} style={s.libraryAudio} /><button type="button" style={s.trashButton} disabled={working} onClick={() => changeRecording(take.id, "TRASH")}>Move to Trash</button></div>)}</div>}
+      <details style={s.trashPanel}><summary>Trash ({data.trash?.length || 0})</summary>
+        <p style={s.hint}>Recordings are removed permanently after 30 days. Permanent deletion removes the protected audio file immediately.</p>
+        {!data.trash?.length ? <p style={s.hint}>Trash is empty.</p> : <div style={s.recordingList}>{data.trash.map((take) => {
+          const days = Math.max(0, Math.ceil((new Date(take.purgeAfter).getTime() - Date.now()) / 86400000));
+          return <div key={take.id} style={s.trashRow}><div><strong>{take.mediaAsset.name}</strong><small>{take.project.title} · {days} day{days === 1 ? "" : "s"} remaining</small></div><div style={s.actions}><button type="button" style={s.secondary} disabled={working} onClick={() => changeRecording(take.id, "RESTORE")}>Restore</button><button type="button" style={s.permanentButton} disabled={working} onClick={() => changeRecording(take.id, "DELETE_PERMANENTLY")}>Delete permanently</button></div></div>;
+        })}</div>}
+      </details>
+    </section>
     <p style={s.safety}>Private by default · no public sharing · immutable source take · local recovery stays on this device · protected Ruvanas playback only.</p>
   </section>;
 }
@@ -455,6 +493,8 @@ const s = {
   panel: { border: "1px solid var(--rv-border)", borderRadius: 16, background: "var(--rv-surface)", padding: 22, marginBottom: 22 }, heading: { display: "flex", justifyContent: "space-between", gap: 18, alignItems: "flex-start", marginBottom: 16 }, title: { margin: "0 0 8px", fontSize: 28 }, eyebrow: { color: "#f4b942", fontSize: 12, fontWeight: 900, letterSpacing: 1.1, margin: "0 0 7px" }, autosave: { color: "var(--rv-info-text)", fontSize: 12, whiteSpace: "nowrap" },
   grid: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: 16 }, two: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }, card: { border: "1px solid var(--rv-border)", borderRadius: 12, background: "var(--rv-surface)", padding: 18 }, cardTitle: { margin: "0 0 15px" }, label: { display: "grid", gap: 6, marginBottom: 12, color: "var(--rv-text)", fontWeight: 800, fontSize: 13 }, input: { width: "100%", boxSizing: "border-box", border: "1px solid var(--rv-border)", borderRadius: 7, background: "var(--rv-input-bg)", color: "var(--rv-input-text)", padding: "10px 11px", font: "inherit" }, check: { display: "flex", gap: 8, alignItems: "center", marginBottom: 12, color: "var(--rv-text)", fontWeight: 800, fontSize: 13 },
   primary: { border: 0, borderRadius: 7, background: "#f4b942", color: "#101827", padding: "11px 14px", fontWeight: 900, cursor: "pointer" }, secondary: { border: "1px solid var(--rv-border)", borderRadius: 7, background: "transparent", color: "var(--rv-text)", padding: "10px 12px", fontWeight: 800, cursor: "pointer" }, record: { border: 0, borderRadius: 7, background: "#ef4444", color: "white", padding: "10px 13px", fontWeight: 900, cursor: "pointer" }, actions: { display: "flex", flexWrap: "wrap", gap: 8 }, timer: { fontSize: 42, fontWeight: 900, letterSpacing: 2, fontVariantNumeric: "tabular-nums" }, meter: { height: 16, marginTop: 15, background: "var(--rv-surface)", borderRadius: 999, overflow: "hidden" }, meterFill: { height: "100%", transition: "width 80ms linear" }, audio: { width: "100%", margin: "4px 0 14px" }, progress: { height: 7, background: "var(--rv-surface)", borderRadius: 999, overflow: "hidden", marginTop: 13 }, progressFill: { height: "100%", background: "#22c55e", transition: "width 150ms" },
+  libraryHeading: { display: "flex", justifyContent: "space-between", gap: 14, alignItems: "flex-start", flexWrap: "wrap" }, libraryCount: { borderRadius: 999, padding: "7px 10px", background: "var(--rv-info-bg)", color: "var(--rv-info-text)", fontSize: 12, fontWeight: 900 }, recordingList: { display: "grid", gap: 9, marginTop: 12 }, recordingRow: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,210px),1fr))", gap: 12, alignItems: "center", padding: 12, border: "1px solid var(--rv-border)", borderRadius: 10, background: "var(--rv-surface-muted)" }, trashRow: { display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap", padding: 12, border: "1px solid #7f4d58", borderRadius: 10, background: "linear-gradient(110deg,rgba(127,29,29,.18),var(--rv-surface))" }, libraryAudio: { width: "100%", maxWidth: 320 }, trashButton: { border: "1px solid #f59e0b", borderRadius: 7, background: "rgba(245,158,11,.12)", color: "var(--rv-warning-text)", padding: "9px 11px", fontWeight: 900, cursor: "pointer" }, permanentButton: { border: 0, borderRadius: 7, background: "#b91c1c", color: "#fff", padding: "9px 11px", fontWeight: 900, cursor: "pointer" }, trashPanel: { marginTop: 14, border: "1px solid #7f4d58", borderRadius: 10, padding: "11px 13px", color: "var(--rv-text)", fontWeight: 800 },
   hint: { color: "var(--rv-text-muted)", lineHeight: 1.5, fontSize: 13, margin: "5px 0" }, warning: { color: "var(--rv-error-text)", lineHeight: 1.5, fontSize: 13, fontWeight: 800, margin: "5px 0" }, ready: { color: "var(--rv-success-text)", fontWeight: 800 }, error: { border: "1px solid #ef4444", background: "var(--rv-error-bg)", color: "var(--rv-error-text)", borderRadius: 8, padding: 12, marginBottom: 14 }, notice: { border: "1px solid #22c55e", background: "var(--rv-success-bg)", color: "var(--rv-success-text)", borderRadius: 8, padding: 12, marginBottom: 14 }, safety: { color: "var(--rv-text-muted)", fontSize: 12, margin: "16px 0 0" }
 };
+
 

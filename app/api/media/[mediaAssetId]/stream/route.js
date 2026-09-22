@@ -72,7 +72,8 @@ export async function GET(request, { params }) {
         storageKey: true,
         mimeType: true,
         sizeBytes: true,
-        status: true
+        status: true,
+        audioTakes: { where: { trashedAt: { not: null } }, take: 1, select: { id: true } }
       }
     });
 
@@ -85,7 +86,8 @@ export async function GET(request, { params }) {
 
     if (
       asset.libraryType !== "ORGANISATION_PROMO" ||
-      asset.status !== "READY"
+      asset.status !== "READY" ||
+      asset.audioTakes.length > 0
     ) {
       return NextResponse.json(
         { error: "This audio file is not available for playback." },
@@ -180,3 +182,4 @@ export async function GET(request, { params }) {
     );
   }
 }
+

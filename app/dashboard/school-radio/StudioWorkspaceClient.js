@@ -166,7 +166,7 @@ export default function StudioWorkspaceClient() {
         <WaveformEditorClient requestedProjectId={requestedProjectId} experienceMode={data?.studioProEnabled ? experienceMode : "BEGINNER"} onExperienceModeChange={changeMode} />
       </div> : null}
       {visited.has("multitrack") ? <div id="studio-multitrack-panel" role="tabpanel" aria-labelledby="studio-multitrack-tab" hidden={activeTool !== "multitrack"} className={styles.panel}>
-        <MultitrackStudioClient requestedProjectId={requestedProjectId} experienceMode={data?.studioProEnabled ? experienceMode : "BEGINNER"} onExperienceModeChange={changeMode} />
+        <MultitrackStudioClient requestedProjectId={requestedProjectId} experienceMode={data?.studioProEnabled ? experienceMode : "BEGINNER"} onExperienceModeChange={changeMode} onOpenRecordings={() => selectTool("record")} />
       </div> : null}
     </section>
   );
