@@ -14,7 +14,7 @@ const createSchema = z.object({
   studentGroupId: z.string().cuid().optional().nullable()
 });
 
-const mediaSelect = { id: true, name: true, originalName: true, mimeType: true, durationSeconds: true, mediaType: true };
+const mediaSelect = { id: true, name: true, originalName: true, mimeType: true, durationSeconds: true, mediaType: true, libraryType: true };
 
 async function validateLinks(organisationId, values) {
   const [programme, episode, group] = await Promise.all([
@@ -38,14 +38,14 @@ export async function GET() {
     prisma.schoolProgramme.findMany({ where: { organisationId, status: "ACTIVE" }, orderBy: { title: "asc" }, select: { id: true, title: true } }),
     prisma.schoolEpisode.findMany({ where: { organisationId, status: { in: ["DRAFT", "CHANGES_REQUESTED"] } }, orderBy: { createdAt: "desc" }, select: { id: true, title: true, programmeId: true } }),
     prisma.studentGroup.findMany({ where: { organisationId }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
-    prisma.audioTake.findMany({ where: { organisationId, status: "READY", mediaAsset: { status: "READY" } }, orderBy: { createdAt: "desc" }, take: 100, select: { id: true, durationMs: true, mediaAsset: { select: mediaSelect } } }),
+    prisma.audioTake.findMany({ where: { organisationId, status: "READY", trashedAt: null, mediaAsset: { status: "READY" } }, orderBy: { createdAt: "desc" }, take: 100, select: { id: true, durationMs: true, waveformPeaks: true, mediaAsset: { select: mediaSelect } } }),
     access.entitlements.licensedMusicCatalogueEnabled
       ? prisma.track.findMany({ where: { status: "READY", OR: [{ licenceExpiresAt: null }, { licenceExpiresAt: { gte: rightsDate } }], mediaAsset: { organisationId: null, libraryType: "RUVANAS_CATALOGUE", status: "READY" } }, orderBy: [{ artist: "asc" }, { title: "asc" }], take: 250, select: { id: true, title: true, artist: true, mediaAsset: { select: mediaSelect } } })
       : Promise.resolve([]),
-    prisma.mediaAsset.findMany({ where: { organisationId, status: "READY", mimeType: { startsWith: "audio/" } }, orderBy: { createdAt: "desc" }, take: 150, select: mediaSelect })
+    prisma.mediaAsset.findMany({ where: { organisationId, status: "READY", mimeType: { startsWith: "audio/" }, audioTakes: { none: { trashedAt: { not: null } } } }, orderBy: { createdAt: "desc" }, take: 150, select: mediaSelect })
   ]);
   const sources = new Map();
-  for (const item of takes) sources.set(item.mediaAsset.id, { ...item.mediaAsset, label: item.mediaAsset.name, sourceType: "TAKE", durationMs: item.durationMs || (item.mediaAsset.durationSeconds || 0) * 1000 });
+  for (const item of takes) sources.set(item.mediaAsset.id, { ...item.mediaAsset, label: item.mediaAsset.name, sourceType: "TAKE", durationMs: item.durationMs || (item.mediaAsset.durationSeconds || 0) * 1000, waveformPeaks: item.waveformPeaks });
   for (const item of catalogue) sources.set(item.mediaAsset.id, { ...item.mediaAsset, label: `${item.artist} — ${item.title}`, sourceType: "CATALOGUE", durationMs: (item.mediaAsset.durationSeconds || 0) * 1000 });
   for (const item of organisationAudio) if (!sources.has(item.id)) sources.set(item.id, { ...item, label: item.name, sourceType: "ORGANISATION", durationMs: (item.durationSeconds || 0) * 1000 });
   return NextResponse.json({
@@ -78,3 +78,4 @@ export async function POST(request) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "The multitrack project could not be created." }, { status: 409 });
   }
 }
+

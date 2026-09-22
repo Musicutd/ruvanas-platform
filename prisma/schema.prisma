@@ -5017,6 +5017,9 @@ model AudioTake {
   waveformPeaks       Json?
   waveformGeneratedAt DateTime?
   sourceEditDecision  Json
+  trashedAt            DateTime?
+  purgeAfter           DateTime?
+  permanentlyDeletedAt DateTime?
   createdAt           DateTime            @default(now())
   updatedAt           DateTime            @updatedAt
 
@@ -5032,6 +5035,8 @@ model AudioTake {
   @@index([mediaAssetId])
   @@index([promoVersionId])
   @@index([waveformStatus, createdAt])
+  @@index([organisationId, trashedAt])
+  @@index([purgeAfter, permanentlyDeletedAt])
 }
 
 model AudioTrack {

@@ -16,10 +16,12 @@ import { expirePublicListenerLeases } from "../lib/public-player.mjs";
 import { deploymentIdentity, safeOperationalErrorCode, structuredServiceLog } from "../lib/operational-observability.mjs";
 import { recordServiceHeartbeat } from "../lib/operational-observability-service.js";
 import { processDueMusicDistributorSyncs, processDueMusicDistributorUsageDeliveries } from "../lib/music-distributor-service.js";
+import { purgeExpiredAudioTakes } from "../lib/audio-take-trash-service.js";
 import { processDuePromoOnlySync } from "../lib/promo-only-service.js";
 
 let stopping = false;
 let lastListenerRetentionAt = 0;
+let lastAudioTrashPurgeAt = 0;
 const workerId = String(process.env.RENDER_INSTANCE_ID || `operations-${hostname()}-${process.pid}`).slice(0, 120);
 const processStartedAt = new Date();
 const identity = deploymentIdentity({ service: "OPERATIONS_WORKER", instanceId: workerId, startedAt: processStartedAt });
@@ -67,6 +69,11 @@ while (!stopping) {
       const listenerRetention = await applyListenerAnalyticsRetention(prisma);
       lastListenerRetentionAt = Date.now();
       if (listenerRetention.rawDeleted > 0 || listenerRetention.aggregatesDeleted > 0) writeLog("info", "listener_analytics_retention_applied", listenerRetention);
+    }
+    if (Date.now() - lastAudioTrashPurgeAt >= 60 * 60 * 1000) {
+      const audioTrash = await purgeExpiredAudioTakes(prisma);
+      lastAudioTrashPurgeAt = Date.now();
+      if (audioTrash.deleted > 0 || audioTrash.blocked > 0 || audioTrash.failed > 0) writeLog(audioTrash.failed > 0 ? "warn" : "info", "audio_take_trash_purged", audioTrash);
     }
   } catch (error) {
     writeLog("error", "operations_scan_failed", { errorCode: safeOperationalErrorCode(error, "OPERATIONS_SCAN_FAILED") });

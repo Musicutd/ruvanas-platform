@@ -19,7 +19,7 @@ const requestSchema = z.discriminatedUnion("action", [
 
 const editorInclude = {
   takes: {
-    where: { status: { not: "ARCHIVED" } },
+    where: { status: { not: "ARCHIVED" }, trashedAt: null },
     orderBy: { createdAt: "desc" },
     select: {
       id: true, durationMs: true, status: true, waveformStatus: true,
@@ -90,7 +90,7 @@ export async function GET(_request, { params }) {
 async function saveSnapshot(tx, { project, userId, state, reason }) {
   const clean = normalizeEditorState(state);
   const sourceIds = [...new Set(clean.clips.filter((clip) => clip.kind === "SOURCE").map((clip) => clip.mediaAssetId))];
-  const owned = sourceIds.length ? await tx.mediaAsset.count({ where: { id: { in: sourceIds }, organisationId: project.organisationId, status: { in: ["READY", "PROCESSING"] } } }) : 0;
+  const owned = sourceIds.length ? await tx.mediaAsset.count({ where: { id: { in: sourceIds }, organisationId: project.organisationId, status: { in: ["READY", "PROCESSING"] }, audioTakes: { none: { trashedAt: { not: null } } } } }) : 0;
   if (owned !== sourceIds.length) throw new Error("One or more clip sources are unavailable to this organisation.");
 
   await tx.audioTrack.deleteMany({ where: { projectId: project.id } });
@@ -128,7 +128,7 @@ export async function POST(request, { params }) {
   if (!project) return NextResponse.json({ error: "The AudioLab project was not found." }, { status: 404 });
   try {
     if (parsed.data.action === "INITIALIZE") {
-      const take = await prisma.audioTake.findFirst({ where: { id: parsed.data.takeId, projectId, organisationId: access.organisation.id, status: { in: ["READY", "PROCESSING"] } }, include: { mediaAsset: true } });
+      const take = await prisma.audioTake.findFirst({ where: { id: parsed.data.takeId, projectId, organisationId: access.organisation.id, status: { in: ["READY", "PROCESSING"] }, trashedAt: null }, include: { mediaAsset: true } });
       if (!take) return NextResponse.json({ error: "Choose an available source take from this project." }, { status: 404 });
       const durationMs = take.durationMs || (take.mediaAsset.durationSeconds ? take.mediaAsset.durationSeconds * 1000 : 0);
       if (!durationMs) return NextResponse.json({ error: "This take is still being analysed. Try again shortly." }, { status: 409 });
@@ -171,4 +171,5 @@ export async function POST(request, { params }) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "The waveform project could not be saved." }, { status: 409 });
   }
 }
+
 

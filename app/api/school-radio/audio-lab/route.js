@@ -30,7 +30,7 @@ function projectInclude() {
     episode: { select: { id: true, title: true, status: true } },
     studentGroup: { select: { id: true, name: true } },
     takes: {
-      where: { status: { not: "ARCHIVED" } },
+      where: { status: { not: "ARCHIVED" }, trashedAt: null },
       orderBy: { createdAt: "desc" },
       select: {
         id: true,
@@ -80,7 +80,7 @@ export async function GET() {
   const access = await requireActiveStudio(ORGANISATION_CONTENT_ROLES);
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const organisationId = access.organisation.id;
-  const [projects, programmes, episodes, groups] = await Promise.all([
+  const [projects, programmes, episodes, groups, trash] = await Promise.all([
     prisma.audioProject.findMany({
       where: { organisationId, status: { not: "ARCHIVED" } },
       orderBy: { updatedAt: "desc" },
@@ -89,9 +89,22 @@ export async function GET() {
     }),
     prisma.schoolProgramme.findMany({ where: { organisationId, status: "ACTIVE" }, orderBy: { title: "asc" }, select: { id: true, title: true, studentGroupId: true } }),
     prisma.schoolEpisode.findMany({ where: { organisationId, status: { in: ["DRAFT", "CHANGES_REQUESTED"] } }, orderBy: { createdAt: "desc" }, select: { id: true, title: true, programmeId: true, status: true } }),
-    prisma.studentGroup.findMany({ where: { organisationId }, orderBy: { name: "asc" }, select: { id: true, name: true } })
+    prisma.studentGroup.findMany({ where: { organisationId }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    prisma.audioTake.findMany({
+      where: { organisationId, trashedAt: { not: null }, permanentlyDeletedAt: null },
+      orderBy: { trashedAt: "desc" },
+      take: 100,
+      select: {
+        id: true,
+        durationMs: true,
+        trashedAt: true,
+        purgeAfter: true,
+        project: { select: { id: true, title: true } },
+        mediaAsset: { select: { id: true, name: true, originalName: true, mimeType: true, status: true } }
+      }
+    })
   ]);
-  return NextResponse.json({ projects, programmes, episodes, groups, studioLevel: access.entitlements.studioLevel, studioProEnabled: access.entitlements.studioProEnabled, limits: { maxRecordingMb: 250, uploadPartMb: 5 } });
+  return NextResponse.json({ projects, programmes, episodes, groups, trash, studioLevel: access.entitlements.studioLevel, studioProEnabled: access.entitlements.studioProEnabled, limits: { maxRecordingMb: 250, uploadPartMb: 5 } });
 }
 
 export async function POST(request) {
@@ -145,4 +158,5 @@ export async function PATCH(request) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "The AudioLab project could not be saved." }, { status: error?.status || 409 });
   }
 }
+
 
