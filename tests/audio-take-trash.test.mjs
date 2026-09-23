@@ -38,9 +38,10 @@ test("a recording used by a production cannot be trashed or permanently removed"
 });
 
 test("Studio exposes a visual multitrack console and an explicit recording Trash workflow", async () => {
-  const [multitrack, audioLab, trashRoute, worker, schema] = await Promise.all([
+  const [multitrack, audioLab, workspace, trashRoute, worker, schema] = await Promise.all([
     readFile(new URL("../app/dashboard/school-radio/MultitrackStudioClient.js", import.meta.url), "utf8"),
     readFile(new URL("../app/dashboard/school-radio/AudioLabClient.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/dashboard/school-radio/StudioWorkspaceClient.js", import.meta.url), "utf8"),
     readFile(new URL("../app/api/school-radio/audio-lab/takes/[takeId]/route.js", import.meta.url), "utf8"),
     readFile(new URL("../scripts/operations-worker.mjs", import.meta.url), "utf8"),
     readFile(new URL("../prisma/schema.prisma", import.meta.url), "utf8")
@@ -50,9 +51,12 @@ test("Studio exposes a visual multitrack console and an explicit recording Trash
   assert.match(multitrack, /Preview clip/);
   assert.match(multitrack, /Clip controls/);
   assert.match(multitrack, /trackConsole/);
-  assert.match(audioLab, /RECORDING LIBRARY/);
+  assert.match(audioLab, /RECORDINGS &amp; TRASH/);
   assert.match(audioLab, /Move to Trash/);
   assert.match(audioLab, /Delete permanently/);
+  assert.ok(audioLab.indexOf("{recordingLibrary}") < audioLab.indexOf("<form style={s.card} onSubmit={createProject}"));
+  assert.match(workspace, /Recordings &amp; Trash/);
+  assert.match(workspace, /Manage recordings/);
   assert.match(trashRoute, /DELETE_PERMANENTLY/);
   assert.match(trashRoute, /RESTORE/);
   assert.match(worker, /purgeExpiredAudioTakes/);

@@ -32,6 +32,7 @@ export default function StudioWorkspaceClient() {
   const [requestedProjectId, setRequestedProjectId] = useState("");
   const [experienceMode, setExperienceMode] = useState("BEGINNER");
   const tabRefs = useRef([]);
+  const tabsRef = useRef(null);
 
   const loadProjects = useCallback(async () => {
     const response = await fetch("/api/school-radio/audio-lab", { cache: "no-store" });
@@ -59,6 +60,7 @@ export default function StudioWorkspaceClient() {
     setRequestedProjectId(projectId);
     setActiveTool(toolId);
     setVisited((current) => new Set([...current, toolId]));
+    window.requestAnimationFrame(() => tabsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
   }
 
   function changeMode(mode) {
@@ -108,7 +110,7 @@ export default function StudioWorkspaceClient() {
         <span>Original audio stays unchanged. Studio saves edit decisions and renders final output on the server.</span>
       </div>
 
-      <div className={styles.tabs} role="tablist" aria-label="Ruvanas Studio tools">
+      <div ref={tabsRef} className={styles.tabs} role="tablist" aria-label="Ruvanas Studio tools">
         {tools.map((tool, index) => {
           const selected = activeTool === tool.id;
           return <button
@@ -143,7 +145,10 @@ export default function StudioWorkspaceClient() {
 
         <div className={styles.projectHeading}>
           <div><h3>Recent projects</h3><p>Open the right tool without searching through the full product dashboard.</p></div>
-          <button type="button" className={styles.primaryButton} onClick={() => selectTool("record")}>New recording</button>
+          <div className={styles.projectActions}>
+            <button type="button" className={styles.secondaryButton} onClick={() => selectTool("record")}>Recordings &amp; Trash</button>
+            <button type="button" className={styles.primaryButton} onClick={() => selectTool("record")}>New recording</button>
+          </div>
         </div>
 
         {!data ? <p className={styles.empty}>Loading your Studio projects…</p> : !summary.recent.length ? <div className={styles.empty}><strong>No Studio projects yet</strong><span>Create a recording first, or open Multitrack for a voice-and-music production.</span><div><button type="button" onClick={() => selectTool("record")}>Start a recording</button><button type="button" onClick={() => selectTool("multitrack")}>Start a multitrack project</button></div></div> : <div className={styles.projectList}>
@@ -154,7 +159,10 @@ export default function StudioWorkspaceClient() {
               <p>{project.status.replaceAll("_", " ")} · Version {project.currentVersion} · Updated {formatDate(project.updatedAt)}</p>
               {project.programme?.title || project.episode?.title ? <small>{project.programme?.title || "No programme"}{project.episode?.title ? ` · ${project.episode.title}` : ""}</small> : null}
             </div>
-            <button type="button" onClick={() => openProject(project)}>Open {project.tool === "record" ? "recording" : project.tool}</button>
+            <div className={styles.projectActions}>
+              {project.type !== "MULTITRACK" && project.takes?.length ? <button type="button" className={styles.secondaryButton} onClick={() => selectTool("record", project.id)}>Manage recordings</button> : null}
+              <button type="button" onClick={() => openProject(project)}>Open {project.tool === "record" ? "recording" : project.tool}</button>
+            </div>
           </article>)}
         </div>}
       </div> : null}
