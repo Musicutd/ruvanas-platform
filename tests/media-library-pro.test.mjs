@@ -88,13 +88,19 @@ test("only approved organisation music can enter the shared playout layer", () =
 
 test("Super Admin catalogue releases keep recorded pillar and territory limits", () => {
   const track = {
-    status: "READY", permittedUses: ["RETAIL_RADIO"], permittedTerritories: "EUROPE",
+    status: "READY", permittedUses: ["RETAIL_RADIO"], permittedTerritories: "EUROPE", minimumCatalogueLevel: "PROFESSIONAL",
     mediaAsset: { status: "READY", mediaType: "MUSIC", libraryType: "RUVANAS_CATALOGUE", organisationId: null, licensedCatalogue: false }
   };
-  assert.equal(musicTrackEligibility(track, { requiredUse: "RETAIL_RADIO", territory: "MT" }).playable, true);
-  assert.equal(musicTrackEligibility(track, { requiredUse: "HEALTH_RADIO", territory: "MT" }).reason, "USE_NOT_PERMITTED");
-  assert.equal(musicTrackEligibility(track, { requiredUse: "RETAIL_RADIO", territory: "US" }).playable, false);
-  assert.equal(musicTrackEligibility(track, { requiredUse: "RETAIL_RADIO" }).reason, "TERRITORY_REQUIRED");
+  const options = { requiredUse: "RETAIL_RADIO", territory: "MT", licensedCatalogueLevel: "PROFESSIONAL" };
+  assert.equal(musicTrackEligibility(track, options).playable, true);
+  assert.equal(musicTrackEligibility(track, { ...options, licensedCatalogueLevel: "FOCUSED" }).reason, "CATALOGUE_TIER_REQUIRED");
+  assert.equal(musicTrackEligibility(track, { ...options, licensedCatalogueLevel: "NONE" }).reason, "CATALOGUE_PLAN_REQUIRED");
+  assert.equal(musicTrackEligibility(track, { ...options, requiredUse: null }).reason, "PRODUCT_CONTEXT_REQUIRED");
+  assert.equal(musicTrackEligibility(track, { ...options, requiredUse: "HEALTH_RADIO" }).reason, "USE_NOT_PERMITTED");
+  assert.equal(musicTrackEligibility(track, { ...options, territory: "US" }).playable, false);
+  assert.equal(musicTrackEligibility(track, { ...options, territory: null }).reason, "TERRITORY_REQUIRED");
+  assert.equal(musicTrackEligibility({ ...track, permittedUses: [] }, options).reason, "USE_NOT_PERMITTED");
+  assert.equal(musicTrackEligibility({ ...track, permittedTerritories: null }, options).reason, "TERRITORY_REQUIRED");
 });
 
 test("rights windows and submission transitions fail closed", () => {

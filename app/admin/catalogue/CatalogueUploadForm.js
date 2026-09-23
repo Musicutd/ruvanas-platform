@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CATALOGUE_TERRITORY_PRESETS } from "@/lib/catalogue-territories.mjs";
+import { CATALOGUE_PILLARS, CATALOGUE_TIERS } from "@/lib/catalogue-audience.mjs";
 
 export default function CatalogueUploadForm({ genres }) {
   const router = useRouter();
@@ -221,16 +222,16 @@ export default function CatalogueUploadForm({ genres }) {
       ) : null}
 
       <fieldset style={styles.fieldset} disabled={uploading}>
-        <legend style={styles.legend}>Licensed product use</legend>
+        <legend style={styles.legend}>Subscriber access · pillars and tier</legend>
+        <label style={{ ...styles.label, marginBottom: 14 }}>Available from tier
+          <select name="minimumCatalogueLevel" defaultValue="FOCUSED" required style={styles.input}>
+            {CATALOGUE_TIERS.map((tier) => <option key={tier.level} value={tier.level}>{tier.label}</option>)}
+          </select>
+        </label>
         <div style={styles.checkboxGrid}>
-          <label style={styles.checkLabel}><input type="checkbox" name="permittedUses" value="RETAIL_RADIO" defaultChecked />Retail Radio</label>
-          <label style={styles.checkLabel}><input type="checkbox" name="permittedUses" value="SCHOOL_RADIO" defaultChecked />School Radio</label>
-          <label style={styles.checkLabel}><input type="checkbox" name="permittedUses" value="ONLINE_RADIO" defaultChecked />Online Radio</label>
-          <label style={styles.checkLabel}><input type="checkbox" name="permittedUses" value="HEALTH_RADIO" />Health Radio</label>
-          <label style={styles.checkLabel}><input type="checkbox" name="permittedUses" value="FAITH_RADIO" />Faith Radio</label>
-          <label style={styles.checkLabel}><input type="checkbox" name="permittedUses" value="ORGANISATIONS_RADIO" />Ruvanas Organisations</label>
+          {CATALOGUE_PILLARS.map((pillar) => <label key={pillar.use} style={styles.checkLabel}><input type="checkbox" name="permittedUses" value={pillar.use} />{pillar.label}</label>)}
         </div>
-        <p style={styles.hint}>Select only the Ruvanas services covered by the music licence.</p>
+        <p style={styles.hint}>Choose only licensed pillars. A subscriber sees this track when their pillar and plan tier qualify, irrespective of the names they give their shops or channels. Higher tiers include lower-tier music.</p>
       </fieldset>
 
       <div style={styles.confirmations}>
@@ -250,7 +251,7 @@ export default function CatalogueUploadForm({ genres }) {
         </label>
         <label style={styles.checkLabel}>
           <input type="checkbox" name="licensedCatalogue" disabled={uploading} />
-          Apply Licensed Music Catalogue plan and genre controls
+          Also apply Licensed Music Catalogue genre controls
         </label>
         <p style={styles.hint}>
           Leave this unchecked to keep the track in Draft. Even a Ready track will not play until you add it to a Music Mode and publish a schedule.

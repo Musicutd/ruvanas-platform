@@ -5,6 +5,8 @@ import { prisma } from "@/lib/prisma";
 import { resolveEntitlements } from "@/lib/entitlements.mjs";
 import { normaliseSchedulePayload, resolveMusicSchedule } from "@/lib/music-scheduling.mjs";
 import { musicModeIsPlayable, playableLiveMusicModeEntries } from "@/lib/music-mode-playback.mjs";
+import { cataloguePlaybackTrackInclude } from "@/lib/catalogue-playback-include";
+import { rightsUseForChannel } from "@/lib/subscriber-playlist-service.mjs";
 import {
   canManageSubscriberProgramming,
   previousProgrammingDate,
@@ -15,7 +17,7 @@ import {
 export const dynamic = "force-dynamic";
 
 const playbackModeInclude = {
-  tracks: { include: { track: { include: { mediaAsset: true } } } }
+  tracks: { include: { track: { include: cataloguePlaybackTrackInclude } } }
 };
 
 const scheduleSchema = z.object({
@@ -65,7 +67,7 @@ function safeSchedule(schedule) {
   };
 }
 
-async function loadProgramming(organisationId, role) {
+async function loadProgramming(organisationId, role, entitlements) {
   const now = new Date();
   const [locations, musicModes, schedules, channels] = await Promise.all([
     prisma.location.findMany({
@@ -172,7 +174,11 @@ async function loadProgramming(organisationId, role) {
       instant: now,
       timezone: target.timezone,
       autoDjPolicy: channel?.autoDjPolicy || { enabled: false, playbackPolicy: "FOLLOW_LOCATION_HOURS" },
-      musicModeAvailable: (mode) => musicModeIsPlayable(mode, now)
+      musicModeAvailable: (mode) => musicModeIsPlayable(mode, now, {
+        organisationId,
+        requiredUse: rightsUseForChannel(channel),
+        licensedCatalogueLevel: entitlements.licensedMusicCatalogueLevel
+      })
     });
     return {
       ...target,
@@ -199,7 +205,14 @@ async function loadProgramming(organisationId, role) {
       name: mode.name,
       description: mode.description,
       trackCount: mode.tracks.length,
-      playableTrackCount: playableLiveMusicModeEntries(mode, now).length
+      playableTrackCount: playableLiveMusicModeEntries(mode, now, {
+        organisationId,
+        requiredUse: {
+          RETAIL: "RETAIL_RADIO", SCHOOL: "SCHOOL_RADIO", ONLINE: "ONLINE_RADIO",
+          HEALTH: "HEALTH_RADIO", FAITH: "FAITH_RADIO", ORGANISATIONS: "ORGANISATIONS_RADIO"
+        }[entitlements.planProductFamily] || null,
+        licensedCatalogueLevel: entitlements.licensedMusicCatalogueLevel
+      }).length
     })),
     schedules: safeSchedules,
     channels: channels.map((channel) => ({
@@ -235,7 +248,7 @@ export async function GET() {
     if (!context.membership) return NextResponse.json({ error: "No active organisation is available." }, { status: 403 });
     const serviceEnabled = resolveEntitlements(context.membership.organisation.subscription).serviceEnabled;
     if (!serviceEnabled) return NextResponse.json({ error: "Radio programming is unavailable while this service is inactive." }, { status: 403 });
-    const programming = await loadProgramming(context.membership.organisationId, context.membership.role);
+    const programming = await loadProgramming(context.membership.organisationId, context.membership.role, resolveEntitlements(context.membership.organisation.subscription));
     return NextResponse.json({ ok: true, ...programming });
   } catch (error) {
     console.error("Subscriber programming load error:", error);

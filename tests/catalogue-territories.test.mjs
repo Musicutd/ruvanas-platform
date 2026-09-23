@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   catalogueTerritoriesFromForm,
+  catalogueTerritoriesWithinApprovedScope,
   catalogueTerritoryAllows,
   limitCatalogueTerritories,
   parseCatalogueTerritories
@@ -16,6 +17,7 @@ test("Super Admin territory form accepts the three regional choices", () => {
   assert.deepEqual(parseCatalogueTerritories("Europe, United States of America, Canada"), { ok: true, codes: ["EUROPE", "US", "CA"] });
   assert.equal(parseCatalogueTerritories("EUROPE, WORLDWIDE").ok, false);
   assert.equal(parseCatalogueTerritories("unknown continent").ok, false);
+  assert.equal(catalogueTerritoriesFromForm(new FormData()).ok, false);
 });
 
 test("Europe is explicitly EU/EEA, UK and Switzerland; unknown customer country fails closed", () => {
@@ -33,4 +35,12 @@ test("API provider claims cannot expand Super Admin approved scope", () => {
   assert.deepEqual(limitCatalogueTerritories(["US", "CA"], ["EUROPE", "US"]), ["US"]);
   assert.deepEqual(limitCatalogueTerritories(["US"], []), []);
   assert.deepEqual(limitCatalogueTerritories(["US"], ["EUROPE"]), []);
+});
+
+test("editing an existing provider track can narrow but never widen territories", () => {
+  assert.equal(catalogueTerritoriesWithinApprovedScope(["US"], ["EUROPE", "US", "CA"]), true);
+  assert.equal(catalogueTerritoriesWithinApprovedScope(["EUROPE", "US"], ["EUROPE", "US", "CA"]), true);
+  assert.equal(catalogueTerritoriesWithinApprovedScope(["WORLDWIDE"], ["EUROPE", "US", "CA"]), false);
+  assert.equal(catalogueTerritoriesWithinApprovedScope(["CA"], ["EUROPE", "US"]), false);
+  assert.equal(catalogueTerritoriesWithinApprovedScope([], ["EUROPE", "US"]), false);
 });

@@ -72,8 +72,8 @@ test("disabled and unsubscribed public stations fail closed", async () => {
 
 test("public manifests use protected URLs and remove enrolled-player proof authority", () => {
   const player = { id: "public:station-1", name: "Public", zone: { name: "Web", location: { name: "Station", timezone: "Europe/Malta" }, channelAssignments: [{ channel: { id: "channel-1" } }] } };
-  const track = { id: "track-1", title: "Song", artist: "Artist", status: "READY", mediaAsset: { id: "asset-1", durationSeconds: 180, status: "READY", mediaType: "MUSIC", libraryType: "RUVANAS_CATALOGUE", organisationId: null } };
-  const manifest = buildPlayerManifest({ player, resolution: { reason: "DEFAULT_AUTODJ", musicMode: { id: "mode-1", name: "Main", slug: "main", tracks: [{ weight: 100, track }] } }, proofSecret: secret, listenerToken: "public-token", instant, includeProof: false, mediaUrlFor: (id, token) => `/api/public/player/station/media/${id}?listener=${token}` });
+  const track = { id: "track-1", title: "Song", artist: "Artist", status: "READY", minimumCatalogueLevel: "FOCUSED", permittedUses: ["RETAIL_RADIO"], permittedTerritories: "WORLDWIDE", mediaAsset: { id: "asset-1", durationSeconds: 180, status: "READY", mediaType: "MUSIC", libraryType: "RUVANAS_CATALOGUE", organisationId: null } };
+  const manifest = buildPlayerManifest({ player, resolution: { reason: "DEFAULT_AUTODJ", licensedCatalogueLevel: "FOCUSED", requiredUse: "RETAIL_RADIO", musicMode: { id: "mode-1", name: "Main", slug: "main", tracks: [{ weight: 100, track }] } }, proofSecret: secret, listenerToken: "public-token", instant, includeProof: false, mediaUrlFor: (id, token) => `/api/public/player/station/media/${id}?listener=${token}` });
   assert.equal(manifest.playlist[0].mediaUrl, "/api/public/player/station/media/asset-1?listener=public-token");
   assert.equal("proofToken" in manifest.playlist[0], false);
   assert.equal("programmingSourceProofToken" in manifest.playlist[0], false);

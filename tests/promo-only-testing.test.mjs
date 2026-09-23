@@ -148,9 +148,9 @@ test("provider track is tier-gated and fails closed if provider relationship is 
   assert.equal(musicTrackEligibility(premium, { ...options, licensedCatalogueLevel: "PROFESSIONAL" }).playable, false);
   assert.equal(musicTrackEligibility(premium, { ...options, licensedCatalogueLevel: "PREMIUM" }).playable, true);
   assert.equal(musicTrackEligibility({ ...premium, permittedTerritories: "MT" }, { ...options, licensedCatalogueLevel: "PREMIUM" }).reason, "TERRITORY_REQUIRED");
-  assert.equal(studioQueueReadiness({ ...asset, track }, { licensedMusicCatalogueEnabled: true, licensedMusicCatalogueLevel: "FOCUSED" }).ready, false);
-  assert.equal(studioQueueReadiness({ ...asset, track }, { licensedMusicCatalogueEnabled: true, licensedMusicCatalogueLevel: "PROFESSIONAL" }).ready, true);
-  assert.equal(studioQueueReadiness({ ...asset, track: { ...track, rightsReviewStatus: "DRAFT" } }, { licensedMusicCatalogueEnabled: true, licensedMusicCatalogueLevel: "PREMIUM" }).ready, false);
+  assert.equal(studioQueueReadiness({ ...asset, track }, { licensedMusicCatalogueEnabled: true, licensedMusicCatalogueLevel: "FOCUSED", planProductFamily: "ONLINE" }).ready, false);
+  assert.equal(studioQueueReadiness({ ...asset, track }, { licensedMusicCatalogueEnabled: true, licensedMusicCatalogueLevel: "PROFESSIONAL", planProductFamily: "ONLINE" }).ready, true);
+  assert.equal(studioQueueReadiness({ ...asset, track: { ...track, rightsReviewStatus: "DRAFT" } }, { licensedMusicCatalogueEnabled: true, licensedMusicCatalogueLevel: "PREMIUM", planProductFamily: "ONLINE" }).ready, false);
 });
 
 test("RSS discovery is idempotent and a later METADATA mode enriches the same item once", async () => {

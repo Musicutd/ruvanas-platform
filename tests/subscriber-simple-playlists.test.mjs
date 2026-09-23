@@ -6,7 +6,7 @@ import { subscriberPlaylistCandidate } from "../lib/playout-source-adapters.mjs"
 import { boundEncoderCache, eligibleScheduledOnlineRotation } from "../lib/online-radio-output.mjs";
 import { rightsUseForChannel } from "../lib/subscriber-playlist-service.mjs";
 
-const track = (id, genre, artist) => ({ track: { id, artist, status: "READY", mediaAsset: { id: `asset-${id}`, status: "READY", mediaType: "MUSIC", libraryType: "RUVANAS_CATALOGUE", organisationId: null, licensedCatalogue: false, durationSeconds: 180, genres: [{ mediaGenre: { name: genre, slug: genre.toLowerCase() } }] } }, genreCodes: [genre.toUpperCase()] });
+const track = (id, genre, artist) => ({ track: { id, artist, status: "READY", permittedUses: ["ONLINE_RADIO"], minimumCatalogueLevel: "FOCUSED", permittedTerritories: "WORLDWIDE", mediaAsset: { id: `asset-${id}`, status: "READY", mediaType: "MUSIC", libraryType: "RUVANAS_CATALOGUE", organisationId: null, licensedCatalogue: false, durationSeconds: 180, genres: [{ mediaGenre: { name: genre, slug: genre.toLowerCase() } }] } }, genreCodes: [genre.toUpperCase()] });
 const entries = [track("pop1", "Pop", "A"), track("pop2", "Pop", "B"), track("rock1", "Rock", "C"), track("country1", "Country", "D")];
 
 test("subscriber templates validate duration, genre pool and ordered duplicate slots", () => {
@@ -60,7 +60,7 @@ test("scheduled template is tenant scoped and outranks Non-Stop but not explicit
   const event = { id: "event", organisationId: "org-a", channelId: "channel-a", startsAt: new Date("2026-09-25T01:00:00Z"), endsAt: new Date("2026-09-25T03:00:00Z"), smartPlaylist: { id: "playlist", organisationId: "org-a", status: "ACTIVE", simpleBuildMode: "GENRE_SEQUENCE", durationMinutes: 180, genreCodes: ["POP", "ROCK"], rightsUse: "ONLINE_RADIO", version: 1, musicMode: { id: "mode", name: "Morning", status: "ACTIVE", tracks: entries.map((item) => ({ track: item.track, weight: 100 })) } } };
   assert.equal(subscriberPlaylistCandidate(event, { organisationId: "org-b", channelId: "channel-a", instant: now }), null);
   assert.equal(subscriberPlaylistCandidate(event, { organisationId: "org-a", channelId: "channel-b", instant: now }), null);
-  const candidate = subscriberPlaylistCandidate(event, { organisationId: "org-a", channelId: "channel-a", instant: now });
+  const candidate = subscriberPlaylistCandidate(event, { organisationId: "org-a", channelId: "channel-a", instant: now, licensedCatalogueLevel: "FOCUSED" });
   assert.equal(candidate.available, true);
   assert.equal(candidate.priority > 400 && candidate.priority < 600, true);
   assert.equal(candidate.validUntil.toISOString(), "2026-09-25T03:00:00.000Z");

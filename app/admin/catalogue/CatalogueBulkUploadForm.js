@@ -1,5 +1,6 @@
 "use client";
 import { CATALOGUE_TERRITORY_PRESETS } from "@/lib/catalogue-territories.mjs";
+import { CATALOGUE_PILLARS, CATALOGUE_TIERS } from "@/lib/catalogue-audience.mjs";
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -97,21 +98,22 @@ export default function CatalogueBulkUploadForm() {
       </fieldset>
 
       <fieldset style={styles.fieldset} disabled={Boolean(working)}>
-        <legend style={styles.legend}>Licensed product use</legend>
+        <legend style={styles.legend}>Subscriber access · pillars and tier for every track in this batch</legend>
+        <label style={{ ...styles.label, marginBottom: 14 }}>Available from tier
+          <select name="minimumCatalogueLevel" defaultValue="FOCUSED" required style={styles.input}>
+            {CATALOGUE_TIERS.map((tier) => <option key={tier.level} value={tier.level}>{tier.label}</option>)}
+          </select>
+        </label>
         <div style={styles.checkboxGrid}>
-          <label style={styles.checkLabel}><input type="checkbox" name="permittedUses" value="RETAIL_RADIO" defaultChecked />Retail Radio</label>
-          <label style={styles.checkLabel}><input type="checkbox" name="permittedUses" value="SCHOOL_RADIO" defaultChecked />School Radio</label>
-          <label style={styles.checkLabel}><input type="checkbox" name="permittedUses" value="ONLINE_RADIO" defaultChecked />Online Radio</label>
-          <label style={styles.checkLabel}><input type="checkbox" name="permittedUses" value="HEALTH_RADIO" />Health Radio</label>
-          <label style={styles.checkLabel}><input type="checkbox" name="permittedUses" value="FAITH_RADIO" />Faith Radio</label>
-          <label style={styles.checkLabel}><input type="checkbox" name="permittedUses" value="ORGANISATIONS_RADIO" />Ruvanas Organisations</label>
+          {CATALOGUE_PILLARS.map((pillar) => <label key={pillar.use} style={styles.checkLabel}><input type="checkbox" name="permittedUses" value={pillar.use} />{pillar.label}</label>)}
         </div>
+        <p style={styles.hint}>Only these licensed pillars, from the selected tier upwards, receive the imported tracks. Subscriber shop and channel names do not affect access.</p>
       </fieldset>
 
       <div style={styles.confirmations}>
         <label style={styles.checkLabelStrong}><input type="checkbox" name="rightsConfirmed" required disabled={Boolean(working)} />I confirm that Ruvanas is authorised to store, distribute and programme every recording in this batch.</label>
         <label style={styles.checkLabel}><input type="checkbox" name="publishNow" disabled={Boolean(working)} />Mark valid imported tracks ready for programming immediately</label>
-        <label style={styles.checkLabel}><input type="checkbox" name="licensedCatalogue" disabled={Boolean(working)} />Apply Licensed Music Catalogue plan and genre controls</label>
+        <label style={styles.checkLabel}><input type="checkbox" name="licensedCatalogue" disabled={Boolean(working)} />Also apply Licensed Music Catalogue genre controls</label>
       </div>
 
       {error ? <div role="alert" style={styles.error}>{error}</div> : null}
