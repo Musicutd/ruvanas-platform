@@ -14,7 +14,8 @@ test("product dashboards stay separate while shared radio station tools accept e
     readFile(new URL("../app/dashboard/product-dashboard.module.css", import.meta.url), "utf8")
   ]);
 
-  assert.match(retail, /Retail Radio dashboard/);
+  assert.match(retail, /Retail Control Centre/);
+  assert.match(retail, /loadRetailControlCentre/);
   assert.match(retail, /organisationId/);
   assert.match(retail, /requireSubscriberProduct\("RETAIL"\)/);
   assert.match(school, /School Radio dashboard/);

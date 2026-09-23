@@ -2,11 +2,11 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-test("all six audio pillars share the focused subscriber dashboard", async () => {
+test("all six audio pillars retain focused subscriber dashboards", async () => {
   const pillars = ["retail", "school", "radio", "faith", "health", "organisations"];
   for (const pillar of pillars) {
     const page = await readFile(new URL(`../app/dashboard/${pillar}/page.js`, import.meta.url), "utf8");
-    assert.match(page, /<ProductDashboard\b/, `${pillar} should use the shared subscriber dashboard`);
+    assert.match(page, pillar === "retail" ? /<RetailControlCentre\b/ : /<ProductDashboard\b/, `${pillar} should use its focused subscriber dashboard`);
   }
 });
 
