@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { deriveRetailControlCentre, loadRetailControlCentre } from "../lib/retail-dashboard-service.mjs";
 
@@ -93,4 +94,15 @@ test("database reads are tenant-scoped and avoid querying disabled signage", asy
   assert.equal(queries.length, 5);
   assert.ok(queries.every((query) => query.where.organisationId === "tenant-1"));
   assert.ok(queries.filter((query) => "take" in query).every((query) => query.take <= 600));
+});
+
+test("Retail home keeps everyday actions visible and technical evidence optional", async () => {
+  const client = await readFile(new URL("../app/dashboard/retail/RetailControlCentre.js", import.meta.url), "utf8");
+  assert.match(client, /What would you like to do\?/);
+  assert.match(client, /Change shop music/);
+  assert.match(client, /Check shop players/);
+  assert.match(client, /More about this shop/);
+  assert.match(client, /Schedules, reports and more tools/);
+  assert.match(client, /Player ready/);
+  assert.doesNotMatch(client, /shops with playback confirmed/);
 });

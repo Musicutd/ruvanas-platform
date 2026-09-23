@@ -45,4 +45,6 @@ test("Retail music page is product guarded and reuses existing programming autho
   assert.match(client, /targetType: "ZONE"/);
   assert.match(client, /rightsUse: "RETAIL_RADIO"/);
   assert.match(client, /Published schedules take priority/);
+  assert.match(client, /areas\.length === 1/);
+  assert.match(page, /Choose music for your shop/);
 });
