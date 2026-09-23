@@ -44,6 +44,10 @@ export default function RetailMusicSetup() {
   const selectedMode = playableModes.find((mode) => mode.id === modeId) || null;
   const currentPolicy = area?.channel?.autoDjPolicy || null;
   const changed = currentPolicy?.enabled !== true || currentPolicy.defaultMusicModeId !== modeId || currentPolicy.playbackPolicy !== playbackPolicy;
+  const setupNeeds = [
+    !area ? "a shop area" : area.blocker ? "a ready channel for this area" : null,
+    !playableModes.length ? "approved playable music" : null
+  ].filter(Boolean);
 
   function chooseArea(id) {
     const nextArea = areas.find((item) => item.id === id) || null;
@@ -111,9 +115,10 @@ export default function RetailMusicSetup() {
     <section className={styles.card} aria-labelledby="hours-heading">
       <div className={styles.cardHeading}><span className={styles.number}>3</span><div><h2 id="hours-heading">When should it play?</h2><p>Choose shop hours for a normal retail location.</p></div></div>
       <div className={styles.hourGrid}>
-        <label className={playbackPolicy === "FOLLOW_LOCATION_HOURS" ? styles.selectedMode : styles.mode}><input type="radio" name="retail-hours" value="FOLLOW_LOCATION_HOURS" checked={playbackPolicy === "FOLLOW_LOCATION_HOURS"} onChange={() => setPlaybackPolicy("FOLLOW_LOCATION_HOURS")} disabled={!programming.canManage || Boolean(area?.blocker)} /><span><strong>During shop hours</strong><small>Follow the opening hours configured for this location.</small></span></label>
-        <label className={playbackPolicy === "RUN_24_7" ? styles.selectedMode : styles.mode}><input type="radio" name="retail-hours" value="RUN_24_7" checked={playbackPolicy === "RUN_24_7"} onChange={() => setPlaybackPolicy("RUN_24_7")} disabled={!programming.canManage || Boolean(area?.blocker)} /><span><strong>All day, every day</strong><small>Use for locations that need continuous 24/7 music.</small></span></label>
+        <label className={playbackPolicy === "FOLLOW_LOCATION_HOURS" ? styles.selectedMode : styles.mode}><input type="radio" name="retail-hours" value="FOLLOW_LOCATION_HOURS" checked={playbackPolicy === "FOLLOW_LOCATION_HOURS"} onChange={() => setPlaybackPolicy("FOLLOW_LOCATION_HOURS")} disabled={!programming.canManage} /><span><strong>During shop hours</strong><small>Follow the opening hours configured for this location.</small></span></label>
+        <label className={playbackPolicy === "RUN_24_7" ? styles.selectedMode : styles.mode}><input type="radio" name="retail-hours" value="RUN_24_7" checked={playbackPolicy === "RUN_24_7"} onChange={() => setPlaybackPolicy("RUN_24_7")} disabled={!programming.canManage} /><span><strong>All day, every day</strong><small>Use for locations that need continuous 24/7 music.</small></span></label>
       </div>
+      {programming.canManage && setupNeeds.length ? <p className={styles.setupHint} role="status">You can choose a time now. To save automatic music, this setup still needs {setupNeeds.join(" and ")}.</p> : null}
     </section>
 
     <section className={styles.review} aria-labelledby="review-heading">
