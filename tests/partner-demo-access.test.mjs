@@ -77,6 +77,6 @@ test("every product dashboard offers task-first choices", async () => {
   const paths = ["retail", "school", "radio", "health", "faith", "organisations"];
   for (const path of paths) {
     const page = await readFile(new URL(`../app/dashboard/${path}/page.js`, import.meta.url), "utf8");
-    assert.match(page, /quickTasks=/, `${path} needs daily task shortcuts`);
+    assert.match(page, path === "retail" ? /<RetailControlCentre\b/ : /quickTasks=/, `${path} needs daily task shortcuts`);
   }
 });

@@ -36,11 +36,12 @@ test("unavailable service leads to notices, not radio setup", () => {
 
 test("Retail and Digital Signage expose simple tasks and review before publish", async () => {
   const [retail, productDashboard, signage] = await Promise.all([
-    readFile(new URL("../app/dashboard/retail/page.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/dashboard/retail/RetailControlCentre.js", import.meta.url), "utf8"),
     readFile(new URL("../app/dashboard/ProductDashboard.js", import.meta.url), "utf8"),
     readFile(new URL("../app/admin/digital-signage/DigitalSignageConsole.js", import.meta.url), "utf8")
   ]);
-  assert.match(retail, /quickTasks=\{/);
+  assert.match(retail, /YOUR NEXT STEP/);
+  assert.match(retail, /Change shop music/);
   assert.match(productDashboard, /COMMON TASKS/);
   assert.match(signage, /Connect a display/);
   assert.match(signage, /Standard full-screen \(recommended\)/);
