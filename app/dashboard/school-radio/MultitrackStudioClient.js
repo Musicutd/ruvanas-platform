@@ -115,7 +115,7 @@ export default function MultitrackStudioClient({ requestedProjectId = "", experi
   async function createProject(event) {
     event.preventDefault(); setWorking(true); setError(""); setNotice("");
     try {
-      const response = await fetch("/api/school-radio/multitrack", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(draft) });
+      const response = await fetch("/api/school-radio/multitrack", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...draft, programmeId: draft.programmeId || null, episodeId: draft.episodeId || null, studentGroupId: draft.studentGroupId || null }) });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || "The multitrack project could not be created.");
       setDraft(emptyProject); await loadCatalogue(); setProjectId(payload.project.id); setNotice("Multitrack project created with a voice track and music bed.");

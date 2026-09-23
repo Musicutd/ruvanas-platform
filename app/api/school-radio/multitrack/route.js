@@ -1,18 +1,11 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { ORGANISATION_CONTENT_ROLES, ORGANISATION_MANAGER_ROLES, isOrganisationRoleAllowed } from "@/lib/permissions.mjs";
 import { requireActiveStudio } from "@/lib/studio-access";
+import { createMultitrackProjectSchema } from "@/lib/multitrack-create-schema.mjs";
 import { defaultMultitrackState, studioMultitrackTrackLimit } from "@/lib/multitrack-studio.mjs";
 
 export const dynamic = "force-dynamic";
-
-const createSchema = z.object({
-  title: z.string().trim().min(2).max(160),
-  programmeId: z.string().cuid().optional().nullable(),
-  episodeId: z.string().cuid().optional().nullable(),
-  studentGroupId: z.string().cuid().optional().nullable()
-});
 
 const mediaSelect = { id: true, name: true, originalName: true, mimeType: true, durationSeconds: true, mediaType: true, libraryType: true };
 
@@ -61,7 +54,7 @@ export async function GET() {
 export async function POST(request) {
   const access = await requireActiveStudio(ORGANISATION_CONTENT_ROLES);
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
-  const parsed = createSchema.safeParse(await request.json().catch(() => null));
+  const parsed = createMultitrackProjectSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Enter a multitrack project title and check its optional programme details." }, { status: 400 });
   try {
     await validateLinks(access.organisation.id, parsed.data);
