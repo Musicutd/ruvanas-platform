@@ -12,13 +12,12 @@ export default async function RetailMusicPage() {
   return <main className={styles.page} id="main-content">
     <div className={styles.shell}>
       <div className={styles.topLinks}>
-        <Link href="/dashboard/retail">← Retail dashboard</Link>
-        <Link href="/dashboard/programming">Advanced programming →</Link>
+        <Link href="/dashboard/retail">← Your shops</Link>
       </div>
       <header className={styles.hero}>
-        <p className={styles.eyebrow}>RETAIL MUSIC</p>
-        <h1>Music for your shops, made simple</h1>
-        <p>Choose where music should play, select approved music, and decide when it should run. Detailed schedules and AutoDJ controls are still available when you need them.</p>
+        <p className={styles.eyebrow}>SHOP MUSIC</p>
+        <h1>Choose music for your shop</h1>
+        <p>Pick a shop area and approved music. Automatic music follows shop hours by default, while published programmes keep priority.</p>
       </header>
       <RetailMusicSetup />
     </div>

@@ -5,8 +5,8 @@ import Link from "next/link";
 import styles from "./retail-control-centre.module.css";
 
 const STATUS = {
-  HEALTHY: { label: "Playback confirmed", tone: "good" },
-  ATTENTION: { label: "Needs attention", tone: "warn" },
+  HEALTHY: { label: "Player ready", tone: "good" },
+  ATTENTION: { label: "Needs a check", tone: "warn" },
   OFFLINE: { label: "Player offline", tone: "bad" },
   SETUP: { label: "Setup needed", tone: "neutral" },
   CLOSED: { label: "Closed now", tone: "neutral" }
@@ -18,41 +18,48 @@ function Status({ state }) {
 }
 
 function heroCopy(summary) {
-  if (!summary.counts.stores) return { title: "Let's get your first shop ready", detail: "Start with a location and listening area. Your music and player steps will appear here as the setup progresses." };
-  if (summary.overallState === "SETUP") return { title: "Finish your shop setup", detail: "A listening area, approved music or a connected player still needs attention before playback can be confirmed." };
-  if (summary.overallState === "ATTENTION") return { title: `${summary.counts.attentionStores} ${summary.counts.attentionStores === 1 ? "shop needs" : "shops need"} a check`, detail: "See what needs attention below. Music settings and published programmes have not been changed." };
-  if (summary.overallState === "CLOSED") return { title: "Your shops are closed right now", detail: "The next scheduled music is shown below. Playback confirmation resumes when players report again." };
-  return { title: "Your retail sound at a glance", detail: "See confirmed playback, today’s planned music and the shops that need a hand." };
+  if (!summary.counts.stores) return { title: "Let's get your first shop ready", detail: "Follow the next step below. Your shop will appear here once it has been prepared." };
+  if (summary.overallState === "SETUP") return { title: "Let's finish setting up your shops", detail: "Choose music and check your shop player so customers can hear it." };
+  if (summary.overallState === "ATTENTION") return { title: "A shop needs your attention", detail: "See which shop needs a check below. Your music settings have not changed." };
+  if (summary.overallState === "CLOSED") return { title: "Your shops are closed now", detail: "You can still prepare tomorrow's music and promotions." };
+  return { title: "Your shops at a glance", detail: "Check your shops, change the music or plan a promotion." };
 }
 
-function SummaryCard({ label, value, note, tone }) {
-  return <div className={`${styles.summaryCard} ${tone === "accent" ? styles.summaryAccent : ""}`}>
-    <span>{label}</span><strong>{value}</strong><small>{note}</small>
-  </div>;
+function storeSound(store) {
+  const names = [...new Set(store.zones.map((zone) => zone.selectedSound).filter(Boolean))];
+  return names.length === 1 ? names[0] : names.length > 1 ? "Different music by area" : "No music selected";
+}
+
+function storeAction(store) {
+  if (!store.zones.length) return { href: "/dashboard/locations", label: "Review shop setup" };
+  if (!store.zones.some((zone) => zone.selectedSound)) return { href: "/dashboard/retail/music", label: "Choose music" };
+  if (store.state === "HEALTHY" || store.state === "CLOSED") return { href: "/dashboard/retail/music", label: "Change music" };
+  return { href: "/dashboard/players", label: "Check player" };
 }
 
 function StoreCard({ store, signageEnabled }) {
-  const soundNames = [...new Set(store.zones.map((zone) => zone.selectedSound).filter(Boolean))];
-  const sound = soundNames.length === 1 ? soundNames[0] : soundNames.length > 1 ? "Different sounds by area" : "No music selected";
   const confirmed = store.zones.find((zone) => zone.recentPlayback);
+  const action = storeAction(store);
   return <article className={styles.storeCard}>
-    <div className={styles.storeTop}>
-      <div><h3>{store.name}</h3><p>{store.city || "Retail location"} · {store.zones.length} {store.zones.length === 1 ? "area" : "areas"}</p></div>
-      <Status state={store.state} />
+    <div className={styles.storeTop}><div><h3>{store.name}</h3><p>{store.city || "Retail location"}</p></div><Status state={store.state} /></div>
+    <div className={styles.storeOverview}>
+      <p><span>Music</span><strong>{storeSound(store)}</strong></p>
+      <p><span>Player</span><strong>{store.readyPlayerCount ? `${store.readyPlayerCount} ready` : store.playerCount ? "Not ready" : "Not set up"}</strong></p>
     </div>
-    <div className={styles.storeDetails}>
-      <div><span>Selected sound</span><strong>{sound}</strong></div>
-      <div><span>Players</span><strong>{store.readyPlayerCount} of {store.playerCount} playback confirmed</strong></div>
-      <div><span>Opening hours</span><strong>{store.openingState === "UNKNOWN" ? "Not set" : store.openingState === "OPEN" ? "Open now" : "Closed now"}</strong></div>
-      <div><span>Promotions</span><strong>{store.promotionCount} in today’s date window</strong></div>
-      {signageEnabled ? <div><span>Displays</span><strong>{store.onlineScreenCount} of {store.screenCount} connected</strong></div> : null}
-    </div>
-    {confirmed ? <p className={styles.evidence}>Recent audio confirmed in {confirmed.name}: {confirmed.recentPlayback.artist ? `${confirmed.recentPlayback.artist} — ` : ""}{confirmed.recentPlayback.title || "Audio item"}. This is not a live now-playing claim.</p> : <p className={styles.evidence}>No recent playback confirmation. Check the player before assuming listeners can hear audio.</p>}
-    {store.zones.length > 1 ? <div className={styles.zones} aria-label={`${store.name} areas`}>{store.zones.map((zone) => <span key={zone.id}>{zone.name}: {STATUS[zone.state]?.label || "Setup needed"}</span>)}</div> : null}
-    <div className={styles.storeActions}>
-      <Link href="/dashboard/players">Check players</Link>
-      <Link href="/dashboard/retail/music">{store.zones.length ? "View shop music" : "Set up music"}</Link>
-    </div>
+    <Link className={styles.storePrimary} href={action.href}>{action.label} →</Link>
+    <details className={styles.storeMore}>
+      <summary>More about this shop</summary>
+      <dl>
+        <div><dt>Listening areas</dt><dd>{store.zones.length}</dd></div>
+        <div><dt>Players ready</dt><dd>{store.readyPlayerCount} of {store.playerCount}</dd></div>
+        <div><dt>Opening hours</dt><dd>{store.openingState === "UNKNOWN" ? "Not set" : store.openingState === "OPEN" ? "Open now" : "Closed now"}</dd></div>
+        <div><dt>Promotions dated today</dt><dd>{store.promotionCount}</dd></div>
+        {signageEnabled ? <div><dt>Displays connected</dt><dd>{store.onlineScreenCount} of {store.screenCount}</dd></div> : null}
+      </dl>
+      {confirmed ? <p>Recent audio reported in {confirmed.name}: {confirmed.recentPlayback.artist ? `${confirmed.recentPlayback.artist} — ` : ""}{confirmed.recentPlayback.title || "Audio item"}. This does not confirm what is playing right now.</p> : <p>No recent audio report is available. Check the player to confirm sound.</p>}
+      {store.zones.length > 1 ? <ul aria-label={`${store.name} listening areas`}>{store.zones.map((zone) => <li key={zone.id}>{zone.name}: {STATUS[zone.state]?.label || "Setup needed"}</li>)}</ul> : null}
+      <div className={styles.storeLinks}><Link href="/dashboard/players">All players</Link><Link href="/dashboard/retail/music">Shop music</Link></div>
+    </details>
   </article>;
 }
 
@@ -65,63 +72,32 @@ export default function RetailControlCentre({ summary, onboarding, complimentary
   }), [summary.stores, query, filter]);
   const copy = heroCopy(summary);
   const next = onboarding.nextAction;
-  const firstTimeline = summary.timeline[0];
-  const hasEvidence = summary.counts.readyPlayers > 0;
 
-  return <main id="main-content" className={styles.page}>
-    <div className={styles.container}>
-      <header className={styles.hero}>
-        <div className={styles.heroContent}>
-          <p className={styles.eyebrow}>RETAIL CONTROL CENTRE</p>
-          <h1>{copy.title}</h1>
-          <p>{copy.detail}</p>
-          <div className={styles.heroActions}>
-            <Link className={styles.primaryAction} href={next.href}>{next.label}</Link>
-            <Link className={styles.secondaryAction} href="/dashboard/retail/music">{summary.canManage ? "Change shop music" : "View shop music"}</Link>
-          </div>
-        </div>
-        <div className={styles.heroPulse}>
-          <Status state={summary.overallState} />
-          <strong>{summary.counts.healthyStores} of {summary.counts.stores}</strong>
-          <span>shops with playback confirmed</span>
-          <small>Checked {summary.checkedAt.slice(11, 16)} UTC · Recent player evidence, not a live audio meter</small>
-        </div>
-      </header>
+  return <main id="main-content" className={styles.page}><div className={styles.container}>
+    <header className={styles.hero}>
+      <p className={styles.eyebrow}>YOUR RETAIL RADIO</p><h1>{copy.title}</h1><p>{copy.detail}</p>
+      <div className={styles.nextStep}><div><span>YOUR NEXT STEP</span><strong>{next.title}</strong><p>{next.description}</p></div><Link href={next.href}>{next.label} →</Link></div>
+      <small>{onboarding.completedCount} of {onboarding.totalCount} setup steps complete{complimentary ? " · Complimentary service" : ""}</small>
+    </header>
 
-      <section className={styles.summaryGrid} aria-label="Today at a glance">
-        <SummaryCard label="Recent audio" value={summary.recentPlayback ? `${summary.recentPlayback.artist ? `${summary.recentPlayback.artist} — ` : ""}${summary.recentPlayback.title || "Audio item"}` : "Not confirmed"} note={summary.recentPlayback ? `Last reported by ${summary.recentPlayback.storeName} · within 15 minutes` : "Open a shop player to verify sound"} tone="accent" />
-        <SummaryCard label="Next planned music" value={firstTimeline ? `${firstTimeline.time} · ${firstTimeline.label}` : "No later slot today"} note={firstTimeline ? `${firstTimeline.storeName} · local shop time` : "Published schedules stay in place"} />
-        <SummaryCard label="Promotion date windows" value={String(summary.counts.promotionsToday)} note="Published and dated for at least one shop today; check each campaign’s play times" />
-        <SummaryCard label="Needs a check" value={String(summary.counts.attentionStores)} note={summary.counts.attentionStores ? "Open the attention list below" : "No open shop checks in this view"} />
-      </section>
+    <section className={styles.quickTasks} aria-labelledby="tasks-title"><h2 id="tasks-title">What would you like to do?</h2><div className={styles.taskGrid}>
+      <Link href="/dashboard/retail/music"><span aria-hidden="true">♫</span><strong>{summary.canManage ? "Change shop music" : "View shop music"}</strong><small>Choose what plays and when</small></Link>
+      <Link href="/dashboard/promotions"><span aria-hidden="true">✦</span><strong>{summary.canManage ? "Plan a promotion" : "View promotions"}</strong><small>Messages for your shops</small></Link>
+      <Link href="/dashboard/players"><span aria-hidden="true">▣</span><strong>Check shop players</strong><small>See whether devices are ready</small></Link>
+    </div></section>
 
-      <div className={styles.mainGrid}>
-        <div className={styles.mainColumn}>
-          <section className={styles.panel} aria-labelledby="shops-title">
-            <div className={styles.sectionHead}><div><p className={styles.eyebrow}>YOUR SHOPS</p><h2 id="shops-title">Locations at a glance</h2><p>{summary.counts.activeStores} active shops · {summary.counts.zones} listening areas · {summary.counts.players} players{summary.limited ? " · Showing a limited overview; open Locations for the full list" : ""}</p></div><Link href="/dashboard/locations">Locations & areas</Link></div>
-            {summary.stores.length ? <>
-              <div className={styles.filters}>
-                <label className={styles.searchLabel}>Find a shop<input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name or city" /></label>
-                <div className={styles.filterButtons} role="group" aria-label="Filter shops">{[["ALL", "All"], ["HEALTHY", "Confirmed"], ["ATTENTION", "Needs a check"], ["CLOSED", "Closed"]].map(([value, label]) => <button type="button" key={value} className={filter === value ? styles.activeFilter : ""} aria-pressed={filter === value} onClick={() => setFilter(value)}>{label}</button>)}</div>
-              </div>
-              <div className={styles.storeList}>{filteredStores.length ? filteredStores.map((store) => <StoreCard key={store.id} store={store} signageEnabled={summary.entitlements.digitalSignageEnabled} />) : <p className={styles.empty}>No shops match this search. Try another name or filter.</p>}</div>
-            </> : <div className={styles.emptyState}><h3>No retail locations yet</h3><p>Once Ruvanas prepares your first shop and listening area, its status will appear here.</p><Link href="/dashboard/locations">Review locations</Link></div>}
-          </section>
+    <section className={styles.shopsPanel} aria-labelledby="shops-title"><div className={styles.sectionHead}><div><h2 id="shops-title">Your shops</h2><p>{summary.counts.stores ? `${summary.counts.healthyStores} ready · ${summary.counts.attentionStores} need a check${summary.limited ? " · Showing a limited overview" : ""}` : "Your shop status will appear here"}</p></div><Link href="/dashboard/locations">All locations →</Link></div>
+      {summary.stores.length > 4 ? <div className={styles.filters}><label>Find a shop<input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Name or city" /></label><div role="group" aria-label="Filter shops">{[["ALL", "All"], ["ATTENTION", "Needs a check"], ["HEALTHY", "Ready"], ["CLOSED", "Closed"]].map(([value, label]) => <button type="button" key={value} className={filter === value ? styles.activeFilter : ""} aria-pressed={filter === value} onClick={() => setFilter(value)}>{label}</button>)}</div></div> : null}
+      {summary.stores.length ? <div className={styles.storeList}>{filteredStores.length ? filteredStores.map((store) => <StoreCard key={store.id} store={store} signageEnabled={summary.entitlements.digitalSignageEnabled} />) : <p className={styles.empty}>No shops match. Try another name or filter.</p>}</div> : <div className={styles.emptyState}><p>No retail locations yet. Ruvanas prepares the first location and listening area.</p><Link href="/dashboard/locations">Review location setup →</Link></div>}
+    </section>
 
-          <section className={styles.panel} aria-labelledby="timeline-title"><div className={styles.sectionHead}><div><p className={styles.eyebrow}>COMING UP TODAY</p><h2 id="timeline-title">Planned music</h2><p>Published schedule slots, shown in each shop’s local time. These are plans, not playback proof.</p></div><Link href="/dashboard/programming">Open schedule</Link></div>
-            {summary.timeline.length ? <ol className={styles.timeline}>{summary.timeline.map((event) => <li key={event.id}><time>{event.time}</time><div><strong>{event.label}</strong><span>{event.storeName} · {event.timezone}</span></div></li>)}</ol> : <p className={styles.empty}>No later published music slot appears today. Continuous music may still be configured for a shop.</p>}
-          </section>
-        </div>
+    {summary.attention.length ? <section className={styles.attentionPanel} aria-labelledby="attention-title"><h2 id="attention-title">Needs a check</h2><ul>{summary.attention.map((item) => <li key={item.id}><div><strong>{item.name}</strong><span>{item.message}</span></div><Link href={item.href}>Review →</Link></li>)}</ul></section> : null}
 
-        <aside className={styles.sideColumn} aria-label="Retail guidance and insights">
-          <section className={styles.nextCard}><p className={styles.eyebrow}>YOUR NEXT STEP</p><h2>{next.title}</h2><p>{next.description}</p><Link href={next.href}>{next.label} →</Link><small>{onboarding.completedCount} of {onboarding.totalCount} setup steps complete{complimentary ? " · Complimentary service" : ""}</small></section>
-          <section className={styles.panel} aria-labelledby="attention-title"><div className={styles.sectionHead}><div><p className={styles.eyebrow}>ATTENTION</p><h2 id="attention-title">What needs a check</h2></div></div>{summary.attention.length ? <ul className={styles.attentionList}>{summary.attention.map((item) => <li key={item.id}><strong>{item.name}</strong><span>{item.message}</span><Link href={item.href}>Review →</Link></li>)}</ul> : <p className={styles.empty}>{summary.stores.length ? "No shop checks are flagged in this overview." : "Your first shop’s checks will appear here after setup."}</p>}</section>
-          <section className={styles.panel} aria-labelledby="insights-title"><div className={styles.sectionHead}><div><p className={styles.eyebrow}>INSIGHT PREVIEW</p><h2 id="insights-title">Delivery confidence</h2></div></div><p className={styles.insightNumber}>{summary.counts.readyPlayers}<span> / {summary.counts.players} players</span></p><p>{hasEvidence ? "Recent playback evidence was received from these players." : "No recent player has confirmed audio in this view."} This does not measure listener impressions.</p><div className={styles.linkRow}><Link href="/dashboard/analytics">Service insights</Link><Link href="/dashboard/reports">Delivery reports</Link></div></section>
-        </aside>
-      </div>
-
-      <section className={styles.bottomPanel} aria-labelledby="tools-title"><div><p className={styles.eyebrow}>MORE WHEN YOU NEED IT</p><h2 id="tools-title">Your retail tools</h2><p>The full tools are still here; start with the everyday actions above.</p></div><div className={styles.toolLinks}><Link href="/dashboard/promotions">{summary.canManage ? "Create a promotion" : "View promotions"}</Link><Link href="/dashboard/studio">Open Studio</Link><Link href="/dashboard/players">Shop players</Link>{summary.entitlements.digitalSignageEnabled ? <Link href="/dashboard/digital-signage">Digital signage</Link> : null}{summary.entitlements.retailMediaEnabled ? <Link href="/dashboard/retail-media">Retail media</Link> : null}</div></section>
-      <details className={styles.setupDetails}><summary>See all setup steps</summary><ol>{onboarding.steps.map((step) => <li key={step.id}><span>{step.complete ? "Done" : step.status === "CURRENT" ? "Next" : "Later"}</span><div><strong>{step.label}</strong><p>{step.detail}</p></div><Link href={step.href}>{step.actionLabel}</Link></li>)}</ol></details>
-    </div>
-  </main>;
+    <details className={styles.moreDetails}><summary>Schedules, reports and more tools</summary><div className={styles.moreGrid}>
+      <section><h2>Coming up today</h2><p>Plans shown in each shop's local time, not proof of playback.</p>{summary.timeline.length ? <ol className={styles.timeline}>{summary.timeline.map((event) => <li key={event.id}><time>{event.time}</time><span>{event.label} · {event.storeName}</span></li>)}</ol> : <p>No later published music slot today. Automatic music may still be set.</p>}<Link href="/dashboard/programming">Open detailed schedule →</Link></section>
+      <section><h2>Recent activity</h2><p>{summary.recentPlayback ? `${summary.recentPlayback.artist ? `${summary.recentPlayback.artist} — ` : ""}${summary.recentPlayback.title || "Audio item"} was reported by ${summary.recentPlayback.storeName} within 15 minutes.` : "No recent audio report is available. Check a shop player to confirm sound."}</p><p>{summary.counts.promotionsToday} published {summary.counts.promotionsToday === 1 ? "promotion is" : "promotions are"} within today's date window. Play times may differ.</p><p>{summary.counts.readyPlayers} of {summary.counts.players} players ready.</p><Link href="/dashboard/reports">Open delivery reports →</Link></section>
+      <section><h2>Other tools</h2><div className={styles.toolLinks}><Link href="/dashboard/studio">Studio</Link><Link href="/dashboard/analytics">Insights</Link>{summary.entitlements.digitalSignageEnabled ? <Link href="/dashboard/digital-signage">Digital signage</Link> : null}{summary.entitlements.retailMediaEnabled ? <Link href="/dashboard/retail-media">Retail media</Link> : null}</div></section>
+    </div></details>
+    <details className={styles.moreDetails}><summary>See all setup steps</summary><ol className={styles.setupList}>{onboarding.steps.map((step) => <li key={step.id}><span>{step.complete ? "Done" : step.status === "CURRENT" ? "Next" : "Later"}</span><div><strong>{step.label}</strong><p>{step.detail}</p></div><Link href={step.href}>{step.actionLabel}</Link></li>)}</ol></details>
+  </div></main>;
 }
