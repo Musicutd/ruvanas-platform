@@ -424,9 +424,22 @@ export default function AudioLabClient({ requestedProjectId = "", experienceMode
   }
 
   if (!data) return <section style={s.panel}><p style={s.hint}>{error || "Loading AudioLab…"}</p></section>;
+  const recordingLibrary = <section style={{ ...s.card, marginBottom: 16 }} aria-labelledby="recording-library-title">
+    <div style={s.libraryHeading}><div><p style={s.eyebrow}>RECORDINGS &amp; TRASH</p><h3 id="recording-library-title" style={s.cardTitle}>Manage your recordings</h3><p style={s.hint}>Move an unused recording to Trash, restore it within 30 days, or delete it permanently.</p></div><span style={s.libraryCount}>{selected?.takes?.length || 0} ready · {data.trash?.length || 0} in Trash</span></div>
+    <label style={{ ...s.label, maxWidth: 420, marginTop: 14 }}>Recording project<select style={s.input} value={projectId} onChange={(event) => setProjectId(event.target.value)}><option value="">Choose project…</option>{data.projects.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>
+    {!selected ? <p style={s.hint}>Choose a project to manage its recordings.</p> : !selected.takes.length ? <p style={s.hint}>This project has no ready recordings.</p> : <div style={s.recordingList}>{selected.takes.map((take) => <div key={take.id} style={s.recordingRow}><div><strong>{take.mediaAsset.name}</strong><small>{take.mediaAsset.originalName} · {durationLabel(take.durationMs || 0)} · {new Date(take.createdAt).toLocaleString()}</small></div><audio controls preload="none" src={`/api/media/${take.mediaAsset.id}/stream`} style={s.libraryAudio} /><button type="button" style={s.trashButton} disabled={working} onClick={() => changeRecording(take.id, "TRASH")}>Move to Trash</button></div>)}</div>}
+    <details style={s.trashPanel}><summary>Trash ({data.trash?.length || 0})</summary>
+      <p style={s.hint}>Recordings are removed permanently after 30 days. Permanent deletion removes the protected audio file immediately.</p>
+      {!data.trash?.length ? <p style={s.hint}>Trash is empty.</p> : <div style={s.recordingList}>{data.trash.map((take) => {
+        const days = Math.max(0, Math.ceil((new Date(take.purgeAfter).getTime() - Date.now()) / 86400000));
+        return <div key={take.id} style={s.trashRow}><div><strong>{take.mediaAsset.name}</strong><small>{take.project.title} · {days} day{days === 1 ? "" : "s"} remaining</small></div><div style={s.actions}><button type="button" style={s.secondary} disabled={working} onClick={() => changeRecording(take.id, "RESTORE")}>Restore</button><button type="button" style={s.permanentButton} disabled={working} onClick={() => changeRecording(take.id, "DELETE_PERMANENTLY")}>Delete permanently</button></div></div>;
+      })}</div>}
+    </details>
+  </section>;
   return <section id="audio-lab-quick-record" style={s.panel}>
     <div style={s.heading}><div><p style={s.eyebrow}>RECORD</p><h2 style={s.title}>Record safely in the browser</h2><p style={s.hint}>Immutable source takes, local recovery, resumable protected uploads, non-destructive edits, and controlled preview.</p></div><span style={s.autosave}>{experienceMode === "ADVANCED" ? "Advanced" : "Beginner"} · {autosave}</span></div>
     {error ? <div style={s.error}>{error}</div> : null}{notice ? <div style={s.notice}>{notice}</div> : null}
+    {recordingLibrary}
     <div style={s.grid}>
       <form style={s.card} onSubmit={createProject}><p style={s.eyebrow}>1 · PROJECT</p><h3 style={s.cardTitle}>New Quick Record</h3>
         <label style={s.label}>Project title<input style={s.input} value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} placeholder="Monday morning bulletin" required /></label>
@@ -474,17 +487,6 @@ export default function AudioLabClient({ requestedProjectId = "", experienceMode
         {serverTake || selected.takes[0] ? <><p style={s.ready}>Protected take ready · audio review {(serverTake?.reviewStatus || selected.takes[0]?.promoVersion?.status || "PENDING").replaceAll("_", " ")}</p><button style={s.primary} disabled={working || !projectForm.episodeId} onClick={submitTake}>Submit to linked episode</button>{!projectForm.episodeId ? <p style={s.hint}>Link this project to a draft episode to submit it.</p> : null}</> : null}
       </section>
     </div></> : null}
-    <section style={{ ...s.card, marginTop: 16 }} aria-labelledby="recording-library-title">
-      <div style={s.libraryHeading}><div><p style={s.eyebrow}>RECORDING LIBRARY</p><h3 id="recording-library-title" style={s.cardTitle}>Protected recordings</h3><p style={s.hint}>Remove a recording from timelines or programme items first. Trash keeps the source recoverable for 30 days.</p></div><span style={s.libraryCount}>{selected?.takes?.length || 0} ready · {data.trash?.length || 0} in Trash</span></div>
-      {!selected ? <p style={s.hint}>Choose a project to manage its recordings.</p> : !selected.takes.length ? <p style={s.hint}>This project has no ready recordings.</p> : <div style={s.recordingList}>{selected.takes.map((take) => <div key={take.id} style={s.recordingRow}><div><strong>{take.mediaAsset.name}</strong><small>{take.mediaAsset.originalName} · {durationLabel(take.durationMs || 0)} · {new Date(take.createdAt).toLocaleString()}</small></div><audio controls preload="none" src={`/api/media/${take.mediaAsset.id}/stream`} style={s.libraryAudio} /><button type="button" style={s.trashButton} disabled={working} onClick={() => changeRecording(take.id, "TRASH")}>Move to Trash</button></div>)}</div>}
-      <details style={s.trashPanel}><summary>Trash ({data.trash?.length || 0})</summary>
-        <p style={s.hint}>Recordings are removed permanently after 30 days. Permanent deletion removes the protected audio file immediately.</p>
-        {!data.trash?.length ? <p style={s.hint}>Trash is empty.</p> : <div style={s.recordingList}>{data.trash.map((take) => {
-          const days = Math.max(0, Math.ceil((new Date(take.purgeAfter).getTime() - Date.now()) / 86400000));
-          return <div key={take.id} style={s.trashRow}><div><strong>{take.mediaAsset.name}</strong><small>{take.project.title} · {days} day{days === 1 ? "" : "s"} remaining</small></div><div style={s.actions}><button type="button" style={s.secondary} disabled={working} onClick={() => changeRecording(take.id, "RESTORE")}>Restore</button><button type="button" style={s.permanentButton} disabled={working} onClick={() => changeRecording(take.id, "DELETE_PERMANENTLY")}>Delete permanently</button></div></div>;
-        })}</div>}
-      </details>
-    </section>
     <p style={s.safety}>Private by default · no public sharing · immutable source take · local recovery stays on this device · protected Ruvanas playback only.</p>
   </section>;
 }

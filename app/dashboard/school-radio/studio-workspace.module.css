@@ -9,7 +9,7 @@
 .modeControl button { min-height: 40px; border: 0; border-radius: 7px; background: transparent; color: var(--rv-text-muted); font: inherit; font-weight: 900; cursor: pointer; }
 .modeControl button[aria-pressed="true"] { background: #f4b942; color: #101827; }
 .safetyStrip { display: flex; flex-wrap: wrap; gap: 8px 14px; margin: 20px 0 14px; border: 1px solid #285b56; border-radius: 10px; padding: 11px 13px; background: var(--rv-success-bg); color: #bce8df; font-size: 13px; }
-.tabs { display: flex; gap: 8px; overflow-x: auto; padding: 5px; border: 1px solid #2e405b; border-radius: 14px; background: var(--rv-surface); scrollbar-width: thin; }
+.tabs { display: flex; gap: 8px; overflow-x: auto; padding: 5px; border: 1px solid #2e405b; border-radius: 14px; background: var(--rv-surface); scrollbar-width: thin; scroll-margin-top: 90px; }
 .tab, .activeTab { min-width: 150px; flex: 1 0 150px; display: grid; gap: 4px; border: 1px solid transparent; border-radius: 10px; padding: 11px 13px; background: transparent; color: var(--rv-text-muted); text-align: left; cursor: pointer; }
 .tab span, .activeTab span { font-size: 14px; font-weight: 900; }
 .tab small, .activeTab small { color: #8291a8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -27,6 +27,8 @@
 .projectHeading h3 { margin: 0 0 5px; font-size: 22px; }
 .projectHeading p { margin: 0; color: var(--rv-text-muted); font-size: 13px; }
 .primaryButton, .empty button, .projectCard button { border: 0; border-radius: 8px; padding: 10px 13px; background: #f4b942; color: #101827; font-weight: 900; cursor: pointer; }
+.projectActions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.projectCard .secondaryButton, .secondaryButton { border: 1px solid #f4b942; border-radius: 8px; padding: 10px 13px; background: transparent; color: var(--rv-text); font-weight: 900; cursor: pointer; }
 .projectList { display: grid; gap: 10px; }
 .projectCard { display: flex; align-items: center; justify-content: space-between; gap: 18px; border: 1px solid var(--rv-border); border-radius: 11px; padding: 15px; background: var(--rv-surface); }
 .projectCard h3 { margin: 5px 0; font-size: 17px; }
