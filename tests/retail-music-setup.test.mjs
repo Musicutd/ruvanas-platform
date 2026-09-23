@@ -23,8 +23,13 @@ test("Retail quick setup lists listening zones and blocks shared channels", () =
 
 test("Retail quick setup requires exactly one assigned channel", () => {
   const [unassigned] = buildRetailMusicAreas({ targets: [{ ...zone, channelId: null }] });
+  const [preparable] = buildRetailMusicAreas({ targets: [{ ...zone, channelId: null, channelIds: [] }] });
+  const [assignedDraft] = buildRetailMusicAreas({ targets: [{ ...zone, channelId: null, channelIds: ["draft-channel"] }] });
   const [ready] = buildRetailMusicAreas({ targets: [zone], channels: [{ id: "channel-1", assignments: ["Main shop / Sales floor"] }] });
   assert.match(unassigned.blocker, /needs one assigned channel/);
+  assert.equal(unassigned.canPrepareChannel, false);
+  assert.equal(preparable.canPrepareChannel, true);
+  assert.equal(assignedDraft.canPrepareChannel, false);
   assert.equal(ready.blocker, null);
 });
 
@@ -44,11 +49,13 @@ test("Retail music page is product guarded and reuses existing programming autho
   assert.match(client, /\/api\/programming\/autodj/);
   assert.match(client, /\/api\/catalogue\/music\?product=RETAIL/);
   assert.match(client, /\/api\/programming\/simple\/nonstop/);
+  assert.match(client, /\/api\/programming\/retail\/prepare-channel/);
   assert.match(client, /Approved Ruvanas catalogue/);
   assert.match(client, /targetType: "ZONE"/);
   assert.match(client, /rightsUse: "RETAIL_RADIO"/);
   assert.match(client, /Published schedules take priority/);
   assert.match(client, /areas\.length === 1/);
+  assert.match(client, /area\.blocker && !area\.canPrepareChannel/);
   const timingChoices = client.split("\n").filter((line) => line.includes('name="retail-hours"'));
   assert.equal(timingChoices.length, 2);
   for (const choice of timingChoices) {
