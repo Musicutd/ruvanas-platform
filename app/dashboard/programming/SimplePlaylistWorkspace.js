@@ -9,7 +9,7 @@ const zonedInput = (value, timezone) => {
   return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
 };
 
-export default function SimplePlaylistWorkspace() {
+export default function SimplePlaylistWorkspace({ availableProducts = [] }) {
   const [data, setData] = useState(null);
   const [channelId, setChannelId] = useState("");
   const [playlistChannelId, setPlaylistChannelId] = useState("");
@@ -23,6 +23,9 @@ export default function SimplePlaylistWorkspace() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [dragged, setDragged] = useState(null);
+  const [catalogue, setCatalogue] = useState(null);
+  const [catalogueError, setCatalogueError] = useState("");
+  const [browseProduct, setBrowseProduct] = useState(availableProducts[0]?.key || "");
 
   async function load() {
     const response = await fetch("/api/programming/simple", { cache: "no-store" });
@@ -39,6 +42,17 @@ export default function SimplePlaylistWorkspace() {
     }
   }
   useEffect(() => { load().catch((issue) => setError(issue.message)); }, []);
+  useEffect(() => {
+    if (!channelId && !browseProduct) return;
+    const controller = new AbortController();
+    setCatalogue(null); setCatalogueError("");
+    const catalogueQuery = channelId ? `channelId=${encodeURIComponent(channelId)}` : `product=${encodeURIComponent(browseProduct)}`;
+    fetch(`/api/catalogue/music?${catalogueQuery}&limit=6`, { cache: "no-store", signal: controller.signal })
+      .then(async (response) => { const payload = await response.json(); if (!response.ok) throw new Error(payload.error || "Unable to load approved music."); return payload; })
+      .then(setCatalogue)
+      .catch((issue) => { if (issue.name !== "AbortError") setCatalogueError(issue.message); });
+    return () => controller.abort();
+  }, [channelId, browseProduct]);
 
   const channel = data?.channels.find((item) => item.id === channelId);
   const playlistChannel = data?.channels.find((item) => item.id === playlistChannelId);
@@ -135,6 +149,19 @@ export default function SimplePlaylistWorkspace() {
   return <div className={styles.layout}>
     {message && <p className={styles.success} role="status">{message}</p>}
     {error && <p className={styles.error} role="alert">{error}</p>}
+    <section className={styles.panel} aria-label="Approved music catalogue">
+      <p className={styles.kicker}>APPROVED MUSIC · AVAILABLE AUTOMATICALLY</p>
+      <h2>Music for your service</h2>
+      {!data.channels.length && availableProducts.length > 1 ? <label>Service<select value={browseProduct} onChange={(event) => setBrowseProduct(event.target.value)}>{availableProducts.map((product) => <option key={product.key} value={product.key}>{product.label}</option>)}</select></label> : null}
+      {data.channels.length ? <p className={styles.hint}>Showing music cleared for {channel?.name || "your selected channel"}. Change the channel below to check another service.</p> : <p className={styles.hint}>You can browse approved songs now. A channel is needed only when you are ready to start playback.</p>}
+      <div className={styles.cataloguePreview} aria-live="polite">
+        <strong>{catalogue ? `${catalogue.total} approved catalogue track${catalogue.total === 1 ? "" : "s"} available` : "Checking the approved catalogue…"}</strong>
+        {catalogueError ? <span>{catalogueError}</span> : catalogue?.tracks?.length ? <span>{catalogue.tracks.slice(0, 5).map((track) => `${track.artist} — ${track.title}`).join(" · ")}</span> : catalogue ? <span>No catalogue tracks are cleared for this service, territory and plan yet. Your own approved uploads may still be available.</span> : null}
+        <small>This list updates automatically when Ruvanas approves music. Track files cannot be downloaded here. Turning on AutoDJ is a separate step.</small>
+        {!catalogue?.territoryKnown ? <small>Music restricted to a country appears once a listening area or channel territory is confirmed.</small> : null}
+        {channel?.productFamily === "ONLINE" || !channelId && browseProduct === "ONLINE" ? <small>Licensed catalogue tracks are browseable only for Online Radio until their live-output rights and encoder path are verified.</small> : null}
+      </div>
+    </section>
     {!data.channels.length && <section className={styles.panel}><h2>Music setup is not ready yet</h2><p>A playback channel is needed before you can switch on Non-Stop music. For Online Radio, Ruvanas prepares that channel; other services may first need a location or listening area.</p><a href="/dashboard">See your next setup step</a></section>}
     {data.channels.length > 0 && <>
       <section className={styles.panel} aria-labelledby="nonstop-title">

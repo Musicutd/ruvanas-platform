@@ -42,6 +42,9 @@ test("Retail music page is product guarded and reuses existing programming autho
   ]);
   assert.match(page, /requireSubscriberProduct\("RETAIL"\)/);
   assert.match(client, /\/api\/programming\/autodj/);
+  assert.match(client, /\/api\/catalogue\/music\?product=RETAIL/);
+  assert.match(client, /\/api\/programming\/simple\/nonstop/);
+  assert.match(client, /Approved Ruvanas catalogue/);
   assert.match(client, /targetType: "ZONE"/);
   assert.match(client, /rightsUse: "RETAIL_RADIO"/);
   assert.match(client, /Published schedules take priority/);
@@ -54,4 +57,9 @@ test("Retail music page is product guarded and reuses existing programming autho
   }
   assert.match(client, /You can choose a time now\. To save automatic music/);
   assert.match(page, /Choose music for your shop/);
+});
+
+test("Retail catalogue rotation remains one clear choice after saving", () => {
+  const area = { channel: { autoDjPolicy: { catalogueRotation: true, defaultMusicModeId: "nonstop-1", playbackPolicy: "FOLLOW_LOCATION_HOURS" } } };
+  assert.deepEqual(retailMusicSelection(area, [{ id: "nonstop-1", playableTrackCount: 4 }]), { modeId: "approved-catalogue", playbackPolicy: "FOLLOW_LOCATION_HOURS" });
 });

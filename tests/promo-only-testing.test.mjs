@@ -247,7 +247,10 @@ test("administrator endpoints guard roles and generic distributor cannot control
   assert.match(read("app/api/studio/playout/route.js"), /studioQueueReadiness/);
   const subscriber = read("app/api/catalogue/music/route.js");
   assert.match(subscriber, /loadEligibleSubscriberMusic/);
-  assert.match(subscriber, /sourceScopes: \["LICENSED_CATALOGUE"\]/);
+  assert.match(subscriber, /sourceScopes: scopes/);
+  assert.match(subscriber, /includesRuvanasCatalogue/);
+  assert.match(subscriber, /licensedMusicCatalogueEnabled/);
+  assert.match(subscriber, /subscriberProductAccess/);
   assert.doesNotMatch(subscriber, /dl_token|downloadHost|providerMetadata|storageKey/);
 });
 

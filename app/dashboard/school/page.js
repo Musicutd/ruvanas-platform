@@ -45,6 +45,7 @@ export default async function SchoolProductDashboard() {
     primaryAction={{ href: "/dashboard/school-radio", label: "Open School Radio" }}
     quickTasks={[
       { href: "/dashboard/school-radio", label: "Create a school programme", description: "Start a supervised show or episode in the school workspace." },
+      { href: "/dashboard/programming", label: "Explore approved school music", description: "See the catalogue cleared for School Radio before choosing AutoDJ or a playlist." },
       { href: "/dashboard/notifications", label: "Review work awaiting staff", description: "See approval and safeguarding tasks that need attention." },
       { href: "/dashboard/players", label: "Check listening devices", description: "Confirm the school player is connected and ready." }
     ]}

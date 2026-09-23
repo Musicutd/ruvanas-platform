@@ -86,6 +86,17 @@ test("only approved organisation music can enter the shared playout layer", () =
   assert.equal(musicTrackEligibility(organisationTrack({ permittedUses: ["ONLINE_RADIO"] }), { organisationId: "organisation-1", requiredUse: "RETAIL_RADIO" }).reason, "USE_NOT_PERMITTED");
 });
 
+test("Super Admin catalogue releases keep recorded pillar and territory limits", () => {
+  const track = {
+    status: "READY", permittedUses: ["RETAIL_RADIO"], permittedTerritories: "EUROPE",
+    mediaAsset: { status: "READY", mediaType: "MUSIC", libraryType: "RUVANAS_CATALOGUE", organisationId: null, licensedCatalogue: false }
+  };
+  assert.equal(musicTrackEligibility(track, { requiredUse: "RETAIL_RADIO", territory: "MT" }).playable, true);
+  assert.equal(musicTrackEligibility(track, { requiredUse: "HEALTH_RADIO", territory: "MT" }).reason, "USE_NOT_PERMITTED");
+  assert.equal(musicTrackEligibility(track, { requiredUse: "RETAIL_RADIO", territory: "US" }).playable, false);
+  assert.equal(musicTrackEligibility(track, { requiredUse: "RETAIL_RADIO" }).reason, "TERRITORY_REQUIRED");
+});
+
 test("rights windows and submission transitions fail closed", () => {
   assert.equal(musicRightsWindowIsCurrent(organisationTrack(), new Date("2027-12-31T23:59:00.000Z")), true);
   assert.equal(musicRightsWindowIsCurrent(organisationTrack(), new Date("2028-01-01T00:00:00.000Z")), false);
