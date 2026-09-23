@@ -63,7 +63,7 @@ export default function RetailMusicSetup() {
   const currentPolicy = area?.channel?.autoDjPolicy || null;
   const changed = currentPolicy?.enabled !== true || (modeId === RETAIL_CATALOGUE_MODE ? !currentPolicy?.catalogueRotation : currentPolicy.defaultMusicModeId !== modeId) || currentPolicy.playbackPolicy !== playbackPolicy;
   const setupNeeds = [
-    !area ? "a shop area" : area.blocker ? "a ready channel for this area" : null,
+    !area ? "a shop area" : area.blocker && !area.canPrepareChannel ? "a ready channel for this area" : null,
     !playableModes.length && !catalogue?.total ? "approved playable music" : null
   ].filter(Boolean);
 
@@ -78,17 +78,30 @@ export default function RetailMusicSetup() {
   }
 
   async function save() {
-    if (!area || area.blocker || !selectedMode || !programming?.canManage || saving) return;
+    if (!area || (area.blocker && !area.canPrepareChannel) || !selectedMode || !programming?.canManage || saving) return;
     setSaving(true);
     setError("");
     setNotice("");
+    let channelPrepared = false;
     try {
+      let channelId = area.channel?.id;
+      if (!channelId && area.canPrepareChannel) {
+        const prepareResponse = await fetch("/api/programming/retail/prepare-channel", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ zoneId: area.id })
+        });
+        const prepared = await prepareResponse.json();
+        if (!prepareResponse.ok) throw new Error(prepared.error || "Unable to prepare this shop area.");
+        channelId = prepared.channelId;
+        channelPrepared = true;
+      }
       const catalogueChoice = modeId === RETAIL_CATALOGUE_MODE;
       const response = await fetch(catalogueChoice ? "/api/programming/simple/nonstop" : "/api/programming/autodj", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(catalogueChoice ? {
-          channelId: area.channel.id,
+          channelId,
           enabled: true,
           genreCodes: [],
           sourceScopes: catalogue.sources,
@@ -96,7 +109,7 @@ export default function RetailMusicSetup() {
           targetType: "ZONE",
           targetId: area.id
         } : {
-          channelId: area.channel.id,
+          channelId,
           enabled: true,
           defaultMusicModeId: modeId,
           backupMusicModeId: currentPolicy?.backupMusicModeId === modeId ? null : currentPolicy?.backupMusicModeId || null,
@@ -111,6 +124,7 @@ export default function RetailMusicSetup() {
       await load(area.id);
       setNotice(`Automatic music was saved for ${area.label}. Check the player to confirm what customers hear.`);
     } catch (saveError) {
+      if (channelPrepared) await load(area.id);
       setError(saveError.message);
     } finally {
       setSaving(false);
@@ -127,7 +141,7 @@ export default function RetailMusicSetup() {
     <section className={styles.card} aria-labelledby="area-heading">
       <div className={styles.cardHeading}><span className={styles.number}>1</span><div><h2 id="area-heading">Which shop?</h2><p>Choose the shop area you want to update.</p></div></div>
       {!areas.length ? <div className={styles.empty}>No listening areas are set up yet. <Link href="/dashboard/locations">Review locations and zones →</Link></div> : areas.length === 1 ? <div className={styles.field}>Shop / listening area<strong className={styles.onlyArea}>{areas[0].label}</strong></div> : <label className={styles.field}>Shop / listening area<select value={areaId} onChange={(event) => chooseArea(event.target.value)}>{areas.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>}
-      {area?.blocker ? <div className={styles.warning}>{area.blocker} <Link href="/dashboard/support">Ask for setup help →</Link></div> : null}
+      {area?.canPrepareChannel ? <div className={styles.warning}>This area has no channel yet. Save will prepare and assign one automatically; streaming-provider details are not needed here.</div> : area?.blocker ? <div className={styles.warning}>{area.blocker} <Link href="/dashboard/support">Ask for setup help →</Link></div> : null}
       {area && !area.blocker ? <div className={styles.current}><strong>Current status</strong><span>{area.current?.musicModeName ? `${area.current.musicModeName} · ${area.current.sourceLabel}` : area.programmingState === "LOCATION_CLOSED" ? "Outside your configured opening hours" : "No music is scheduled right now"}</span></div> : null}
     </section>
 
@@ -138,10 +152,10 @@ export default function RetailMusicSetup() {
       {catalogue && !catalogue.territoryKnown ? <div className={styles.warning}>This shop needs a confirmed country before music licensed only for Europe, the US or Canada can appear. <Link href="/dashboard/locations">Check your location →</Link></div> : null}
       {!playableModes.length && !catalogue?.total && catalogue !== null ? <div className={styles.empty}>No music is cleared for this shop and your current plan yet. Ruvanas can review the catalogue rights or help prepare a music choice. <Link href="/dashboard/support">Ask for help →</Link></div> : null}
       {playableModes.length || catalogue?.total ? <div className={styles.modeGrid}>{catalogue?.total ? <label className={modeId === RETAIL_CATALOGUE_MODE ? styles.selectedMode : styles.mode}>
-        <input type="radio" name="retail-music-mode" value={RETAIL_CATALOGUE_MODE} checked={modeId === RETAIL_CATALOGUE_MODE} onChange={() => setModeId(RETAIL_CATALOGUE_MODE)} disabled={!programming.canManage || Boolean(area?.blocker)} />
+        <input type="radio" name="retail-music-mode" value={RETAIL_CATALOGUE_MODE} checked={modeId === RETAIL_CATALOGUE_MODE} onChange={() => setModeId(RETAIL_CATALOGUE_MODE)} disabled={!programming.canManage || Boolean(area?.blocker && !area?.canPrepareChannel)} />
         <span><strong>Approved Ruvanas catalogue</strong><small>Ready for this shop. New approved songs become available without another upload.</small><em>{catalogue.total} available track{catalogue.total === 1 ? "" : "s"}</em></span>
       </label> : null}{playableModes.map((mode) => <label key={mode.id} className={modeId === mode.id ? styles.selectedMode : styles.mode}>
-        <input type="radio" name="retail-music-mode" value={mode.id} checked={modeId === mode.id} onChange={() => setModeId(mode.id)} disabled={!programming.canManage || Boolean(area?.blocker)} />
+        <input type="radio" name="retail-music-mode" value={mode.id} checked={modeId === mode.id} onChange={() => setModeId(mode.id)} disabled={!programming.canManage || Boolean(area?.blocker && !area?.canPrepareChannel)} />
         <span><strong>{mode.name}</strong><small>{mode.description || "Approved music selection"}</small><em>{mode.playableTrackCount} available track{mode.playableTrackCount === 1 ? "" : "s"}</em></span>
       </label>)}</div> : null}
       {catalogue?.tracks?.length ? <div className={styles.cataloguePreview}><strong>From the catalogue</strong><p>{catalogue.tracks.slice(0, 5).map((track) => `${track.artist} — ${track.title}`).join(" · ")}</p><small>Track details only; downloads are not available here. Playback remains subject to licensing and your connected channel.</small></div> : null}
@@ -154,11 +168,12 @@ export default function RetailMusicSetup() {
         <label className={playbackPolicy === "RUN_24_7" ? styles.selectedMode : styles.mode}><input type="radio" name="retail-hours" value="RUN_24_7" checked={playbackPolicy === "RUN_24_7"} onChange={() => setPlaybackPolicy("RUN_24_7")} disabled={!programming.canManage} /><span><strong>All day, every day</strong><small>Use for locations that need continuous 24/7 music.</small></span></label>
       </div>
       {programming.canManage && setupNeeds.length ? <p className={styles.setupHint} role="status">You can choose a time now. To save automatic music, this setup still needs {setupNeeds.join(" and ")}.</p> : null}
+      {programming.canManage && area?.canPrepareChannel && !setupNeeds.length ? <p className={styles.setupHint} role="status">Save will set up this shop's missing channel and enable its approved automatic music. A connected player is needed before customers hear it.</p> : null}
     </section>
 
     <section className={styles.review} aria-labelledby="review-heading">
       <div><p className={styles.eyebrow}>REVIEW</p><h2 id="review-heading">{area?.label || "Choose an area"}</h2><p>{selectedMode?.name || "No music selected"} · {playbackPolicy === "RUN_24_7" ? "24/7" : "During shop hours"}</p><small>Published schedules take priority. Saving can change live playback on a connected player; it does not connect a player or override music rights.</small></div>
-      <button type="button" onClick={save} disabled={saving || !changed || !area || Boolean(area.blocker) || !selectedMode || !programming.canManage}>{saving ? "Saving…" : currentPolicy?.enabled ? "Update automatic music" : "Save automatic music"}</button>
+      <button type="button" onClick={save} disabled={saving || !changed || !area || Boolean(area.blocker && !area.canPrepareChannel) || !selectedMode || !programming.canManage}>{saving ? "Saving…" : currentPolicy?.enabled ? "Update automatic music" : "Save automatic music"}</button>
     </section>
     {!programming.canManage ? <p className={styles.readOnly}>This account can view the music setup. An organisation owner or manager can change it.</p> : null}
     <div className={styles.nextLinks}><Link href="/dashboard/players">Check the shop player →</Link><Link href="/dashboard/programming">Need a detailed schedule? Open advanced programming →</Link></div>
