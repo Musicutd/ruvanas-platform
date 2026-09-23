@@ -46,5 +46,12 @@ test("Retail music page is product guarded and reuses existing programming autho
   assert.match(client, /rightsUse: "RETAIL_RADIO"/);
   assert.match(client, /Published schedules take priority/);
   assert.match(client, /areas\.length === 1/);
+  const timingChoices = client.split("\n").filter((line) => line.includes('name="retail-hours"'));
+  assert.equal(timingChoices.length, 2);
+  for (const choice of timingChoices) {
+    assert.match(choice, /disabled={!programming\.canManage}/);
+    assert.doesNotMatch(choice, /area\?\.blocker/);
+  }
+  assert.match(client, /You can choose a time now\. To save automatic music/);
   assert.match(page, /Choose music for your shop/);
 });
