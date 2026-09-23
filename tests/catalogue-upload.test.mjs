@@ -21,6 +21,7 @@ const validMetadata = {
   licenceExpiresAt: "",
   rightsConfirmed: "true",
   publishNow: "false",
+  minimumCatalogueLevel: "FOCUSED",
   permittedUses: ["RETAIL_RADIO", "SCHOOL_RADIO", "ONLINE_RADIO"],
   genreIds: []
 };
@@ -45,6 +46,7 @@ test("catalogue metadata defaults a reviewed upload to draft", () => {
   assert.equal(parsed.data.mixName, "Clean");
   assert.equal(parsed.data.bpm, 121);
   assert.equal(parsed.data.licenceExpiresAt, null);
+  assert.equal(parsed.data.minimumCatalogueLevel, "FOCUSED");
   assert.deepEqual(parsed.data.permittedUses, ["RETAIL_RADIO", "SCHOOL_RADIO", "ONLINE_RADIO"]);
 });
 
@@ -60,6 +62,17 @@ test("catalogue metadata requires at least one licensed product use", () => {
   const parsed = parseCatalogueMetadata({ ...validMetadata, permittedUses: [] });
   assert.equal(parsed.ok, false);
   assert.match(parsed.error, /at least one Ruvanas service/i);
+});
+
+test("single-track catalogue upload requires valid chosen territories", () => {
+  assert.equal(parseCatalogueMetadata({ ...validMetadata, permittedTerritories: "" }).ok, false);
+  assert.equal(parseCatalogueMetadata({ ...validMetadata, permittedTerritories: "unknown continent" }).ok, false);
+  assert.equal(parseCatalogueMetadata({ ...validMetadata, permittedTerritories: "Europe, US, Canada" }).data.permittedTerritories, "EUROPE,US,CA");
+});
+
+test("catalogue metadata requires an explicit Tier 3, 4 or 5 threshold", () => {
+  assert.equal(parseCatalogueMetadata({ ...validMetadata, minimumCatalogueLevel: "NONE" }).ok, false);
+  assert.equal(parseCatalogueMetadata({ ...validMetadata, minimumCatalogueLevel: "PREMIUM" }).data.minimumCatalogueLevel, "PREMIUM");
 });
 
 test("catalogue metadata only becomes ready through the explicit option", () => {

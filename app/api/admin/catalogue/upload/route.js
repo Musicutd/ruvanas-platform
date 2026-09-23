@@ -52,6 +52,7 @@ export async function POST(request) {
       rightsConfirmed: formData.get("rightsConfirmed"),
       publishNow: formData.get("publishNow"),
       licensedCatalogue: formData.get("licensedCatalogue"),
+      minimumCatalogueLevel: formData.get("minimumCatalogueLevel"),
       permittedUses: formData.getAll("permittedUses").map(String),
       genreIds: formData.getAll("genreIds").map(String)
     });

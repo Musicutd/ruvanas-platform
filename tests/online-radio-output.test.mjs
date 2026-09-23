@@ -4,7 +4,8 @@ import { eligibleOnlineRadioRotation, liquidsoapScript, rotationFingerprint } fr
 
 const instant = new Date("2026-09-18T12:00:00Z");
 const baseTrack = (overrides = {}) => ({
-  id: "track-1", status: "READY", updatedAt: instant, licenceStartsAt: null, licenceExpiresAt: null,
+  id: "track-1", status: "READY", updatedAt: instant, licenceStartsAt: null, licenceExpiresAt: null, permittedUses: ["ONLINE_RADIO"], minimumCatalogueLevel: "FOCUSED",
+  permittedTerritories: "WORLDWIDE",
   mediaAsset: { id: "asset-1", updatedAt: instant, status: "READY", mediaType: "MUSIC", libraryType: "RUVANAS_CATALOGUE", organisationId: null, licensedCatalogue: false, durationSeconds: 180, storageKey: "test.mp3" },
   ...overrides
 });
@@ -14,7 +15,7 @@ const station = (track = baseTrack(), overrides = {}) => ({
   channels: [{ id: "channel-1", status: "ACTIVE", autoDjPolicy: { enabled: true, state: "ACTIVE", playbackPolicy: "RUN_24_7", rightsUse: "ONLINE_RADIO", sourceScopes: ["RUVANAS_CORE"], selectedGenreCodes: [], defaultMusicMode: { id: "mode-1", status: "ACTIVE", tracks: [{ track, weight: 100, position: 1 }] }, backupMusicMode: null, updatedAt: instant } }],
   ...overrides
 });
-const entitlements = { onlineRadioEnabled: true, licensedMusicCatalogueLevel: "NONE" };
+const entitlements = { onlineRadioEnabled: true, licensedMusicCatalogueLevel: "FOCUSED" };
 
 test("Online Radio can prepare a rights-eligible rotation before the listener stream is live", () => {
   const result = eligibleOnlineRadioRotation(station(), entitlements, instant);

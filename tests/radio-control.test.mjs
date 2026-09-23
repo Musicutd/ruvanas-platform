@@ -28,20 +28,18 @@ test("music mode track selection normalizes the safe input", () => {
   );
 });
 
-test("global ready catalogue music is available to every organisation", () => {
+test("catalogue music requires the subscriber's licensed tier and approved pillar", () => {
+  const track = {
+    status: "READY",
+    minimumCatalogueLevel: "PROFESSIONAL",
+    permittedUses: ["RETAIL_RADIO"],
+    permittedTerritories: "WORLDWIDE",
+    mediaAsset: { status: "READY", mediaType: "MUSIC", libraryType: "RUVANAS_CATALOGUE", organisationId: null }
+  };
+  assert.equal(canUseTrackForOrganisation(track, "organisation-1"), false);
+  assert.equal(canUseTrackForOrganisation(track, "organisation-1", new Date(), { requiredUse: "SCHOOL_RADIO", licensedCatalogueLevel: "PROFESSIONAL" }), false);
   assert.equal(
-    canUseTrackForOrganisation(
-      {
-        status: "READY",
-        mediaAsset: {
-          status: "READY",
-          mediaType: "MUSIC",
-          libraryType: "RUVANAS_CATALOGUE",
-          organisationId: null
-        }
-      },
-      "organisation-1"
-    ),
+    canUseTrackForOrganisation(track, "organisation-1", new Date(), { requiredUse: "RETAIL_RADIO", licensedCatalogueLevel: "PROFESSIONAL" }),
     true
   );
 });

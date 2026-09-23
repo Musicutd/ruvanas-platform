@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requirePlatformAdmin } from "@/lib/access-control";
 import { accessDenied } from "@/lib/api-response";
+import { catalogueTierSchema, catalogueUseSchema, parseCatalogueAudience } from "@/lib/catalogue-audience.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +20,8 @@ const trackSchema = z.object({
   rightsHolder: z.string().trim().min(1).max(200),
   rightsReference: z.string().trim().min(1).max(500),
   permittedTerritories: z.string().trim().min(1).max(500),
+  minimumCatalogueLevel: catalogueTierSchema,
+  permittedUses: z.array(catalogueUseSchema).min(1),
   licenceExpiresAt: z.coerce.date().optional().nullable(),
   rightsConfirmed: z.literal(true)
 });
@@ -88,6 +91,8 @@ export async function POST(request) {
         { status: 400 }
       );
     }
+    const audience = parseCatalogueAudience(parsed.data);
+    if (!audience.ok) return NextResponse.json({ error: audience.error }, { status: 400 });
 
     const asset = await prisma.mediaAsset.findFirst({
       where: {
@@ -112,9 +117,9 @@ export async function POST(request) {
       const created = await tx.track.create({
         data: {
           ...trackData,
+          ...audience.data,
           album: parsed.data.album || null,
           rightsBasis: "OTHER",
-          permittedUses: ["RETAIL_RADIO", "SCHOOL_RADIO", "ONLINE_RADIO"],
           rightsConfirmedAt: new Date(),
           rightsConfirmedById: access.user.id,
           rightsReviewStatus: "APPROVED",
@@ -139,6 +144,8 @@ export async function POST(request) {
             rightsHolder: created.rightsHolder,
             rightsReference: created.rightsReference,
             permittedTerritories: created.permittedTerritories,
+            minimumCatalogueLevel: created.minimumCatalogueLevel,
+            permittedUses: created.permittedUses,
             licenceExpiresAt: created.licenceExpiresAt?.toISOString() || null
           }
         }

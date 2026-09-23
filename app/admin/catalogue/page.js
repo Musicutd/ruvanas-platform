@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import CatalogueBulkUploadForm from "./CatalogueBulkUploadForm";
 import CatalogueUploadForm from "./CatalogueUploadForm";
+import CatalogueAudienceControl from "./CatalogueAudienceControl";
 import GenreTierControl from "./GenreTierControl";
 import { CANONICAL_AUTODJ_GENRES, normaliseGenreCode } from "@/lib/autodj-genre-entitlements.mjs";
 
@@ -186,8 +187,9 @@ export default async function AdminCataloguePage() {
           <div>
             <h2 style={styles.sectionTitle}>Catalogue tracks</h2>
             <p style={styles.sectionDescription}>
-              Catalogue tracks will appear here after rights-cleared content is
-              approved and published by Ruvanas.
+              Set the approved pillars and minimum tier for each track here. A
+              subscriber&apos;s plan controls access; shop and channel names do not.
+              Subscriber-created shops remain visible separately under Customer setup → Locations.
             </p>
           </div>
 
@@ -217,6 +219,7 @@ export default async function AdminCataloguePage() {
                   <th style={styles.tableHeader}>Type</th>
                   <th style={styles.tableHeader}>Status</th>
                   <th style={styles.tableHeader}>Rights</th>
+                  <th style={styles.tableHeader}>Subscriber access</th>
                   <th style={styles.tableHeader}>Added</th>
                 </tr>
               </thead>
@@ -264,6 +267,10 @@ export default async function AdminCataloguePage() {
                       ) : (
                         "Legacy record"
                       )}
+                    </td>
+
+                    <td style={styles.tableCell}>
+                      {asset.track ? <CatalogueAudienceControl track={{ id: asset.track.id, minimumCatalogueLevel: asset.track.minimumCatalogueLevel, permittedUses: asset.track.permittedUses, permittedTerritories: asset.track.permittedTerritories }} /> : "No track metadata"}
                     </td>
 
                     <td style={styles.tableCell}>

@@ -25,7 +25,14 @@ const settings = parseCatalogueBatchSettings({
   rightsConfirmed: "true",
   publishNow: "false",
   licensedCatalogue: "true",
+  minimumCatalogueLevel: "PROFESSIONAL",
   permittedUses: ["ONLINE_RADIO"]
+});
+
+test("bulk catalogue import requires valid chosen territories", () => {
+  assert.equal(parseCatalogueBatchSettings({ ...settings.data, permittedTerritories: "" }).ok, false);
+  assert.equal(parseCatalogueBatchSettings({ ...settings.data, permittedTerritories: "unknown continent" }).ok, false);
+  assert.equal(settings.data.permittedTerritories, "WORLDWIDE");
 });
 
 test("spreadsheet HTML entities are decoded before genre matching", async () => {
@@ -58,6 +65,7 @@ test("bulk metadata uses shared rights and row Mix and BPM", async () => {
   assert.equal(metadata.data.mixName, "Radio Edit");
   assert.equal(metadata.data.bpm, 128);
   assert.equal(metadata.data.rightsHolder, "Promo Only");
+  assert.equal(metadata.data.minimumCatalogueLevel, "PROFESSIONAL");
   assert.deepEqual(metadata.data.genreIds, ["cm0000000000000000000001"]);
 });
 

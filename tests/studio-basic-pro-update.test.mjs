@@ -48,9 +48,9 @@ test("Manual Playout requires fallback and returns to AutoDJ when its queue empt
 });
 
 test("catalogue use, external destination caps, safe credentials and metadata are explicit", () => {
-  const catalogueAsset = { status: "READY", organisationId: null, libraryType: "RUVANAS_CATALOGUE", track: { status: "READY", licenceExpiresAt: null } };
+  const catalogueAsset = { status: "READY", organisationId: null, libraryType: "RUVANAS_CATALOGUE", track: { status: "READY", licenceExpiresAt: null, minimumCatalogueLevel: "FOCUSED", permittedUses: ["RETAIL_RADIO"], permittedTerritories: "WORLDWIDE" } };
   assert.equal(studioQueueReadiness(catalogueAsset, { licensedMusicCatalogueEnabled: false }).ready, false);
-  assert.equal(studioQueueReadiness(catalogueAsset, { licensedMusicCatalogueEnabled: true }).ready, true);
+  assert.equal(studioQueueReadiness(catalogueAsset, { licensedMusicCatalogueEnabled: true, licensedMusicCatalogueLevel: "FOCUSED", planProductFamily: "RETAIL" }).ready, true);
   assert.deepEqual([1, 2, 3, 4, 5].map((tier) => studioExternalDestinationLimit(tier)), [0, 0, 2, 5, 10]);
   assert.throws(() => assertDestinationCapacity({ tierNumber: 3, activeCount: 1, requestedCount: 2 }), /2 simultaneous/);
   assert.equal(assertDestinationCapacity({ tierNumber: 5, customLimit: 14, activeCount: 10, requestedCount: 4 }), 14);

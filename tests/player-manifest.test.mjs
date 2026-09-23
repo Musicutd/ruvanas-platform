@@ -7,8 +7,8 @@ import {
 
 const player={id:"player-1",name:"Front desk",zone:{name:"Lobby",location:{name:"Hotel Malta",timezone:"Europe/Malta"},channelAssignments:[{channel:{id:"channel-1"}}]}};
 const proofSecret="test-proof-secret-that-is-at-least-32-characters";
-const entry=(id,weight=100,overrides={})=>({weight,track:{id,title:`Track ${id}`,artist:"Artist",album:null,status:"READY",mediaAsset:{id:`asset-${id}`,durationSeconds:180,status:"READY",mediaType:"MUSIC",libraryType:"RUVANAS_CATALOGUE",organisationId:null,storageKey:"must-not-leak"},...overrides}});
-const resolution={reason:"ZONE_SLOT",scheduleId:"schedule-1",scheduleVersion:2,slotId:"slot-1",musicMode:{id:"mode-1",name:"Morning",slug:"morning",tracks:[entry("a"),entry("b",200)]}};
+const entry=(id,weight=100,overrides={})=>({weight,track:{id,title:`Track ${id}`,artist:"Artist",album:null,status:"READY",minimumCatalogueLevel:"FOCUSED",permittedUses:["RETAIL_RADIO"],permittedTerritories:"WORLDWIDE",mediaAsset:{id:`asset-${id}`,durationSeconds:180,status:"READY",mediaType:"MUSIC",libraryType:"RUVANAS_CATALOGUE",organisationId:null,storageKey:"must-not-leak"},...overrides}});
+const resolution={reason:"ZONE_SLOT",scheduleId:"schedule-1",scheduleVersion:2,slotId:"slot-1",licensedCatalogueLevel:"FOCUSED",requiredUse:"RETAIL_RADIO",musicMode:{id:"mode-1",name:"Morning",slug:"morning",tracks:[entry("a"),entry("b",200)]}};
 
 test("weighted rotation is deterministic for a player and time bucket",()=>{
   const first=deterministicWeightedRotation(resolution.musicMode.tracks,"stable-seed").map((item)=>item.track.id);

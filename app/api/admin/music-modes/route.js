@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requirePlatformAdmin } from "@/lib/access-control";
 import { accessDenied } from "@/lib/api-response";
+import { resolveEntitlements } from "@/lib/entitlements.mjs";
 import {
   canUseTrackForOrganisation,
   makeRadioSlug,
@@ -106,7 +107,7 @@ export async function POST(request) {
 
     const organisation = await prisma.organisation.findUnique({
       where: { id: parsed.data.organisationId },
-      select: { id: true }
+      select: { id: true, subscription: { include: { plan: true, billingContract: true } } }
     });
 
     if (!organisation) {
@@ -115,6 +116,11 @@ export async function POST(request) {
         { status: 404 }
       );
     }
+    const entitlements = resolveEntitlements(organisation.subscription);
+    const requiredUse = {
+      RETAIL: "RETAIL_RADIO", SCHOOL: "SCHOOL_RADIO", ONLINE: "ONLINE_RADIO",
+      HEALTH: "HEALTH_RADIO", FAITH: "FAITH_RADIO", ORGANISATIONS: "ORGANISATIONS_RADIO"
+    }[entitlements.planProductFamily] || null;
 
     const trackIds = trackSelection.tracks.map((entry) => entry.trackId);
     const tracks = trackIds.length
@@ -127,7 +133,10 @@ export async function POST(request) {
     if (
       tracks.length !== trackIds.length ||
       tracks.some(
-        (track) => !canUseTrackForOrganisation(track, organisation.id)
+        (track) => !canUseTrackForOrganisation(track, organisation.id, new Date(), {
+          requiredUse,
+          licensedCatalogueLevel: entitlements.licensedMusicCatalogueLevel
+        })
       )
     ) {
       return NextResponse.json(
