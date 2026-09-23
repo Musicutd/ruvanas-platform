@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getActiveOrganisationContext } from "@/lib/auth";
 import { resolveEntitlements } from "@/lib/entitlements.mjs";
+import { enabledSubscriberProducts } from "@/lib/product-access.mjs";
 import { prisma } from "@/lib/prisma";
 import SkipLink from "@/app/components/SkipLink";
 import ProgrammingWorkspace from "./ProgrammingWorkspace";
@@ -66,7 +67,7 @@ export default async function SubscriberProgrammingPage() {
           </div>
         </div>
         <WorkspaceTabs label="Programming tools" intro="Open only the part of radio programming you need right now." tabs={tabs}>
-          <div className={styles.workspace}><SimplePlaylistWorkspace /></div>
+          <div className={styles.workspace}><SimplePlaylistWorkspace availableProducts={enabledSubscriberProducts(entitlements).map(({ key, label }) => ({ key, label }))} /></div>
           <div className={styles.workspace}><ProgrammingWorkspace organisationName={context.membership.organisation.name} onlineOnly={onlineOnly} /></div>
           <div className={styles.workspace}>
             {onlineRadioStation ? <div className={styles.notice} role="note">Plan recurring station shows? <a href={`/dashboard/radio/schedule/${onlineRadioStation.id}`}>Open the station programme schedule</a>. Everyday Non-Stop music is managed in Music &amp; playlists.</div> : null}

@@ -195,6 +195,7 @@ async function loadProgramming(organisationId, role) {
     targets: liveTargets,
     musicModes: musicModes.map((mode) => ({
       id: mode.id,
+      slug: mode.slug,
       name: mode.name,
       description: mode.description,
       trackCount: mode.tracks.length,
@@ -213,6 +214,7 @@ async function loadProgramming(organisationId, role) {
         playbackPolicy: channel.autoDjPolicy.playbackPolicy,
         defaultMusicModeId: channel.autoDjPolicy.defaultMusicModeId,
         backupMusicModeId: channel.autoDjPolicy.backupMusicModeId,
+        catalogueRotation: channel.autoDjPolicy.defaultMusicMode?.slug === `nonstop-${channel.id}` && Array.isArray(channel.autoDjPolicy.sourceScopes) && !channel.autoDjPolicy.sourceScopes.includes("SUBSCRIBER_LIBRARY"),
         defaultMusicMode: channel.autoDjPolicy.defaultMusicMode ? {
           id: channel.autoDjPolicy.defaultMusicMode.id,
           name: channel.autoDjPolicy.defaultMusicMode.name

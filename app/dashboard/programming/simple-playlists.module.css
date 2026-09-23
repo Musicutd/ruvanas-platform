@@ -26,6 +26,9 @@
 .panel .secondary { border: 1px solid var(--rv-border); background: var(--rv-surface-muted); color: var(--rv-text); }
 .panel .danger { border: 1px solid #b91c1c; color: var(--rv-error-text); background: var(--rv-error-bg); }
 .hint { color: var(--rv-text-muted); font-size: 14px; }
+.cataloguePreview { display: grid; gap: 6px; border: 1px solid var(--rv-border); border-radius: 11px; padding: 14px 16px; background: var(--rv-surface-muted); line-height: 1.45; }
+.cataloguePreview strong { color: var(--rv-accent-text); }
+.cataloguePreview small { color: var(--rv-text-muted); }
 .toggle { display: flex; align-items: center; gap: 10px; font-size: 18px; }
 .toggle input { width: 22px; height: 22px; }
 .genreGrid { display: flex; flex-wrap: wrap; gap: 8px; }

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { buildRetailMusicAreas, retailMusicSelection } from "@/lib/retail-music-setup.mjs";
+import { buildRetailMusicAreas, retailMusicSelection, RETAIL_CATALOGUE_MODE } from "@/lib/retail-music-setup.mjs";
 import styles from "./retail-music.module.css";
 
 export default function RetailMusicSetup() {
@@ -14,6 +14,8 @@ export default function RetailMusicSetup() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [catalogue, setCatalogue] = useState(null);
+  const [catalogueError, setCatalogueError] = useState("");
 
   async function load(preferredAreaId = "") {
     setLoading(true);
@@ -37,16 +39,32 @@ export default function RetailMusicSetup() {
   }
 
   useEffect(() => { load(); }, []);
+  useEffect(() => {
+    if (!areaId) return;
+    const controller = new AbortController();
+    setCatalogue(null);
+    setCatalogueError("");
+    fetch(`/api/catalogue/music?product=RETAIL&zoneId=${encodeURIComponent(areaId)}&limit=8`, { cache: "no-store", signal: controller.signal })
+      .then(async (response) => { const payload = await response.json(); if (!response.ok) throw new Error(payload.error || "Unable to load the catalogue."); return payload; })
+      .then((payload) => {
+        setCatalogue(payload);
+        if (payload.total > 0) setModeId((current) => current || RETAIL_CATALOGUE_MODE);
+      })
+      .catch((issue) => { if (issue.name !== "AbortError") setCatalogueError(issue.message); });
+    return () => controller.abort();
+  }, [areaId]);
 
   const areas = useMemo(() => buildRetailMusicAreas(programming), [programming]);
   const area = areas.find((item) => item.id === areaId) || null;
-  const playableModes = programming?.musicModes?.filter((mode) => mode.playableTrackCount > 0) || [];
-  const selectedMode = playableModes.find((mode) => mode.id === modeId) || null;
+  const playableModes = programming?.musicModes?.filter((mode) => mode.playableTrackCount > 0 && !(area?.channel?.autoDjPolicy?.catalogueRotation && mode.id === area.channel.autoDjPolicy.defaultMusicModeId)) || [];
+  const selectedMode = modeId === RETAIL_CATALOGUE_MODE && catalogue?.total > 0
+    ? { id: RETAIL_CATALOGUE_MODE, name: "Approved Ruvanas catalogue", playableTrackCount: catalogue.total }
+    : playableModes.find((mode) => mode.id === modeId) || null;
   const currentPolicy = area?.channel?.autoDjPolicy || null;
-  const changed = currentPolicy?.enabled !== true || currentPolicy.defaultMusicModeId !== modeId || currentPolicy.playbackPolicy !== playbackPolicy;
+  const changed = currentPolicy?.enabled !== true || (modeId === RETAIL_CATALOGUE_MODE ? !currentPolicy?.catalogueRotation : currentPolicy.defaultMusicModeId !== modeId) || currentPolicy.playbackPolicy !== playbackPolicy;
   const setupNeeds = [
     !area ? "a shop area" : area.blocker ? "a ready channel for this area" : null,
-    !playableModes.length ? "approved playable music" : null
+    !playableModes.length && !catalogue?.total ? "approved playable music" : null
   ].filter(Boolean);
 
   function chooseArea(id) {
@@ -65,10 +83,19 @@ export default function RetailMusicSetup() {
     setError("");
     setNotice("");
     try {
-      const response = await fetch("/api/programming/autodj", {
+      const catalogueChoice = modeId === RETAIL_CATALOGUE_MODE;
+      const response = await fetch(catalogueChoice ? "/api/programming/simple/nonstop" : "/api/programming/autodj", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        body: JSON.stringify(catalogueChoice ? {
+          channelId: area.channel.id,
+          enabled: true,
+          genreCodes: [],
+          sourceScopes: catalogue.sources,
+          playbackPolicy,
+          targetType: "ZONE",
+          targetId: area.id
+        } : {
           channelId: area.channel.id,
           enabled: true,
           defaultMusicModeId: modeId,
@@ -106,10 +133,18 @@ export default function RetailMusicSetup() {
 
     <section className={styles.card} aria-labelledby="music-heading">
       <div className={styles.cardHeading}><span className={styles.number}>2</span><div><h2 id="music-heading">Choose the music</h2><p>These choices are ready for your organisation.</p></div></div>
-      {!playableModes.length ? <div className={styles.empty}>No playable music choices are ready yet. A catalogue alone does not create a shop playlist; an approved music mode must be prepared for your organisation. <Link href="/dashboard/programming">Open advanced programming →</Link> or <Link href="/dashboard/support">ask for help →</Link></div> : <div className={styles.modeGrid}>{playableModes.map((mode) => <label key={mode.id} className={modeId === mode.id ? styles.selectedMode : styles.mode}>
+      {catalogueError ? <div className={styles.warning} role="status">{catalogueError} Please refresh to try again.</div> : null}
+      {catalogue === null && !catalogueError ? <p className={styles.message} role="status">Checking approved catalogue music…</p> : null}
+      {catalogue && !catalogue.territoryKnown ? <div className={styles.warning}>This shop needs a confirmed country before music licensed only for Europe, the US or Canada can appear. <Link href="/dashboard/locations">Check your location →</Link></div> : null}
+      {!playableModes.length && !catalogue?.total && catalogue !== null ? <div className={styles.empty}>No music is cleared for this shop and your current plan yet. Ruvanas can review the catalogue rights or help prepare a music choice. <Link href="/dashboard/support">Ask for help →</Link></div> : null}
+      {playableModes.length || catalogue?.total ? <div className={styles.modeGrid}>{catalogue?.total ? <label className={modeId === RETAIL_CATALOGUE_MODE ? styles.selectedMode : styles.mode}>
+        <input type="radio" name="retail-music-mode" value={RETAIL_CATALOGUE_MODE} checked={modeId === RETAIL_CATALOGUE_MODE} onChange={() => setModeId(RETAIL_CATALOGUE_MODE)} disabled={!programming.canManage || Boolean(area?.blocker)} />
+        <span><strong>Approved Ruvanas catalogue</strong><small>Ready for this shop. New approved songs become available without another upload.</small><em>{catalogue.total} available track{catalogue.total === 1 ? "" : "s"}</em></span>
+      </label> : null}{playableModes.map((mode) => <label key={mode.id} className={modeId === mode.id ? styles.selectedMode : styles.mode}>
         <input type="radio" name="retail-music-mode" value={mode.id} checked={modeId === mode.id} onChange={() => setModeId(mode.id)} disabled={!programming.canManage || Boolean(area?.blocker)} />
         <span><strong>{mode.name}</strong><small>{mode.description || "Approved music selection"}</small><em>{mode.playableTrackCount} available track{mode.playableTrackCount === 1 ? "" : "s"}</em></span>
-      </label>)}</div>}
+      </label>)}</div> : null}
+      {catalogue?.tracks?.length ? <div className={styles.cataloguePreview}><strong>From the catalogue</strong><p>{catalogue.tracks.slice(0, 5).map((track) => `${track.artist} — ${track.title}`).join(" · ")}</p><small>Track details only; downloads are not available here. Playback remains subject to licensing and your connected channel.</small></div> : null}
     </section>
 
     <section className={styles.card} aria-labelledby="hours-heading">
