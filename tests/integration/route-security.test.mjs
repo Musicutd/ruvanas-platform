@@ -1858,25 +1858,33 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
       1
     );
 
-    const catalogueAsset = await db.mediaAsset.create({
+    const organisationAsset = await db.mediaAsset.create({
       data: {
+        organisationId: accountABody.organisation.id,
         name: `Rights-cleared track ${suffix}`,
         originalName: "integration.mp3",
-        storageKey: `integration/catalogue/${suffix}.mp3`,
+        storageKey: `integration/organisation/${suffix}.mp3`,
         mimeType: "audio/mpeg",
         sizeBytes: 1024n,
         durationSeconds: 180,
         mediaType: "MUSIC",
-        libraryType: "RUVANAS_CATALOGUE",
+        libraryType: "ORGANISATION_MUSIC",
         status: "READY"
       }
     });
     const track = await db.track.create({
       data: {
-        mediaAssetId: catalogueAsset.id,
+        mediaAssetId: organisationAsset.id,
         title: `Integration Track ${suffix}`,
         artist: "Ruvanas Test Artist",
-        status: "READY"
+        status: "READY",
+        rightsHolder: "Ruvanas Test Rights",
+        rightsReference: `INTEGRATION-${suffix}`,
+        rightsBasis: "DIRECT_LICENCE",
+        permittedTerritories: "WORLDWIDE",
+        permittedUses: ["ONLINE_RADIO", "RETAIL_RADIO"],
+        rightsConfirmedAt: new Date(),
+        rightsReviewStatus: "APPROVED"
       }
     });
     await assert.rejects(
