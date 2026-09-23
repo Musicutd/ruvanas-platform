@@ -1882,7 +1882,7 @@ test("route-level origin, authentication, tenant, plan, and rate-limit controls"
         rightsReference: `INTEGRATION-${suffix}`,
         rightsBasis: "DIRECT_LICENCE",
         permittedTerritories: "WORLDWIDE",
-        permittedUses: ["ONLINE_RADIO", "RETAIL_RADIO"],
+        permittedUses: ["ONLINE_RADIO", "RETAIL_RADIO", "SCHOOL_RADIO"],
         rightsConfirmedAt: new Date(),
         rightsReviewStatus: "APPROVED"
       }
