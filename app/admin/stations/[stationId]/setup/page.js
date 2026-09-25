@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getAdminUser } from "@/lib/requireAdmin";
 import AdminStationSetupForm from "./AdminStationSetupForm";
+import AdminStreamingProfiles from "./AdminStreamingProfiles";
 
 export default async function AdminStationSetupPage({ params }) {
   const user = await getAdminUser();
@@ -20,6 +21,12 @@ export default async function AdminStationSetupPage({ params }) {
   if (!station) {
     notFound();
   }
+
+  const [channels, destinations, liveSources] = await Promise.all([
+    prisma.channel.findMany({ where: { stationId: station.id, organisationId: station.organisationId, status: "ACTIVE" }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    prisma.studioBroadcastDestination.findMany({ where: { stationId: station.id, organisationId: station.organisationId }, select: { id: true, name: true, type: true, enabled: true }, orderBy: { name: "asc" } }),
+    prisma.externalLiveSource.findMany({ where: { organisationId: station.organisationId, channel: { stationId: station.id }, status: { not: "ARCHIVED" } }, select: { id: true, name: true, status: true, channel: { select: { name: true } } }, orderBy: { createdAt: "desc" } })
+  ]);
 
   const initialData = {
     streamUrl: station.streamConfig?.streamUrl ?? "",
@@ -62,6 +69,7 @@ export default async function AdminStationSetupPage({ params }) {
         hasStreamConfig={Boolean(station.streamConfig?.streamUrl)}
         initialData={initialData}
       />
+      <AdminStreamingProfiles stationId={station.id} channels={channels} destinations={destinations} liveSources={liveSources} />
     </div>
   );
 }
