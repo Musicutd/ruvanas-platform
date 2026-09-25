@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { encryptSecret } from "@/lib/crypto";
 import { requireActiveStudio } from "@/lib/studio-access";
 import { ORGANISATION_MANAGER_ROLES } from "@/lib/permissions.mjs";
-import { assertDestinationCapacity, broadcastMetadata, safeStudioDestination, validateStudioDestination } from "@/lib/studio-broadcast.mjs";
+import { assertDestinationCapacity, broadcastMetadata, safeStudioDestination } from "@/lib/studio-broadcast.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -52,6 +51,9 @@ export async function POST(request) {
   const parsed = inputSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "The Studio Broadcast request is invalid." }, { status: 400 });
   const input = parsed.data;
+  if (input.action === "CREATE_EXTERNAL" || input.action === "SET_ENABLED") {
+    return NextResponse.json({ error: "Only Ruvanas Super Admin can configure streaming destinations." }, { status: 403 });
+  }
   const idempotencyKey = String(request.headers.get("idempotency-key") || "").trim().slice(0, 160);
   if (!idempotencyKey) return NextResponse.json({ error: "Studio Broadcast commands require an Idempotency-Key." }, { status: 400 });
   try {
@@ -63,20 +65,6 @@ export async function POST(request) {
       const destination = await prisma.studioBroadcastDestination.upsert({ where: { organisationId_name: { organisationId: access.organisation.id, name: `Ruvanas · ${station.name}` } }, create: { organisationId: access.organisation.id, stationId: station.id, name: `Ruvanas · ${station.name}`, type: "RUVANAS_MANAGED", codec: station.streamConfig.outputCodec, bitrateKbps: station.streamConfig.bitrateKbps, enabled: true, connectionState: station.streamConfig.sourceConnectionStatus === "CONNECTED" ? "CONNECTED" : "STANDBY", createdByUserId: access.user.id }, update: { stationId: station.id, codec: station.streamConfig.outputCodec, bitrateKbps: station.streamConfig.bitrateKbps, enabled: true } });
       await recordBroadcastCommand(access, input, idempotencyKey, { destinationId: destination.id });
       return NextResponse.json({ destination: safeStudioDestination(destination) }, { status: 201 });
-    }
-    if (input.action === "CREATE_EXTERNAL") {
-      const clean = validateStudioDestination(input);
-      const destination = await prisma.studioBroadcastDestination.create({ data: { organisationId: access.organisation.id, name: input.name, type: clean.type, host: input.host, port: input.port, mountOrService: input.mountOrService, codec: clean.codec, bitrateKbps: clean.bitrateKbps, credentialEncrypted: encryptSecret(input.credential), enabled: true, primaryGroup: input.primaryGroup || null, isBackup: input.isBackup === true, createdByUserId: access.user.id } });
-      await prisma.auditLog.create({ data: { organisationId: access.organisation.id, actorUserId: access.user.id, action: "STUDIO_BROADCAST_DESTINATION_CREATED", entityType: "StudioBroadcastDestination", entityId: destination.id, details: { type: destination.type, codec: destination.codec, bitrateKbps: destination.bitrateKbps, credentialStored: true } } });
-      await recordBroadcastCommand(access, input, idempotencyKey, { destinationId: destination.id });
-      return NextResponse.json({ destination: safeStudioDestination(destination), notice: "Credential encrypted and stored. It cannot be displayed again." }, { status: 201 });
-    }
-    if (input.action === "SET_ENABLED") {
-      const destination = await prisma.studioBroadcastDestination.findFirst({ where: { id: input.destinationId, organisationId: access.organisation.id } });
-      if (!destination) throw Object.assign(new Error("The destination was not found."), { status: 404 });
-      const updated = await prisma.studioBroadcastDestination.update({ where: { id: destination.id }, data: { enabled: input.enabled, connectionState: input.enabled ? "STANDBY" : "DISABLED" } });
-      await recordBroadcastCommand(access, input, idempotencyKey, { destinationId: updated.id, enabled: updated.enabled });
-      return NextResponse.json({ destination: safeStudioDestination(updated) });
     }
     if (input.action === "START_BROADCAST") {
       const playout = await prisma.studioPlayoutSession.findFirst({ where: { id: input.playoutSessionId, organisationId: access.organisation.id, status: { in: ["ACTIVE", "FALLBACK"] } }, include: { items: { where: { status: "ON_AIR" } } } });
