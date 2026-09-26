@@ -1,6 +1,7 @@
 import { buildSchoolProductOnboarding } from "@/lib/product-onboarding.mjs";
 import { prisma } from "@/lib/prisma";
 import { requireSubscriberProduct } from "@/lib/subscriber-product-access";
+import { pillarListenHref } from "@/lib/pillar-audio.mjs";
 import ProductDashboard from "../ProductDashboard";
 
 export const dynamic = "force-dynamic";
@@ -43,9 +44,10 @@ export default async function SchoolProductDashboard() {
     complimentary={entitlements.complimentaryAccess}
     onboarding={onboarding}
     primaryAction={{ href: "/dashboard/school-radio", label: "Open School Radio" }}
+    listenAction={{ href: pillarListenHref("SCHOOL"), label: "Listen live" }}
     quickTasks={[
       { href: "/dashboard/school-radio", label: "Create a school programme", description: "Start a supervised show or episode in the school workspace." },
-      { href: "/dashboard/programming", label: "Explore approved school music", description: "See the catalogue cleared for School Radio before choosing AutoDJ or a playlist." },
+      { href: "/dashboard/autodj/school", label: "School AutoDJ", description: "Choose approved music for your school channel. Existing schedules stay separate." },
       { href: "/dashboard/notifications", label: "Review work awaiting staff", description: "See approval and safeguarding tasks that need attention." },
       { href: "/dashboard/players", label: "Check listening devices", description: "Confirm the school player is connected and ready." }
     ]}

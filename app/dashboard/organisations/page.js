@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { requireSubscriberProduct } from "@/lib/subscriber-product-access";
+import { pillarListenHref } from "@/lib/pillar-audio.mjs";
 import ProductDashboard from "../ProductDashboard";
 
 export const dynamic = "force-dynamic";
@@ -16,9 +17,10 @@ export default async function OrganisationsDashboard() {
     prisma.schoolPodcastEpisode.count({ where: { organisationId: organisation.id, status: "PUBLISHED", series: { product: "ORGANISATIONS_RADIO" } } })
   ]);
   const activeChannels = organisation.stations.filter((station) => station.status === "ACTIVE");
-  return <ProductDashboard eyebrow="Ruvanas Organisations" title="Your organisation’s media, under your control" description="Operate channels, announcements, events, podcasts, sponsors and displays. Ruvanas supplies the technology; your organisation controls the service and content." status={activeChannels.length ? "Organisation media ready" : "Channel setup needed"} statusTone={activeChannels.length ? "healthy" : "attention"} complimentary={entitlements.complimentaryAccess} primaryAction={{ href: "/dashboard/organisations/workspace", label: "Open Organisations workspace" }} quickTasks={[
+  return <ProductDashboard eyebrow="Ruvanas Organisations" title="Your organisation’s media, under your control" description="Operate channels, announcements, events, podcasts, sponsors and displays. Ruvanas supplies the technology; your organisation controls the service and content." status={activeChannels.length ? "Organisation media ready" : "Channel setup needed"} statusTone={activeChannels.length ? "healthy" : "attention"} complimentary={entitlements.complimentaryAccess} primaryAction={{ href: "/dashboard/organisations/workspace", label: "Open Organisations workspace" }} listenAction={{ href: pillarListenHref("ORGANISATIONS"), label: "Listen live" }} quickTasks={[
     { href: "/dashboard/organisations/workspace?tab=announcements", label: "Prepare an announcement", description: "Choose the message, review it and select where it appears." },
     { href: "/dashboard/organisations/workspace?tab=events", label: "Prepare an event", description: "Plan a live window with a safe fallback." },
+    { href: "/dashboard/autodj/organisations", label: "Organisation AutoDJ", description: "Keep approved audio ready between events and announcements." },
     { href: "/dashboard/organisations/setup", label: "Review your channels", description: "Check audience and access settings before publishing." }
   ]} metrics={[
     { label: "Branches & venues", value: locations, detail: "Subscriber-owned locations" },

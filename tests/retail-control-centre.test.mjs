@@ -99,7 +99,7 @@ test("database reads are tenant-scoped and avoid querying disabled signage", asy
 test("Retail home keeps everyday actions visible and technical evidence optional", async () => {
   const client = await readFile(new URL("../app/dashboard/retail/RetailControlCentre.js", import.meta.url), "utf8");
   assert.match(client, /What would you like to do\?/);
-  assert.match(client, /Change shop music/);
+  assert.match(client, /AutoDJ & shop music/);
   assert.match(client, /Check shop players/);
   assert.match(client, /More about this shop/);
   assert.match(client, /Schedules, reports and more tools/);

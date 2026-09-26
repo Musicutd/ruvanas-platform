@@ -27,7 +27,7 @@ test("the radio dashboard offers tasks appropriate to station readiness", async 
   ]);
   assert.match(radio, /const quickTasks = !firstStation \? \[\] : stationReady \?/);
   assert.match(radio, /label: "Prepare your audio"/);
-  assert.match(radio, /label: "Music & schedule"/);
+  assert.match(radio, /label: "AutoDJ music"/);
   assert.match(dashboard, /RUVANAS IS HANDLING THIS STEP/);
   assert.match(dashboard, /While Ruvanas prepares your service/);
   assert.doesNotMatch(stationForm, /shop programming/);

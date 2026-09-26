@@ -1,6 +1,7 @@
 import { buildHealthProductOnboarding } from "@/lib/product-onboarding.mjs";
 import { prisma } from "@/lib/prisma";
 import { requireSubscriberProduct } from "@/lib/subscriber-product-access";
+import { pillarListenHref } from "@/lib/pillar-audio.mjs";
 import ProductDashboard from "../ProductDashboard";
 
 export const dynamic = "force-dynamic";
@@ -19,9 +20,9 @@ export default async function HealthDashboard() {
   const activeChannels = organisation.stations.filter((station) => station.status === "ACTIVE");
   const programmeReady = policies > 0 && schedules > 0;
   const onboarding = buildHealthProductOnboarding({ serviceEnabled: entitlements.serviceEnabled, membershipRole: context.membership.role, activeLocationCount: locations, stationActive: activeChannels.length > 0, programmeReady, configuredPlayerCount: players, requestModerationReady: organisation.stations.some((station) => station.listenerRequestsEnabled) });
-  return <ProductDashboard eyebrow="Ruvanas Health" title="Calm, controlled audio for care environments" description="Run hospital radio, wellbeing channels, announcements and listen-again programmes with subscriber ownership and privacy-aware request handling." status={activeChannels.length ? "Health channel available" : "Channel setup needed"} statusTone={activeChannels.length ? "healthy" : "attention"} complimentary={entitlements.complimentaryAccess} onboarding={onboarding} primaryAction={{ href: "/dashboard/health/setup", label: "Set up Health channel" }} quickTasks={[
+  return <ProductDashboard eyebrow="Ruvanas Health" title="Calm, controlled audio for care environments" description="Run hospital radio, wellbeing channels, announcements and listen-again programmes with subscriber ownership and privacy-aware request handling." status={activeChannels.length ? "Health channel available" : "Channel setup needed"} statusTone={activeChannels.length ? "healthy" : "attention"} complimentary={entitlements.complimentaryAccess} onboarding={onboarding} primaryAction={{ href: "/dashboard/health/setup", label: "Set up Health channel" }} listenAction={{ href: pillarListenHref("HEALTH"), label: "Listen live" }} quickTasks={[
     { href: "/dashboard/health/setup", label: "Set up a care channel", description: "Choose the audience and privacy settings for hospital audio." },
-    { href: "/dashboard/programming", label: "Plan the audio", description: "Prepare approved music and announcements for scheduled playback." },
+    { href: "/dashboard/autodj/health", label: "Health AutoDJ", description: "Set continuous approved audio for a Health channel." },
     { href: "/dashboard/players", label: "Check listening devices", description: "Confirm approved players are connected at the right location." }
   ]} metrics={[
     { label: "Health sites", value: locations, detail: "Hospitals and care locations" }, { label: "Health channels", value: `${activeChannels.length} / ${entitlements.stationLimit}`, detail: "Subscriber-owned channels" }, { label: "Players", value: players, detail: "Secure listening endpoints" }, { label: "Listen again", value: podcasts, detail: "Published Health programmes" }

@@ -36,10 +36,11 @@ export default async function OnlineRadioDashboard() {
   });
   const stationReady = firstStation?.status === "ACTIVE" && Boolean(firstStation?.streamConfig?.streamUrl);
   const quickTasks = !firstStation ? [] : stationReady ? [
-    { href: "/dashboard/programming#workspace-simple", label: "Music & schedule", description: "Start 24/7 music first; add playlists and timed shows when you need them." },
+    { href: "/dashboard/autodj/online", label: "AutoDJ music", description: "Keep your station playing; detailed schedules stay available separately." },
     { href: `/stations/${firstStation.id}/public-player`, label: "Your listening page", description: "Preview or publish the page you will share with listeners." },
     { href: "/dashboard/media", label: "Add your own audio", description: "Prepare station-owned tracks, jingles and spoken content." }
   ] : [
+    { href: "/dashboard/autodj/online", label: "Prepare AutoDJ music", description: "Choose approved music now; Ruvanas handles the broadcast connection separately." },
     { href: "/dashboard/media", label: "Prepare your audio", description: "Add station-owned audio while Ruvanas prepares the broadcast connection." },
     { href: "/dashboard/support", label: "Ask Ruvanas", description: "Send a question and follow the answer in one place." }
   ];
@@ -53,7 +54,7 @@ export default async function OnlineRadioDashboard() {
     complimentary={entitlements.complimentaryAccess}
     onboarding={onboarding}
     primaryAction={{ href: firstStation ? `/stations/${firstStation.id}` : "/stations/new", label: firstStation ? "Open station" : "Create station" }}
-    listenAction={listenStation ? { href: onlineRadioListenHref(listenStation.id), label: listenStation.status === "ACTIVE" && listenStation.publicPlayerEnabled ? "Listen live" : "Listen to test stream" } : null}
+    listenAction={{ href: listenStation ? onlineRadioListenHref(listenStation.id) : "/dashboard/listen/online", label: listenStation && (listenStation.status !== "ACTIVE" || !listenStation.publicPlayerEnabled) ? "Listen to test stream" : "Listen live" }}
     quickTasks={quickTasks}
     metrics={[
       { label: "Stations", value: `${organisation.stations.length} / ${entitlements.stationLimit}`, detail: "Online services configured" },

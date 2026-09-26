@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { SubscriberThemeContext } from "./SubscriberThemeContext";
+import { AUDIO_PILLARS, dashboardAudioPillar } from "@/lib/pillar-audio.mjs";
 import styles from "./subscriber-portal-shell.module.css";
 
 const THEME_STORAGE_KEY = "ruvanas:subscriber-theme";
@@ -13,8 +14,15 @@ function matchesPath(pathname, href) {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export default function SubscriberPortalShell({ navigation, organisationName, userName, membershipRole, listenHref, children }) {
+export default function SubscriberPortalShell({ navigation, organisationName, userName, membershipRole, listenHrefs = {}, children }) {
   const pathname = usePathname();
+  const availableListenProducts = Object.keys(listenHrefs);
+  const currentPillar = dashboardAudioPillar(pathname);
+  const listenProduct = currentPillar && listenHrefs[currentPillar]
+    ? currentPillar
+    : availableListenProducts.length === 1 ? availableListenProducts[0] : listenHrefs.ONLINE ? "ONLINE" : null;
+  const listenHref = listenProduct ? listenHrefs[listenProduct] : null;
+  const listenLabel = AUDIO_PILLARS[listenProduct]?.label || "your channel";
   const [open, setOpen] = useState(false);
   const [showAllTools, setShowAllTools] = useState(false);
   const [theme, setTheme] = useState("dark");
@@ -105,7 +113,7 @@ export default function SubscriberPortalShell({ navigation, organisationName, us
           <span>{organisationName}</span>
           <small>{membershipRole.replaceAll("_", " ").toLowerCase()}</small>
         </div>
-        {listenHref ? <Link href={listenHref} className={styles.listenLink} target="_blank" rel="noopener noreferrer" aria-label="Listen to your Online Radio station in a new tab">▶ Listen</Link> : null}
+        {listenHref ? <Link href={listenHref} className={styles.listenLink} target="_blank" rel="noopener noreferrer" aria-label={`Listen to ${listenLabel} in a new tab`}>▶ Listen</Link> : null}
         <button
           type="button"
           className={styles.themeToggle}
@@ -136,7 +144,7 @@ export default function SubscriberPortalShell({ navigation, organisationName, us
             >
               <span>Overview</span><b aria-hidden="true">⌂</b>
             </Link>
-            {listenHref ? <Link href={listenHref} className={styles.listenSidebar} target="_blank" rel="noopener noreferrer" onClick={() => setOpen(false)}>▶ Listen to your station</Link> : null}
+            {listenHref ? <Link href={listenHref} className={styles.listenSidebar} target="_blank" rel="noopener noreferrer" onClick={() => setOpen(false)}>▶ Listen to {listenLabel}</Link> : null}
             {topLevelItems.map((item) => {
               const active = item.available !== false && matchesPath(pathname, item.href);
               return (

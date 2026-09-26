@@ -17,7 +17,7 @@ export async function GET() {
     const [channels, playlists, events, genres] = await Promise.all([
       prisma.channel.findMany({ where: { organisationId, status: { in: ["ACTIVE", "DRAFT"] } }, include: {
         station: { select: { id: true, name: true, productFamily: true, status: true, streamConfig: { select: { streamUrl: true } } } },
-        autoDjPolicy: { select: { enabled: true, selectedGenreCodes: true } },
+        autoDjPolicy: { select: { enabled: true, selectedGenreCodes: true, playbackPolicy: true } },
         zoneAssignments: { include: { zone: { include: { location: { select: { timezone: true } } } } }, take: 1 }
       }, orderBy: { name: "asc" } }),
       prisma.smartPlaylist.findMany({ where: { organisationId, simpleBuildMode: { not: null }, status: { not: "ARCHIVED" } }, include: { musicMode: { select: { name: true } } }, orderBy: { updatedAt: "desc" }, take: 200 }),
@@ -28,11 +28,12 @@ export async function GET() {
       ok: true,
       canManage: ["OWNER", "MANAGER", "CONTENT_EDITOR"].includes(access.context.membership.role),
       channels: channels.map((channel) => ({
-        id: channel.id, name: channel.name, status: channel.status, productFamily: channel.station?.productFamily || "RETAIL",
+        id: channel.id, name: channel.name, status: channel.status,
+        productFamily: channel.station?.productFamily || ({ RETAIL_RADIO: "RETAIL", SCHOOL_RADIO: "SCHOOL", ONLINE_RADIO: "ONLINE", HEALTH_RADIO: "HEALTH", FAITH_RADIO: "FAITH", ORGANISATIONS_RADIO: "ORGANISATIONS" }[rightsUseForChannel(channel)] || "RETAIL"),
         rightsUse: rightsUseForChannel(channel), timezone: channel.zoneAssignments[0]?.zone?.location?.timezone || "Europe/Malta",
         stationName: channel.station?.name || null,
         streamingStatus: !rightsUseForChannel(channel) ? "RIGHTS_PROFILE_REQUIRED" : channel.station ? (channel.station.streamConfig?.streamUrl ? "CONFIGURED" : "PENDING_MANUAL_CONFIGURATION") : "RUVANAS_PLAYBACK",
-        nonStop: { enabled: channel.autoDjPolicy?.enabled === true, genreCodes: Array.isArray(channel.autoDjPolicy?.selectedGenreCodes) ? channel.autoDjPolicy.selectedGenreCodes : [] }
+        nonStop: { enabled: channel.autoDjPolicy?.enabled === true, genreCodes: Array.isArray(channel.autoDjPolicy?.selectedGenreCodes) ? channel.autoDjPolicy.selectedGenreCodes : [], playbackPolicy: channel.autoDjPolicy?.playbackPolicy || "RUN_24_7" }
       })),
       genres: genres.map((genre) => ({ id: genre.id, name: genre.name, code: normaliseGenreCode(genre.slug) })),
       playlists: playlists.map(safeSimplePlaylist),

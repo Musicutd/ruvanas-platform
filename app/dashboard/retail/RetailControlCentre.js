@@ -76,12 +76,13 @@ export default function RetailControlCentre({ summary, onboarding, complimentary
   return <main id="main-content" className={styles.page}><div className={styles.container}>
     <header className={styles.hero}>
       <p className={styles.eyebrow}>YOUR RETAIL RADIO</p><h1>{copy.title}</h1><p>{copy.detail}</p>
+      <div className={styles.heroActions}><Link href="/dashboard/listen/retail" target="_blank" rel="noopener noreferrer">▶ Listen live</Link><Link href="/dashboard/retail/music">♫ Set up AutoDJ</Link></div>
       <div className={styles.nextStep}><div><span>YOUR NEXT STEP</span><strong>{next.title}</strong><p>{next.description}</p></div><Link href={next.href}>{next.label} →</Link></div>
       <small>{onboarding.completedCount} of {onboarding.totalCount} setup steps complete{complimentary ? " · Complimentary service" : ""}</small>
     </header>
 
     <section className={styles.quickTasks} aria-labelledby="tasks-title"><h2 id="tasks-title">What would you like to do?</h2><div className={styles.taskGrid}>
-      <Link href="/dashboard/retail/music"><span aria-hidden="true">♫</span><strong>{summary.canManage ? "Change shop music" : "View shop music"}</strong><small>Choose what plays and when</small></Link>
+      <Link href="/dashboard/retail/music"><span aria-hidden="true">♫</span><strong>{summary.canManage ? "AutoDJ & shop music" : "View shop music"}</strong><small>Choose what plays and when</small></Link>
       <Link href="/dashboard/promotions"><span aria-hidden="true">✦</span><strong>{summary.canManage ? "Plan a promotion" : "View promotions"}</strong><small>Messages for your shops</small></Link>
       <Link href="/dashboard/players"><span aria-hidden="true">▣</span><strong>Check shop players</strong><small>See whether devices are ready</small></Link>
     </div></section>
