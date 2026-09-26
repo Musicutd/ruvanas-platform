@@ -25,13 +25,14 @@ export async function GET(request) {
       });
     }
     const instant = new Date();
-    const { resolution, playoutDecision, campaignPlayout, schoolPlayout } = await resolvePlayerProgramming(player, instant);
+    const { resolution, playoutDecision, campaignPlayout, schoolPlayout, correctionsPlayout } = await resolvePlayerProgramming(player, instant);
     const manifest = buildPlayerManifest({
       player,
       resolution,
       playoutDecision,
       campaignPlayout,
       schoolPlayout,
+      correctionsPlayout,
       listenerToken: listenerAccess.listenerToken,
       instant,
       proofSecret: process.env.SESSION_SECRET

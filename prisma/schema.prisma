@@ -540,6 +540,49 @@ enum CorrectionsStudioSessionStatus {
   REVOKED
 }
 
+enum CorrectionsRequestAvailability {
+  DISABLED
+  INTERNAL_ONLY
+  FAMILY_AND_INTERNAL
+}
+
+enum CorrectionsRequestSource {
+  INTERNAL
+  FAMILY
+}
+
+enum CorrectionsRequestType {
+  SONG
+  PROGRAMME
+  DEDICATION
+  MESSAGE
+  REHABILITATION_SUGGESTION
+}
+
+enum CorrectionsRequestStatus {
+  RECEIVED
+  SCREENING
+  APPROVED
+  REJECTED
+  SCHEDULED
+  PLAYED
+  ARCHIVED
+}
+
+enum CorrectionsRehabStatus {
+  DRAFT
+  IN_REVIEW
+  APPROVED
+  REJECTED
+  ARCHIVED
+}
+
+enum CorrectionsDevelopmentStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+}
+
 enum ChannelStatus {
   DRAFT
   ACTIVE
@@ -1064,6 +1107,7 @@ enum PlaybackItemType {
   MUSIC
   PROMO
   SCHOOL_ANNOUNCEMENT
+  CORRECTIONS_AUDIO
 }
 
 enum SchoolPublishingPolicy {
@@ -1849,6 +1893,10 @@ model Organisation {
   correctionsFacilityGrants           CorrectionsFacilityGrant[]
   correctionsContributors             CorrectionsContributor[]
   correctionsStudioSessions           CorrectionsStudioSession[]
+  correctionsRequests                 CorrectionsRequest[]
+  correctionsRehabCategories          CorrectionsRehabCategory[]
+  correctionsRehabContent             CorrectionsRehabContent[]
+  correctionsDevelopmentModules       CorrectionsDevelopmentModule[]
   schoolSafeguardingReadiness        SchoolSafeguardingReadiness?
   schoolSafeguardingReviews          SchoolSafeguardingReview[]
   schoolRetentionHolds               SchoolRetentionHold[]
@@ -2667,6 +2715,8 @@ model Location {
   correctionsFacilityGrants     CorrectionsFacilityGrant[]
   correctionsContributors       CorrectionsContributor[]
   correctionsStudioSessions     CorrectionsStudioSession[]
+  correctionsRequests           CorrectionsRequest[]
+  correctionsRehabContent       CorrectionsRehabContent[]
 
   @@unique([organisationId, slug])
   @@index([organisationId])
@@ -2788,6 +2838,11 @@ model CorrectionsFacility {
   blockedTrackIds    String[]  @default([])
   blockedArtists     String[]  @default([])
   policyConfiguredAt DateTime?
+  requestAvailability CorrectionsRequestAvailability @default(DISABLED)
+  publicRequestCode String? @unique
+  songRequestsEnabled Boolean @default(false)
+  messageRequestsEnabled Boolean @default(false)
+  dedicationsEnabled Boolean @default(false)
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
@@ -2811,6 +2866,9 @@ model CorrectionsProgramme {
   createdBy    User                    @relation("CorrectionsProgrammeCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
   submissions  CorrectionsSubmission[]
   studioSessions CorrectionsStudioSession[]
+  requests CorrectionsRequest[]
+  rehabItems CorrectionsRehabProgrammeItem[]
+  playoutIntents PlayoutIntent[]
 
   @@index([organisationId, facilityId, status])
   @@index([facilityId, updatedAt])
@@ -2842,6 +2900,7 @@ model CorrectionsSubmission {
   render      AudioRender           @relation(fields: [renderId], references: [id], onDelete: Restrict)
   submittedBy User                  @relation("CorrectionsSubmissionSubmittedBy", fields: [submittedByUserId], references: [id], onDelete: Restrict)
   reviews     CorrectionsReview[]
+  playoutIntents PlayoutIntent[]
   contributor CorrectionsContributor? @relation(fields: [contributorId], references: [id], onDelete: Restrict)
   studioSession CorrectionsStudioSession? @relation(fields: [studioSessionId], references: [id], onDelete: Restrict)
   studioProject AudioProject? @relation("CorrectionsSubmittedProject", fields: [studioProjectId], references: [id], onDelete: Restrict)
@@ -2871,6 +2930,7 @@ model CorrectionsContributor {
   createdBy    User         @relation("CorrectionsContributorCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
   sessions     CorrectionsStudioSession[]
   submissions  CorrectionsSubmission[]
+  milestones CorrectionsContributorMilestone[]
 
   @@index([organisationId, facilityId, status])
 }
@@ -2942,6 +3002,152 @@ model CorrectionsFacilityGrant {
 
   @@unique([organisationMemberId, facilityId])
   @@index([organisationId, facilityId, permission])
+}
+
+// Staff may approve a separate on-air version; the original request is evidence.
+// Scheduling and played states remain reserved for proof-backed private delivery.
+model CorrectionsRequest {
+  id String @id @default(cuid())
+  organisationId String
+  facilityId String
+  source CorrectionsRequestSource
+  type CorrectionsRequestType
+  status CorrectionsRequestStatus @default(RECEIVED)
+  senderDisplayName String?
+  relationship String?
+  recipientReference String?
+  recipientDisplayName String?
+  wingOrUnit String?
+  songTitle String?
+  songArtist String?
+  originalMessage String?
+  onAirRecipient String?
+  onAirMessage String?
+  trackId String?
+  programmeId String?
+  dedupeKey String? @unique
+  createdByUserId String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  decisions CorrectionsRequestDecision[]
+  playoutIntents PlayoutIntent[]
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  facility Location @relation(fields: [facilityId], references: [id], onDelete: Restrict)
+  programme CorrectionsProgramme? @relation(fields: [programmeId], references: [id], onDelete: SetNull)
+  track Track? @relation(fields: [trackId], references: [id], onDelete: SetNull)
+
+  @@index([organisationId, facilityId, status, createdAt], map: "CorrectionsRequest_org_facility_status_created_idx")
+  @@index([facilityId, source, createdAt])
+  @@index([programmeId])
+}
+
+model CorrectionsRequestDecision {
+  id String @id @default(cuid())
+  requestId String
+  organisationId String
+  facilityId String
+  action String
+  fromStatus CorrectionsRequestStatus
+  toStatus CorrectionsRequestStatus
+  moderatorUserId String
+  note String?
+  onAirRecipient String?
+  onAirMessage String?
+  trackId String?
+  programmeId String?
+  decidedAt DateTime @default(now())
+  request CorrectionsRequest @relation(fields: [requestId], references: [id], onDelete: Restrict)
+
+  @@index([requestId, decidedAt])
+  @@index([organisationId, facilityId, decidedAt], map: "CorrectionsRequestDecision_org_facility_decided_idx")
+}
+
+model CorrectionsRehabCategory {
+  id String @id @default(cuid())
+  organisationId String
+  code String
+  name String
+  active Boolean @default(true)
+  createdAt DateTime @default(now())
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  content CorrectionsRehabContent[]
+
+  @@unique([organisationId, code])
+}
+
+model CorrectionsRehabContent {
+  id String @id @default(cuid())
+  organisationId String
+  facilityId String?
+  categoryId String
+  mediaAssetId String
+  title String
+  description String?
+  providerName String
+  languageCode String @default("und")
+  sourceNotes String?
+  accessibilityNotes String?
+  expiresAt DateTime?
+  reviewAt DateTime?
+  status CorrectionsRehabStatus @default(DRAFT)
+  createdByUserId String
+  reviewedByUserId String?
+  reviewedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  facility Location? @relation(fields: [facilityId], references: [id], onDelete: Restrict)
+  category CorrectionsRehabCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  mediaAsset MediaAsset @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+  programmeItems CorrectionsRehabProgrammeItem[]
+  playoutIntents PlayoutIntent[]
+
+  @@index([organisationId, facilityId, status])
+  @@index([mediaAssetId])
+  @@index([expiresAt])
+}
+
+model CorrectionsRehabProgrammeItem {
+  id String @id @default(cuid())
+  programmeId String
+  contentId String
+  position Int
+  addedByUserId String
+  createdAt DateTime @default(now())
+  programme CorrectionsProgramme @relation(fields: [programmeId], references: [id], onDelete: Cascade)
+  content CorrectionsRehabContent @relation(fields: [contentId], references: [id], onDelete: Restrict)
+
+  @@unique([programmeId, contentId])
+  @@unique([programmeId, position])
+}
+
+model CorrectionsDevelopmentModule {
+  id String @id @default(cuid())
+  organisationId String
+  code String
+  title String
+  position Int
+  active Boolean @default(true)
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  milestones CorrectionsContributorMilestone[]
+
+  @@unique([organisationId, code])
+  @@index([organisationId, position])
+}
+
+model CorrectionsContributorMilestone {
+  id String @id @default(cuid())
+  contributorId String
+  moduleId String
+  status CorrectionsDevelopmentStatus @default(NOT_STARTED)
+  completedAt DateTime?
+  supervisorUserId String?
+  note String?
+  updatedAt DateTime @updatedAt
+  contributor CorrectionsContributor @relation(fields: [contributorId], references: [id], onDelete: Cascade)
+  module CorrectionsDevelopmentModule @relation(fields: [moduleId], references: [id], onDelete: Restrict)
+
+  @@unique([contributorId, moduleId])
 }
 
 model Channel {
@@ -3465,6 +3671,7 @@ model MediaAsset {
   liveRecordings        LiveStudioSession[]    @relation("LiveStudioRecordingAsset")
   podcastEpisodes       SchoolPodcastEpisode[]
   studioProductHandoffs StudioProductHandoff[]
+  correctionsRehabContent CorrectionsRehabContent[]
 
   @@unique([id, organisationId])
   @@index([organisationId])
@@ -4144,6 +4351,8 @@ model Track {
   rightsUsageLedgerEvents  RightsUsageLedgerEvent[]
   generatedPlaylistItems   GeneratedPlaylistItem[]
   distributorItems         MusicDistributorTrack[]
+  correctionsRequests CorrectionsRequest[]
+  correctionsPlayoutIntents PlayoutIntent[]
 
   @@index([status])
   @@index([artist, title])
@@ -7198,6 +7407,12 @@ model PlayoutIntent {
   campaignId            String?
   schoolBroadcastSlotId String?
   schoolRundownItemId   String?
+  correctionsRequestId String?
+  correctionsRehabContentId String?
+  correctionsProgrammeId String?
+  correctionsSubmissionId String?
+  correctionsTrackId String?
+  cancelledAt DateTime?
   promoVersionId        String?
   mediaAssetId          String
   locationId            String
@@ -7217,6 +7432,11 @@ model PlayoutIntent {
   campaign            Campaign?            @relation(fields: [campaignId], references: [id], onDelete: Restrict)
   schoolBroadcastSlot SchoolBroadcastSlot? @relation(fields: [schoolBroadcastSlotId], references: [id], onDelete: Restrict)
   schoolRundownItem   SchoolRundownItem?   @relation(fields: [schoolRundownItemId], references: [id], onDelete: Restrict)
+  correctionsRequest CorrectionsRequest? @relation(fields: [correctionsRequestId], references: [id], onDelete: Restrict)
+  correctionsRehabContent CorrectionsRehabContent? @relation(fields: [correctionsRehabContentId], references: [id], onDelete: Restrict)
+  correctionsProgramme CorrectionsProgramme? @relation(fields: [correctionsProgrammeId], references: [id], onDelete: Restrict)
+  correctionsSubmission CorrectionsSubmission? @relation(fields: [correctionsSubmissionId], references: [id], onDelete: Restrict)
+  correctionsTrack Track? @relation(fields: [correctionsTrackId], references: [id], onDelete: Restrict)
   promoVersion        PromoVersion?        @relation(fields: [promoVersionId], references: [id], onDelete: Restrict)
   mediaAsset          MediaAsset           @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
   playbackEvents      ProofOfPlayEvent[]
@@ -7230,6 +7450,9 @@ model PlayoutIntent {
   @@index([campaignId, plannedStart])
   @@index([schoolBroadcastSlotId, plannedStart])
   @@index([schoolRundownItemId, plannedStart])
+  @@index([correctionsRequestId, plannedStart])
+  @@index([correctionsRehabContentId, plannedStart])
+  @@index([correctionsProgrammeId, plannedStart])
   @@index([promoVersionId, plannedStart])
   @@index([locationId, plannedStart])
   @@index([expiresAt])

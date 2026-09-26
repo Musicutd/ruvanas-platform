@@ -290,7 +290,7 @@ export default function PlayerPage() {
           eventType: "INTERRUPTED",
           occurredAt: new Date().toISOString(),
           positionSeconds: Math.max(0, Math.round(activeAudioRef.current?.currentTime || 0)),
-          failureReason: `Interrupted for ${nextInsertion.itemType === "SCHOOL_ANNOUNCEMENT" ? `school announcement ${nextInsertion.announcementTitle}` : `campaign ${nextInsertion.campaignName}`}`
+          failureReason: `Interrupted for ${nextInsertion.programmingSource?.startsWith("CORRECTIONS_") ? "private Inside programme" : nextInsertion.itemType === "SCHOOL_ANNOUNCEMENT" ? `school announcement ${nextInsertion.announcementTitle}` : `campaign ${nextInsertion.campaignName}`}`
         });
       }
       startedPlaybackKey.current = null;
@@ -415,8 +415,8 @@ export default function PlayerPage() {
     <h1 style={styles.heading}>{state.player.name}</h1>
     <p style={styles.copy}>{state.player.location} / {state.player.zone}</p>
     {activeInsertion ? <>
-      <h2 style={styles.channel}>{activeInsertion.itemType === "SCHOOL_ANNOUNCEMENT" ? "School Radio" : activeInsertion.campaignName}</h2>
-      <p style={styles.nowPlaying}>{activeInsertion.itemType === "SCHOOL_ANNOUNCEMENT" ? "Announcement playing" : "Campaign playing"}: <strong>{activeInsertion.artist} — {activeInsertion.title}</strong></p>
+      <h2 style={styles.channel}>{activeInsertion.programmingSource?.startsWith("CORRECTIONS_") ? "Private Ruvanas Inside" : activeInsertion.itemType === "SCHOOL_ANNOUNCEMENT" ? "School Radio" : activeInsertion.campaignName}</h2>
+      <p style={styles.nowPlaying}>{activeInsertion.programmingSource?.startsWith("CORRECTIONS_") ? "Scheduled audio playing" : activeInsertion.itemType === "SCHOOL_ANNOUNCEMENT" ? "Announcement playing" : "Campaign playing"}: <strong>{activeInsertion.artist} — {activeInsertion.title}</strong></p>
       <audio ref={insertionAudio} key={activePlaybackKey} src={activeInsertion.mediaUrl} controls autoPlay onPlay={startTrack} onEnded={finishTrack} onError={failTrack} style={{ width: "100%" }} />
       <p style={styles.online}>Online — secure schedule and proof of play active</p>
     </> : manifest?.externalLive ? <>

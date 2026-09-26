@@ -21,7 +21,7 @@ export async function GET(request, { params }) {
 
     const mediaAssetId = String(params.mediaAssetId || "");
     const instant = new Date();
-    const { resolution, campaignPlayout, schoolPlayout } = await resolvePlayerProgramming(player, instant);
+    const { resolution, campaignPlayout, schoolPlayout, correctionsPlayout } = await resolvePlayerProgramming(player, instant);
     const isEligibleMusic = (resolution.musicMode?.tracks || []).some(({ track }) =>
       track.status === "READY" &&
       track.mediaAsset?.id === mediaAssetId &&
@@ -33,18 +33,21 @@ export async function GET(request, { params }) {
     );
     const isCurrentPromo = (campaignPlayout.insertions || []).some((item) => item.mediaAssetId === mediaAssetId);
     const isCurrentSchoolAnnouncement = (schoolPlayout.insertions || []).some((item) => item.mediaAssetId === mediaAssetId);
-    const recentInsertionIntent = isCurrentPromo || isCurrentSchoolAnnouncement ? null : await prisma.playoutIntent.findFirst({
+    const isCurrentInsideAudio = (correctionsPlayout?.insertions || []).some((item) => item.mediaAssetId === mediaAssetId);
+    const recentInsertionIntent = resolution.reason === "CORRECTIONS_PRIVATE" || isCurrentPromo || isCurrentSchoolAnnouncement || isCurrentInsideAudio ? null : await prisma.playoutIntent.findFirst({
       where: {
         playerId: player.id,
         organisationId: player.organisationId,
         zoneId: player.zoneId,
         mediaAssetId,
+        correctionsRequestId: null,
+        correctionsRehabContentId: null,
         plannedStart: { gte: new Date(instant.getTime() - 15 * 60 * 1000) },
         expiresAt: { gt: instant }
       },
       select: { id: true }
     });
-    if (!isEligibleMusic && !isCurrentPromo && !isCurrentSchoolAnnouncement && !recentInsertionIntent) {
+    if (!isEligibleMusic && !isCurrentPromo && !isCurrentSchoolAnnouncement && !isCurrentInsideAudio && !recentInsertionIntent) {
       return NextResponse.json({ error: "This audio is not in the player's current playback plan." }, { status: 404 });
     }
 

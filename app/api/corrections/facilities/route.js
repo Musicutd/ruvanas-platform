@@ -22,7 +22,10 @@ export async function GET() {
   const assignmentByFacility = new Map(assignments.map((item) => [item.facilityId, item.permission]));
   const profile = await prisma.correctionsProfile.findUnique({ where: { organisationId: access.organisationId } });
   const zoneCount = await prisma.zone.count({ where: { location: { organisationId: access.organisationId, correctionsFacility: { isNot: null }, status: { not: "CLOSED" } } } });
-  return reply({ ok: true, facilities: facilities.map((item) => ({ ...item, canEdit: owner || (access.context.membership.role === "MANAGER" && assignmentByFacility.get(item.locationId) === "MANAGER"), programmeRole: owner ? "OWNER" : assignmentByFacility.get(item.locationId) || "VIEWER" })), profile, caps: correctionsCaps(access.entitlements), zoneCount, canCreate: owner, playbackEnabled: false });
+  return reply({ ok: true, facilities: facilities.map((item) => {
+    const canEdit = owner || (access.context.membership.role === "MANAGER" && assignmentByFacility.get(item.locationId) === "MANAGER");
+    return { ...item, publicRequestCode: canEdit ? item.publicRequestCode : null, canEdit, programmeRole: owner ? "OWNER" : assignmentByFacility.get(item.locationId) || "VIEWER" };
+  }), profile, caps: correctionsCaps(access.entitlements), zoneCount, canCreate: owner, playbackEnabled: false });
 }
 
 export async function POST(request) {

@@ -110,16 +110,17 @@ export async function GET(request, { params }) {
 
     // A Studio output submitted to Corrections becomes facility-scoped review
     // media. The general organisation stream must not bypass Inside grants.
-    const correctionsUses = await prisma.correctionsSubmission.findMany({
-      where: { render: { outputMediaAssetId: asset.id } },
-      select: { facilityId: true }, take: 100
-    });
-    if (correctionsUses.length) {
+    const [correctionsUses, rehabilitationUses] = await Promise.all([
+      prisma.correctionsSubmission.findMany({ where: { render: { outputMediaAssetId: asset.id } }, select: { facilityId: true }, take: 100 }),
+      prisma.correctionsRehabContent.findMany({ where: { mediaAssetId: asset.id }, select: { facilityId: true }, take: 100 })
+    ]);
+    if (correctionsUses.length || rehabilitationUses.length) {
       const insideAccess = await requireOrganisationProductAccess(asset.organisationId, "CORRECTIONS");
       if (!insideAccess.ok || !insideAccess.membership) return accessDenied(insideAccess.ok ? { ok: false, status: 403, error: "Inside facility access is required." } : insideAccess);
       if (insideAccess.membership.role !== "OWNER") {
-        const assigned = await prisma.correctionsFacilityGrant.count({
-          where: { organisationId: asset.organisationId, organisationMemberId: insideAccess.membership.id, facilityId: { in: correctionsUses.map((item) => item.facilityId) } }
+        const facilityIds = [...correctionsUses, ...rehabilitationUses].map((item) => item.facilityId).filter(Boolean);
+        const assigned = facilityIds.length && await prisma.correctionsFacilityGrant.count({
+          where: { organisationId: asset.organisationId, organisationMemberId: insideAccess.membership.id, facilityId: { in: facilityIds } }
         });
         if (!assigned) return NextResponse.json({ error: "Inside facility access is required." }, { status: 403 });
       }
