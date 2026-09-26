@@ -3,9 +3,10 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { ORGANISATION_CONTENT_ROLES } from "@/lib/permissions.mjs";
 import { requireActiveStudio } from "@/lib/studio-access";
-import { assertStudioWaveformWriteAllowed, normalizeEditorState, waveformUsesProFeatures } from "@/lib/waveform-editor.mjs";
+import { assertStudioWaveformWriteAllowed, normalizeEditorState } from "@/lib/waveform-editor.mjs";
 import { normalizeVoiceCleanup } from "@/lib/voice-cleanup.mjs";
 import { applyStudioMasteringPreset, normalizeStudioEffects, normalizeStudioMastering } from "@/lib/studio-effects-mastering.mjs";
+import { findStudioWaveformProject, saveStudioWaveformSnapshot, serializeStudioWaveformProject } from "@/lib/studio-waveform-persistence";
 
 export const dynamic = "force-dynamic";
 
@@ -17,105 +18,12 @@ const requestSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("QUEUE_MASTER_PREVIEW"), state: z.record(z.unknown()) })
 ]);
 
-const editorInclude = {
-  takes: {
-    where: { status: { not: "ARCHIVED" }, trashedAt: null },
-    orderBy: { createdAt: "desc" },
-    select: {
-      id: true, durationMs: true, status: true, waveformStatus: true,
-      waveformPeaks: true, waveformGeneratedAt: true,
-      mediaAsset: { select: { id: true, name: true, originalName: true, mimeType: true, durationSeconds: true } }
-    }
-  },
-  tracks: {
-    orderBy: { order: "asc" },
-    include: { clips: { orderBy: { timelineStartMs: "asc" } } }
-  },
-  markers: { orderBy: { positionMs: "asc" } },
-  renders: {
-    orderBy: { createdAt: "desc" }, take: 10,
-    include: { outputMediaAsset: { select: { id: true, name: true, durationSeconds: true } } }
-  }
-};
-
-async function findProject(projectId, organisationId) {
-  return prisma.audioProject.findFirst({
-    where: { id: projectId, organisationId, status: { not: "ARCHIVED" } },
-    include: editorInclude
-  });
-}
-
-function serialize(project, entitlements) {
-  return {
-    id: project.id,
-    title: project.title,
-    currentVersion: project.currentVersion,
-    status: project.status,
-    studioLevel: entitlements.studioLevel,
-    studioProEnabled: entitlements.studioProEnabled,
-    restrictedReadOnly: !entitlements.studioProEnabled && waveformUsesProFeatures({ clips: project.tracks.flatMap((track) => track.clips), markers: project.markers }),
-    takes: project.takes,
-    state: {
-      clips: project.tracks.flatMap((track) => track.clips.map((clip) => ({
-        clientId: clip.id, kind: clip.kind, mediaAssetId: clip.mediaAssetId,
-        sourceStartMs: clip.sourceStartMs, sourceEndMs: clip.sourceEndMs,
-        timelineStartMs: clip.timelineStartMs, gainDb: clip.gainDb,
-        fadeInMs: clip.fadeInMs, fadeOutMs: clip.fadeOutMs,
-        fadeInCurve: clip.fadeInCurve, fadeOutCurve: clip.fadeOutCurve, locked: clip.locked
-      }))),
-      markers: project.markers.map((marker) => ({ clientId: marker.id, positionMs: marker.positionMs, type: marker.type, label: marker.label })),
-      normalize: project.editDecision?.normalize !== false,
-      targetLufs: project.editDecision?.targetLufs ?? -16,
-      noiseCleanup: project.editDecision?.noiseCleanup === true,
-      voiceCleanup: normalizeVoiceCleanup(project.editDecision?.voiceCleanup, project.editDecision?.noiseCleanup === true),
-      effects: normalizeStudioEffects(project.editDecision?.effects),
-      mastering: normalizeStudioMastering(project.editDecision?.mastering, project.editDecision || {})
-    },
-    renders: project.renders.map((render) => ({
-      id: render.id, status: render.status, preset: render.preset, loudnessLufs: render.loudnessLufs,
-      resultJson: render.resultJson, errorMessage: render.errorMessage, createdAt: render.createdAt,
-      streamUrl: render.outputMediaAsset ? `/api/media/${render.outputMediaAsset.id}/stream` : null
-    }))
-  };
-}
-
 export async function GET(_request, { params }) {
   const access = await requireActiveStudio(ORGANISATION_CONTENT_ROLES);
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
-  const project = await findProject((await params).projectId, access.organisation.id);
+  const project = await findStudioWaveformProject((await params).projectId, access.organisation.id);
   if (!project) return NextResponse.json({ error: "The AudioLab project was not found." }, { status: 404 });
-  return NextResponse.json(serialize(project, access.entitlements));
-}
-
-async function saveSnapshot(tx, { project, userId, state, reason }) {
-  const clean = normalizeEditorState(state);
-  const sourceIds = [...new Set(clean.clips.filter((clip) => clip.kind === "SOURCE").map((clip) => clip.mediaAssetId))];
-  const owned = sourceIds.length ? await tx.mediaAsset.count({ where: { id: { in: sourceIds }, organisationId: project.organisationId, status: { in: ["READY", "PROCESSING"] }, audioTakes: { none: { trashedAt: { not: null } } } } }) : 0;
-  if (owned !== sourceIds.length) throw new Error("One or more clip sources are unavailable to this organisation.");
-
-  await tx.audioTrack.deleteMany({ where: { projectId: project.id } });
-  await tx.audioMarker.deleteMany({ where: { projectId: project.id } });
-  const track = await tx.audioTrack.create({ data: { projectId: project.id, name: "Programme timeline", kind: "MIXED", order: 0 } });
-  if (clean.clips.length) {
-    await tx.audioClip.createMany({ data: clean.clips.map((clip) => ({
-      trackId: track.id, kind: clip.kind, mediaAssetId: clip.mediaAssetId,
-      sourceStartMs: clip.sourceStartMs, sourceEndMs: clip.sourceEndMs,
-      timelineStartMs: clip.timelineStartMs, gainDb: clip.gainDb,
-      fadeInMs: clip.fadeInMs, fadeOutMs: clip.fadeOutMs,
-      fadeInCurve: clip.fadeInCurve, fadeOutCurve: clip.fadeOutCurve, locked: clip.locked
-    })) });
-  }
-  if (clean.markers.length) {
-    await tx.audioMarker.createMany({ data: clean.markers.map((marker) => ({
-      projectId: project.id, positionMs: marker.positionMs, type: marker.type,
-      label: marker.label, createdByUserId: userId
-    })) });
-  }
-  const nextVersion = project.currentVersion + 1;
-  const snapshot = { editor: clean, title: project.title, editDecision: { ...project.editDecision, normalize: clean.mastering.enabled, targetLufs: clean.mastering.targetLufs, noiseCleanup: clean.noiseCleanup, voiceCleanup: clean.voiceCleanup, effects: clean.effects, mastering: clean.mastering } };
-  const version = await tx.audioProjectVersion.create({ data: { projectId: project.id, version: nextVersion, state: snapshot, reason, createdByUserId: userId } });
-  await tx.audioProject.update({ where: { id: project.id }, data: { currentVersion: nextVersion, editDecision: snapshot.editDecision, status: "READY" } });
-  return { clean, version };
+  return NextResponse.json(serializeStudioWaveformProject(project, access.entitlements));
 }
 
 export async function POST(request, { params }) {
@@ -133,7 +41,7 @@ export async function POST(request, { params }) {
       const durationMs = take.durationMs || (take.mediaAsset.durationSeconds ? take.mediaAsset.durationSeconds * 1000 : 0);
       if (!durationMs) return NextResponse.json({ error: "This take is still being analysed. Try again shortly." }, { status: 409 });
       const state = { clips: [{ clientId: `take-${take.id}`, kind: "SOURCE", mediaAssetId: take.mediaAssetId, sourceStartMs: 0, sourceEndMs: durationMs, timelineStartMs: 0, gainDb: 0, fadeInMs: 0, fadeOutMs: 0, fadeInCurve: "linear", fadeOutCurve: "linear", locked: false }], markers: [], normalize: true, targetLufs: -16, noiseCleanup: false, voiceCleanup: normalizeVoiceCleanup(), effects: normalizeStudioEffects(), mastering: applyStudioMasteringPreset("PODCAST") };
-      await prisma.$transaction((tx) => saveSnapshot(tx, { project, userId: access.user.id, state, reason: "Waveform editor initialized" }));
+      await prisma.$transaction((tx) => saveStudioWaveformSnapshot(tx, { project, userId: access.user.id, state, reason: "Waveform editor initialized" }));
     } else {
       const renderRequested = parsed.data.action === "QUEUE_RENDER";
       const cleanupPreviewRequested = parsed.data.action === "QUEUE_CLEANUP_PREVIEW";
@@ -146,7 +54,7 @@ export async function POST(request, { params }) {
       if (masterPreviewRequested && !requestedState.effects.enabled && !requestedState.mastering.enabled) {
         return NextResponse.json({ error: "Choose an Effects or Mastering preset before creating a preview." }, { status: 409 });
       }
-      const saved = await prisma.$transaction((tx) => saveSnapshot(tx, { project, userId: access.user.id, state: requestedState, reason: renderRequested ? "Final render requested" : cleanupPreviewRequested ? "Voice cleanup comparison requested" : masterPreviewRequested ? "Effects and mastering preview requested" : parsed.data.reason || "Waveform editor save" }));
+      const saved = await prisma.$transaction((tx) => saveStudioWaveformSnapshot(tx, { project, userId: access.user.id, state: requestedState, reason: renderRequested ? "Final render requested" : cleanupPreviewRequested ? "Voice cleanup comparison requested" : masterPreviewRequested ? "Effects and mastering preview requested" : parsed.data.reason || "Waveform editor save" }));
       if (parsed.data.action === "QUEUE_RENDER") {
         await prisma.audioRender.create({ data: { organisationId: access.organisation.id, projectId, versionId: saved.version.id, requestedByUserId: access.user.id, preset: parsed.data.preset } });
         await prisma.auditLog.create({ data: { organisationId: access.organisation.id, actorUserId: access.user.id, action: "AUDIO_RENDER_QUEUED", entityType: "AudioProject", entityId: projectId, details: { version: saved.version.version, preset: parsed.data.preset } } });
@@ -165,8 +73,8 @@ export async function POST(request, { params }) {
         ]);
       }
     }
-    const updated = await findProject(projectId, access.organisation.id);
-    return NextResponse.json(serialize(updated, access.entitlements));
+    const updated = await findStudioWaveformProject(projectId, access.organisation.id);
+    return NextResponse.json(serializeStudioWaveformProject(updated, access.entitlements));
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "The waveform project could not be saved." }, { status: 409 });
   }
