@@ -1,6 +1,7 @@
 import { buildFaithProductOnboarding } from "@/lib/product-onboarding.mjs";
 import { prisma } from "@/lib/prisma";
 import { requireSubscriberProduct } from "@/lib/subscriber-product-access";
+import { pillarListenHref } from "@/lib/pillar-audio.mjs";
 import ProductDashboard from "../ProductDashboard";
 
 export const dynamic = "force-dynamic";
@@ -20,9 +21,9 @@ export default async function FaithDashboard() {
   ]);
   const activeChannels = organisation.stations.filter((station) => station.status === "ACTIVE");
   const onboarding = buildFaithProductOnboarding({ serviceEnabled: entitlements.serviceEnabled, membershipRole: context.membership.role, activeLocationCount: locations, stationActive: activeChannels.length > 0, programmeReady: policies > 0 && schedules > 0, liveServiceReady: liveServices > 0, publishedPodcastCount: teachings });
-  return <ProductDashboard eyebrow="Ruvanas Faith" title="Continuous radio and live services for every campus" description="Run scheduled faith radio, hand off to live services, resume AutoDJ, and publish reviewed sermons, teachings and community programmes." status={activeChannels.length ? "Faith channel available" : "Channel setup needed"} statusTone={activeChannels.length ? "healthy" : "attention"} complimentary={entitlements.complimentaryAccess} onboarding={onboarding} primaryAction={{ href: "/dashboard/faith/setup", label: "Set up Faith channel" }} quickTasks={[
+  return <ProductDashboard eyebrow="Ruvanas Faith" title="Continuous radio and live services for every campus" description="Run scheduled faith radio, hand off to live services, resume AutoDJ, and publish reviewed sermons, teachings and community programmes." status={activeChannels.length ? "Faith channel available" : "Channel setup needed"} statusTone={activeChannels.length ? "healthy" : "attention"} complimentary={entitlements.complimentaryAccess} onboarding={onboarding} primaryAction={{ href: "/dashboard/faith/setup", label: "Set up Faith channel" }} listenAction={{ href: pillarListenHref("FAITH"), label: "Listen live" }} quickTasks={[
     { href: "/dashboard/faith/setup", label: "Prepare a live service", description: "Review channel and audience settings before going live." },
-    { href: "/dashboard/programming", label: "Keep audio playing", description: "Set up approved 24/7 programming and fallback." },
+    { href: "/dashboard/autodj/faith", label: "Faith AutoDJ", description: "Set up approved continuous music between live services." },
     { href: "/dashboard/podcasts?product=FAITH", label: "Share a teaching", description: "Review and publish a sermon or listen-again episode." }
   ]} metrics={[
     { label: "Campuses", value: locations, detail: "Ministry locations" }, { label: "Faith channels", value: `${activeChannels.length} / ${entitlements.stationLimit}`, detail: "Continuous or service-led" }, { label: "Players", value: players, detail: "Listening endpoints" }, { label: "Teachings", value: teachings, detail: "Published listen-again items" }
