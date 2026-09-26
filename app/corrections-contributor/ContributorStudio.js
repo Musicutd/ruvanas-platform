@@ -17,13 +17,16 @@ export default function ContributorStudio() {
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [tool, setTool] = useState("WELCOME");
+  const [studioExperienceMode, setStudioExperienceMode] = useState("BEGINNER");
   const [recording, setRecording] = useState(false);
+  const [startingRecording, setStartingRecording] = useState(false);
   const [editorKey, setEditorKey] = useState(0);
   const [renders, setRenders] = useState([]);
   const [renderId, setRenderId] = useState("");
   const [submitted, setSubmitted] = useState(null);
   const [now, setNow] = useState(Date.now());
   const recorderRef = useRef(null);
+  const recordingStartRef = useRef(false);
   const streamRef = useRef(null);
   const chunksRef = useRef([]);
   const startedRef = useRef(0);
@@ -44,7 +47,7 @@ export default function ContributorStudio() {
     const editor = await response.json();
     setRenders((editor.renders || []).filter((item) => !item.resultJson?.studioPreview));
   }, [workspace?.session?.projectId, workspace?.session?.projectType]);
-  useEffect(() => { if (!workspace || tool !== "STUDIO") return; refreshRenders(); const timer = setInterval(refreshRenders, 5000); return () => clearInterval(timer); }, [workspace, tool, refreshRenders]);
+  useEffect(() => { if (!workspace || submitted || tool !== "STUDIO") return; refreshRenders(); const timer = setInterval(refreshRenders, 5000); return () => clearInterval(timer); }, [workspace, submitted, tool, refreshRenders]);
 
   const enter = async (event) => {
     event.preventDefault(); setBusy(true); setNotice("");
@@ -62,9 +65,13 @@ export default function ContributorStudio() {
     finally { setBusy(false); }
   };
   const startRecording = async () => {
+    if (recordingStartRef.current || recording || busy || recorderRef.current?.state === "recording") return;
+    recordingStartRef.current = true;
+    setStartingRecording(true);
     setNotice("");
+    let stream;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mimeType = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"].find((value) => MediaRecorder.isTypeSupported(value));
       if (!mimeType) { stream.getTracks().forEach((track) => track.stop()); throw new Error("This browser cannot record a supported audio format."); }
       const recorder = new MediaRecorder(stream, { mimeType }); streamRef.current = stream; recorderRef.current = recorder; chunksRef.current = []; startedRef.current = Date.now();
@@ -76,7 +83,13 @@ export default function ContributorStudio() {
         uploadRecording(file, Date.now() - startedRef.current);
       };
       recorder.start(1000); setRecording(true);
-    } catch (error) { setNotice(error.message || "Microphone access is unavailable."); }
+    } catch (error) {
+      stream?.getTracks().forEach((track) => track.stop());
+      setNotice(error.message || "Microphone access is unavailable.");
+    } finally {
+      recordingStartRef.current = false;
+      setStartingRecording(false);
+    }
   };
   const stopRecording = () => { if (recorderRef.current?.state === "recording") recorderRef.current.stop(); };
   const importFile = async (event) => {
@@ -100,17 +113,20 @@ export default function ContributorStudio() {
   };
   const exit = async () => { if (recording) stopRecording(); await fetch("/api/corrections/contributor/session", { method: "DELETE" }); setWorkspace(null); setTool("WELCOME"); setNotice(""); };
   const minutesLeft = workspace?.session?.expiresAt ? Math.max(0, Math.ceil((new Date(workspace.session.expiresAt).getTime() - now) / 60000)) : 0;
+  const reviewRenders = renders.filter((item) => item.status === "SUCCEEDED" &&
+    new Date(item.createdAt).getTime() >= new Date(workspace?.session?.activatedAt || 0).getTime() &&
+    (item.reviewVersionId || item.outputVersion?.status === "IN_REVIEW"));
   return <main className={styles.page}><header className={styles.header}><strong>RUVANAS INSIDE</strong><span>Supervised Studio</span></header>
     {!workspace ? <section className={styles.entry}><span className={styles.eyebrow}>Restricted contributor access</span><h1>Your Studio session</h1><p>Enter the time-limited code given to you by your supervisor. Use a separate private browser window, not a staff-signed-in window.</p><form onSubmit={enter}><label>Session access code<input value={code} onChange={(event) => setCode(event.target.value)} autoComplete="off" required /></label><button disabled={busy || !code.trim()}>Open session</button></form>{notice && <p role="alert" className={styles.notice}>{notice}</p>}</section> : <div className={styles.shell}>
       <div className={styles.top}><div><span className={styles.eyebrow}>Supervised Corrections Studio Session</span><h1>{workspace.session.programmeTitle}</h1><p>{workspace.session.facilityName} · {workspace.session.projectTitle}</p></div><button className={styles.secondary} onClick={exit}>Leave this session</button></div>
       <div className={styles.facts}><div><span>Supervisor</span><strong>{workspace.session.supervisorName}</strong></div><div><span>Status</span><strong>{submitted ? "Submitted" : workspace.session.status}</strong></div><div><span>Time remaining</span><strong>{minutesLeft} minutes</strong></div><div><span>Tools</span><strong>Recording · Editing · Review render</strong></div></div>
       {notice && <p role="status" className={styles.notice}>{notice}</p>}
       {submitted ? <section className={styles.card}><h2>Work sent to staff review</h2><p>Revision {submitted.revision} is saved against the exact Studio render. Only authorised staff can approve, request changes or reject it.</p></section> : minutesLeft === 0 ? <section className={styles.card}><h2>Session expired</h2><p>Your saved work remains available to staff. Ask your supervisor for a new session to continue.</p></section> : tool === "WELCOME" ? <section className={styles.card}><h2>Ready to create?</h2><p>You can record and edit only this assigned programme. No publishing, scheduling, broadcasting, account settings or catalogue downloads are available.</p><button onClick={() => setTool("STUDIO")}>Open Studio</button></section> : <>
-        <section className={styles.card}><span className={styles.eyebrow}>Recording</span><h2>Capture or add voice</h2><p>Record a take using this device, or add audio supplied for this programme. Files stay in this supervised project and must pass staff review.</p><div className={styles.actions}><button disabled={busy || recording} onClick={startRecording}>Start recording</button><button className={styles.secondary} disabled={!recording} onClick={stopRecording}>Stop and save</button><label className={styles.file}>Add audio file<input type="file" accept=".mp3,.wav,.ogg,.m4a,.webm,audio/*" disabled={busy || recording} onChange={importFile} /></label></div></section>
+        <section className={styles.card}><span className={styles.eyebrow}>Recording</span><h2>Capture or add voice</h2><p>Record a take using this device, or add audio supplied for this programme. Files stay in this supervised project and must pass staff review.</p><div className={styles.actions}><button disabled={busy || recording || startingRecording} onClick={startRecording}>{startingRecording ? "Waiting for microphone…" : "Start recording"}</button><button className={styles.secondary} disabled={!recording} onClick={stopRecording}>Stop and save</button><label className={styles.file}>Add audio file<input type="file" accept=".mp3,.wav,.ogg,.m4a,.webm,audio/*" disabled={busy || recording || startingRecording} onChange={importFile} /></label></div></section>
         <section className={styles.editor}>{workspace.session.projectType === "MULTITRACK"
-          ? <MultitrackStudioClient key={editorKey} requestedProjectId={workspace.session.projectId} experienceMode="BEGINNER" apiBase="/api/corrections/contributor/multitrack" mediaBase="/api/corrections/contributor/media" supervised />
-          : <WaveformEditorClient key={editorKey} requestedProjectId={workspace.session.projectId} experienceMode="BEGINNER" apiBase="/api/corrections/contributor/audio-lab" mediaBase="/api/corrections/contributor/media" supervised />}</section>
-        <section className={styles.card}><span className={styles.eyebrow}>Submit for Review</span><h2>Send the exact render to Corrections Guard</h2><p>Create a final render in the waveform editor, wait until it is ready, then select it here. Submission starts review; it is not approval.</p><label>Completed Studio render<select value={renderId} onChange={(event) => setRenderId(event.target.value)}><option value="">Choose a completed render</option>{renders.filter((item) => item.status === "SUCCEEDED").map((item) => <option key={item.id} value={item.id}>{item.preset} · {new Date(item.createdAt).toLocaleString()}</option>)}</select></label>{renders.some((item) => item.status === "QUEUED" || item.status === "RUNNING") && <p>A render is being prepared. This list refreshes automatically.</p>}<button disabled={busy || !renderId} onClick={submit}>Submit for Review</button></section>
+          ? <MultitrackStudioClient key={editorKey} requestedProjectId={workspace.session.projectId} experienceMode={studioExperienceMode} onExperienceModeChange={setStudioExperienceMode} apiBase="/api/corrections/contributor/multitrack" mediaBase="/api/corrections/contributor/media" supervised />
+          : <WaveformEditorClient key={editorKey} requestedProjectId={workspace.session.projectId} experienceMode={studioExperienceMode} onExperienceModeChange={setStudioExperienceMode} apiBase="/api/corrections/contributor/audio-lab" mediaBase="/api/corrections/contributor/media" supervised />}</section>
+        <section className={styles.card}><span className={styles.eyebrow}>Submit for Review</span><h2>Send the exact render to Corrections Guard</h2><p>Create a final render in the {workspace.session.projectType === "MULTITRACK" ? "multitrack mixer" : "waveform editor"}, wait until it is ready, then select it here. Submission starts review; it is not approval.</p><label>Completed Studio render<select value={renderId} onChange={(event) => setRenderId(event.target.value)}><option value="">Choose a completed render from this session</option>{reviewRenders.map((item) => <option key={item.id} value={item.id}>{item.preset} · {new Date(item.createdAt).toLocaleString()}</option>)}</select></label>{renders.some((item) => item.status === "QUEUED" || item.status === "RUNNING") && <p>A render is being prepared. This list refreshes automatically.</p>}<button disabled={busy || !reviewRenders.some((item) => item.id === renderId)} onClick={submit}>Submit for Review</button></section>
       </>}
     </div>}
   </main>;

@@ -4,7 +4,8 @@ import { correctionsRequestContext } from "@/lib/corrections-access";
 import { createCorrectionsStudioSession, listCorrectionsStudio } from "@/lib/corrections-studio-service";
 
 export const dynamic = "force-dynamic";
-const schema = z.object({ facilityId: z.string().cuid(), contributorId: z.string().cuid(), programmeId: z.string().cuid(), priorProjectId: z.string().cuid().optional().nullable(), title: z.string().trim().min(2).max(160).optional().nullable(), projectType: z.enum(["QUICK_RECORD", "MULTITRACK"]).default("QUICK_RECORD") });
+const optionalBlank = (schema) => z.preprocess((value) => value === "" ? undefined : value, schema.optional().nullable());
+const schema = z.object({ facilityId: z.string().cuid(), contributorId: z.string().cuid(), programmeId: z.string().cuid(), priorProjectId: optionalBlank(z.string().cuid()), title: optionalBlank(z.string().trim().min(2).max(160)), projectType: z.enum(["QUICK_RECORD", "MULTITRACK"]).default("QUICK_RECORD") });
 
 export async function GET() {
   const access = await correctionsRequestContext();

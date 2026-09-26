@@ -18,7 +18,8 @@ const schema = z.discriminatedUnion("action", [
 
 function response(project, entitlements) {
   const serialized = serializeStudioWaveformProject(project, entitlements, { restrictedMediaPath: "/api/corrections/contributor/media" });
-  return NextResponse.json(serialized, { headers: { "Cache-Control": "private, no-store" } });
+  const versionIds = new Map(project.renders.map((render) => [render.id, render.outputPromoVersionId]));
+  return NextResponse.json({ ...serialized, renders: serialized.renders.map((render) => ({ ...render, reviewVersionId: versionIds.get(render.id) || null })) }, { headers: { "Cache-Control": "private, no-store" } });
 }
 
 export async function GET(_request, { params }) {

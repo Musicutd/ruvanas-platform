@@ -15,6 +15,7 @@ import { broadcastEncoding, evaluateBroadcastProcessingQc, normalizeBroadcastPro
 import { buildStudioMasteringCorrectionFilters, evaluateStudioMasteringQuality, normalizeStudioMastering, studioMasteringCorrectionDb } from "../lib/studio-effects-mastering.mjs";
 import { deploymentIdentity, safeOperationalErrorCode, structuredServiceLog } from "../lib/operational-observability.mjs";
 import { recordServiceHeartbeat } from "../lib/operational-observability-service.js";
+import { correctionsReviewVersionRequired } from "../lib/corrections-studio-policy.mjs";
 
 const prisma = new PrismaClient();
 const intervalMs = Math.max(2000, Number(process.env.AUDIO_WORKER_INTERVAL_MS || 5000));
@@ -163,16 +164,26 @@ async function processRender() {
 
     const sourceTake = await prisma.audioTake.findFirst({ where: { projectId: render.projectId, mediaAssetId: { in: sourceIds }, promoVersionId: { not: null } }, include: { promoVersion: { include: { promoAsset: { include: { versions: { select: { version: true } } } } } } } });
     const priorOutput = multitrack ? await prisma.audioRender.findFirst({ where: { projectId: render.projectId, id: { not: render.id }, outputPromoVersionId: { not: null } }, orderBy: { completedAt: "desc" }, include: { outputPromoVersion: { include: { promoAsset: { include: { versions: { select: { version: true } } } } } } } }) : null;
+    // A contributor's first recording has no source PromoVersion. Pin its exact
+    // render as a new, unapproved Corrections review version, never as a new
+    // version of an approved jingle or a normal Studio product handoff.
+    const possibleCorrectionsSession = !studioPreview && await prisma.correctionsStudioSession.findFirst({ where: {
+      organisationId: render.organisationId, projectId: render.projectId,
+      supervisorUserId: render.requestedByUserId, status: "ACTIVE",
+      activatedAt: { lte: render.version.createdAt }, expiresAt: { gt: new Date() },
+      createdAt: { lte: render.createdAt }
+    }, select: { id: true, organisationId: true, projectId: true, supervisorUserId: true, status: true, activatedAt: true, expiresAt: true, createdAt: true } });
+    const correctionsSession = correctionsReviewVersionRequired(render, possibleCorrectionsSession) ? possibleCorrectionsSession : null;
     const result = await prisma.$transaction(async (tx) => {
       const previewName = studioPreview ? ` · voice ${String(studioPreview.variant).toLowerCase()} preview` : "";
       const mediaAsset = await tx.mediaAsset.create({ data: { organisationId: render.organisationId, libraryType: "ORGANISATION_PROMO", name: `${render.project.title}${processingProfile ? ` · ${processingProfile.name}` : previewName || " final"}`, originalName: `${render.project.title}${previewName}.${extension}`, storageKey: key, mimeType, sizeBytes: BigInt(fileInfo.size), durationSeconds, mediaType: "ANNOUNCEMENT", status: "READY" } });
       let promoVersion = null;
-      const existingPromo = priorOutput?.outputPromoVersion?.promoAsset || sourceTake?.promoVersion?.promoAsset || null;
-      if (!studioPreview && (existingPromo || multitrack)) {
+      const existingPromo = correctionsSession ? null : priorOutput?.outputPromoVersion?.promoAsset || sourceTake?.promoVersion?.promoAsset || null;
+      if (!studioPreview && (existingPromo || multitrack || correctionsSession)) {
         const promoAsset = existingPromo || await tx.promoAsset.create({ data: { organisationId: render.organisationId, name: render.project.title, mediaType: "ANNOUNCEMENT", languageCode: "und" } });
         const nextVersion = Math.max(0, ...(promoAsset.versions || []).map((item) => item.version)) + 1;
-        const processingJobs = multitrack || processingProfile ? undefined : { create: ["PREVIEW", "TRANSCODE", "LOUDNESS_ANALYSIS"].map((jobType) => ({ jobType, status: "QUEUED" })) };
-        promoVersion = await tx.promoVersion.create({ data: { promoAssetId: promoAsset.id, mediaAssetId: mediaAsset.id, version: nextVersion, status: "IN_REVIEW", qcStatus: processingProfile ? processingQc.status : multitrack ? (masteringQuality.status === "READY" ? "PASSED" : "FAILED") : "PENDING", qcNotes: processingProfile ? (processingQc.findings.join(" ") || `Passed ${processingProfile.name} broadcast profile.`) : multitrack ? (masteringQuality.findings.join(" ") || "Studio mastering targets passed.") : undefined, sourceType: "STUDIO", sourceReference: `audio-render:${render.id}`, checksumSha256, languageCode: sourceTake?.promoVersion?.languageCode || "und", durationSeconds, loudnessLufs: report.integratedLufs, submittedById: render.requestedByUserId, submittedAt: new Date(), ...(processingJobs ? { processingJobs } : {}) } });
+        const processingJobs = multitrack || processingProfile || correctionsSession ? undefined : { create: ["PREVIEW", "TRANSCODE", "LOUDNESS_ANALYSIS"].map((jobType) => ({ jobType, status: "QUEUED" })) };
+        promoVersion = await tx.promoVersion.create({ data: { promoAssetId: promoAsset.id, mediaAssetId: mediaAsset.id, version: nextVersion, status: "IN_REVIEW", qcStatus: processingProfile ? processingQc.status : multitrack || correctionsSession ? (masteringQuality.status === "READY" ? "PASSED" : "FAILED") : "PENDING", qcNotes: processingProfile ? (processingQc.findings.join(" ") || `Passed ${processingProfile.name} broadcast profile.`) : multitrack || correctionsSession ? (masteringQuality.findings.join(" ") || "Studio mastering targets passed.") : undefined, sourceType: "STUDIO", sourceReference: `audio-render:${render.id}`, checksumSha256, languageCode: sourceTake?.promoVersion?.languageCode || "und", durationSeconds, loudnessLufs: report.integratedLufs, submittedById: render.requestedByUserId, submittedAt: new Date(), ...(processingJobs ? { processingJobs } : {}) } });
       }
       await tx.audioRender.update({ where: { id: render.id }, data: { status: "SUCCEEDED", completedAt: new Date(), outputMediaAssetId: mediaAsset.id, outputPromoVersionId: promoVersion?.id || null, loudnessLufs: report.integratedLufs, processingQcStatus: processingQc?.status, processingQcNotes: processingQc ? (processingQc.findings.join(" ") || "Broadcast profile targets passed.") : undefined, resultJson: { ...report, durationSeconds, checksumSha256, immutableSource: true, version: render.version.version, ...(studioPreview ? { studioPreview } : {}), ...(!processingProfile ? { studioMastering, masteringQuality } : {}), ...(processingProfile ? { broadcastProfile: { id: render.broadcastProcessingProfileId, revision: render.broadcastProcessingProfileRevision, name: processingProfile.name, codec: processingProfile.codec }, qc: processingQc } : {}) } } });
       return { mediaAsset, promoVersion };
