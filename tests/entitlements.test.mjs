@@ -90,7 +90,7 @@ test("an organisation subscription can override the shared School Radio plan def
   );
 });
 
-test("all six product capabilities resolve independently", () => {
+test("all seven product capabilities resolve independently", () => {
   const entitlements = resolveEntitlements({
     status: "ACTIVE",
     retailRadioEnabled: false,
@@ -109,6 +109,7 @@ test("all six product capabilities resolve independently", () => {
     health: "PLAN",
     faith: "PLAN",
     organisations: "PLAN",
+    corrections: "PLAN",
     licensedMusicCatalogue: "PLAN"
   });
 });

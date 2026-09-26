@@ -12,6 +12,7 @@ function ProductIcon({ product }) {
   if (product === "HEALTH") return <span aria-hidden="true">H</span>;
   if (product === "FAITH") return <span aria-hidden="true">F</span>;
   if (product === "ORGANISATIONS") return <span aria-hidden="true">G</span>;
+  if (product === "CORRECTIONS") return <span aria-hidden="true">I</span>;
   return <span aria-hidden="true">R</span>;
 }
 
@@ -102,7 +103,7 @@ export default function RegisterJourney({ products, initialSelection }) {
           <p>Set up the right workspace for your organisation. Your service and plan determine the tools you receive.</p>
           <div className={styles.promiseList}>
             <span><strong>One secure account</strong> for your organisation and team</span>
-            <span><strong>Product-aware setup</strong> for all six specialised Ruvanas services</span>
+            <span><strong>Product-aware setup</strong> for all seven specialised Ruvanas services</span>
             <span><strong>Clear plan authority</strong> with no hidden product access</span>
           </div>
         </aside>

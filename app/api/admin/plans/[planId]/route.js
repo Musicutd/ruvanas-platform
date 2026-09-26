@@ -12,7 +12,8 @@ const PRODUCT_ACCESS_FIELDS = [
   "onlineRadioEnabled",
   "healthRadioEnabled",
   "faithRadioEnabled",
-  "organisationsEnabled"
+  "organisationsEnabled",
+  "correctionsRadioEnabled"
 ];
 
 // Stable plan code and productFamily authority are intentionally not editable.
@@ -34,6 +35,7 @@ const updateSchema = z.object({
   healthRadioEnabled: z.boolean(),
   faithRadioEnabled: z.boolean(),
   organisationsEnabled: z.boolean(),
+  correctionsRadioEnabled: z.boolean(),
   schoolPublicPublishingEnabled: z.boolean(),
   retailMediaEnabled: z.boolean(),
   digitalSignageEnabled: z.boolean(),
@@ -62,6 +64,7 @@ function editablePlanSnapshot(plan) {
     healthRadioEnabled: plan.healthRadioEnabled,
     faithRadioEnabled: plan.faithRadioEnabled,
     organisationsEnabled: plan.organisationsEnabled,
+    correctionsRadioEnabled: plan.correctionsRadioEnabled,
     schoolPublicPublishingEnabled: plan.schoolPublicPublishingEnabled,
     retailMediaEnabled: plan.retailMediaEnabled,
     digitalSignageEnabled: plan.digitalSignageEnabled,

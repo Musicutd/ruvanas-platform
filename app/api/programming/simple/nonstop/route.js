@@ -7,6 +7,7 @@ import { loadEligibleSubscriberMusic, rightsUseForChannel } from "@/lib/subscrib
 import { resolveAutoDjTarget } from "@/lib/autodj-targets";
 import { canManageSubscriberProgramming } from "@/lib/subscriber-programming.mjs";
 import { subscriberProductAccess } from "@/lib/product-access.mjs";
+import { assertCorrectionsSchedulingAllowed } from "@/lib/corrections-scheduling-lock.mjs";
 
 const schema = z.object({
   channelId: z.string().cuid(), enabled: z.boolean(),
@@ -66,6 +67,7 @@ export async function PUT(request) {
     const selected = genreCodes.length ? entries.filter((entry) => entry.genreCodes.some((code) => genreCodes.includes(code))) : entries;
     if (parsed.data.enabled && !selected.length) return NextResponse.json({ error: "No rights-approved songs match this channel and genre selection yet." }, { status: 400 });
     const saved = await prisma.$transaction(async (tx) => {
+      if (parsed.data.enabled) await assertCorrectionsSchedulingAllowed(tx, { organisationId, channelId: channel.id, ...(target?.type === "ZONE" ? { zoneId: target.id } : {}) });
       const slug = `nonstop-${channel.id}`;
       let mode = await tx.musicMode.findUnique({ where: { organisationId_slug: { organisationId, slug } } });
       if (!mode) mode = await tx.musicMode.create({ data: { organisationId, name: `AutoDJ Non-Stop · ${channel.name}`, slug, status: "ACTIVE" } });
@@ -84,6 +86,7 @@ export async function PUT(request) {
     });
     return NextResponse.json({ ok: true, enabled: saved.enabled, genreCodes, playableTrackCount: selected.length });
   } catch (error) {
+    if (error?.code === "CORRECTIONS_SCHEDULING_LOCKED") return NextResponse.json({ error: error.message }, { status: 409 });
     console.error("Subscriber Non-Stop error:", error);
     return NextResponse.json({ error: "Unable to save AutoDJ Non-Stop." }, { status: 500 });
   }

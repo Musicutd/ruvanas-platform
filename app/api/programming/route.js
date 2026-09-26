@@ -7,6 +7,7 @@ import { normaliseSchedulePayload, resolveMusicSchedule } from "@/lib/music-sche
 import { musicModeIsPlayable, playableLiveMusicModeEntries } from "@/lib/music-mode-playback.mjs";
 import { cataloguePlaybackTrackInclude } from "@/lib/catalogue-playback-include";
 import { rightsUseForChannel } from "@/lib/subscriber-playlist-service.mjs";
+import { assertCorrectionsSchedulingAllowed } from "@/lib/corrections-scheduling-lock.mjs";
 import {
   canManageSubscriberProgramming,
   previousProgrammingDate,
@@ -308,6 +309,7 @@ export async function POST(request) {
 
     const targetWhere = data.targetType === "LOCATION" ? { locationId: target.id } : { zoneId: target.id };
     const created = await prisma.$transaction(async (tx) => {
+      if (data.publish) await assertCorrectionsSchedulingAllowed(tx, { organisationId, ...(data.targetType === "LOCATION" ? { locationId: target.id } : { zoneId: target.id }) });
       const latest = await tx.musicSchedule.findFirst({
         where: { organisationId, ...targetWhere },
         orderBy: { version: "desc" },
@@ -368,6 +370,7 @@ export async function POST(request) {
 
     return NextResponse.json({ ok: true, schedule: created }, { status: 201 });
   } catch (error) {
+    if (error?.code === "CORRECTIONS_SCHEDULING_LOCKED") return NextResponse.json({ error: error.message }, { status: 409 });
     if (error?.code === "P2002") return NextResponse.json({ error: "This listening area changed at the same time. Please retry." }, { status: 409 });
     console.error("Subscriber programming save error:", error);
     return NextResponse.json({ error: "Unable to save radio programming." }, { status: 500 });

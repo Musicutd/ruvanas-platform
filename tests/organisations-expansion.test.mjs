@@ -8,9 +8,9 @@ import { subscriberProductAccess } from "../lib/product-access.mjs";
 import { studioDestinationAvailability, studioWorkflowPath } from "../lib/studio-product-handoff.mjs";
 import { BETA_PRODUCTS } from "../lib/beta-operations.mjs";
 
-test("ORG.0 dependency and ORG.1 catalogue establish six products and thirty plans", async () => {
-  assert.deepEqual(RUVANAS_PRODUCTS, ["RETAIL", "SCHOOL", "ONLINE", "HEALTH", "FAITH", "ORGANISATIONS"]);
-  assert.equal(PUBLIC_PLAN_CATALOGUE.length, 30);
+test("ORG.0 dependency and ORG.1 catalogue preserve Organisations within seven products and 35 plans", async () => {
+  assert.deepEqual(RUVANAS_PRODUCTS, ["RETAIL", "SCHOOL", "ONLINE", "HEALTH", "FAITH", "ORGANISATIONS", "CORRECTIONS"]);
+  assert.equal(PUBLIC_PLAN_CATALOGUE.length, 35);
   const plans = publicPlansForProduct("ORGANISATIONS");
   assert.deepEqual(plans.map((plan) => [plan.code, plan.monthlyPriceCents, plan.licensedMusicCatalogueLevel, plan.stationLimit, plan.storageLimitGb, plan.listenerLimit]), [
     ["ORGANISATIONS_START", 2490, "NONE", 1, 25, 250],

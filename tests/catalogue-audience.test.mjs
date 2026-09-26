@@ -13,8 +13,8 @@ test("Super Admin audience requires a minimum tier and licensed pillar", () => {
   });
 });
 
-test("all six pillars have a Super Admin choice and older records default to Tier 3", () => {
-  assert.equal(CATALOGUE_PILLARS.length, 6);
+test("all seven pillars have a Super Admin choice and older records default to Tier 3", () => {
+  assert.equal(CATALOGUE_PILLARS.length, 7);
   assert.equal(effectiveCatalogueLevel("NONE"), "FOCUSED");
   assert.equal(effectiveCatalogueLevel("PREMIUM"), "PREMIUM");
 });

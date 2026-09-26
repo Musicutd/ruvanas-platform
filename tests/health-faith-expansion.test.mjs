@@ -8,8 +8,8 @@ import { studioDestinationAvailability, studioWorkflowPath } from "../lib/studio
 import { BETA_PRODUCTS } from "../lib/beta-operations.mjs";
 import { subscriberProductForStationFamily } from "../lib/product-access.mjs";
 
-test("Health and Faith add exactly ten plans to the authoritative 25-plan catalogue", () => {
-  assert.equal(PUBLIC_PLAN_CATALOGUE.length, 30);
+test("Health and Faith retain their tiers in the expanded catalogue", () => {
+  assert.equal(PUBLIC_PLAN_CATALOGUE.length, 35);
   assert.deepEqual(publicPlansForProduct("HEALTH").map((plan) => [plan.code, plan.monthlyPriceCents, plan.licensedMusicCatalogueLevel]), [
     ["HEALTH_START", 2900, "NONE"], ["HEALTH_CONNECT", 7900, "NONE"], ["HEALTH_PRO", 17900, "FOCUSED"], ["HEALTH_NETWORK", 44900, "PROFESSIONAL"], ["HEALTH_ENTERPRISE", 99900, "PREMIUM"]
   ]);

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requirePlatformAdmin } from "@/lib/access-control";
 import { accessDenied } from "@/lib/api-response";
 import { normaliseSchedulePayload } from "@/lib/music-scheduling.mjs";
+import { assertCorrectionsSchedulingAllowed } from "@/lib/corrections-scheduling-lock.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -86,6 +87,7 @@ export async function POST(request) {
 
     const targetWhere = data.targetType === "LOCATION" ? { locationId: target.id } : { zoneId: target.id };
     const created = await prisma.$transaction(async (tx) => {
+      if (data.publish) await assertCorrectionsSchedulingAllowed(tx, { organisationId: data.organisationId, ...(data.targetType === "LOCATION" ? { locationId: target.id } : { zoneId: target.id }) });
       const latest = await tx.musicSchedule.findFirst({ where: targetWhere, orderBy: { version: "desc" }, select: { version: true } });
       if (data.publish) await tx.musicSchedule.updateMany({ where: { ...targetWhere, status: "PUBLISHED" }, data: { status: "ARCHIVED" } });
       const schedule = await tx.musicSchedule.create({
@@ -116,6 +118,7 @@ export async function POST(request) {
     });
     return NextResponse.json({ ok: true, schedule: created }, { status: 201 });
   } catch (error) {
+    if (error?.code === "CORRECTIONS_SCHEDULING_LOCKED") return NextResponse.json({ error: error.message }, { status: 409 });
     if (error?.code === "P2002") return NextResponse.json({ error: "This schedule target was updated at the same time. Please retry." }, { status: 409 });
     console.error("Create music schedule error:", error);
     return NextResponse.json({ error: "Unable to create the music schedule." }, { status: 500 });

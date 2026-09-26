@@ -13,6 +13,7 @@ export default async function PublicPlayerSettingsPage({ params }) {
   if (!context?.membership) redirect("/login");
   const station = await prisma.station.findFirst({ where: { id: params.stationId, organisationId: context.membership.organisationId }, select: { id: true, name: true, slug: true, status: true, productFamily: true, publicPlayerEnabled: true, publicPlayerTagline: true, publicPlayerAccent: true, listenerRequestsEnabled: true, listenerRequestInstructions: true, listenerLimit: true } });
   if (!station) notFound();
+  if (station.productFamily === "CORRECTIONS") notFound();
   const productKey = subscriberProductForStationFamily(station.productFamily);
   await requireSubscriberProduct(productKey);
   const productLabel = productKey === "HEALTH" ? "RUVANAS HEALTH" : productKey === "FAITH" ? "RUVANAS FAITH" : productKey === "ORGANISATIONS" ? "RUVANAS ORGANISATIONS" : "ONLINE RADIO";
