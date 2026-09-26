@@ -193,6 +193,7 @@ enum NotificationType {
   SCHOOL_REVIEW_REQUEST
   CONSENT_EXPIRY
   LISTENER_REQUEST
+  CORRECTIONS_REVIEW_REQUEST
 }
 
 enum ListenerRequestStatus {
@@ -523,6 +524,19 @@ enum CorrectionsFacilityGrantPermission {
   MANAGER
   EDITOR
   VIEWER
+}
+
+enum CorrectionsContributorStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum CorrectionsStudioSessionStatus {
+  DRAFT
+  ACTIVE
+  SUBMITTED
+  COMPLETED
+  REVOKED
 }
 
 enum ChannelStatus {
@@ -1643,6 +1657,9 @@ model User {
   submittedCorrectionsContent            CorrectionsSubmission[]          @relation("CorrectionsSubmissionSubmittedBy")
   correctionsReviews                     CorrectionsReview[]              @relation("CorrectionsReviewReviewer")
   createdCorrectionsFacilityGrants       CorrectionsFacilityGrant[]       @relation("CorrectionsFacilityGrantCreatedBy")
+  createdCorrectionsContributors         CorrectionsContributor[]         @relation("CorrectionsContributorCreatedBy")
+  supervisedCorrectionsStudioSessions    CorrectionsStudioSession[]       @relation("CorrectionsStudioSupervisor")
+  createdCorrectionsStudioSessions       CorrectionsStudioSession[]       @relation("CorrectionsStudioCreatedBy")
   createdSchoolAnnouncements             SchoolAnnouncement[]             @relation("SchoolAnnouncementCreatedBy")
   reviewedSchoolAnnouncements            SchoolAnnouncement[]             @relation("SchoolAnnouncementReviewedBy")
   createdSchoolNoticeboardPosts          SchoolNoticeboardPost[]          @relation("SchoolNoticeboardCreatedBy")
@@ -1829,6 +1846,8 @@ model Organisation {
   correctionsProfile                 CorrectionsProfile?
   correctionsProgrammes              CorrectionsProgramme[]
   correctionsFacilityGrants           CorrectionsFacilityGrant[]
+  correctionsContributors             CorrectionsContributor[]
+  correctionsStudioSessions           CorrectionsStudioSession[]
   schoolSafeguardingReadiness        SchoolSafeguardingReadiness?
   schoolSafeguardingReviews          SchoolSafeguardingReview[]
   schoolRetentionHolds               SchoolRetentionHold[]
@@ -2645,6 +2664,8 @@ model Location {
   correctionsFacility           CorrectionsFacility?
   correctionsProgrammes         CorrectionsProgramme[]
   correctionsFacilityGrants     CorrectionsFacilityGrant[]
+  correctionsContributors       CorrectionsContributor[]
+  correctionsStudioSessions     CorrectionsStudioSession[]
 
   @@unique([organisationId, slug])
   @@index([organisationId])
@@ -2788,6 +2809,7 @@ model CorrectionsProgramme {
   facility     Location                @relation(fields: [facilityId], references: [id], onDelete: Restrict)
   createdBy    User                    @relation("CorrectionsProgrammeCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
   submissions  CorrectionsSubmission[]
+  studioSessions CorrectionsStudioSession[]
 
   @@index([organisationId, facilityId, status])
   @@index([facilityId, updatedAt])
@@ -2810,15 +2832,79 @@ model CorrectionsSubmission {
   evidenceSnapshot      Json
   submittedByUserId     String
   submittedAt           DateTime                    @default(now())
+  contributorId         String?
+  studioSessionId       String?                     @unique
+  studioProjectId       String?
+  studioVersionId       String?
 
   programme   CorrectionsProgramme @relation(fields: [programmeId], references: [id], onDelete: Restrict)
   render      AudioRender           @relation(fields: [renderId], references: [id], onDelete: Restrict)
   submittedBy User                  @relation("CorrectionsSubmissionSubmittedBy", fields: [submittedByUserId], references: [id], onDelete: Restrict)
   reviews     CorrectionsReview[]
+  contributor CorrectionsContributor? @relation(fields: [contributorId], references: [id], onDelete: Restrict)
+  studioSession CorrectionsStudioSession? @relation(fields: [studioSessionId], references: [id], onDelete: Restrict)
+  studioProject AudioProject? @relation("CorrectionsSubmittedProject", fields: [studioProjectId], references: [id], onDelete: Restrict)
+  studioVersion AudioProjectVersion? @relation("CorrectionsSubmittedVersion", fields: [studioVersionId], references: [id], onDelete: Restrict)
 
   @@unique([programmeId, revision])
   @@index([organisationId, facilityId, status])
   @@index([renderId])
+  @@index([contributorId, submittedAt])
+}
+
+// No email, password, ordinary User or OrganisationMember is created for a
+// Corrections contributor. A time-bounded supervised session is the authority.
+model CorrectionsContributor {
+  id              String                       @id @default(cuid())
+  organisationId  String
+  facilityId      String
+  displayName     String
+  localReference  String?
+  status          CorrectionsContributorStatus @default(ACTIVE)
+  createdByUserId String
+  createdAt       DateTime                     @default(now())
+  archivedAt      DateTime?
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  facility     Location     @relation(fields: [facilityId], references: [id], onDelete: Restrict)
+  createdBy    User         @relation("CorrectionsContributorCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  sessions     CorrectionsStudioSession[]
+  submissions  CorrectionsSubmission[]
+
+  @@index([organisationId, facilityId, status])
+}
+
+model CorrectionsStudioSession {
+  id              String                         @id @default(cuid())
+  organisationId  String
+  facilityId      String
+  contributorId   String
+  programmeId     String
+  projectId       String
+  supervisorUserId String
+  createdByUserId String
+  status          CorrectionsStudioSessionStatus @default(DRAFT)
+  accessTokenHash String?                        @unique
+  capabilityScope Json
+  activatedAt     DateTime?
+  expiresAt       DateTime?
+  revokedAt       DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime                       @default(now())
+  updatedAt       DateTime                       @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  facility     Location     @relation(fields: [facilityId], references: [id], onDelete: Restrict)
+  contributor  CorrectionsContributor @relation(fields: [contributorId], references: [id], onDelete: Restrict)
+  programme    CorrectionsProgramme @relation(fields: [programmeId], references: [id], onDelete: Restrict)
+  project      AudioProject @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  supervisor   User @relation("CorrectionsStudioSupervisor", fields: [supervisorUserId], references: [id], onDelete: Restrict)
+  createdBy    User @relation("CorrectionsStudioCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  submission   CorrectionsSubmission?
+
+  @@index([organisationId, facilityId, status, expiresAt])
+  @@index([contributorId, status])
+  @@index([projectId, status])
 }
 
 model CorrectionsReview {
@@ -4973,6 +5059,8 @@ model AudioProject {
   newsStories           SchoolNewsStory[]
   newsStoryRevisions    NewsStoryRevision[]
   studioProductHandoffs StudioProductHandoff[]
+  correctionsStudioSessions CorrectionsStudioSession[]
+  correctionsSubmissions CorrectionsSubmission[] @relation("CorrectionsSubmittedProject")
 
   @@unique([id, organisationId])
   @@index([organisationId, status])
@@ -4992,6 +5080,7 @@ model AudioProjectVersion {
   project   AudioProject  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   createdBy User          @relation("AudioProjectVersionCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
   renders   AudioRender[]
+  correctionsSubmissions CorrectionsSubmission[] @relation("CorrectionsSubmittedVersion")
 
   @@unique([projectId, version])
   @@index([createdByUserId, createdAt])

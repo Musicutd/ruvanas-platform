@@ -24,7 +24,7 @@ const masteringPresets = [
   ["RETAIL_PROMO", "Retail Promo", "-14 LUFS · -1.0 dBTP"], ["SCHOOL_PROGRAMME", "School Programme", "-18 LUFS · -1.5 dBTP"]
 ];
 
-export default function WaveformEditorClient({ requestedProjectId = "", experienceMode, onExperienceModeChange }) {
+export default function WaveformEditorClient({ requestedProjectId = "", experienceMode, onExperienceModeChange, apiBase = "/api/school-radio/audio-lab", mediaBase = "/api/media", supervised = false }) {
   const [projects, setProjects] = useState([]);
   const [projectId, setProjectId] = useState("");
   const [editor, setEditor] = useState(null);
@@ -70,22 +70,22 @@ export default function WaveformEditorClient({ requestedProjectId = "", experien
   const masterPreview = editor?.renders?.find((render) => render.resultJson?.studioPreview?.purpose === "EFFECTS_MASTERING");
 
   const loadProjects = useCallback(async () => {
-    const response = await fetch("/api/school-radio/audio-lab", { cache: "no-store" });
+    const response = await fetch(apiBase, { cache: "no-store" });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || "Waveform projects could not be loaded.");
     const editableProjects = (payload.projects || []).filter((project) => project.type !== "MULTITRACK");
     setProjects(editableProjects);
     setProjectId((current) => current || editableProjects[0]?.id || "");
-  }, []);
+  }, [apiBase]);
 
   const loadEditor = useCallback(async () => {
     if (!projectId) return;
-    const response = await fetch(`/api/school-radio/audio-lab/projects/${projectId}/editor`, { cache: "no-store" });
+    const response = await fetch(`${apiBase}/projects/${projectId}/editor`, { cache: "no-store" });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || "The waveform editor could not be loaded.");
     setEditor(payload); stateRef.current = payload.state; setState(payload.state); setHistory([]); setFuture([]); setLastAction("Project loaded"); setSaveFeedback("");
     setCursorMs(0); setSelection({ startMs: 0, endMs: 0 });
-  }, [projectId]);
+  }, [apiBase, projectId]);
 
   useEffect(() => { loadProjects().catch((loadError) => setError(loadError.message)); }, [loadProjects]);
   useEffect(() => {
@@ -96,11 +96,11 @@ export default function WaveformEditorClient({ requestedProjectId = "", experien
     const hasActiveWork = editor?.takes.some((take) => ["PENDING", "RUNNING"].includes(take.waveformStatus)) || editor?.renders.some((render) => ["QUEUED", "RUNNING"].includes(render.status));
     if (!projectId || !hasActiveWork) return;
     const timer = setInterval(async () => {
-      const response = await fetch(`/api/school-radio/audio-lab/projects/${projectId}/editor`, { cache: "no-store" });
+      const response = await fetch(`${apiBase}/projects/${projectId}/editor`, { cache: "no-store" });
       if (response.ok) setEditor(await response.json());
     }, 5000);
     return () => clearInterval(timer);
-  }, [editor, projectId]);
+  }, [apiBase, editor, projectId]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -380,7 +380,7 @@ export default function WaveformEditorClient({ requestedProjectId = "", experien
     requestInFlightRef.current = true;
     setWorking(true); setWorkingAction(action); setError(""); setMessage("");
     try {
-      const response = await fetch(`/api/school-radio/audio-lab/projects/${projectId}/editor`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, state: stateRef.current, ...extra }) });
+      const response = await fetch(`${apiBase}/projects/${projectId}/editor`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, state: stateRef.current, ...extra }) });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || "The waveform action failed.");
       setEditor(payload); stateRef.current = payload.state; setState(payload.state); setHistory([]); setFuture([]);
@@ -409,7 +409,7 @@ export default function WaveformEditorClient({ requestedProjectId = "", experien
 
   if (!projects.length) return <section style={s.panel}><p style={s.hint}>{error || "Create and upload an AudioLab take to unlock the waveform editor."}</p></section>;
   return <section ref={sectionRef} style={s.panel} aria-labelledby="waveform-title">
-    <div style={s.heading}><div><p style={s.eyebrow}>WAVEFORM · STUDIO {editor?.studioLevel || "BASIC"}</p><h2 id="waveform-title" style={s.title}>Shape the programme without touching the source</h2><p style={s.hint}>Cached waveform peaks, versioned edits, markers, undo/redo, and server-rendered review copies.</p></div><button type="button" style={s.secondary} disabled={!editor?.studioProEnabled} title={!editor?.studioProEnabled ? "Studio Pro is included with Tiers 3–5." : undefined} onClick={() => { const next = advanced ? "BEGINNER" : "ADVANCED"; setLocalMode(next); onExperienceModeChange?.(next); }}>{editor?.studioProEnabled ? (advanced ? "Use Basic tools" : "Use Pro tools") : "Basic tools"}</button></div>
+    <div style={s.heading}><div><p style={s.eyebrow}>{supervised ? "SUPERVISED CORRECTIONS STUDIO" : "WAVEFORM"} · STUDIO {editor?.studioLevel || "BASIC"}</p><h2 id="waveform-title" style={s.title}>Shape the programme without touching the source</h2><p style={s.hint}>Cached waveform peaks, versioned edits, markers, undo/redo, and server-rendered review copies.</p></div><button type="button" style={s.secondary} disabled={!editor?.studioProEnabled} title={!editor?.studioProEnabled ? "Studio Pro is included with Tiers 3–5." : undefined} onClick={() => { const next = advanced ? "BEGINNER" : "ADVANCED"; setLocalMode(next); onExperienceModeChange?.(next); }}>{editor?.studioProEnabled ? (advanced ? "Use Basic tools" : "Use Pro tools") : "Basic tools"}</button></div>
     {error ? <div style={s.error}>{error}</div> : null}{message ? <div style={s.notice}>{message}</div> : null}
     {editor?.restrictedReadOnly ? <div style={s.error}>This project contains Studio Pro edits. They remain intact, but editing and rendering are read-only on the current Basic plan.</div> : null}
     <label style={s.label}>AudioLab project<select style={s.input} value={projectId} onChange={(event) => setProjectId(event.target.value)}>{projects.map((project) => <option key={project.id} value={project.id}>{project.title}</option>)}</select></label>
@@ -434,7 +434,7 @@ export default function WaveformEditorClient({ requestedProjectId = "", experien
       </div>
       <div style={s.selectionBar} aria-live="polite"><div style={s.selectionSummary}><strong>{hasSelection ? `${seconds(Math.abs(selection.endMs - selection.startMs))} seconds selected` : "Select part of the wave"}</strong><span>{hasSelection ? `${seconds(Math.min(selection.startMs, selection.endMs))}–${seconds(Math.max(selection.startMs, selection.endMs))} s · Choose an edit below.` : "Drag from left to right—or right to left—then choose an edit."}</span></div><div style={s.selectionActions}><button type="button" style={{ ...s.cutButton, opacity: hasSelection && canEdit ? 1 : .48 }} disabled={!hasSelection || !canEdit} onClick={cutCurrentSelection}>✂ Cut selection</button><button type="button" style={{ ...s.deleteButton, opacity: hasSelection && canEdit ? 1 : .48 }} disabled={!hasSelection || !canEdit} onClick={() => deleteCurrentSelection()}>⌫ Delete selection</button><button type="button" style={{ ...s.silenceButton, opacity: hasSelection && canEdit ? 1 : .48 }} disabled={!hasSelection || !canEdit} onClick={silenceCurrentSelection}>◌ Silence selection</button></div></div>
       {gainEnabled ? <div style={s.gainPanel}><div><strong>Amplify or reduce</strong><p style={s.gainHint}>Adjust only the highlighted audio. Positive dB raises it; negative dB reduces it. The wave updates when applied; create a review render to hear the result. Final mastering may rebalance overall loudness.</p></div><label style={s.gainControl}>Gain change <output>{gainAdjustmentDb > 0 ? "+" : ""}{gainAdjustmentDb} dB</output><input aria-label="Gain change in decibels" type="range" min="-36" max="18" step="0.5" value={gainAdjustmentDb} onChange={(event) => setGainAdjustmentDb(Number(event.target.value))} /></label><input aria-label="Gain change number in decibels" style={s.gainNumber} type="number" min="-36" max="18" step="0.5" value={gainAdjustmentDb} onChange={(event) => setGainAdjustmentDb(Math.min(18, Math.max(-36, Number(event.target.value) || 0)))} /><button type="button" style={s.primary} disabled={!hasSelection || !canEdit || gainAdjustmentDb === 0} onClick={applyGainAdjustment}>Apply dB change</button></div> : editor && hasSelection ? <p style={s.gainLocked}>Amplitude adjustment is included with Studio Pro (tiers 3–5). Your current plan has Studio Basic, so gain editing is unavailable here.</p> : null}
-      {sourceTake ? <audio ref={audioRef} src={`/api/media/${sourceTake.mediaAsset.id}/stream`} onTimeUpdate={onAudioTime} onEnded={() => setCursorMs(0)} preload="metadata" /> : null}
+      {sourceTake ? <audio ref={audioRef} src={supervised ? `${mediaBase}/${sourceTake.mediaAsset.id}` : `${mediaBase}/${sourceTake.mediaAsset.id}/stream`} onTimeUpdate={onAudioTime} onEnded={() => setCursorMs(0)} preload="metadata" /> : null}
       <div style={s.timeGrid}><label style={s.label}>Cursor (seconds)<input style={s.input} type="number" min="0" max={seconds(durationMs)} step=".01" value={seconds(cursorMs)} onChange={(event) => setCursorMs(milliseconds(event.target.value))} /></label><label style={s.label}>Selection start<input style={s.input} type="number" min="0" max={seconds(durationMs)} step=".01" value={seconds(selection.startMs)} onChange={(event) => setSelection({ ...selection, startMs: milliseconds(event.target.value) })} /></label><label style={s.label}>Selection end<input style={s.input} type="number" min="0" max={seconds(durationMs)} step=".01" value={seconds(selection.endMs)} onChange={(event) => setSelection({ ...selection, endMs: milliseconds(event.target.value) })} /></label><div style={s.duration}>Selection duration<br /><strong>{seconds(Math.abs(selection.endMs-selection.startMs))} s</strong></div><div style={s.duration}>Project length<br /><strong>{seconds(durationMs)} s</strong></div></div>
       <details style={s.moreTools}><summary>More edit tools</summary><div style={s.actions}><button type="button" style={s.secondary} disabled={!canEdit} onClick={() => editClips((clips) => splitAt(clips, cursorMs, newId), "Split at cursor")}>Split at cursor</button><button type="button" style={s.secondary} disabled={!hasSelection} onClick={copyCurrentSelection}>Copy</button><button type="button" style={s.secondary} disabled={!clipboard.clips.length || !canEdit} onClick={pasteAtCursor}>Paste at cursor</button><button type="button" style={s.secondary} disabled={!hasSelection} onClick={() => setZoom(Math.min(5, Math.max(1, durationMs / Math.max(1, Math.abs(selection.endMs-selection.startMs)))))}>Fit selection</button><button type="button" style={s.secondary} disabled={!hasSelection || !canEdit} onClick={() => editClips((clips) => trimToSelection(clips, selection.startMs, selection.endMs, newId), "Crop to selection")}>Crop to selection</button></div></details>
       {advanced ? <div style={s.advanced}>
