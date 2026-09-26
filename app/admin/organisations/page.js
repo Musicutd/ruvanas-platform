@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getAdminUser } from "@/lib/requireAdmin";
 import SchoolRadioEntitlementControl from "./SchoolRadioEntitlementControl";
@@ -19,7 +20,7 @@ import {
   buildSchoolProductOnboarding
 } from "@/lib/product-onboarding.mjs";
 
-function ProductReadinessSummary({ organisation, correctionsFacilities = [] }) {
+function ProductReadinessSummary({ organisation, correctionsFacilities = [], correctionsC5 = {} }) {
   const entitlements = resolveEntitlements(organisation.subscription);
   const firstStation = organisation.stations.find((station) => station.status === "ACTIVE") || organisation.stations[0] || null;
   const common = {
@@ -114,7 +115,7 @@ function ProductReadinessSummary({ organisation, correctionsFacilities = [] }) {
             <>
               <progress style={styles.readinessProgress} value={product.readiness.completedCount} max={product.readiness.totalCount} aria-label={`${product.label} ${product.readiness.percent}% ready`} />
               <strong style={product.readiness.complete ? styles.ready : styles.inProgress}>{product.readiness.percent}%</strong>
-              <span style={styles.readinessNext}>{product.readiness.complete ? "Ready for operation" : `Next: ${product.readiness.nextAction.title}`}</span>
+              <span style={styles.readinessNext}>{product.label === "Inside" ? `Private playback locked · ${correctionsC5.pendingRequests || 0} requests waiting · ${correctionsC5.rehabReview || 0} rehabilitation items waiting · ${correctionsC5.contributorRecords || 0} development records` : product.readiness.complete ? "Ready for operation" : `Next: ${product.readiness.nextAction.title}`}</span>
             </>
           ) : <span style={styles.notIncluded}>Not included</span>}
         </div>
@@ -201,6 +202,16 @@ export default async function AdminOrganisationsPage() {
     rows.push(facility);
     correctionFacilitiesByOrg.set(facility.location.organisationId, rows);
   }
+  const organisationIds = organisations.map((organisation) => organisation.id);
+  const [requestCounts, rehabCounts, milestoneCounts] = await Promise.all([
+    prisma.correctionsRequest.groupBy({ by: ["organisationId"], where: { organisationId: { in: organisationIds }, status: { in: ["RECEIVED", "SCREENING"] } }, _count: { _all: true } }),
+    prisma.correctionsRehabContent.groupBy({ by: ["organisationId"], where: { organisationId: { in: organisationIds }, status: "IN_REVIEW" }, _count: { _all: true } }),
+    organisationIds.length ? prisma.$queryRaw`SELECT c."organisationId", COUNT(m."id")::int AS "count" FROM "CorrectionsContributorMilestone" m JOIN "CorrectionsContributor" c ON c."id" = m."contributorId" WHERE c."organisationId" IN (${Prisma.join(organisationIds)}) GROUP BY c."organisationId"` : []
+  ]);
+  const c5ByOrg = new Map(organisationIds.map((id) => [id, { pendingRequests: 0, rehabReview: 0, contributorRecords: 0 }]));
+  for (const item of requestCounts) c5ByOrg.get(item.organisationId).pendingRequests = item._count._all;
+  for (const item of rehabCounts) c5ByOrg.get(item.organisationId).rehabReview = item._count._all;
+  for (const item of milestoneCounts) c5ByOrg.get(item.organisationId).contributorRecords = item.count;
 
   return (
     <main style={styles.page}>
@@ -270,7 +281,7 @@ export default async function AdminOrganisationsPage() {
                     </td>
 
                     <td style={styles.tableCellReadiness}>
-                      <ProductReadinessSummary organisation={organisation} correctionsFacilities={correctionFacilitiesByOrg.get(organisation.id) || []} />
+                      <ProductReadinessSummary organisation={organisation} correctionsFacilities={correctionFacilitiesByOrg.get(organisation.id) || []} correctionsC5={c5ByOrg.get(organisation.id)} />
                     </td>
 
                     <td style={styles.tableCellFeature}>
