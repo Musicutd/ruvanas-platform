@@ -19,8 +19,8 @@ export async function GET(_request, { params }) {
   if (resolved.error) return resolved.error;
   const { access, facility } = resolved;
   const [members, grants] = await Promise.all([
-    prisma.organisationMember.findMany({ where: { organisationId: access.organisationId, role: { in: ["MANAGER", "CONTENT_EDITOR", "VIEWER"] } }, select: { id: true, role: true, user: { select: { name: true, email: true } } }, orderBy: { createdAt: "asc" } }),
-    prisma.correctionsFacilityGrant.findMany({ where: { organisationId: access.organisationId, facilityId: facility.locationId }, select: { id: true, organisationMemberId: true, permission: true } })
+    prisma.organisationMember.findMany({ where: { organisationId: access.organisationId, role: { in: ["OWNER", "MANAGER", "CONTENT_EDITOR", "VIEWER"] } }, select: { id: true, role: true, user: { select: { name: true, email: true } } }, orderBy: { createdAt: "asc" } }),
+    prisma.correctionsFacilityGrant.findMany({ where: { organisationId: access.organisationId, facilityId: facility.locationId }, select: { id: true, organisationMemberId: true, permission: true, canPriorityActivate: true, canPriorityStop: true, canEmergencyActivate: true, canEmergencyClear: true } })
   ]);
   return correctionsResponse({ ok: true, members, grants });
 }
@@ -32,13 +32,15 @@ export async function POST(request, { params }) {
   const body = await request.json().catch(() => ({}));
   try {
     const member = await prisma.organisationMember.findFirst({ where: { id: body.memberId, organisationId: access.organisationId }, select: { id: true, role: true } });
-    if (!member || !correctionsGrantAllowed(member.role, body.permission)) return correctionsResponse({ error: "Choose an eligible team member and matching facility role." }, 400);
+    if (!member || !(correctionsGrantAllowed(member.role, body.permission) || (member.role === "OWNER" && body.permission === "MANAGER"))) return correctionsResponse({ error: "Choose an eligible team member and matching facility role." }, 400);
+    const elevated = body.permission === "MANAGER" && ["OWNER", "MANAGER"].includes(member.role);
+    const capabilities = { canPriorityActivate: elevated && body.canPriorityActivate === true, canPriorityStop: elevated && body.canPriorityStop === true, canEmergencyActivate: elevated && body.canEmergencyActivate === true, canEmergencyClear: elevated && body.canEmergencyClear === true };
     const grant = await prisma.$transaction(async (tx) => {
-      const saved = await tx.correctionsFacilityGrant.upsert({ where: { organisationMemberId_facilityId: { organisationMemberId: member.id, facilityId: facility.locationId } }, create: { organisationId: access.organisationId, organisationMemberId: member.id, facilityId: facility.locationId, permission: body.permission, createdByUserId: access.context.user.id }, update: { permission: body.permission, createdByUserId: access.context.user.id } });
-      await tx.auditLog.create({ data: { organisationId: access.organisationId, actorUserId: access.context.user.id, action: "CORRECTIONS_FACILITY_ACCESS_GRANTED", entityType: "CorrectionsFacilityGrant", entityId: saved.id, details: { facilityId: facility.locationId, memberId: member.id, permission: body.permission } } });
+      const saved = await tx.correctionsFacilityGrant.upsert({ where: { organisationMemberId_facilityId: { organisationMemberId: member.id, facilityId: facility.locationId } }, create: { organisationId: access.organisationId, organisationMemberId: member.id, facilityId: facility.locationId, permission: body.permission, ...capabilities, createdByUserId: access.context.user.id }, update: { permission: body.permission, ...capabilities, createdByUserId: access.context.user.id } });
+      await tx.auditLog.create({ data: { organisationId: access.organisationId, actorUserId: access.context.user.id, action: "CORRECTIONS_FACILITY_ACCESS_GRANTED", entityType: "CorrectionsFacilityGrant", entityId: saved.id, details: { facilityId: facility.locationId, memberId: member.id, permission: body.permission, ...capabilities } } });
       return saved;
     });
-    return correctionsResponse({ ok: true, grant: { id: grant.id, memberId: member.id, permission: grant.permission } });
+    return correctionsResponse({ ok: true, grant: { id: grant.id, memberId: member.id, permission: grant.permission, ...capabilities } });
   } catch (error) { return correctionsError(error); }
 }
 

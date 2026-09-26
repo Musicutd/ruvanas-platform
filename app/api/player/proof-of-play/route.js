@@ -35,7 +35,8 @@ const eventSchema = z.object({
     "PROGRAMME_SHOW_RUNDOWN",
     "CRITICAL_FAILURE",
     "CORRECTIONS_REQUEST",
-    "CORRECTIONS_REHABILITATION"
+    "CORRECTIONS_REHABILITATION",
+    "CORRECTIONS_STANDARD", "CORRECTIONS_PRIORITY", "CORRECTIONS_EMERGENCY"
   ]).optional().nullable(),
   trackId: z.string().cuid().optional().nullable(),
   eventType: z.enum(["STARTED", "COMPLETED", "FAILED", "INTERRUPTED"]),
@@ -96,6 +97,8 @@ export async function POST(request) {
           schoolRundownItem: { select: { id: true, label: true, type: true } },
           correctionsRequest: { select: { id: true, organisationId: true, facilityId: true, status: true } },
           correctionsRehabContent: { select: { id: true, organisationId: true, facilityId: true } },
+          correctionsAnnouncement: { select: { id: true, organisationId: true, facilityId: true, status: true, mediaAssetId: true, promoVersionId: true, title: true } },
+          correctionsOverride: { select: { id: true, organisationId: true, facilityId: true, type: true, status: true, startedAt: true, endedAt: true, expiresAt: true, targetZoneIds: true, targetPlayerIds: true } },
           promoVersion: { include: { promoAsset: { select: { id: true, name: true } } } },
           mediaAsset: true
         }
@@ -111,9 +114,22 @@ export async function POST(request) {
       const age = now.getTime() - occurredAt.getTime();
       const track = event.itemType === "MUSIC" ? tracksById.get(event.trackId) : null;
       const intent = intentsByScheduleItemId.get(event.scheduleItemId) || null;
-      const inside = Boolean(intent?.correctionsRequestId || intent?.correctionsRehabContentId);
+      const inside = Boolean(intent?.correctionsRequestId || intent?.correctionsRehabContentId || intent?.correctionsAnnouncementId);
+      const announcement = intent?.correctionsAnnouncement || null;
+      const override = intent?.correctionsOverride || null;
+      const c6 = Boolean(intent?.correctionsAnnouncementId);
       const contentId = track?.id || intent?.promoVersionId || intent?.mediaAssetId;
-      const validIntentType = inside ? (
+      const endedProofAllowed = override?.endedAt && (new Date(event.occurredAt) <= override.endedAt || (event.eventType === "INTERRUPTED" && new Date(event.occurredAt).getTime() <= override.endedAt.getTime() + 15000));
+      const validIntentType = c6 ? (
+        (!intent.cancelledAt || endedProofAllowed) &&
+        !intent.campaignId && !intent.schoolBroadcastSlotId && !intent.correctionsRequestId && !intent.correctionsRehabContentId &&
+        event.itemType === "CORRECTIONS_AUDIO" && !event.trackId &&
+        announcement?.status === "APPROVED" && announcement.organisationId === player.organisationId && announcement.facilityId === player.zone.locationId &&
+        announcement.mediaAssetId === intent.mediaAssetId && announcement.promoVersionId === intent.promoVersionId &&
+        event.programmingSource === (override ? `CORRECTIONS_${override.type}` : "CORRECTIONS_STANDARD") &&
+        (!override || (override.organisationId === player.organisationId && override.facilityId === player.zone.locationId && override.targetZoneIds.includes(player.zoneId) && override.targetPlayerIds.includes(player.id) &&
+          (override.status === "ACTIVE" || endedProofAllowed)))
+      ) : inside ? (
         !intent.cancelledAt && intent.organisationId === player.organisationId && intent.zoneId === player.zoneId &&
         !intent.campaignId && !intent.schoolBroadcastSlotId &&
         (event.programmingSource === (intent.correctionsRequestId ? "CORRECTIONS_REQUEST" : "CORRECTIONS_REHABILITATION")) &&
@@ -144,8 +160,13 @@ export async function POST(request) {
       const validChannel = !intent?.channelId || intent.channelId === channelId;
       const validCompletion = !inside || event.eventType !== "COMPLETED" ||
         (Number.isInteger(event.positionSeconds) && event.positionSeconds >= Math.max(1, Math.floor(Number(intent.mediaAsset.durationSeconds) - 5)));
+      const interruptedByOverride = inside && !override && event.eventType === "COMPLETED" && Boolean(await prisma.correctionsOverride.findFirst({ where: {
+        organisationId: player.organisationId, facilityId: player.zone.locationId, targetPlayerIds: { has: player.id },
+        startedAt: { lte: occurredAt }, expiresAt: { gt: occurredAt }, OR: [{ endedAt: null }, { endedAt: { gt: occurredAt } }]
+      }, select: { id: true } }));
 
       if (!contentId || !signedForPlayer || !signedProgrammingSource || !validIntentType || !validPromoTime || !validChannel || !validCompletion ||
+          interruptedByOverride ||
           (Boolean(privateFacility) !== inside) ||
           (event.programmingSource?.startsWith("CORRECTIONS_") && !inside) ||
           (event.itemType === "CORRECTIONS_AUDIO" && !inside) ||
@@ -155,12 +176,12 @@ export async function POST(request) {
     }
 
     const result = await runSerializableTransaction(prisma, async (tx) => {
-      const insideIntentIds = intents.filter((intent) => intent.correctionsRequestId || intent.correctionsRehabContentId).map((intent) => intent.id);
+      const insideIntentIds = intents.filter((intent) => intent.correctionsRequestId || intent.correctionsRehabContentId || intent.correctionsAnnouncementId).map((intent) => intent.id);
       const previousInside = insideIntentIds.length ? await tx.proofOfPlayEvent.findMany({ where: { playoutIntentId: { in: insideIntentIds }, eventType: { in: ["COMPLETED", "FAILED", "INTERRUPTED"] } }, select: { playoutIntentId: true, eventType: true } }) : [];
       const seenInside = new Set(previousInside.map((item) => `${item.playoutIntentId}:${item.eventType}`));
       const acceptedEvents = events.filter((event) => {
         const intent = intentsByScheduleItemId.get(event.scheduleItemId);
-        if (!intent?.correctionsRequestId && !intent?.correctionsRehabContentId) return true;
+        if (!intent?.correctionsRequestId && !intent?.correctionsRehabContentId && !intent?.correctionsAnnouncementId) return true;
         if (event.eventType === "STARTED") return true;
         const key = `${intent.id}:${event.eventType}`;
         if (seenInside.has(key)) return false;
@@ -194,8 +215,8 @@ export async function POST(request) {
             playerName: player.name,
             locationName: player.zone.location.name,
             zoneName: player.zone.name,
-            trackTitle: track?.title || (intent?.correctionsRequestId ? "Approved Inside request" : null) || (intent?.correctionsRehabContentId ? "Approved rehabilitation audio" : null) || intent?.schoolRundownItem?.label || intent?.schoolBroadcastSlot?.announcement?.title || intent?.schoolBroadcastSlot?.episode?.title || intent?.promoVersion?.promoAsset?.name || "Scheduled audio",
-            trackArtist: track?.artist || (intent?.correctionsRequestId || intent?.correctionsRehabContentId ? "Ruvanas Inside" : event.itemType === "SCHOOL_ANNOUNCEMENT" ? (intent?.schoolRundownItem ? "School programme" : "School announcement") : "Promotion")
+            trackTitle: track?.title || intent?.correctionsAnnouncement?.title || (intent?.correctionsRequestId ? "Approved Inside request" : null) || (intent?.correctionsRehabContentId ? "Approved rehabilitation audio" : null) || intent?.schoolRundownItem?.label || intent?.schoolBroadcastSlot?.announcement?.title || intent?.schoolBroadcastSlot?.episode?.title || intent?.promoVersion?.promoAsset?.name || "Scheduled audio",
+            trackArtist: track?.artist || (intent?.correctionsRequestId || intent?.correctionsRehabContentId || intent?.correctionsAnnouncementId ? "Ruvanas Inside" : event.itemType === "SCHOOL_ANNOUNCEMENT" ? (intent?.schoolRundownItem ? "School programme" : "School announcement") : "Promotion")
           };
         }),
         skipDuplicates: true
@@ -203,7 +224,29 @@ export async function POST(request) {
 
       for (const event of acceptedEvents) {
         const intent = intentsByScheduleItemId.get(event.scheduleItemId);
-        if (!intent?.correctionsRequestId && !intent?.correctionsRehabContentId) continue;
+        if (privateFacility && intent && !intent.correctionsOverrideId && event.eventType === "STARTED") {
+          const occurredAt = new Date(event.occurredAt);
+          const previousOverride = await tx.correctionsOverride.findFirst({ where: { organisationId: player.organisationId, facilityId: player.zone.locationId, targetPlayerIds: { has: player.id }, status: { in: ["COMPLETED", "CLEARED", "SUPERSEDED", "EXPIRED"] }, endedAt: { lte: occurredAt, gte: new Date(occurredAt.getTime() - 30 * 60000) } }, orderBy: { endedAt: "desc" } });
+          if (previousOverride) {
+            const recorded = await tx.auditLog.findFirst({ where: { organisationId: player.organisationId, action: "CORRECTIONS_RESTORATION_CONFIRMED", entityType: "CorrectionsOverride", entityId: previousOverride.id, details: { path: ["playerId"], equals: player.id } }, select: { id: true } });
+            if (!recorded) await tx.auditLog.create({ data: { organisationId: player.organisationId, action: "CORRECTIONS_RESTORATION_CONFIRMED", entityType: "CorrectionsOverride", entityId: previousOverride.id, details: { playerId: player.id, zoneId: player.zoneId, resumedIntentId: intent.id, proofEventId: event.eventId } } });
+          }
+        }
+        if (!intent?.correctionsRequestId && !intent?.correctionsRehabContentId && !intent?.correctionsAnnouncementId) continue;
+        if (intent.correctionsAnnouncementId) {
+          const override = intent.correctionsOverride;
+          const action = event.eventType === "COMPLETED" ? "CORRECTIONS_ANNOUNCEMENT_DELIVERED" : ["FAILED", "INTERRUPTED"].includes(event.eventType) ? "CORRECTIONS_ANNOUNCEMENT_DELIVERY_ISSUE" : "CORRECTIONS_ANNOUNCEMENT_STARTED";
+          await tx.auditLog.create({ data: { organisationId: player.organisationId, action, entityType: override ? "CorrectionsOverride" : "CorrectionsAnnouncement", entityId: override?.id || intent.correctionsAnnouncementId, details: { intentId: intent.id, eventId: event.eventId, zoneId: player.zoneId, playerId: player.id, eventType: event.eventType } } });
+          if (["FAILED", "INTERRUPTED"].includes(event.eventType)) await enqueueNotificationEvent(tx, { organisationId: player.organisationId, type: "CORRECTIONS_REVIEW_REQUEST", severity: override?.type === "EMERGENCY" ? "CRITICAL" : "WARNING", title: "Inside announcement delivery needs attention", message: "A targeted player did not confirm a complete announcement play.", entityType: override ? "CorrectionsOverride" : "CorrectionsAnnouncement", entityId: override?.id || intent.correctionsAnnouncementId, dedupeKey: `inside-announcement-failure:${intent.id}`, correlationId: intent.id });
+          if (override && event.eventType === "COMPLETED" && override.status === "ACTIVE") {
+            const completed = await tx.proofOfPlayEvent.count({ where: { eventType: "COMPLETED", playoutIntent: { correctionsOverrideId: override.id } } });
+            if (completed >= override.targetPlayerIds.length) {
+              const changed = await tx.correctionsOverride.updateMany({ where: { id: override.id, status: "ACTIVE" }, data: { status: "COMPLETED", endedAt: new Date() } });
+              if (changed.count) await tx.auditLog.create({ data: { organisationId: player.organisationId, action: `CORRECTIONS_${override.type}_COMPLETED`, entityType: "CorrectionsOverride", entityId: override.id, details: { completedPlayerCount: completed, restoration: "RE_RESOLVE_CURRENT_PRIVATE_PROGRAMMING" } } });
+            }
+          }
+          continue;
+        }
         if (event.eventType === "COMPLETED" && intent.correctionsRequestId) {
           const changed = await tx.correctionsRequest.updateMany({ where: { id: intent.correctionsRequestId, organisationId: player.organisationId, facilityId: player.zone.locationId, status: "SCHEDULED" }, data: { status: "PLAYED" } });
           if (changed.count) await tx.auditLog.create({ data: { organisationId: player.organisationId, action: "CORRECTIONS_REQUEST_DELIVERY_CONFIRMED", entityType: "CorrectionsRequest", entityId: intent.correctionsRequestId, details: { intentId: intent.id, proofEventId: event.eventId, zoneId: player.zoneId, playerId: player.id } } });

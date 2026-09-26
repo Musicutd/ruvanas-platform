@@ -82,6 +82,8 @@ export default function PlayerPage() {
   const insertionAudio = useRef(null);
   const activeAudioRef = useRef(null);
   const activeItemRef = useRef(null);
+  const activeInsertionIdRef = useRef(null);
+  const activeManifestVersionRef = useRef(null);
   const startedPlaybackKey = useRef(null);
   const commandBusy = useRef(false);
 
@@ -127,9 +129,25 @@ export default function PlayerPage() {
     if (!response.ok) throw new Error(data.error || "Unable to load the playback plan.");
     setAccessBlocked(false);
     setAccessBlockedCode(null);
+    const previous = activeItemRef.current;
+    if (activeInsertionIdRef.current && !data.insertions?.some((item) => item.scheduleItemId === activeInsertionIdRef.current)) {
+      if (previous && startedPlaybackKey.current && activeManifestVersionRef.current) {
+        queuePlaybackEvent({ eventId: crypto.randomUUID(), manifestVersion: activeManifestVersionRef.current,
+          proofToken: previous.proofToken, programmingSourceProofToken: previous.programmingSourceProofToken,
+          scheduleItemId: previous.scheduleItemId, itemType: previous.itemType, programmingSource: previous.programmingSource,
+          ...(previous.itemType === "MUSIC" ? { trackId: previous.trackId } : {}),
+          eventType: "INTERRUPTED", occurredAt: new Date().toISOString(),
+          positionSeconds: Math.max(0, Math.round(activeAudioRef.current?.currentTime || 0)),
+          failureReason: data.activeOverride ? `Interrupted by Inside ${data.activeOverride.type}` : "Signed private schedule changed" });
+      }
+      startedPlaybackKey.current = null;
+      activeItemRef.current = null;
+      activeAudioRef.current = null;
+      activeInsertionIdRef.current = null;
+    }
     setManifest(data);
     setActiveInsertionId((current) => data.insertions?.some((item) => item.scheduleItemId === current) ? current : null);
-  }, []);
+  }, [queuePlaybackEvent]);
 
   const loadState = useCallback(async () => {
     const response = await fetch("/api/player/state", {
@@ -271,11 +289,12 @@ export default function PlayerPage() {
     if (activeInsertionId) return undefined;
     const played = readPlayedInsertions();
     const nextInsertion = (manifest.insertions || [])
-      .filter((item) => !played.has(item.scheduleItemId))
+      .filter((item) => !played.has(item.scheduleItemId) && (!item.expiresAt || Date.now() < new Date(item.expiresAt).getTime()))
       .sort((left, right) => left.plannedStart.localeCompare(right.plannedStart))[0];
     if (!nextInsertion) return undefined;
 
     const activate = () => {
+      if (nextInsertion.expiresAt && Date.now() >= new Date(nextInsertion.expiresAt).getTime()) return;
       const current = activeItemRef.current;
       if (current?.itemType === "MUSIC" && startedPlaybackKey.current) {
         queuePlaybackEvent({
@@ -294,6 +313,7 @@ export default function PlayerPage() {
         });
       }
       startedPlaybackKey.current = null;
+      activeInsertionIdRef.current = nextInsertion.scheduleItemId;
       setActiveInsertionId(nextInsertion.scheduleItemId);
     };
     const delay = Math.max(0, new Date(nextInsertion.plannedStart).getTime() - Date.now());
@@ -390,6 +410,7 @@ export default function PlayerPage() {
     startedPlaybackKey.current = activePlaybackKey;
     rememberPlayedInsertion(activeInsertion.scheduleItemId);
     activeItemRef.current = activeInsertion;
+    activeManifestVersionRef.current = manifest.version;
     activeAudioRef.current = event.currentTarget;
     playbackEvent(activeInsertion, "STARTED", event.currentTarget);
   }
@@ -398,6 +419,7 @@ export default function PlayerPage() {
     if (!activeInsertion) return;
     playbackEvent(activeInsertion, "COMPLETED", event.currentTarget);
     startedPlaybackKey.current = null;
+    activeInsertionIdRef.current = null;
     setActiveInsertionId(null);
   }
 
@@ -405,6 +427,7 @@ export default function PlayerPage() {
     if (!activeInsertion) return;
     playbackEvent(activeInsertion, "FAILED", event.currentTarget, "Browser audio playback failed");
     startedPlaybackKey.current = null;
+    activeInsertionIdRef.current = null;
     rememberPlayedInsertion(activeInsertion.scheduleItemId);
     setActiveInsertionId(null);
     setMessage("This audio could not be played. The player will retry when the schedule refreshes.");
