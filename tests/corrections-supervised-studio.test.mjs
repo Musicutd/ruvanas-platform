@@ -134,3 +134,30 @@ test("contributor API has no normal product-handoff, scheduling or approval oper
   const normalHandoff = await readFile(new URL("../lib/studio-product-handoff.mjs", import.meta.url), "utf8");
   assert.match(normalHandoff, /status !== "APPROVED"/);
 });
+
+test("supervised contributor can switch Studio Pro tools without changing permissions", async () => {
+  const source = await readFile(new URL("../app/corrections-contributor/ContributorStudio.js", import.meta.url), "utf8");
+  assert.match(source, /setStudioExperienceMode/);
+  assert.match(source, /<WaveformEditorClient[^>]*experienceMode=\{studioExperienceMode\}[^>]*onExperienceModeChange=\{setStudioExperienceMode\}/);
+  assert.match(source, /<MultitrackStudioClient[^>]*experienceMode=\{studioExperienceMode\}[^>]*onExperienceModeChange=\{setStudioExperienceMode\}/);
+  assert.doesNotMatch(source, /experienceMode="BEGINNER"/);
+});
+
+test("microphone permission wait cannot start two simultaneous recordings", async () => {
+  const source = await readFile(new URL("../app/corrections-contributor/ContributorStudio.js", import.meta.url), "utf8");
+  assert.match(source, /if \(recordingStartRef\.current \|\| recording \|\| busy \|\| recorderRef\.current\?\.state === "recording"\) return/);
+  assert.match(source, /recordingStartRef\.current = true/);
+  assert.match(source, /disabled=\{busy \|\| recording \|\| startingRecording\}/);
+  assert.match(source, /recordingStartRef\.current = false/);
+});
+
+test("supervised playback selects only a completed render pinned to the saved version", async () => {
+  const editor = await readFile(new URL("../app/dashboard/school-radio/WaveformEditorClient.js", import.meta.url), "utf8");
+  const persistence = await readFile(new URL("../lib/studio-waveform-persistence.js", import.meta.url), "utf8");
+  assert.match(persistence, /version: \{ select: \{ version: true \} \}/);
+  assert.match(persistence, /versionNumber: render\.version\.version/);
+  assert.match(editor, /supervised && history\.length === 0 && future\.length === 0/);
+  assert.match(editor, /render\.status === "SUCCEEDED" && render\.versionNumber === editor\.currentVersion && render\.streamUrl/);
+  assert.match(editor, /src=\{supervisedRender\?\.streamUrl \|\| \(supervised \?/);
+  assert.match(editor, /supervisedRender \? "▶ Play edited render \/ pause" : "▶ Play original take \/ pause"/);
+});

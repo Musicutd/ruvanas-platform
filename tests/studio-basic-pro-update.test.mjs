@@ -40,6 +40,15 @@ test("Pro Blade split remains non-destructive and supports sixteen tracks", () =
   assert.equal(studioMultitrackTrackLimit({ studioLevel: "PRO", planTierNumber: 3 }), 16);
 });
 
+test("waveform fade handles show saved clip values after reopening", async () => {
+  const source = await readFile(new URL("../app/dashboard/school-radio/WaveformEditorClient.js", import.meta.url), "utf8");
+  assert.match(source, /selectedFadeInMs = hasSelection/);
+  assert.match(source, /selectedFadeOutMs = hasSelection/);
+  assert.match(source, /value=\{selectedFadeInMs\}/);
+  assert.match(source, /value=\{selectedFadeOutMs\}/);
+  assert.doesNotMatch(source, /aria-label="Fade-in handle"[^>]*defaultValue=/);
+});
+
 test("Manual Playout requires fallback and returns to AutoDJ when its queue empties", () => {
   assert.throws(() => playoutModeTransition({ status: "ACTIVE" }, "MANUAL"), /fallback/);
   assert.equal(playoutModeTransition({ status: "FALLBACK" }, "MANUAL", { hasFallback: true }).status, "ACTIVE");
