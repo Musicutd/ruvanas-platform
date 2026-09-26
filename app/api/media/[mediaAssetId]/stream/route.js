@@ -1,7 +1,7 @@
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireOrganisationAccess } from "@/lib/access-control";
+import { requireOrganisationAccess, requireOrganisationProductAccess } from "@/lib/access-control";
 import { accessDenied } from "@/lib/api-response";
 import { getR2Storage } from "@/lib/r2";
 
@@ -106,6 +106,23 @@ export async function GET(request, { params }) {
 
     if (!access.ok) {
       return accessDenied(access);
+    }
+
+    // A Studio output submitted to Corrections becomes facility-scoped review
+    // media. The general organisation stream must not bypass Inside grants.
+    const correctionsUses = await prisma.correctionsSubmission.findMany({
+      where: { render: { outputMediaAssetId: asset.id } },
+      select: { facilityId: true }, take: 100
+    });
+    if (correctionsUses.length) {
+      const insideAccess = await requireOrganisationProductAccess(asset.organisationId, "CORRECTIONS");
+      if (!insideAccess.ok || !insideAccess.membership) return accessDenied(insideAccess.ok ? { ok: false, status: 403, error: "Inside facility access is required." } : insideAccess);
+      if (insideAccess.membership.role !== "OWNER") {
+        const assigned = await prisma.correctionsFacilityGrant.count({
+          where: { organisationId: asset.organisationId, organisationMemberId: insideAccess.membership.id, facilityId: { in: correctionsUses.map((item) => item.facilityId) } }
+        });
+        if (!assigned) return NextResponse.json({ error: "Inside facility access is required." }, { status: 403 });
+      }
     }
 
     const totalLength = Number(asset.sizeBytes);

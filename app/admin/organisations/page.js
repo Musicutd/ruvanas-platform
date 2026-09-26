@@ -11,6 +11,7 @@ import EmptyState from "@/app/components/EmptyState";
 import { interfaceMessages } from "@/lib/interface-guidance.mjs";
 import { resolveEntitlements } from "@/lib/entitlements.mjs";
 import {
+  buildCorrectionsProductOnboarding,
   buildFaithProductOnboarding,
   buildHealthProductOnboarding,
   buildOnlineRadioProductOnboarding,
@@ -18,7 +19,7 @@ import {
   buildSchoolProductOnboarding
 } from "@/lib/product-onboarding.mjs";
 
-function ProductReadinessSummary({ organisation }) {
+function ProductReadinessSummary({ organisation, correctionsFacilities = [] }) {
   const entitlements = resolveEntitlements(organisation.subscription);
   const firstStation = organisation.stations.find((station) => station.status === "ACTIVE") || organisation.stations[0] || null;
   const common = {
@@ -90,6 +91,17 @@ function ProductReadinessSummary({ organisation }) {
         liveServiceReady: false,
         publishedPodcastCount: organisation._count.schoolPodcastEpisodes
       })
+    },
+    {
+      label: "Inside",
+      enabled: entitlements.correctionsRadioEnabled,
+      readiness: buildCorrectionsProductOnboarding({
+        serviceEnabled: entitlements.correctionsRadioEnabled,
+        facilityCount: correctionsFacilities.length,
+        zoneCount: correctionsFacilities.reduce((total, facility) => total + facility.location.zones.length, 0),
+        organisationPolicyReady: Boolean(organisation.correctionsProfile?.policyConfiguredAt),
+        facilityPolicyReadyCount: correctionsFacilities.filter((facility) => facility.policyConfiguredAt).length
+      })
     }
   ];
 
@@ -120,7 +132,8 @@ function ProductAccessSummary({ subscription }) {
     ["Online", entitlements.onlineRadioEnabled],
     ["Health", entitlements.healthRadioEnabled],
     ["Faith", entitlements.faithRadioEnabled],
-    ["Organisations", entitlements.organisationsEnabled]
+    ["Organisations", entitlements.organisationsEnabled],
+    ["Ruvanas Inside", entitlements.correctionsRadioEnabled]
   ];
 
   return (
@@ -158,6 +171,7 @@ export default async function AdminOrganisationsPage() {
       musicSchedules: { where: { status: "PUBLISHED" }, select: { id: true } },
       playerListenerLeases: { where: { revokedAt: null, expiresAt: { gt: now } }, select: { id: true } },
       schoolProfile: { select: { id: true } },
+      correctionsProfile: { select: { policyConfiguredAt: true } },
       schoolSafeguardingReadiness: { select: { status: true } },
       staffSupervisors: { where: { active: true }, select: { id: true } },
       schoolProgrammes: { where: { status: "ACTIVE" }, select: { id: true } },
@@ -177,6 +191,16 @@ export default async function AdminOrganisationsPage() {
       name: "asc"
     }
   });
+  const correctionFacilityRows = await prisma.correctionsFacility.findMany({
+    where: { location: { organisationId: { in: organisations.map((organisation) => organisation.id) }, status: { not: "CLOSED" } } },
+    select: { policyConfiguredAt: true, location: { select: { organisationId: true, zones: { select: { id: true } } } } }
+  });
+  const correctionFacilitiesByOrg = new Map();
+  for (const facility of correctionFacilityRows) {
+    const rows = correctionFacilitiesByOrg.get(facility.location.organisationId) || [];
+    rows.push(facility);
+    correctionFacilitiesByOrg.set(facility.location.organisationId, rows);
+  }
 
   return (
     <main style={styles.page}>
@@ -246,7 +270,7 @@ export default async function AdminOrganisationsPage() {
                     </td>
 
                     <td style={styles.tableCellReadiness}>
-                      <ProductReadinessSummary organisation={organisation} />
+                      <ProductReadinessSummary organisation={organisation} correctionsFacilities={correctionFacilitiesByOrg.get(organisation.id) || []} />
                     </td>
 
                     <td style={styles.tableCellFeature}>

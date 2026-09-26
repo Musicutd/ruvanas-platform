@@ -69,7 +69,7 @@ test("each exclusive product account sees its own dashboard and only entitled op
   const families = [
     ["retailRadioEnabled", "retailHome"], ["schoolRadioEnabled", "schoolHome"],
     ["onlineRadioEnabled", "radioHome"], ["healthRadioEnabled", "healthHome"],
-    ["faithRadioEnabled", "faithHome"], ["organisationsEnabled", "organisationsHome"]
+    ["faithRadioEnabled", "faithHome"], ["organisationsEnabled", "organisationsHome"], ["correctionsRadioEnabled", "correctionsHome"]
   ];
   const dashboardIds = families.map(([, id]) => id);
   for (const [capability, ownId] of families) {

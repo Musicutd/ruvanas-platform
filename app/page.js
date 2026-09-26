@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export const metadata = {
   title: "Ruvanas | Professional Radio Platforms by 21-Three",
   description:
-    "Ruvanas, part of 21-Three, provides professional Retail, School, Online, Health, Faith and Organisations media platforms.",
+    "Ruvanas, part of 21-Three, provides professional Retail, School, Online, Health, Faith, Organisations and Corrections media platforms.",
 };
 
 const platforms = [
@@ -52,6 +52,13 @@ const platforms = [
     title: "Ruvanas Organisations",
     text: "Give NGOs, clubs, associations, civic groups and networks one governed home for their own media, events, announcements and displays.",
     features: ["Governed announcements", "Event Mode", "Branch controls"],
+    icon: "organisations",
+  },
+  {
+    number: "07",
+    title: "Ruvanas Inside",
+    text: "A governed foundation for private correctional-facility radio and rehabilitation media. Facility controls and secure delivery are being prepared.",
+    features: ["Private by design", "Facility governance", "Rehabilitation media"],
     icon: "organisations",
   },
 ];
@@ -110,9 +117,22 @@ const pricingFamilyDefinitions = [
     title: "Bring your organisation’s media into one governed workspace.",
     text: "Subscriber-operated channels, announcements, events, podcasts, sponsors, displays and branch controls."
   },
+  {
+    id: "corrections",
+    productId: "CORRECTIONS",
+    eyebrow: "Ruvanas Inside",
+    title: "Prepare secure media for correctional environments.",
+    text: "Commercial and account foundation is available; private delivery and facility governance require a later setup stage."
+  },
 ];
 
 function planFeatures(plan) {
+  if (plan.productFamily === "CORRECTIONS") return [
+    { label: "Corrections product access and guided foundation", included: true },
+    { label: `Ruvanas Studio ${plan.studioLevel} tier entitlement`, included: true },
+    { label: plan.catalogueDescription, included: plan.licensedMusicCatalogueLevel !== "NONE" },
+    { label: "Private playback requires facility policy and delivery setup", included: false }
+  ];
   if (plan.productFamily === "RETAIL") {
     const siteLabel = plan.stationLimit === 1 ? "1 site" : `Up to ${plan.stationLimit} sites`;
     const displayLabel = plan.digitalSignageDisplayLimit === 1

@@ -9,7 +9,8 @@ const PRODUCT_FIELDS = [
   ["Online", "onlineRadioEnabled"],
   ["Health", "healthRadioEnabled"],
   ["Faith", "faithRadioEnabled"],
-  ["Organisations", "organisationsEnabled"]
+  ["Organisations", "organisationsEnabled"],
+  ["Corrections", "correctionsRadioEnabled"]
 ];
 
 const EXTRA_FIELDS = [
@@ -85,6 +86,7 @@ export default function PlanCatalogueEditor({ initialPlans, productLabels }) {
         healthRadioEnabled: Boolean(draft.healthRadioEnabled),
         faithRadioEnabled: Boolean(draft.faithRadioEnabled),
         organisationsEnabled: Boolean(draft.organisationsEnabled),
+        correctionsRadioEnabled: Boolean(draft.correctionsRadioEnabled),
         schoolPublicPublishingEnabled: Boolean(draft.schoolPublicPublishingEnabled),
         retailMediaEnabled: Boolean(draft.retailMediaEnabled),
         digitalSignageEnabled: Boolean(draft.digitalSignageEnabled),

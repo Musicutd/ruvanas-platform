@@ -59,11 +59,11 @@ export default function ProductQaControlCentre({ initialProfiles }) {
         <div>
           <p className={styles.eyebrow}>CONTROLLED ACCEPTANCE</p>
           <h1>Product QA control centre</h1>
-          <p>Exercise all six Ruvanas products through every public tier without creating a billing event or weakening product isolation.</p>
+          <p>Exercise all seven Ruvanas products through every public tier without creating a billing event or weakening product isolation.</p>
         </div>
         <div className={styles.boundary}>
           <strong>Super Admin only</strong>
-          <span>Only the six named QA organisations with a non-billed trial subscription can be changed here.</span>
+          <span>Only the named QA organisations with a non-billed trial subscription can be changed here.</span>
         </div>
       </header>
 

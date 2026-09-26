@@ -9,10 +9,10 @@ import {
   resolveRegistrationDeepLink
 } from "../lib/registration-experience.mjs";
 
-test("the registration journey exposes all thirty approved plans from one catalogue", () => {
+test("the registration journey exposes all thirty-five approved plans from one catalogue", () => {
   const products = registrationProducts();
-  assert.deepEqual(products.map((product) => product.id), ["RETAIL", "SCHOOL", "ONLINE", "HEALTH", "FAITH", "ORGANISATIONS"]);
-  assert.deepEqual(products.map((product) => product.plans.length), [5, 5, 5, 5, 5, 5]);
+  assert.deepEqual(products.map((product) => product.id), ["RETAIL", "SCHOOL", "ONLINE", "HEALTH", "FAITH", "ORGANISATIONS", "CORRECTIONS"]);
+  assert.deepEqual(products.map((product) => product.plans.length), [5, 5, 5, 5, 5, 5, 5]);
   assert.deepEqual(
     products.flatMap((product) => product.plans.map((plan) => [plan.code, plan.name, plan.priceLabel])),
     PUBLIC_PLAN_CATALOGUE.map((plan) => [

@@ -7,7 +7,8 @@ export async function GET(request, { params }) {
       where: {
         slug: params.slug,
         status: "ACTIVE",
-        publicPlayerEnabled: true
+        publicPlayerEnabled: true,
+        OR: [{ productFamily: null }, { productFamily: { not: "CORRECTIONS" } }]
       },
       select: { id: true, name: true, slug: true, description: true, logoUrl: true, publicPlayerTagline: true, publicPlayerAccent: true, stationWebsiteEnabled: true }
     });

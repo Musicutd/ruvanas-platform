@@ -8,6 +8,7 @@ export async function PATCH(request, { params }) {
   try {
     const station = await prisma.station.findUnique({ where: { id: String(params.stationId || "") }, select: { id: true, organisationId: true, status: true, publicPlayerEnabled: true, slug: true, productFamily: true } });
     if (!station) return NextResponse.json({ error: "Station not found." }, { status: 404 });
+    if (station.productFamily === "CORRECTIONS") return NextResponse.json({ error: "Public websites are not available for Ruvanas Inside." }, { status: 403 });
     const access = await requireOrganisationProductAccess(station.organisationId, subscriberProductForStationFamily(station.productFamily), ORGANISATION_MANAGER_ROLES);
     if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
     const text = await request.text();

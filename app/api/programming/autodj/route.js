@@ -9,6 +9,7 @@ import { musicModeIsPlayable } from "@/lib/music-mode-playback.mjs";
 import { normalizeAutoDjPolicyInput } from "@/lib/autodj-policy.mjs";
 import { assertGenreSelection } from "@/lib/autodj-genre-entitlements.mjs";
 import { resolveAutoDjTarget } from "@/lib/autodj-targets";
+import { assertCorrectionsSchedulingAllowed } from "@/lib/corrections-scheduling-lock.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -106,6 +107,7 @@ export async function PUT(request) {
     }
 
     const saved = await prisma.$transaction(async (tx) => {
+      if (input.enabled) await assertCorrectionsSchedulingAllowed(tx, { organisationId, channelId: channel.id, ...(resolvedTarget?.type === "LOCATION" ? { locationId: resolvedTarget.id } : resolvedTarget?.type === "ZONE" ? { zoneId: resolvedTarget.id } : {}) });
       const policyKey = { channelId: channel.id, organisationId };
       const previous = await tx.autoDjPolicy.findUnique({
         where: { channelId_organisationId: policyKey }
@@ -170,6 +172,7 @@ export async function PUT(request) {
 
     return NextResponse.json({ ok: true, policy: saved });
   } catch (error) {
+    if (error?.code === "CORRECTIONS_SCHEDULING_LOCKED") return NextResponse.json({ error: error.message }, { status: 409 });
     if (error?.code === "P2002") return NextResponse.json({ error: "These AutoDJ settings changed at the same time. Please retry." }, { status: 409 });
     console.error("Continuous AutoDJ save error:", error);
     return NextResponse.json({ error: "Unable to save Continuous AutoDJ settings." }, { status: 500 });

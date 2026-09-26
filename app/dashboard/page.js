@@ -50,6 +50,7 @@ export default async function DashboardPage() {
   const hasPhysicalProduct = ["retailRadioEnabled", "schoolRadioEnabled", "healthRadioEnabled", "faithRadioEnabled", "organisationsEnabled"]
     .some((capability) => entitlements[capability]);
   const onlineOnly = entitlements.onlineRadioEnabled && !hasPhysicalProduct;
+  const correctionsOnly = entitlements.correctionsRadioEnabled && !["retailRadioEnabled", "schoolRadioEnabled", "onlineRadioEnabled", "healthRadioEnabled", "faithRadioEnabled", "organisationsEnabled"].some((capability) => entitlements[capability]);
   const firstStation = organisation.stations.find((station) => station.status === "ACTIVE") || organisation.stations[0] || null;
   const now = new Date();
 
@@ -118,16 +119,16 @@ export default async function DashboardPage() {
       label: onlineOnly ? "Manage your station" : `Open ${products[0].label}`,
       description: onlineOnly ? "Review station setup, listeners and publishing." : "See the steps and tools for this service."
     } : null,
-    {
+    !correctionsOnly ? {
       href: products.length === 1 && products[0].key === "RETAIL" ? "/dashboard/retail/music" : "/dashboard/programming#workspace-simple",
       label: "Choose music",
       description: "Open your playlists, AutoDJ and scheduling tools."
-    },
-    {
+    } : null,
+    !correctionsOnly ? {
       href: "/dashboard/studio",
       label: "Open Studio",
       description: "Create, edit and prepare your audio."
-    }
+    } : null
   ].filter(Boolean) : [];
   const storageUsedGb = storageUsedMb / 1024;
   const setupProgress = home.onboarding ? usagePercent(onboarding.completedCount, onboarding.totalCount) : 0;

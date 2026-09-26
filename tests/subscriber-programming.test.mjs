@@ -44,10 +44,12 @@ test("future programming keeps the current plan live and closes it the day befor
 });
 
 test("subscriber navigation exposes programming only when radio service is enabled", () => {
-  const enabled = buildSubscriberNavigation({ entitlements: { serviceEnabled: true } }).flatMap((section) => section.items);
+  const enabled = buildSubscriberNavigation({ entitlements: { serviceEnabled: true, onlineRadioEnabled: true } }).flatMap((section) => section.items);
   const disabled = buildSubscriberNavigation({ entitlements: { serviceEnabled: false } }).flatMap((section) => section.items);
+  const correctionsOnly = buildSubscriberNavigation({ entitlements: { serviceEnabled: true, correctionsRadioEnabled: true } }).flatMap((section) => section.items);
   assert.ok(enabled.some((item) => item.href === "/dashboard/programming"));
   assert.ok(!disabled.some((item) => item.href === "/dashboard/programming"));
+  assert.ok(!correctionsOnly.some((item) => item.href === "/dashboard/programming"));
 });
 
 test("subscriber programming API is tenant-derived, role-controlled and catalogue-safe", async () => {

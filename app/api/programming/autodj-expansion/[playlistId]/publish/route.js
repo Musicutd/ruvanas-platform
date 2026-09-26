@@ -17,7 +17,7 @@ export async function POST(_request, { params }) {
     const playlist = await publishGeneratedPlaylist({ organisationId: access.context.membership.organisationId, playlistId: current.id, actorUserId: access.context.user.id, catalogueLevel: access.entitlements.licensedMusicCatalogueLevel, configuredGenres: genres });
     return NextResponse.json({ ok: true, playlist: safeGeneratedPlaylist(playlist) });
   } catch (error) {
-    const status = ["EMPTY_GENERATION", "GENERATION_INVALIDATED"].includes(error?.code) ? 409 : 500;
+    const status = ["EMPTY_GENERATION", "GENERATION_INVALIDATED", "CORRECTIONS_SCHEDULING_LOCKED"].includes(error?.code) ? 409 : 500;
     console.error("Timed playlist publish error:", error);
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to publish the timed playlist." }, { status });
   }

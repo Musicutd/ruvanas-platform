@@ -24,6 +24,7 @@ export async function POST(_request, { params }) {
     }
   });
   if (!station) return NextResponse.json({ error: "Station not found." }, { status: 404 });
+  if (station.productFamily === "CORRECTIONS") return NextResponse.json({ error: "Corrections playback needs facility policy and private-delivery approval before activation." }, { status: 409 });
   const onlineChannelMissing = station.productFamily === "ONLINE" && !station.channels.some((channel) => channel.status === "ACTIVE");
   if (station.status === "ACTIVE" && !onlineChannelMissing) return NextResponse.json({ success: true, status: "ACTIVE" });
   if (!["DRAFT", "PENDING_SETUP", "PAUSED", "ACTIVE"].includes(station.status)) {

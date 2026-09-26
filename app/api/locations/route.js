@@ -11,7 +11,7 @@ export async function GET() {
     if (!context) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
     if (!context.membership) return NextResponse.json({ error: "No active organisation is available." }, { status: 403 });
     const organisationId = context.membership.organisationId;
-    const locations = await prisma.location.findMany({ where: { organisationId, status: { not: "CLOSED" } }, orderBy: [{ name: "asc" }, { id: "asc" }], select: { id: true, name: true, timezone: true, city: true, countryCode: true, status: true, zones: { where: { status: { not: "OFFLINE" } }, orderBy: [{ name: "asc" }, { id: "asc" }], select: { id: true, name: true, status: true } } } });
+    const locations = await prisma.location.findMany({ where: { organisationId, status: { not: "CLOSED" }, correctionsFacility: { is: null } }, orderBy: [{ name: "asc" }, { id: "asc" }], select: { id: true, name: true, timezone: true, city: true, countryCode: true, status: true, zones: { where: { status: { not: "OFFLINE" } }, orderBy: [{ name: "asc" }, { id: "asc" }], select: { id: true, name: true, status: true } } } });
     const allowance = subscriberLocationAllowance(context.membership.organisation.subscription);
     return NextResponse.json({ ok: true, locations, allowance, canManage: allowance.enabled && canManageSubscriberLocations(context.membership.role) });
   } catch (error) {

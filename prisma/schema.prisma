@@ -314,6 +314,7 @@ enum PlanProductFamily {
   HEALTH
   FAITH
   ORGANISATIONS
+  CORRECTIONS
   MULTI
 }
 
@@ -488,6 +489,42 @@ enum ZoneStatus {
   OFFLINE
 }
 
+enum CorrectionsProgrammeStatus {
+  DRAFT
+  SUBMITTED
+  STAFF_REVIEW
+  STAFF_APPROVED
+  APPROVED
+  CHANGES_REQUESTED
+  REJECTED
+  ARCHIVED
+}
+
+enum CorrectionsSubmissionStatus {
+  SUBMITTED
+  STAFF_APPROVED
+  APPROVED
+  CHANGES_REQUESTED
+  REJECTED
+}
+
+enum CorrectionsReviewStage {
+  STAFF
+  FACILITY
+}
+
+enum CorrectionsReviewDecision {
+  APPROVE
+  CHANGES_REQUESTED
+  REJECT
+}
+
+enum CorrectionsFacilityGrantPermission {
+  MANAGER
+  EDITOR
+  VIEWER
+}
+
 enum ChannelStatus {
   DRAFT
   ACTIVE
@@ -629,6 +666,7 @@ enum MusicRightsUse {
   HEALTH_RADIO
   FAITH_RADIO
   ORGANISATIONS_RADIO
+  CORRECTIONS_RADIO
 }
 
 enum RightsReportFormat {
@@ -1601,6 +1639,10 @@ model User {
   reportExports                          ReportExportJob[]                @relation("ReportExportRequestedBy")
   confirmedTrackRights                   Track[]                          @relation("TrackRightsConfirmedBy")
   reviewedTrackRights                    Track[]                          @relation("TrackRightsReviewedBy")
+  createdCorrectionsProgrammes           CorrectionsProgramme[]           @relation("CorrectionsProgrammeCreatedBy")
+  submittedCorrectionsContent            CorrectionsSubmission[]          @relation("CorrectionsSubmissionSubmittedBy")
+  correctionsReviews                     CorrectionsReview[]              @relation("CorrectionsReviewReviewer")
+  createdCorrectionsFacilityGrants       CorrectionsFacilityGrant[]       @relation("CorrectionsFacilityGrantCreatedBy")
   createdSchoolAnnouncements             SchoolAnnouncement[]             @relation("SchoolAnnouncementCreatedBy")
   reviewedSchoolAnnouncements            SchoolAnnouncement[]             @relation("SchoolAnnouncementReviewedBy")
   createdSchoolNoticeboardPosts          SchoolNoticeboardPost[]          @relation("SchoolNoticeboardCreatedBy")
@@ -1784,6 +1826,9 @@ model Organisation {
   analyticsAggregationCursor         AnalyticsAggregationCursor?
   activeSessions                     Session[]
   schoolProfile                      SchoolProfile?
+  correctionsProfile                 CorrectionsProfile?
+  correctionsProgrammes              CorrectionsProgramme[]
+  correctionsFacilityGrants           CorrectionsFacilityGrant[]
   schoolSafeguardingReadiness        SchoolSafeguardingReadiness?
   schoolSafeguardingReviews          SchoolSafeguardingReview[]
   schoolRetentionHolds               SchoolRetentionHold[]
@@ -1911,6 +1956,7 @@ model OrganisationMember {
   organisation                  Organisation                   @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   djAccessGrants                DjAccessGrant[]
   organisationBranchAssignments OrganisationBranchAssignment[]
+  correctionsFacilityGrants     CorrectionsFacilityGrant[]
 
   @@unique([userId, organisationId])
   @@index([organisationId])
@@ -2317,6 +2363,7 @@ model Plan {
   healthRadioEnabled             Boolean                     @default(false)
   faithRadioEnabled              Boolean                     @default(false)
   organisationsEnabled           Boolean                     @default(false)
+  correctionsRadioEnabled        Boolean                     @default(false)
   schoolPublicPublishingEnabled  Boolean                     @default(false)
   retailMediaEnabled             Boolean                     @default(false)
   digitalSignageEnabled          Boolean                     @default(false)
@@ -2342,6 +2389,7 @@ model Subscription {
   healthRadioEnabled                         Boolean?
   faithRadioEnabled                          Boolean?
   organisationsEnabled                       Boolean?
+  correctionsRadioEnabled                    Boolean?
   schoolPublicPublishingEnabled              Boolean?
   retailMediaEnabled                         Boolean?
   digitalSignageEnabled                      Boolean?
@@ -2366,6 +2414,7 @@ model Subscription {
   complimentaryHealthRadioEnabled            Boolean?
   complimentaryFaithRadioEnabled             Boolean?
   complimentaryOrganisationsEnabled          Boolean?
+  complimentaryCorrectionsRadioEnabled       Boolean?
   complimentarySchoolPublicPublishingEnabled Boolean?
   complimentaryRetailMediaEnabled            Boolean?
   complimentaryDigitalSignageEnabled         Boolean?
@@ -2593,6 +2642,9 @@ model Location {
   schoolNoticeboardPosts        SchoolNoticeboardPost[]
   integrationMetricSummaries    IntegrationMetricSummary[]
   organisationBranchAssignments OrganisationBranchAssignment[]
+  correctionsFacility           CorrectionsFacility?
+  correctionsProgrammes         CorrectionsProgramme[]
+  correctionsFacilityGrants     CorrectionsFacilityGrant[]
 
   @@unique([organisationId, slug])
   @@index([organisationId])
@@ -2685,6 +2737,124 @@ model Zone {
 
   @@unique([locationId, slug])
   @@index([locationId])
+}
+
+// Corrections reuses Location and Zone; these records only add the guarded
+// facility identity and restrictive music policy. They create no audio route.
+model CorrectionsProfile {
+  organisationId     String    @id
+  cleanOnly          Boolean   @default(true)
+  policyVersion      Int       @default(1)
+  allowedGenres      String[]  @default([])
+  restrictedGenres   String[]  @default([])
+  blockedTrackIds    String[]  @default([])
+  blockedArtists     String[]  @default([])
+  policyConfiguredAt DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+}
+
+model CorrectionsFacility {
+  locationId         String    @id
+  youthFacility      Boolean   @default(false)
+  dualApprovalRequired Boolean @default(false)
+  policyVersion      Int       @default(1)
+  allowedGenres      String[]  @default([])
+  restrictedGenres   String[]  @default([])
+  blockedTrackIds    String[]  @default([])
+  blockedArtists     String[]  @default([])
+  policyConfiguredAt DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+}
+
+model CorrectionsProgramme {
+  id              String                     @id @default(cuid())
+  organisationId  String
+  facilityId      String
+  title           String
+  description     String?
+  status          CorrectionsProgrammeStatus @default(DRAFT)
+  latestRevision  Int                        @default(0)
+  createdByUserId String
+  createdAt       DateTime                   @default(now())
+  updatedAt       DateTime                   @updatedAt
+
+  organisation Organisation            @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  facility     Location                @relation(fields: [facilityId], references: [id], onDelete: Restrict)
+  createdBy    User                    @relation("CorrectionsProgrammeCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  submissions  CorrectionsSubmission[]
+
+  @@index([organisationId, facilityId, status])
+  @@index([facilityId, updatedAt])
+}
+
+model CorrectionsSubmission {
+  id                    String                      @id @default(cuid())
+  programmeId           String
+  organisationId        String
+  facilityId            String
+  revision              Int
+  renderId              String
+  sourceFingerprint     String
+  organisationPolicyVersion Int
+  facilityPolicyVersion Int
+  dualApprovalRequired  Boolean                     @default(false)
+  status                CorrectionsSubmissionStatus @default(SUBMITTED)
+  titleSnapshot         String
+  descriptionSnapshot   String?
+  evidenceSnapshot      Json
+  submittedByUserId     String
+  submittedAt           DateTime                    @default(now())
+
+  programme   CorrectionsProgramme @relation(fields: [programmeId], references: [id], onDelete: Restrict)
+  render      AudioRender           @relation(fields: [renderId], references: [id], onDelete: Restrict)
+  submittedBy User                  @relation("CorrectionsSubmissionSubmittedBy", fields: [submittedByUserId], references: [id], onDelete: Restrict)
+  reviews     CorrectionsReview[]
+
+  @@unique([programmeId, revision])
+  @@index([organisationId, facilityId, status])
+  @@index([renderId])
+}
+
+model CorrectionsReview {
+  id               String                    @id @default(cuid())
+  submissionId     String
+  stage            CorrectionsReviewStage
+  decision         CorrectionsReviewDecision
+  note             String
+  evidenceSnapshot Json
+  reviewedByUserId String
+  reviewedAt       DateTime                  @default(now())
+
+  submission CorrectionsSubmission @relation(fields: [submissionId], references: [id], onDelete: Restrict)
+  reviewer   User                  @relation("CorrectionsReviewReviewer", fields: [reviewedByUserId], references: [id], onDelete: Restrict)
+
+  @@unique([submissionId, stage])
+  @@index([reviewedByUserId, reviewedAt])
+}
+
+model CorrectionsFacilityGrant {
+  id                   String                             @id @default(cuid())
+  organisationId       String
+  organisationMemberId String
+  facilityId           String
+  permission           CorrectionsFacilityGrantPermission
+  createdByUserId      String
+  createdAt            DateTime                           @default(now())
+  updatedAt            DateTime                           @updatedAt
+
+  organisation Organisation       @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  member       OrganisationMember @relation(fields: [organisationMemberId], references: [id], onDelete: Cascade)
+  facility     Location           @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  createdBy    User               @relation("CorrectionsFacilityGrantCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@unique([organisationMemberId, facilityId])
+  @@index([organisationId, facilityId, permission])
 }
 
 model Channel {
@@ -5134,6 +5304,7 @@ model AudioRender {
   broadcastProcessingProfile BroadcastProcessingProfile? @relation(fields: [broadcastProcessingProfileId], references: [id], onDelete: SetNull)
   voiceTrackSegues           VoiceTrackSegue[]
   studioProductHandoffs      StudioProductHandoff[]
+  correctionsSubmissions    CorrectionsSubmission[]
 
   @@index([organisationId, createdAt])
   @@index([projectId, createdAt])
