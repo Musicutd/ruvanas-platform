@@ -14,7 +14,13 @@ async function api(path, { method = "GET", body, cookie, instanceId } = {}) {
 }
 
 test("C6 private standard, Priority, Emergency, proof and safe return", async () => {
-  if (!/^postgresql:\/\/[^@]*@?127\.0\.0\.1:55433\/ruvanas_c6(?:_final)?(?:\?|$)/.test(process.env.DATABASE_URL || "") || !secret || secret.length < 32) throw new Error("C6 E2E requires only the isolated local test database and secret.");
+  const databaseUrl = process.env.DATABASE_URL || "";
+  const isolatedLocalDatabase = /^postgresql:\/\/[^@]+@127\.0\.0\.1:55433\/ruvanas_c6(?:_final)?(?:\?|$)/.test(databaseUrl);
+  const isolatedGithubDatabase = process.env.GITHUB_ACTIONS === "true"
+    && databaseUrl === "postgresql://postgres:postgres@localhost:5432/ruvanas";
+  if (!(isolatedLocalDatabase || isolatedGithubDatabase) || !secret || secret.length < 32) {
+    throw new Error("C6 integration must use the isolated local or GitHub Actions test database and test secret.");
+  }
   const db = new PrismaClient();
   const suffix = randomUUID().slice(0, 8);
   const password = `C6-local-${randomUUID()}!`;
