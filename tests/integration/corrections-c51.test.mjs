@@ -16,7 +16,13 @@ async function api(path, { method = "GET", body, cookie, instanceId } = {}) {
 }
 
 test("C5.1 approved request and rehabilitation content use private signed playout intents and real completion proof", async () => {
-  if (!/127\.0\.0\.1:55433\/ruvanas_c5/.test(process.env.DATABASE_URL || "") || !secret || secret.length < 32) throw new Error("C5.1 integration must use the isolated local database and test secret.");
+  const databaseUrl = process.env.DATABASE_URL || "";
+  const isolatedLocalDatabase = /^postgresql:\/\/[^@]+@127\.0\.0\.1:55433\/ruvanas_c5(?:\?|$)/.test(databaseUrl);
+  const isolatedGithubDatabase = process.env.GITHUB_ACTIONS === "true"
+    && databaseUrl === "postgresql://postgres:postgres@localhost:5432/ruvanas";
+  if (!(isolatedLocalDatabase || isolatedGithubDatabase) || !secret || secret.length < 32) {
+    throw new Error("C5.1 integration must use the isolated local or GitHub Actions test database and test secret.");
+  }
   const db = new PrismaClient();
   const suffix = randomUUID().slice(0, 8);
   const password = `C51-local-${randomUUID()}!`;
