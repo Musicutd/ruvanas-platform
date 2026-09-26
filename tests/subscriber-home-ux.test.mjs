@@ -41,7 +41,7 @@ test("Retail and Digital Signage expose simple tasks and review before publish",
     readFile(new URL("../app/admin/digital-signage/DigitalSignageConsole.js", import.meta.url), "utf8")
   ]);
   assert.match(retail, /YOUR NEXT STEP/);
-  assert.match(retail, /Change shop music/);
+  assert.match(retail, /AutoDJ & shop music/);
   assert.match(productDashboard, /COMMON TASKS/);
   assert.match(signage, /Connect a display/);
   assert.match(signage, /Standard full-screen \(recommended\)/);

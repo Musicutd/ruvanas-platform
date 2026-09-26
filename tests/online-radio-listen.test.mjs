@@ -29,7 +29,7 @@ test("Listen remains available on the subscriber profile without publishing the 
   assert.match(layout, /firstListenableOnlineStation\(organisation\.stations\)/);
   assert.match(shell, /listenHref \? <Link href=\{listenHref\}/);
   assert.match(shell, /target="_blank" rel="noopener noreferrer"/);
-  assert.match(radio, /listenAction=\{listenStation/);
+  assert.match(radio, /listenAction=\{\{ href: listenStation \? onlineRadioListenHref/);
   assert.match(dashboard, /listenAction\.href/);
   assert.match(preview, /requireSubscriberProduct\("ONLINE"\)/);
   assert.match(preview, /where: \{ organisationId, productFamily: "ONLINE" \}/);
