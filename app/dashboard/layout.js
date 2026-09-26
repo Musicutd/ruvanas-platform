@@ -3,6 +3,8 @@ import { getActiveOrganisationContext } from "@/lib/auth";
 import { resolveEntitlements } from "@/lib/entitlements.mjs";
 import { buildSubscriberNavigation } from "@/lib/user-experience-navigation.mjs";
 import { firstListenableOnlineStation, onlineRadioListenHref } from "@/lib/online-radio-listen.mjs";
+import { pillarListenHref } from "@/lib/pillar-audio.mjs";
+import { enabledSubscriberProducts } from "@/lib/product-access.mjs";
 import SubscriberPortalShell from "./SubscriberPortalShell";
 
 export const dynamic = "force-dynamic";
@@ -35,6 +37,10 @@ export default async function DashboardLayout({ children }) {
   const listenStation = entitlements.serviceEnabled && entitlements.onlineRadioEnabled
     ? firstListenableOnlineStation(organisation.stations)
     : null;
+  const listenHrefs = Object.fromEntries(enabledSubscriberProducts(entitlements).map((product) => [
+    product.key,
+    product.key === "ONLINE" && listenStation ? onlineRadioListenHref(listenStation.id) : pillarListenHref(product.key)
+  ]));
 
   return (
     <SubscriberPortalShell
@@ -42,7 +48,7 @@ export default async function DashboardLayout({ children }) {
       organisationName={organisation.name}
       userName={context.user.name || context.user.email}
       membershipRole={context.membership.role}
-      listenHref={onlineRadioListenHref(listenStation?.id)}
+      listenHrefs={listenHrefs}
     >
       {children}
     </SubscriberPortalShell>
