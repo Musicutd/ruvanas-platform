@@ -534,6 +534,7 @@ enum CorrectionsContributorStatus {
 enum CorrectionsStudioSessionStatus {
   DRAFT
   ACTIVE
+  EXPIRED
   SUBMITTED
   COMPLETED
   REVOKED

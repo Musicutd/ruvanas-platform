@@ -55,5 +55,6 @@ test("Studio C comparisons use the protected worker without entering publishing"
   assert.match(route, /QUEUE_CLEANUP_PREVIEW/);
   assert.match(route, /VOICE_CLEANUP_PREVIEW_QUEUED/);
   assert.match(worker, /voiceCleanupBypass/);
-  assert.match(worker, /!studioPreview && \(existingPromo \|\| multitrack\)/);
+  assert.match(worker, /!studioPreview && \(existingPromo \|\| multitrack \|\| correctionsSession\)/);
+  assert.match(worker, /const correctionsSession = correctionsReviewVersionRequired/);
 });

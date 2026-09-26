@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { createCorrectionsStudioToken, hashCorrectionsStudioToken, correctionsStudioCan,
-  correctionsStudioSessionAvailable, correctionsStudioSupervisorAllowed } from "../lib/corrections-studio-policy.mjs";
+  correctionsStudioSessionAvailable, correctionsStudioSupervisorAllowed, correctionsStudioSameOrigin,
+  correctionsReviewVersionRequired } from "../lib/corrections-studio-policy.mjs";
 import { correctionsContributorRenderEvidence, correctionsRenderEvidence, correctionsSubmissionEvidence,
   correctionsReviewTransition, correctionsSchedulingGate } from "../lib/corrections-workflow.mjs";
 import { correctionsStudioSourceIds, correctionsStudioSourcesCurrent } from "../lib/corrections-studio-sources.mjs";
@@ -23,6 +24,32 @@ const session = {
   facility: { organisationId: "org-a", status: "ACTIVE" },
   programme: { organisationId: "org-a", facilityId: "facility-1", status: "DRAFT" }, project: { organisationId: "org-a" }
 };
+
+test("contributor origin must match the requested host, including a local proxy host", () => {
+  const request = (origin, host = "127.0.0.1:3101") => new Request("http://localhost:3101/api/corrections/contributor", {
+    headers: { ...(origin ? { origin } : {}), host }
+  });
+  assert.equal(correctionsStudioSameOrigin(request("http://localhost:3101")), true);
+  assert.equal(correctionsStudioSameOrigin(request("http://127.0.0.1:3101")), true);
+  assert.equal(correctionsStudioSameOrigin(request("https://other.example")), false);
+  assert.equal(correctionsStudioSameOrigin(request(null)), false);
+});
+
+test("only a current supervised Corrections render receives a pending review version", () => {
+  const now = new Date();
+  const render = { organisationId: "org-a", projectId: "project-1", requestedByUserId: "supervisor-a",
+    createdAt: now, version: { createdAt: now }, resultJson: {} };
+  const active = { organisationId: "org-a", projectId: "project-1", supervisorUserId: "supervisor-a", status: "ACTIVE",
+    createdAt: new Date(now.getTime() - 5000), activatedAt: new Date(now.getTime() - 3000),
+    expiresAt: new Date(now.getTime() + 5000) };
+  assert.equal(correctionsReviewVersionRequired(render, active, now), true);
+  assert.equal(correctionsReviewVersionRequired({ ...render, resultJson: { studioPreview: true } }, active, now), false);
+  assert.equal(correctionsReviewVersionRequired(render, { ...active, organisationId: "org-b" }, now), false);
+  assert.equal(correctionsReviewVersionRequired(render, { ...active, projectId: "other" }, now), false);
+  assert.equal(correctionsReviewVersionRequired(render, { ...active, supervisorUserId: "other" }, now), false);
+  assert.equal(correctionsReviewVersionRequired(render, { ...active, status: "REVOKED" }, now), false);
+  assert.equal(correctionsReviewVersionRequired(render, { ...active, expiresAt: new Date(now.getTime() - 1) }, now), false);
+});
 
 test("a Corrections contributor may submit a pending exact render; ordinary Studio still requires prior approval", () => {
   assert.throws(() => correctionsRenderEvidence(pendingRender), /Approve/);

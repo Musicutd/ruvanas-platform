@@ -44,7 +44,7 @@ export default function ContributorStudio() {
     const editor = await response.json();
     setRenders((editor.renders || []).filter((item) => !item.resultJson?.studioPreview));
   }, [workspace?.session?.projectId, workspace?.session?.projectType]);
-  useEffect(() => { if (!workspace || tool !== "STUDIO") return; refreshRenders(); const timer = setInterval(refreshRenders, 5000); return () => clearInterval(timer); }, [workspace, tool, refreshRenders]);
+  useEffect(() => { if (!workspace || submitted || tool !== "STUDIO") return; refreshRenders(); const timer = setInterval(refreshRenders, 5000); return () => clearInterval(timer); }, [workspace, submitted, tool, refreshRenders]);
 
   const enter = async (event) => {
     event.preventDefault(); setBusy(true); setNotice("");
@@ -100,6 +100,9 @@ export default function ContributorStudio() {
   };
   const exit = async () => { if (recording) stopRecording(); await fetch("/api/corrections/contributor/session", { method: "DELETE" }); setWorkspace(null); setTool("WELCOME"); setNotice(""); };
   const minutesLeft = workspace?.session?.expiresAt ? Math.max(0, Math.ceil((new Date(workspace.session.expiresAt).getTime() - now) / 60000)) : 0;
+  const reviewRenders = renders.filter((item) => item.status === "SUCCEEDED" &&
+    new Date(item.createdAt).getTime() >= new Date(workspace?.session?.activatedAt || 0).getTime() &&
+    (item.reviewVersionId || item.outputVersion?.status === "IN_REVIEW"));
   return <main className={styles.page}><header className={styles.header}><strong>RUVANAS INSIDE</strong><span>Supervised Studio</span></header>
     {!workspace ? <section className={styles.entry}><span className={styles.eyebrow}>Restricted contributor access</span><h1>Your Studio session</h1><p>Enter the time-limited code given to you by your supervisor. Use a separate private browser window, not a staff-signed-in window.</p><form onSubmit={enter}><label>Session access code<input value={code} onChange={(event) => setCode(event.target.value)} autoComplete="off" required /></label><button disabled={busy || !code.trim()}>Open session</button></form>{notice && <p role="alert" className={styles.notice}>{notice}</p>}</section> : <div className={styles.shell}>
       <div className={styles.top}><div><span className={styles.eyebrow}>Supervised Corrections Studio Session</span><h1>{workspace.session.programmeTitle}</h1><p>{workspace.session.facilityName} · {workspace.session.projectTitle}</p></div><button className={styles.secondary} onClick={exit}>Leave this session</button></div>
@@ -110,7 +113,7 @@ export default function ContributorStudio() {
         <section className={styles.editor}>{workspace.session.projectType === "MULTITRACK"
           ? <MultitrackStudioClient key={editorKey} requestedProjectId={workspace.session.projectId} experienceMode="BEGINNER" apiBase="/api/corrections/contributor/multitrack" mediaBase="/api/corrections/contributor/media" supervised />
           : <WaveformEditorClient key={editorKey} requestedProjectId={workspace.session.projectId} experienceMode="BEGINNER" apiBase="/api/corrections/contributor/audio-lab" mediaBase="/api/corrections/contributor/media" supervised />}</section>
-        <section className={styles.card}><span className={styles.eyebrow}>Submit for Review</span><h2>Send the exact render to Corrections Guard</h2><p>Create a final render in the waveform editor, wait until it is ready, then select it here. Submission starts review; it is not approval.</p><label>Completed Studio render<select value={renderId} onChange={(event) => setRenderId(event.target.value)}><option value="">Choose a completed render</option>{renders.filter((item) => item.status === "SUCCEEDED").map((item) => <option key={item.id} value={item.id}>{item.preset} · {new Date(item.createdAt).toLocaleString()}</option>)}</select></label>{renders.some((item) => item.status === "QUEUED" || item.status === "RUNNING") && <p>A render is being prepared. This list refreshes automatically.</p>}<button disabled={busy || !renderId} onClick={submit}>Submit for Review</button></section>
+        <section className={styles.card}><span className={styles.eyebrow}>Submit for Review</span><h2>Send the exact render to Corrections Guard</h2><p>Create a final render in the {workspace.session.projectType === "MULTITRACK" ? "multitrack mixer" : "waveform editor"}, wait until it is ready, then select it here. Submission starts review; it is not approval.</p><label>Completed Studio render<select value={renderId} onChange={(event) => setRenderId(event.target.value)}><option value="">Choose a completed render from this session</option>{reviewRenders.map((item) => <option key={item.id} value={item.id}>{item.preset} · {new Date(item.createdAt).toLocaleString()}</option>)}</select></label>{renders.some((item) => item.status === "QUEUED" || item.status === "RUNNING") && <p>A render is being prepared. This list refreshes automatically.</p>}<button disabled={busy || !reviewRenders.some((item) => item.id === renderId)} onClick={submit}>Submit for Review</button></section>
       </>}
     </div>}
   </main>;
