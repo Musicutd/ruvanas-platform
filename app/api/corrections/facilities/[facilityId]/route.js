@@ -49,5 +49,18 @@ export async function PATCH(request, { params }) {
       return reply({ status: 500, error: "The facility policy could not be saved." });
     }
   }
+  if (body.action === "SAVE_ANNOUNCEMENT_POLICY") {
+    if (access.context.membership.role !== "OWNER") return reply({ status: 403, error: "Only the organisation owner may set facility broadcast policy." });
+    if (!["CREATOR_PUBLISH", "EXPLICIT", "DUAL"].includes(body.announcementApprovalMode)) return reply({ status: 400, error: "Choose a standard announcement approval policy." });
+    if (body.emergencyDualControl === true && body.emergencyEnabled === true) return reply({ status: 409, error: "Dual-control Emergency activation is reserved for a later guarded stage; it cannot be enabled for live use yet." });
+    try {
+      const saved = await prisma.$transaction(async (tx) => {
+        const policy = await tx.correctionsFacility.update({ where: { locationId: facility.locationId }, data: { announcementApprovalMode: body.announcementApprovalMode, priorityEnabled: body.priorityEnabled === true, emergencyEnabled: body.emergencyEnabled === true, emergencyDrillsEnabled: body.emergencyDrillsEnabled === true, emergencyDualControl: false } });
+        await tx.auditLog.create({ data: { organisationId: access.organisationId, actorUserId: access.context.user.id, action: "CORRECTIONS_ANNOUNCEMENT_POLICY_SAVED", entityType: "CorrectionsFacility", entityId: facility.locationId, details: { approvalMode: policy.announcementApprovalMode, priorityEnabled: policy.priorityEnabled, emergencyEnabled: policy.emergencyEnabled, emergencyDrillsEnabled: policy.emergencyDrillsEnabled } } });
+        return policy;
+      });
+      return reply({ ok: true, policy: saved });
+    } catch { return reply({ status: 500, error: "Broadcast policy could not be saved." }); }
+  }
   return reply({ status: 400, error: "Choose a valid facility action." });
 }
