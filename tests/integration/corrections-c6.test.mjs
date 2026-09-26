@@ -15,7 +15,7 @@ async function api(path, { method = "GET", body, cookie, instanceId } = {}) {
 
 test("C6 private standard, Priority, Emergency, proof and safe return", async () => {
   const databaseUrl = process.env.DATABASE_URL || "";
-  const isolatedLocalDatabase = /^postgresql:\/\/[^@]+@127\.0\.0\.1:55433\/ruvanas_c6(?:_final)?(?:\?|$)/.test(databaseUrl);
+  const isolatedLocalDatabase = /^postgresql:\/\/[^@]+@127\.0\.0\.1:5543[35]\/ruvanas_c(?:6(?:_final)?|61)(?:\?|$)/.test(databaseUrl);
   const isolatedGithubDatabase = process.env.GITHUB_ACTIONS === "true"
     && databaseUrl === "postgresql://postgres:postgres@localhost:5432/ruvanas";
   if (!(isolatedLocalDatabase || isolatedGithubDatabase) || !secret || secret.length < 32) {
@@ -108,6 +108,12 @@ test("C6 private standard, Priority, Emergency, proof and safe return", async ()
     const resumedItem = afterPriority.body.insertions.find((item) => item.programmingSource === "CORRECTIONS_STANDARD");
     assert.equal((await api("/api/player/proof-of-play", { method: "POST", cookie: playerCookie, body: { events: [{ ...proof(afterPriority.body, resumedItem), eventType: "STARTED", positionSeconds: 0 }] } })).status, 200);
     assert.equal(await db.auditLog.count({ where: { organisationId: organisation.id, action: "CORRECTIONS_RESTORATION_CONFIRMED", entityId: priority.body.override.id } }), 1);
+
+    const interrupted = () => ({ ...proof(afterPriority.body, resumedItem), eventType: "INTERRUPTED", positionSeconds: 2, failureReason: "Interrupted by a new private announcement" });
+    assert.equal((await api("/api/player/proof-of-play", { method: "POST", cookie: playerCookie, body: { events: [interrupted()] } })).status, 200);
+    assert.equal((await api("/api/player/proof-of-play", { method: "POST", cookie: playerCookie, body: { events: [{ ...proof(afterPriority.body, resumedItem), eventType: "STARTED", positionSeconds: 0 }] } })).status, 200);
+    assert.equal((await api("/api/player/proof-of-play", { method: "POST", cookie: playerCookie, body: { events: [interrupted()] } })).status, 200);
+    assert.equal(await db.proofOfPlayEvent.count({ where: { scheduleItemId: resumedItem.scheduleItemId, eventType: "INTERRUPTED" } }), 2);
 
     const priorityAgain = await api("/api/corrections/overrides", { method: "POST", cookie: manager.cookie, body: { ...priorityInput, idempotencyKey: randomUUID() } });
     assert.equal(priorityAgain.status, 200, JSON.stringify(priorityAgain.body));

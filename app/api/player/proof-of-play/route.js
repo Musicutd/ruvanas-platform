@@ -177,12 +177,27 @@ export async function POST(request) {
 
     const result = await runSerializableTransaction(prisma, async (tx) => {
       const insideIntentIds = intents.filter((intent) => intent.correctionsRequestId || intent.correctionsRehabContentId || intent.correctionsAnnouncementId).map((intent) => intent.id);
-      const previousInside = insideIntentIds.length ? await tx.proofOfPlayEvent.findMany({ where: { playoutIntentId: { in: insideIntentIds }, eventType: { in: ["COMPLETED", "FAILED", "INTERRUPTED"] } }, select: { playoutIntentId: true, eventType: true } }) : [];
-      const seenInside = new Set(previousInside.map((item) => `${item.playoutIntentId}:${item.eventType}`));
+      const previousInside = insideIntentIds.length ? await tx.proofOfPlayEvent.findMany({ where: { playoutIntentId: { in: insideIntentIds }, eventType: { in: ["STARTED", "COMPLETED", "FAILED", "INTERRUPTED"] } }, orderBy: { occurredAt: "asc" }, select: { playoutIntentId: true, eventType: true, occurredAt: true } }) : [];
+      const seenInside = new Set(previousInside.filter((item) => ["COMPLETED", "FAILED"].includes(item.eventType)).map((item) => `${item.playoutIntentId}:${item.eventType}`));
+      const lastStarted = new Map();
+      const lastInterrupted = new Map();
+      for (const item of previousInside) {
+        if (item.eventType === "STARTED") lastStarted.set(item.playoutIntentId, item.occurredAt.getTime());
+        if (item.eventType === "INTERRUPTED") lastInterrupted.set(item.playoutIntentId, item.occurredAt.getTime());
+      }
       const acceptedEvents = events.filter((event) => {
         const intent = intentsByScheduleItemId.get(event.scheduleItemId);
         if (!intent?.correctionsRequestId && !intent?.correctionsRehabContentId && !intent?.correctionsAnnouncementId) return true;
-        if (event.eventType === "STARTED") return true;
+        if (event.eventType === "STARTED") {
+          lastStarted.set(intent.id, new Date(event.occurredAt).getTime());
+          return true;
+        }
+        if (event.eventType === "INTERRUPTED") {
+          const previousInterruption = lastInterrupted.get(intent.id);
+          if (previousInterruption !== undefined && (lastStarted.get(intent.id) ?? -Infinity) <= previousInterruption) return false;
+          lastInterrupted.set(intent.id, new Date(event.occurredAt).getTime());
+          return true;
+        }
         const key = `${intent.id}:${event.eventType}`;
         if (seenInside.has(key)) return false;
         seenInside.add(key);
