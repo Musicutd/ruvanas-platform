@@ -1107,6 +1107,7 @@ enum PlaybackItemType {
   MUSIC
   PROMO
   SCHOOL_ANNOUNCEMENT
+  CORRECTIONS_AUDIO
 }
 
 enum SchoolPublishingPolicy {
@@ -2867,6 +2868,7 @@ model CorrectionsProgramme {
   studioSessions CorrectionsStudioSession[]
   requests CorrectionsRequest[]
   rehabItems CorrectionsRehabProgrammeItem[]
+  playoutIntents PlayoutIntent[]
 
   @@index([organisationId, facilityId, status])
   @@index([facilityId, updatedAt])
@@ -2898,6 +2900,7 @@ model CorrectionsSubmission {
   render      AudioRender           @relation(fields: [renderId], references: [id], onDelete: Restrict)
   submittedBy User                  @relation("CorrectionsSubmissionSubmittedBy", fields: [submittedByUserId], references: [id], onDelete: Restrict)
   reviews     CorrectionsReview[]
+  playoutIntents PlayoutIntent[]
   contributor CorrectionsContributor? @relation(fields: [contributorId], references: [id], onDelete: Restrict)
   studioSession CorrectionsStudioSession? @relation(fields: [studioSessionId], references: [id], onDelete: Restrict)
   studioProject AudioProject? @relation("CorrectionsSubmittedProject", fields: [studioProjectId], references: [id], onDelete: Restrict)
@@ -3027,6 +3030,7 @@ model CorrectionsRequest {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   decisions CorrectionsRequestDecision[]
+  playoutIntents PlayoutIntent[]
   organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   facility Location @relation(fields: [facilityId], references: [id], onDelete: Restrict)
   programme CorrectionsProgramme? @relation(fields: [programmeId], references: [id], onDelete: SetNull)
@@ -3096,6 +3100,7 @@ model CorrectionsRehabContent {
   category CorrectionsRehabCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   mediaAsset MediaAsset @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
   programmeItems CorrectionsRehabProgrammeItem[]
+  playoutIntents PlayoutIntent[]
 
   @@index([organisationId, facilityId, status])
   @@index([mediaAssetId])
@@ -4347,6 +4352,7 @@ model Track {
   generatedPlaylistItems   GeneratedPlaylistItem[]
   distributorItems         MusicDistributorTrack[]
   correctionsRequests CorrectionsRequest[]
+  correctionsPlayoutIntents PlayoutIntent[]
 
   @@index([status])
   @@index([artist, title])
@@ -7401,6 +7407,12 @@ model PlayoutIntent {
   campaignId            String?
   schoolBroadcastSlotId String?
   schoolRundownItemId   String?
+  correctionsRequestId String?
+  correctionsRehabContentId String?
+  correctionsProgrammeId String?
+  correctionsSubmissionId String?
+  correctionsTrackId String?
+  cancelledAt DateTime?
   promoVersionId        String?
   mediaAssetId          String
   locationId            String
@@ -7420,6 +7432,11 @@ model PlayoutIntent {
   campaign            Campaign?            @relation(fields: [campaignId], references: [id], onDelete: Restrict)
   schoolBroadcastSlot SchoolBroadcastSlot? @relation(fields: [schoolBroadcastSlotId], references: [id], onDelete: Restrict)
   schoolRundownItem   SchoolRundownItem?   @relation(fields: [schoolRundownItemId], references: [id], onDelete: Restrict)
+  correctionsRequest CorrectionsRequest? @relation(fields: [correctionsRequestId], references: [id], onDelete: Restrict)
+  correctionsRehabContent CorrectionsRehabContent? @relation(fields: [correctionsRehabContentId], references: [id], onDelete: Restrict)
+  correctionsProgramme CorrectionsProgramme? @relation(fields: [correctionsProgrammeId], references: [id], onDelete: Restrict)
+  correctionsSubmission CorrectionsSubmission? @relation(fields: [correctionsSubmissionId], references: [id], onDelete: Restrict)
+  correctionsTrack Track? @relation(fields: [correctionsTrackId], references: [id], onDelete: Restrict)
   promoVersion        PromoVersion?        @relation(fields: [promoVersionId], references: [id], onDelete: Restrict)
   mediaAsset          MediaAsset           @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
   playbackEvents      ProofOfPlayEvent[]
@@ -7433,6 +7450,9 @@ model PlayoutIntent {
   @@index([campaignId, plannedStart])
   @@index([schoolBroadcastSlotId, plannedStart])
   @@index([schoolRundownItemId, plannedStart])
+  @@index([correctionsRequestId, plannedStart])
+  @@index([correctionsRehabContentId, plannedStart])
+  @@index([correctionsProgrammeId, plannedStart])
   @@index([promoVersionId, plannedStart])
   @@index([locationId, plannedStart])
   @@index([expiresAt])

@@ -25,7 +25,17 @@ export default function CorrectionsRequests() {
   const [policy, setPolicy] = useState({ availability: "DISABLED", songRequestsEnabled: false, messageRequestsEnabled: false, dedicationsEnabled: false });
   const [newRequest, setNewRequest] = useState({ type: "SONG", songTitle: "", songArtist: "", recipientDisplayName: "", wingOrUnit: "", message: "" });
   const [review, setReview] = useState({ onAirRecipient: "", onAirMessage: "", trackId: "", programmeId: "", note: "" });
+  const [schedule, setSchedule] = useState({ programmeId: "", zoneId: "", startsAt: "" });
   const facility = facilities.find((item) => item.locationId === facilityId);
+  const requestCounts = {
+    new: requests.filter((item) => item.status === "RECEIVED").length,
+    needsReview: requests.filter((item) => item.status === "SCREENING").length,
+    approved: requests.filter((item) => item.status === "APPROVED").length,
+    scheduled: requests.filter((item) => item.status === "SCHEDULED").length,
+    played: requests.filter((item) => item.status === "PLAYED").length,
+    rejected: requests.filter((item) => item.status === "REJECTED").length,
+    needsAttention: requests.filter((item) => item.delivery?.needsAttention).length
+  };
   const load = useCallback(async (id = facilityId, filter = status) => {
     try { const result = await call(`/api/corrections/requests?${new URLSearchParams({ ...(id ? { facilityId: id } : {}), ...(filter ? { status: filter } : {}), ...(typeFilter ? { type: typeFilter } : {}), ...(dateFilter ? { date: dateFilter } : {}) })}`); setRequests(result.requests); }
     catch (error) { setNotice(error.message); }
@@ -46,7 +56,12 @@ export default function CorrectionsRequests() {
     await call(`/api/corrections/requests/${selected.id}`, "POST", { ...review, action });
     setNotice(`Request ${action.toLowerCase()} recorded.`); setSelected((await call(`/api/corrections/requests/${selected.id}`)).request); await load();
   } catch (error) { setNotice(error.message); } finally { setBusy(false); } };
-  return <main className={styles.page}><header className={styles.hero}><span>RUVANAS INSIDE · REQUESTS</span><h1>Review radio requests</h1><p>Internal and Family & Friends requests wait for facility staff. Nothing here sends a private message or changes playout.</p></header>
+  const scheduleSelected = async () => { if (!selected) return; setBusy(true); setNotice(""); try {
+    await call(`/api/corrections/requests/${selected.id}/schedule`, "POST", { ...schedule, startsAt: new Date(schedule.startsAt).toISOString() });
+    setNotice("Private player delivery scheduled. Played will appear only after verified playback.");
+    setSelected((await call(`/api/corrections/requests/${selected.id}`)).request); await load();
+  } catch (error) { setNotice(error.message); } finally { setBusy(false); } };
+  return <main className={styles.page}><header className={styles.hero}><span>RUVANAS INSIDE · REQUESTS</span><h1>Review and fulfil radio requests</h1><p>Facility staff approve each request before scheduling it to a private player. Only verified playback is marked Played.</p></header>
     {notice && <p role="status" className={styles.notice}>{notice}</p>}
     <nav className={styles.links}><a href="/dashboard/corrections">Facilities</a><a href="/dashboard/corrections/programmes">Programmes</a><a href="/dashboard/corrections/rehabilitation">Rehabilitation</a><a href="/dashboard/corrections/contributors">Contributors</a></nav>
     <section className={styles.card}><h2>Facility and availability</h2><div className={styles.fields}><label>Facility<select value={facilityId} onChange={(event) => { setFacilityId(event.target.value); setSelected(null); }}>{facilities.map((item) => <option key={item.locationId} value={item.locationId}>{item.location.name}</option>)}</select></label>
@@ -64,7 +79,8 @@ export default function CorrectionsRequests() {
       <button disabled={busy || !facilityId || !facility?.canEdit || policy.availability === "DISABLED"} onClick={() => act("/api/corrections/requests", "POST", { ...newRequest, facilityId }, "Internal request received for review.")}>Send to review</button>
     </section>
     <section className={styles.card}><h2>Review queue</h2><div className={styles.fields}><label>Status<select value={status} onChange={(event) => setStatus(event.target.value)}><option value="">All statuses</option>{["RECEIVED", "SCREENING", "APPROVED", "REJECTED", "SCHEDULED", "PLAYED", "ARCHIVED"].map((item) => <option key={item}>{item}</option>)}</select></label><label>Type<select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}><option value="">All types</option>{["SONG", "PROGRAMME", "DEDICATION", "MESSAGE", "REHABILITATION_SUGGESTION"].map((item) => <option key={item}>{item.replaceAll("_", " ")}</option>)}</select></label><label>Received on (UTC)<input type="date" value={dateFilter} onChange={(event) => setDateFilter(event.target.value)} /></label></div>
-      <div className={styles.list}>{requests.map((item) => <button key={item.id} className={styles.row} disabled={!facility?.canEdit} onClick={() => open(item.id)}><strong>{item.type === "SONG" ? `${item.songArtist || "Artist not given"} — ${item.songTitle}` : item.type.replaceAll("_", " ")}</strong><span>{item.source} · {item.status} · {new Date(item.createdAt).toLocaleDateString()}</span></button>)}</div>
+      <div className={styles.stats} aria-label="Request counts in this view"><span>{requestCounts.new} new</span><span>{requestCounts.needsReview} need review</span><span>{requestCounts.approved} approved</span><span>{requestCounts.scheduled} scheduled</span><span>{requestCounts.played} played</span><span>{requestCounts.rejected} rejected</span><span>{requestCounts.needsAttention} need delivery attention</span></div>
+      <div className={styles.list}>{requests.map((item) => <button key={item.id} className={styles.row} disabled={!facility?.canEdit} onClick={() => open(item.id)}><strong>{item.type === "SONG" ? `${item.songArtist || "Artist not given"} — ${item.songTitle}` : item.type.replaceAll("_", " ")}</strong><span>{item.source} · {item.status} · {item.delivery?.evidence ? "Playback confirmed" : item.delivery?.needsAttention ? "Needs attention" : item.delivery?.startsAt ? `Planned ${new Date(item.delivery.startsAt).toLocaleString()}` : new Date(item.createdAt).toLocaleDateString()}</span></button>)}</div>
       {!requests.length && <p>No requests in this view.</p>}
     </section>
     {selected && <section className={styles.card}><h2>Staff review</h2><p>Original submission — restricted to authorised facility staff</p><div className={styles.evidence}><p>Recipient reference: {selected.recipientReference || "Not given"}</p><p>Original message: {selected.originalMessage || "None"}</p><p>Sender: {selected.senderDisplayName || "Not given"}</p><p>Song: {selected.songArtist || ""} {selected.songTitle || ""}</p></div>
@@ -73,7 +89,12 @@ export default function CorrectionsRequests() {
       <label>Approved programme (optional)<select value={review.programmeId} onChange={(event) => setReview({ ...review, programmeId: event.target.value })}><option value="">No programme link</option>{programmes.filter((item) => item.facilityId === facilityId && item.status === "APPROVED").map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>
       <label>Staff note<input value={review.note} onChange={(event) => setReview({ ...review, note: event.target.value })} maxLength={500} /></label></div>
       <div className={styles.actions}>{selected.status === "RECEIVED" && <><button disabled={busy} onClick={() => decide("SCREEN")}>Start screening</button><button disabled={busy} onClick={() => decide("REJECT")}>Reject</button></>}{selected.status === "SCREENING" && <><button disabled={busy} onClick={() => decide("APPROVE")}>Approve wording</button><button disabled={busy} onClick={() => decide("REJECT")}>Reject</button></>}{["APPROVED", "REJECTED"].includes(selected.status) && <button disabled={busy} onClick={() => decide("ARCHIVE")}>Archive</button>}</div>
+      {selected.status === "APPROVED" && selected.type !== "REHABILITATION_SUGGESTION" && facility?.canEdit && <div className={styles.evidence}><h3>Schedule approved request</h3><p>Select an approved Corrections programme and a private player area. The server rechecks approvals and music rights.</p><div className={styles.fields}>
+        <label>Programme<select value={schedule.programmeId} onChange={(event) => setSchedule({ ...schedule, programmeId: event.target.value })}><option value="">Choose approved programme</option>{programmes.filter((item) => item.facilityId === selected.facilityId && item.status === "APPROVED" && (!selected.programmeId || selected.programmeId === item.id)).map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>
+        <label>Private player area<select value={schedule.zoneId} onChange={(event) => setSchedule({ ...schedule, zoneId: event.target.value })}><option value="">Choose area</option>{facility?.location?.zones?.filter((zone) => zone.status === "ACTIVE").map((zone) => <option key={zone.id} value={zone.id}>{zone.name}</option>)}</select></label>
+        <label>Start time<input type="datetime-local" value={schedule.startsAt} onChange={(event) => setSchedule({ ...schedule, startsAt: event.target.value })} /></label></div><button disabled={busy || !schedule.programmeId || !schedule.zoneId || !schedule.startsAt} onClick={scheduleSelected}>Schedule Request</button></div>}
+      {selected.delivery && <div className={styles.evidence}><h3>Delivery evidence</h3><p>Planned: {new Date(selected.delivery.startsAt).toLocaleString()}</p><p>{selected.delivery.evidence ? `Playback confirmed by ${selected.delivery.evidence.playerName} at ${new Date(selected.delivery.evidence.occurredAt).toLocaleString()}. This confirms system delivery, not that a person listened.` : selected.delivery.needsAttention ? "Needs attention: no completed playback evidence was received." : "Awaiting completed playback evidence."}</p></div>}
       {!!selected.decisions?.length && <div className={styles.evidence}><h3>Review history</h3>{selected.decisions.map((decision) => <p key={decision.id}>{new Date(decision.decidedAt).toLocaleString()} · {decision.action} · {decision.fromStatus} → {decision.toStatus}{decision.note ? ` · ${decision.note}` : ""}</p>)}</div>}
-      <p className={styles.caution}>Approval is not scheduling. Private Corrections playback remains locked; do not report this as played.</p></section>}
+      <p className={styles.caution}>Approval is not scheduling. Scheduled time is not proof of playback. Private references and sender details never enter the player manifest.</p></section>}
   </main>;
 }

@@ -1,6 +1,7 @@
 import { correctionsRequestContext } from "@/lib/corrections-access";
 import { correctionsError, correctionsResponse } from "@/lib/corrections-http";
 import { createInternalCorrectionsRequest, listCorrectionsRequests } from "@/lib/corrections-requests-service";
+import { requestDeliveryDetails } from "@/lib/corrections-delivery-service";
 
 export const dynamic = "force-dynamic";
 
@@ -8,7 +9,7 @@ export async function GET(request) {
   const access = await correctionsRequestContext();
   if (!access.ok) return correctionsResponse(access);
   const params = new URL(request.url).searchParams;
-  try { return correctionsResponse({ ok: true, requests: await listCorrectionsRequests(access, Object.fromEntries(params)) }); }
+  try { const requests = await listCorrectionsRequests(access, Object.fromEntries(params)); const delivery = await requestDeliveryDetails(access.organisationId, requests.map((item) => item.id)); return correctionsResponse({ ok: true, requests: requests.map((item) => ({ ...item, delivery: delivery.get(item.id) || null })) }); }
   catch (error) { return correctionsError(error); }
 }
 
