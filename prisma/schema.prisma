@@ -1740,6 +1740,7 @@ model User {
   createdCorrectionsContributors         CorrectionsContributor[]         @relation("CorrectionsContributorCreatedBy")
   supervisedCorrectionsStudioSessions    CorrectionsStudioSession[]       @relation("CorrectionsStudioSupervisor")
   createdCorrectionsStudioSessions       CorrectionsStudioSession[]       @relation("CorrectionsStudioCreatedBy")
+  createdCorrectionsNetworkAudioDistributions CorrectionsNetworkAudioDistribution[]
   createdSchoolAnnouncements             SchoolAnnouncement[]             @relation("SchoolAnnouncementCreatedBy")
   reviewedSchoolAnnouncements            SchoolAnnouncement[]             @relation("SchoolAnnouncementReviewedBy")
   createdSchoolNoticeboardPosts          SchoolNoticeboardPost[]          @relation("SchoolNoticeboardCreatedBy")
@@ -1937,6 +1938,7 @@ model Organisation {
   correctionsNetworkGrants             CorrectionsNetworkGrant[]
   correctionsNetworkWindows            CorrectionsNetworkWindow[]
   correctionsDistributions             CorrectionsProgrammeDistribution[]
+  correctionsNetworkAudioDistributions CorrectionsNetworkAudioDistribution[]
   schoolSafeguardingReadiness        SchoolSafeguardingReadiness?
   schoolSafeguardingReviews          SchoolSafeguardingReview[]
   schoolRetentionHolds               SchoolRetentionHold[]
@@ -2763,6 +2765,8 @@ model Location {
   correctionsNetworkWindows    CorrectionsNetworkWindow[]
   correctionsDistributionTargets CorrectionsProgrammeDistribution[] @relation("CorrectionsDistributionTarget")
   correctionsDistributionSources CorrectionsProgrammeDistribution[] @relation("CorrectionsDistributionSource")
+  correctionsAudioDistributionTargets CorrectionsNetworkAudioDistribution[] @relation("CorrectionsAudioDistributionTarget")
+  correctionsAudioDistributionSources CorrectionsNetworkAudioDistribution[] @relation("CorrectionsAudioDistributionSource")
 
   @@unique([organisationId, slug])
   @@index([organisationId])
@@ -3093,6 +3097,7 @@ model CorrectionsNetworkWindow {
   kind           CorrectionsNetworkWindowKind
   mandatory      Boolean @default(false)
   distributionId String?
+  audioDistributionId String?
   weekday        Int
   startMinute    Int
   endMinute      Int
@@ -3105,9 +3110,48 @@ model CorrectionsNetworkWindow {
   organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   facility Location @relation(fields: [facilityId], references: [id], onDelete: Restrict)
   distribution CorrectionsProgrammeDistribution? @relation(fields: [distributionId], references: [id], onDelete: Restrict)
+  audioDistribution CorrectionsNetworkAudioDistribution? @relation(fields: [audioDistributionId], references: [id], onDelete: Restrict)
 
   @@index([organisationId, facilityId, weekday, active])
   @@index([distributionId])
+  @@index([audioDistributionId])
+}
+
+// C7 rehabilitation and STANDARD announcement distribution pins the reviewed
+// source audio independently of a Corrections Studio programme. It never
+// grants public syndication or bypasses facility policy at playback.
+model CorrectionsNetworkAudioDistribution {
+  id                   String @id @default(cuid())
+  organisationId       String
+  sourceFacilityId     String?
+  targetFacilityId     String
+  kind                 String
+  rehabilitationId     String?
+  announcementId       String?
+  mediaAssetId         String
+  promoVersionId       String
+  sourceFingerprint    String
+  territoryCode        String
+  status               CorrectionsDistributionStatus @default(ACTIVE)
+  effectiveFrom        DateTime
+  effectiveUntil       DateTime?
+  createdByUserId      String
+  withdrawnAt          DateTime?
+  createdAt            DateTime @default(now())
+
+  organisation         Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  sourceFacility       Location? @relation("CorrectionsAudioDistributionSource", fields: [sourceFacilityId], references: [id], onDelete: Restrict)
+  targetFacility       Location @relation("CorrectionsAudioDistributionTarget", fields: [targetFacilityId], references: [id], onDelete: Restrict)
+  rehabilitation       CorrectionsRehabContent? @relation(fields: [rehabilitationId], references: [id], onDelete: Restrict)
+  announcement         CorrectionsAnnouncement? @relation(fields: [announcementId], references: [id], onDelete: Restrict)
+  mediaAsset           MediaAsset @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+  promoVersion         PromoVersion @relation(fields: [promoVersionId], references: [id], onDelete: Restrict)
+  createdBy            User @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  windows              CorrectionsNetworkWindow[]
+
+  @@unique([rehabilitationId, targetFacilityId, promoVersionId])
+  @@unique([announcementId, targetFacilityId])
+  @@index([organisationId, targetFacilityId, status])
 }
 
 // Each distribution pins exact Corrections Guard evidence. The media file is
@@ -3160,6 +3204,7 @@ model CorrectionsAnnouncement {
   promoVersion PromoVersion @relation(fields: [promoVersionId], references: [id], onDelete: Restrict)
   overrides CorrectionsOverride[]
   playoutIntents PlayoutIntent[]
+  networkAudioDistributions CorrectionsNetworkAudioDistribution[]
 
   @@index([organisationId, facilityId, status])
 }
@@ -3289,6 +3334,7 @@ model CorrectionsRehabContent {
   mediaAsset MediaAsset @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
   programmeItems CorrectionsRehabProgrammeItem[]
   playoutIntents PlayoutIntent[]
+  networkAudioDistributions CorrectionsNetworkAudioDistribution[]
 
   @@index([organisationId, facilityId, status])
   @@index([mediaAssetId])
@@ -3861,6 +3907,7 @@ model MediaAsset {
   studioProductHandoffs StudioProductHandoff[]
   correctionsRehabContent CorrectionsRehabContent[]
   correctionsAnnouncements CorrectionsAnnouncement[]
+  correctionsNetworkAudioDistributions CorrectionsNetworkAudioDistribution[]
 
   @@unique([id, organisationId])
   @@index([organisationId])
@@ -3933,6 +3980,7 @@ model PromoVersion {
   schoolEpisodeExchangeOffers SchoolEpisodeExchangeOffer[]
   studioProductHandoffs       StudioProductHandoff[]
   correctionsAnnouncements   CorrectionsAnnouncement[]
+  correctionsNetworkAudioDistributions CorrectionsNetworkAudioDistribution[]
 
   @@unique([promoAssetId, version])
   @@unique([promoAssetId, sourceReference])

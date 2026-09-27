@@ -35,6 +35,11 @@ test("central mandatory windows win, local windows beat only optional central de
   assert.equal(resolveCorrectionsNetworkWindow([central, local], { facilityId: "a", weekday: 1, minute: 665 }), central);
   assert.equal(resolveCorrectionsNetworkWindow([central, local], { facilityId: "b", weekday: 1, minute: 610 }), null);
   assert.equal(correctionsWindowConflict({ ...central, mandatory: true }, local), "MANDATORY_CENTRAL_CONFLICT");
+  const mandatoryAnnouncement = { ...central, id: "announcement-window", distributionId: null,
+    audioDistributionId: "announcement-version", mandatory: true };
+  assert.equal(correctionsWindowConflict(central, mandatoryAnnouncement), null);
+  assert.deepEqual(rankCorrectionsNetworkWindows([central, mandatoryAnnouncement], { facilityId: "a", weekday: 1, minute: 610 }),
+    [mandatoryAnnouncement, central], "the valid central default remains a fallback after mandatory audio");
   assert.equal(resolveCorrectionsNetworkWindow([{ ...central, mandatory: true }, local], { facilityId: "a", weekday: 1, minute: 610 }).kind, "CENTRAL");
   assert.deepEqual(rankCorrectionsNetworkWindows([central, local], { facilityId: "a", weekday: 1, minute: 610 }), [local, central]);
   assert.deepEqual(rankCorrectionsNetworkWindows([{ ...local, distributionId: null }, central], { facilityId: "a", weekday: 1, minute: 610 }), [central]);

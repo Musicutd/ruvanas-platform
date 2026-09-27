@@ -394,6 +394,128 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
       body: { facilityId: facilities[0].id, kind: "LOCAL", distributionId: localAId, weekday,
         startMinute: 0, endMinute: 1440, allowedContentTypes: ["PROGRAMME"] } })).status, 409);
 
+    // C7.3B uses the same private manifest/proof path for centrally reviewed
+    // rehabilitation and STANDARD announcement audio. Group A+B never reaches C.
+    const rehabProgramme = await approvedProgramme(0, "C7 rehabilitation source", 550);
+    const rehabSubmission = await db.correctionsSubmission.findFirst({ where: { programmeId: rehabProgramme.id } });
+    const rehabRender = await db.audioRender.findUnique({ where: { id: rehabSubmission.renderId } });
+    const rehabCategory = await db.correctionsRehabCategory.create({ data: { organisationId: authority.id,
+      code: `LEARNING_${suffix.toUpperCase()}`, name: "Learning" } });
+    const rehab = await db.correctionsRehabContent.create({ data: { organisationId: authority.id, categoryId: rehabCategory.id,
+      mediaAssetId: rehabRender.outputMediaAssetId, title: "Private learning module", providerName: "C7 test",
+      status: "APPROVED", createdByUserId: owner.user.id, reviewedByUserId: manager.user.id,
+      reviewedAt: new Date() } });
+    assert.equal((await api("/api/corrections/network/audio-distribution", { method: "POST", cookie: owner.cookie,
+      body: { kind: "REHABILITATION", contentId: rehab.id, facilityIds: [facilities[0].id], territoryCode: "MT" } })).status, 409,
+      "network rehabilitation requires explicit rights confirmation");
+    assert.equal((await api("/api/corrections/network/audio-distribution", { method: "POST", cookie: owner.cookie,
+      body: { kind: "REHABILITATION", contentId: rehab.id, facilityIds: [foreign.id], territoryCode: "MT", rightsConfirmed: true } })).status, 400,
+      "a raw foreign facility ID cannot become a distribution target");
+    assert.equal((await api("/api/corrections/network/audio-distribution", { method: "POST", cookie: contributor.cookie,
+      body: { kind: "REHABILITATION", contentId: rehab.id, allFacilities: true, territoryCode: "MT", rightsConfirmed: true } })).status, 403);
+    const rehabDistribution = await api("/api/corrections/network/audio-distribution", { method: "POST", cookie: owner.cookie,
+      body: { kind: "REHABILITATION", contentId: rehab.id, groupId: group.id, territoryCode: "MT", rightsConfirmed: true } });
+    assert.equal(rehabDistribution.status, 201, JSON.stringify(rehabDistribution.body));
+    assert.deepEqual(rehabDistribution.body.targetFacilityIds, [facilities[0].id, facilities[1].id].sort());
+    assert.equal((await api("/api/corrections/network/audio-distribution", { method: "POST", cookie: manager.cookie,
+      body: { kind: "REHABILITATION", contentId: rehab.id, allFacilities: true, territoryCode: "MT", rightsConfirmed: true } })).status, 403);
+    const rehabIds = Object.fromEntries(rehabDistribution.body.targetFacilityIds.map((id, index) => [id, rehabDistribution.body.distributionIds[index]]));
+    assert.equal((await api("/api/corrections/network/windows", { method: "POST", cookie: owner.cookie,
+      body: { facilityId: facilities[2].id, kind: "CENTRAL", audioDistributionId: rehabIds[facilities[0].id],
+        weekday, startMinute: 0, endMinute: 1440, mandatory: true, allowedContentTypes: ["REHABILITATION"] } })).status, 409);
+    async function audioWindow(index, distributionId, contentType) {
+      const response = await api("/api/corrections/network/windows", { method: "POST", cookie: owner.cookie,
+        body: { facilityId: facilities[index].id, kind: "CENTRAL", audioDistributionId: distributionId,
+          weekday, startMinute: 0, endMinute: 1440, mandatory: true, allowedContentTypes: [contentType] } });
+      assert.equal(response.status, 201, JSON.stringify(response.body));
+      return response.body.id;
+    }
+    await audioWindow(0, rehabIds[facilities[0].id], "REHABILITATION");
+    await audioWindow(1, rehabIds[facilities[1].id], "REHABILITATION");
+    const rehabManifests = await Promise.all([manifest(0), manifest(1), manifest(2)]);
+    assert.deepEqual(rehabManifests.map((response) => response.body.insertions[0]?.programmingSource),
+      ["CORRECTIONS_CENTRAL_REHAB", "CORRECTIONS_CENTRAL_REHAB", "CORRECTIONS_CENTRAL"]);
+    const rehabInsertion = rehabManifests[0].body.insertions[0];
+    const rehabMedia = await fetch(new URL(rehabInsertion.mediaUrl, baseUrl), { headers: {
+      cookie: players[0].cookie, range: "bytes=0-16043" } });
+    assert.equal(rehabMedia.status, 206);
+    assert.ok(Math.abs(observedTone(Buffer.from(await rehabMedia.arrayBuffer())) - 550) < 5);
+    const rehabProof = await api("/api/player/proof-of-play", { method: "POST", cookie: players[0].cookie,
+      instanceId: players[0].instanceId, body: { events: [{ eventId: randomUUID(), manifestVersion: rehabManifests[0].body.version,
+        proofToken: rehabInsertion.proofToken, programmingSourceProofToken: rehabInsertion.programmingSourceProofToken,
+        scheduleItemId: rehabInsertion.scheduleItemId, itemType: "CORRECTIONS_AUDIO", programmingSource: "CORRECTIONS_CENTRAL_REHAB",
+        eventType: "COMPLETED", occurredAt: new Date().toISOString(), positionSeconds: 30 }] } });
+    assert.equal(rehabProof.status, 200, JSON.stringify(rehabProof.body));
+    assert.equal(rehabProof.body.accepted, 1);
+    assert.equal((await api("/api/corrections/network", { cookie: owner.cookie })).body.deliveryMetricsLast7Days.centralRehabilitation, 1);
+    const rehabCsv = await fetch(`${baseUrl}/api/corrections/network/report/export?groupId=${group.id}&kind=REHABILITATION&source=CORRECTIONS_CENTRAL_REHAB`,
+      { headers: { cookie: owner.cookie } });
+    assert.equal(rehabCsv.status, 200);
+    assert.match(await rehabCsv.text(), /CENTRAL,REHABILITATION,CORRECTIONS_CENTRAL_REHAB,COMPLETED/);
+    const withdrawnRehab = await api(`/api/corrections/network/audio-distribution/${rehabIds[facilities[0].id]}`,
+      { method: "DELETE", cookie: owner.cookie });
+    assert.equal(withdrawnRehab.status, 200, JSON.stringify(withdrawnRehab.body));
+    assert.equal((await manifest(0)).body.insertions[0]?.programmingSource, "CORRECTIONS_CENTRAL",
+      "withdrawal returns facility A to its valid central default");
+    assert.equal((await manifest(1)).body.insertions[0]?.programmingSource, "CORRECTIONS_CENTRAL_REHAB");
+    await api(`/api/corrections/network/audio-distribution/${rehabIds[facilities[1].id]}`,
+      { method: "DELETE", cookie: owner.cookie });
+    assert.equal((await manifest(1)).body.insertions[0]?.programmingSource, "CORRECTIONS_CENTRAL");
+    assert.match(await (await fetch(`${baseUrl}/api/corrections/network/report/export?kind=REHABILITATION`,
+      { headers: { cookie: owner.cookie } })).text(), /CORRECTIONS_CENTRAL_REHAB,COMPLETED/,
+      "withdrawal retains historical signed rehabilitation evidence");
+
+    const announcementProgramme = await approvedProgramme(0, "C7 standard announcement source", 770);
+    const announcementSubmission = await db.correctionsSubmission.findFirst({ where: { programmeId: announcementProgramme.id } });
+    const announcementRender = await db.audioRender.findUnique({ where: { id: announcementSubmission.renderId } });
+    const standard = await db.correctionsAnnouncement.create({ data: { organisationId: authority.id,
+      facilityId: facilities[0].id, title: "Central standard information", mediaAssetId: announcementRender.outputMediaAssetId,
+      promoVersionId: announcementRender.outputPromoVersionId, status: "APPROVED", createdByUserId: owner.user.id,
+      approvedByUserId: manager.user.id, approvedAt: new Date() } });
+    const announcementDistribution = await api("/api/corrections/network/audio-distribution", { method: "POST", cookie: owner.cookie,
+      body: { kind: "ANNOUNCEMENT", contentId: standard.id, groupId: group.id, rightsConfirmed: true } });
+    assert.equal(announcementDistribution.status, 201, JSON.stringify(announcementDistribution.body));
+    const announcementIds = Object.fromEntries(announcementDistribution.body.targetFacilityIds.map((id, index) => [id, announcementDistribution.body.distributionIds[index]]));
+    await audioWindow(0, announcementIds[facilities[0].id], "ANNOUNCEMENT");
+    await audioWindow(1, announcementIds[facilities[1].id], "ANNOUNCEMENT");
+    const announcementManifests = await Promise.all([manifest(0), manifest(1), manifest(2)]);
+    assert.deepEqual(announcementManifests.map((response) => response.body.insertions[0]?.programmingSource),
+      ["CORRECTIONS_CENTRAL_ANNOUNCE", "CORRECTIONS_CENTRAL_ANNOUNCE", "CORRECTIONS_CENTRAL"]);
+    const announcementInsertion = announcementManifests[1].body.insertions[0];
+    const announcementMedia = await fetch(new URL(announcementInsertion.mediaUrl, baseUrl), { headers: {
+      cookie: players[1].cookie, range: "bytes=0-16043" } });
+    assert.equal(announcementMedia.status, 206);
+    assert.ok(Math.abs(observedTone(Buffer.from(await announcementMedia.arrayBuffer())) - 770) < 5);
+    const announcementProof = await api("/api/player/proof-of-play", { method: "POST", cookie: players[1].cookie,
+      instanceId: players[1].instanceId, body: { events: [{ eventId: randomUUID(), manifestVersion: announcementManifests[1].body.version,
+        proofToken: announcementInsertion.proofToken, programmingSourceProofToken: announcementInsertion.programmingSourceProofToken,
+        scheduleItemId: announcementInsertion.scheduleItemId, itemType: "CORRECTIONS_AUDIO", programmingSource: "CORRECTIONS_CENTRAL_ANNOUNCE",
+        eventType: "COMPLETED", occurredAt: new Date().toISOString(), positionSeconds: 30 }] } });
+    assert.equal(announcementProof.status, 200, JSON.stringify(announcementProof.body));
+    assert.equal(announcementProof.body.accepted, 1);
+    assert.equal((await api("/api/corrections/network", { cookie: owner.cookie })).body.deliveryMetricsLast7Days.centralAnnouncement, 1);
+    const announcementCsv = await fetch(`${baseUrl}/api/corrections/network/report/export?groupId=${group.id}&kind=ANNOUNCEMENT&source=CORRECTIONS_CENTRAL_ANNOUNCE`,
+      { headers: { cookie: owner.cookie } });
+    assert.equal(announcementCsv.status, 200);
+    assert.match(await announcementCsv.text(), /CENTRAL,ANNOUNCEMENT,CORRECTIONS_CENTRAL_ANNOUNCE,COMPLETED/);
+    await db.correctionsFacility.update({ where: { locationId: facilities[0].id }, data: {
+      blockedTrackIds: [announcementRender.outputMediaAssetId] } });
+    assert.equal((await manifest(0)).body.insertions[0]?.programmingSource, "CORRECTIONS_CENTRAL",
+      "facility A can tighten policy while unaffected B retains its central announcement");
+    assert.equal((await manifest(1)).body.insertions[0]?.programmingSource, "CORRECTIONS_CENTRAL_ANNOUNCE");
+    await db.correctionsFacility.update({ where: { locationId: facilities[0].id }, data: { blockedTrackIds: [] } });
+    await db.correctionsProfile.update({ where: { organisationId: authority.id }, data: {
+      blockedTrackIds: [announcementRender.outputMediaAssetId] } });
+    assert.equal((await manifest(1)).body.insertions[0]?.programmingSource, "CORRECTIONS_CENTRAL",
+      "central policy cannot be weakened by the receiving facility");
+    await db.correctionsProfile.update({ where: { organisationId: authority.id }, data: { blockedTrackIds: [] } });
+    await api(`/api/corrections/network/audio-distribution/${announcementIds[facilities[0].id]}`,
+      { method: "DELETE", cookie: owner.cookie });
+    await api(`/api/corrections/network/audio-distribution/${announcementIds[facilities[1].id]}`,
+      { method: "DELETE", cookie: owner.cookie });
+    assert.equal((await manifest(0)).body.insertions[0]?.programmingSource, "CORRECTIONS_CENTRAL");
+    assert.equal((await manifest(1)).body.insertions[0]?.programmingSource, "CORRECTIONS_CENTRAL");
+
     await db.player.update({ where: { id: players[1].player.id }, data: { status: "OFFLINE", lastHeartbeatAt: new Date(Date.now() - 180_000) } });
     const degraded = await api("/api/corrections/network", { cookie: owner.cookie });
     assert.equal(degraded.status, 200);
@@ -403,6 +525,8 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
 
     await db.plan.update({ where: { id: plan.id }, data: { tierNumber: 3 } });
     assert.equal((await api("/api/corrections/network", { cookie: owner.cookie })).status, 403);
+    assert.equal((await api("/api/corrections/network/audio-distribution", { method: "POST", cookie: owner.cookie,
+      body: { kind: "REHABILITATION", contentId: rehab.id, allFacilities: true, territoryCode: "MT", rightsConfirmed: true } })).status, 403);
     assert.equal((await fetch(`${baseUrl}/api/corrections/network/report/export`, { headers: { cookie: owner.cookie } })).status, 403);
     assert.equal((await api("/api/corrections/network", { cookie: manager.cookie })).status, 403);
   } finally {
@@ -412,9 +536,13 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
       await db.proofOfPlayEvent.deleteMany({ where: { organisationId: authority.id } });
       await db.playoutIntent.deleteMany({ where: { organisationId: authority.id } });
       await db.correctionsOverride.deleteMany({ where: { organisationId: authority.id } });
-      await db.correctionsAnnouncement.deleteMany({ where: { organisationId: authority.id } });
       await db.correctionsNetworkWindow.deleteMany({ where: { organisationId: authority.id } });
+      await db.correctionsNetworkAudioDistribution.deleteMany({ where: { organisationId: authority.id } });
       await db.correctionsProgrammeDistribution.deleteMany({ where: { organisationId: authority.id } });
+      await db.correctionsAnnouncement.deleteMany({ where: { organisationId: authority.id } });
+      await db.correctionsRehabProgrammeItem.deleteMany({ where: { programme: { organisationId: authority.id } } });
+      await db.correctionsRehabContent.deleteMany({ where: { organisationId: authority.id } });
+      await db.correctionsRehabCategory.deleteMany({ where: { organisationId: authority.id } });
       await db.correctionsReview.deleteMany({ where: { submission: { organisationId: authority.id } } });
       await db.correctionsSubmission.deleteMany({ where: { organisationId: authority.id } });
       await db.correctionsProgramme.deleteMany({ where: { organisationId: authority.id } });

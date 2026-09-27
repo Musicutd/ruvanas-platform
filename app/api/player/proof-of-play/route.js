@@ -7,7 +7,9 @@ import { queueOutgoingWebhookEvent } from "@/lib/outgoing-webhook-service";
 import { appendRightsUsageLedger } from "@/lib/rights-royalty-service";
 import { enqueueNotificationEvent } from "@/lib/job-notification-service";
 import { runSerializableTransaction } from "@/lib/transaction-retry.mjs";
-import { correctionsNetworkIntentRefs, validateCorrectionsNetworkIntent, validateCorrectionsNetworkInterruption } from "@/lib/corrections-network-player-service";
+import { correctionsNetworkIntentRefs, correctionsNetworkAudioIntentRefs,
+  validateCorrectionsNetworkIntent, validateCorrectionsNetworkInterruption,
+  validateCorrectionsNetworkAudioIntent, validateCorrectionsNetworkAudioInterruption } from "@/lib/corrections-network-player-service";
 
 export const runtime = "nodejs";
 
@@ -38,7 +40,7 @@ const eventSchema = z.object({
     "CORRECTIONS_REQUEST",
     "CORRECTIONS_REHABILITATION",
     "CORRECTIONS_STANDARD", "CORRECTIONS_PRIORITY", "CORRECTIONS_EMERGENCY",
-    "CORRECTIONS_CENTRAL", "CORRECTIONS_LOCAL"
+    "CORRECTIONS_CENTRAL", "CORRECTIONS_LOCAL", "CORRECTIONS_CENTRAL_REHAB", "CORRECTIONS_CENTRAL_ANNOUNCE"
   ]).optional().nullable(),
   trackId: z.string().cuid().optional().nullable(),
   eventType: z.enum(["STARTED", "COMPLETED", "FAILED", "INTERRUPTED"]),
@@ -118,16 +120,25 @@ export async function POST(request) {
       const track = event.itemType === "MUSIC" ? tracksById.get(event.trackId) : null;
       const intent = intentsByScheduleItemId.get(event.scheduleItemId) || null;
       const networkRefs = correctionsNetworkIntentRefs(intent);
-      const inside = Boolean(intent?.correctionsRequestId || intent?.correctionsRehabContentId || intent?.correctionsAnnouncementId || networkRefs);
+      const networkAudioRefs = correctionsNetworkAudioIntentRefs(intent);
+      const inside = Boolean(intent?.correctionsRequestId || intent?.correctionsRehabContentId || intent?.correctionsAnnouncementId || networkRefs || networkAudioRefs);
       const networkChoice = networkRefs ? event.eventType === "INTERRUPTED"
         ? await validateCorrectionsNetworkInterruption(prisma, player, intent)
         : await validateCorrectionsNetworkIntent(prisma, player, intent, occurredAt) : null;
+      const networkAudioChoice = networkAudioRefs ? event.eventType === "INTERRUPTED"
+        ? await validateCorrectionsNetworkAudioInterruption(prisma, player, intent)
+        : await validateCorrectionsNetworkAudioIntent(prisma, player, intent, occurredAt) : null;
       const announcement = intent?.correctionsAnnouncement || null;
       const override = intent?.correctionsOverride || null;
-      const c6 = Boolean(intent?.correctionsAnnouncementId);
+      const c6 = Boolean(intent?.correctionsAnnouncementId && !networkAudioRefs);
       const contentId = track?.id || intent?.promoVersionId || intent?.mediaAssetId;
       const endedProofAllowed = override?.endedAt && (new Date(event.occurredAt) <= override.endedAt || (event.eventType === "INTERRUPTED" && new Date(event.occurredAt).getTime() <= override.endedAt.getTime() + 15000));
-      const validIntentType = networkRefs ? (
+      const validIntentType = networkAudioRefs ? (
+        Boolean(networkAudioChoice) && !intent.cancelledAt && !intent.campaignId && !intent.schoolBroadcastSlotId &&
+        !intent.correctionsRequestId && !intent.correctionsProgrammeId && !intent.correctionsSubmissionId &&
+        event.itemType === "CORRECTIONS_AUDIO" && !event.trackId &&
+        event.programmingSource === (intent.correctionsRehabContentId ? "CORRECTIONS_CENTRAL_REHAB" : "CORRECTIONS_CENTRAL_ANNOUNCE")
+      ) : networkRefs ? (
         Boolean(networkChoice) && !intent.cancelledAt && !intent.campaignId && !intent.schoolBroadcastSlotId &&
         !intent.correctionsRequestId && !intent.correctionsRehabContentId && !intent.correctionsAnnouncementId &&
         event.itemType === "CORRECTIONS_AUDIO" && !event.trackId &&
@@ -167,7 +178,7 @@ export async function POST(request) {
         programmingSource: event.programmingSource
       }, event.programmingSourceProofToken, process.env.SESSION_SECRET);
       const validPromoTime = !intent || (inside
-        ? occurredAt.getTime() >= intent.plannedStart.getTime() - (event.eventType === "STARTED" ? 10_000 : 0) && occurredAt.getTime() <= intent.expiresAt.getTime() + (networkRefs && event.eventType === "INTERRUPTED" ? 15_000 : 0)
+        ? occurredAt.getTime() >= intent.plannedStart.getTime() - (event.eventType === "STARTED" ? 10_000 : 0) && occurredAt.getTime() <= intent.expiresAt.getTime() + ((networkRefs || networkAudioRefs) && event.eventType === "INTERRUPTED" ? 15_000 : 0)
         : occurredAt.getTime() >= intent.plannedStart.getTime() - MAX_PROMO_START_EARLY_MS && occurredAt.getTime() <= intent.plannedStart.getTime() + MAX_PROMO_COMPLETION_LATE_MS);
       const validChannel = !intent?.channelId || intent.channelId === channelId;
       const validCompletion = !inside || event.eventType !== "COMPLETED" ||
@@ -176,7 +187,7 @@ export async function POST(request) {
         organisationId: player.organisationId, facilityId: player.zone.locationId, targetPlayerIds: { has: player.id },
         startedAt: { lte: occurredAt }, expiresAt: { gt: occurredAt }, OR: [{ endedAt: null }, { endedAt: { gt: occurredAt } }]
       }, select: { id: true } }));
-      const networkInterruptedEarlier = networkRefs && event.eventType === "COMPLETED" && Boolean(await prisma.correctionsOverride.findFirst({ where: {
+      const networkInterruptedEarlier = (networkRefs || networkAudioRefs) && event.eventType === "COMPLETED" && Boolean(await prisma.correctionsOverride.findFirst({ where: {
         organisationId: player.organisationId, facilityId: player.zone.locationId, targetPlayerIds: { has: player.id },
         startedAt: { gte: intent.plannedStart, lte: occurredAt }
       }, select: { id: true } }));
@@ -192,7 +203,7 @@ export async function POST(request) {
     }
 
     const result = await runSerializableTransaction(prisma, async (tx) => {
-      const insideIntentIds = intents.filter((intent) => intent.correctionsRequestId || intent.correctionsRehabContentId || intent.correctionsAnnouncementId || correctionsNetworkIntentRefs(intent)).map((intent) => intent.id);
+      const insideIntentIds = intents.filter((intent) => intent.correctionsRequestId || intent.correctionsRehabContentId || intent.correctionsAnnouncementId || correctionsNetworkIntentRefs(intent) || correctionsNetworkAudioIntentRefs(intent)).map((intent) => intent.id);
       const previousInside = insideIntentIds.length ? await tx.proofOfPlayEvent.findMany({ where: { playoutIntentId: { in: insideIntentIds }, eventType: { in: ["STARTED", "COMPLETED", "FAILED", "INTERRUPTED"] } }, orderBy: { occurredAt: "asc" }, select: { playoutIntentId: true, eventType: true, occurredAt: true } }) : [];
       const seenInside = new Set(previousInside.filter((item) => ["COMPLETED", "FAILED"].includes(item.eventType)).map((item) => `${item.playoutIntentId}:${item.eventType}`));
       const lastStarted = new Map();
@@ -203,7 +214,7 @@ export async function POST(request) {
       }
       const acceptedEvents = events.filter((event) => {
         const intent = intentsByScheduleItemId.get(event.scheduleItemId);
-        if (!intent?.correctionsRequestId && !intent?.correctionsRehabContentId && !intent?.correctionsAnnouncementId && !correctionsNetworkIntentRefs(intent)) return true;
+        if (!intent?.correctionsRequestId && !intent?.correctionsRehabContentId && !intent?.correctionsAnnouncementId && !correctionsNetworkIntentRefs(intent) && !correctionsNetworkAudioIntentRefs(intent)) return true;
         if (event.eventType === "STARTED") {
           lastStarted.set(intent.id, new Date(event.occurredAt).getTime());
           return true;
@@ -263,8 +274,8 @@ export async function POST(request) {
             if (!recorded) await tx.auditLog.create({ data: { organisationId: player.organisationId, action: "CORRECTIONS_RESTORATION_CONFIRMED", entityType: "CorrectionsOverride", entityId: previousOverride.id, details: { playerId: player.id, zoneId: player.zoneId, resumedIntentId: intent.id, proofEventId: event.eventId } } });
           }
         }
-        if (!intent?.correctionsRequestId && !intent?.correctionsRehabContentId && !intent?.correctionsAnnouncementId && !correctionsNetworkIntentRefs(intent)) continue;
-        if (correctionsNetworkIntentRefs(intent)) {
+        if (!intent?.correctionsRequestId && !intent?.correctionsRehabContentId && !intent?.correctionsAnnouncementId && !correctionsNetworkIntentRefs(intent) && !correctionsNetworkAudioIntentRefs(intent)) continue;
+        if (correctionsNetworkIntentRefs(intent) || correctionsNetworkAudioIntentRefs(intent)) {
           if (["COMPLETED", "FAILED", "INTERRUPTED"].includes(event.eventType)) await tx.auditLog.create({ data: {
             organisationId: player.organisationId, action: event.eventType === "COMPLETED" ? "CORRECTIONS_NETWORK_DELIVERY_CONFIRMED" : "CORRECTIONS_NETWORK_DELIVERY_ISSUE",
             entityType: "PlayoutIntent", entityId: intent.id, details: { proofEventId: event.eventId, eventType: event.eventType,
