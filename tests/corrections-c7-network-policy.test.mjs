@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { correctionsNetworkPermission, normalizeCorrectionsNetworkWindow, correctionsWindowConflict, resolveCorrectionsNetworkWindow, rankCorrectionsNetworkWindows, resolveCorrectionsDistributionTargets } from "../lib/corrections-network-policy.mjs";
 import { correctionsPolicyEligibility } from "../lib/corrections-policy.mjs";
+import { correctionsNetworkSourcePolicy } from "../lib/corrections-network-source-policy.mjs";
 import { normaliseCorrectionsNetworkReportFilters, correctionsNetworkReportCsv } from "../lib/corrections-network-report.mjs";
 
 const scope = { tier: 4, correctionsEnabled: true, organisationId: "authority", memberId: "member" };
@@ -47,6 +48,24 @@ test("distribution targeting refuses foreign or inactive facility IDs", () => {
   assert.deepEqual(resolveCorrectionsDistributionTargets({ allFacilities: facilities, selectedIds: ["a"], groupMembers: ["b", "a"] }), ["a", "b"]);
   assert.throws(() => resolveCorrectionsDistributionTargets({ allFacilities: facilities, selectedIds: ["c"] }));
   assert.throws(() => resolveCorrectionsDistributionTargets({ allFacilities: facilities, selectedIds: ["foreign"] }));
+  assert.deepEqual(resolveCorrectionsDistributionTargets({ allFacilities: facilities, includeAll: true }), ["a", "b"]);
+  assert.throws(() => resolveCorrectionsDistributionTargets({ allFacilities: facilities, includeAll: true, selectedIds: ["a"] }));
+});
+
+test("network audio intersects central and target facility restrictions", () => {
+  const media = { id: "source-x", status: "READY", libraryType: "ORGANISATION_PROMO", mediaType: "ANNOUNCEMENT",
+    genres: [{ mediaGenre: { slug: "spoken-word" } }] };
+  const policy = { policyConfiguredAt: new Date(), blockedTrackIds: [], restrictedGenres: [], allowedGenres: [] };
+  const check = (central, facility, sourceMedia = [media]) => correctionsNetworkSourcePolicy({ sourceMedia,
+    outputMediaAssetId: "output-x", organisationPolicy: central, facilityPolicy: facility });
+  assert.equal(check(policy, policy).allowed, true);
+  assert.equal(check({ ...policy, blockedTrackIds: ["SOURCE-X"] }, policy).reason, "CORRECTIONS_SOURCE_BLOCKED");
+  assert.equal(check(policy, { ...policy, blockedTrackIds: ["output-x"] }).reason, "CORRECTIONS_SOURCE_BLOCKED");
+  assert.equal(check(policy, { ...policy, restrictedGenres: ["SPOKEN_WORD"] }).reason, "CORRECTIONS_GENRE_RESTRICTED");
+  assert.equal(check(policy, { ...policy, allowedGenres: ["other"] }).reason, "CORRECTIONS_GENRE_NOT_ALLOWED");
+  assert.equal(check(policy, { ...policy, allowedGenres: ["SPOKEN_WORD"] }).allowed, true);
+  assert.equal(check(policy, { ...policy, policyConfiguredAt: null }).allowed, false);
+  assert.equal(check(policy, policy, [{ ...media, mediaType: "MUSIC" }]).reason, "NETWORK_MUSIC_RIGHTS_UNVERIFIED");
 });
 
 test("three facility plans isolate local windows and resume the central plan", () => {

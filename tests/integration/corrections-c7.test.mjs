@@ -182,6 +182,24 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
     const central = await approvedProgramme(0, "Central C7 programme", 440);
     const localA = await approvedProgramme(0, "Facility A programme", 880);
     const localC = await approvedProgramme(2, "Facility C programme", 220);
+    const grouped = await approvedProgramme(0, "Group-only C7 programme", 660);
+    const groupDistribution = await api("/api/corrections/network/distribution", { method: "POST", cookie: owner.cookie,
+      body: { programmeId: grouped.id, groupId: group.id } });
+    assert.equal(groupDistribution.status, 201, JSON.stringify(groupDistribution.body));
+    assert.deepEqual(groupDistribution.body.targetFacilityIds, [facilities[0].id, facilities[1].id].sort(),
+      "a group distribution must not silently reach facility C");
+    assert.equal((await db.correctionsProgrammeDistribution.count({ where: { programmeId: grouped.id,
+      targetFacilityId: facilities[2].id } })), 0);
+    const groupedSubmission = await db.correctionsSubmission.findFirst({ where: { programmeId: grouped.id } });
+    const groupedRender = await db.audioRender.findUnique({ where: { id: groupedSubmission.renderId } });
+    await db.correctionsFacility.update({ where: { locationId: facilities[1].id },
+      data: { blockedTrackIds: [groupedRender.outputMediaAssetId] } });
+    const blockedWindow = await api("/api/corrections/network/windows", { method: "POST", cookie: owner.cookie,
+      body: { facilityId: facilities[1].id, kind: "CENTRAL", distributionId: groupDistribution.body.distributionIds[1],
+        weekday: localDateTimeParts(new Date(), "Europe/Malta").weekday,
+        startMinute: 0, endMinute: 1440, allowedContentTypes: ["PROGRAMME"] } });
+    assert.equal(blockedWindow.status, 409, "a receiving facility restriction also blocks scheduling");
+    await db.correctionsFacility.update({ where: { locationId: facilities[1].id }, data: { blockedTrackIds: [] } });
     async function distribute(programmeId, facilityIds) {
       const response = await api("/api/corrections/network/distribution", { method: "POST", cookie: owner.cookie, body: { programmeId, facilityIds } });
       assert.equal(response.status, 201, JSON.stringify(response.body));
@@ -202,6 +220,14 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
       "NEW_VERSION_AVAILABLE", "a newer approved revision must not silently replace distributed audio");
     const localAId = (await distribute(localA.id, [facilities[0].id]))[facilities[0].id];
     const localCId = (await distribute(localC.id, [facilities[2].id]))[facilities[2].id];
+    const allSource = await approvedProgramme(0, "All-facility C7 programme", 330);
+    const allDistribution = await api("/api/corrections/network/distribution", { method: "POST", cookie: owner.cookie,
+      body: { programmeId: allSource.id, allFacilities: true } });
+    assert.equal(allDistribution.status, 201, JSON.stringify(allDistribution.body));
+    assert.deepEqual(allDistribution.body.targetFacilityIds, facilities.map((item) => item.id).sort());
+    assert.equal((await api("/api/corrections/network/distribution", { method: "POST", cookie: manager.cookie,
+      body: { programmeId: allSource.id, allFacilities: true } })).status, 403,
+      "a facility manager cannot claim all-facilities authority without a network distribution grant");
     const weekday = localDateTimeParts(new Date(), "Europe/Malta").weekday;
     async function createWindow(facilityIndex, kind, distributionId) {
       const response = await api("/api/corrections/network/windows", { method: "POST", cookie: owner.cookie,
@@ -235,6 +261,21 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
       ["CORRECTIONS_LOCAL", "CORRECTIONS_CENTRAL", "CORRECTIONS_LOCAL"]);
     assert.deepEqual(during.map((response) => response.body.insertions[0]?.title),
       [localA.title, central.title, localC.title]);
+    const localASubmission = await db.correctionsSubmission.findFirst({ where: { programmeId: localA.id } });
+    const localARender = await db.audioRender.findUnique({ where: { id: localASubmission.renderId } });
+    await db.correctionsFacility.update({ where: { locationId: facilities[0].id },
+      data: { blockedTrackIds: [localARender.outputMediaAssetId] } });
+    assert.equal((await manifest(0)).body.insertions[0]?.programmingSource, "CORRECTIONS_CENTRAL",
+      "a receiving facility restriction must disqualify its local window at player resolution");
+    assert.equal((await manifest(2)).body.insertions[0]?.programmingSource, "CORRECTIONS_LOCAL",
+      "facility A restrictions must not affect facility C");
+    await db.correctionsFacility.update({ where: { locationId: facilities[0].id }, data: { blockedTrackIds: [] } });
+    await db.correctionsProfile.update({ where: { organisationId: authority.id },
+      data: { blockedTrackIds: [localARender.outputMediaAssetId] } });
+    assert.equal((await manifest(0)).body.insertions[0]?.programmingSource, "CORRECTIONS_CENTRAL",
+      "a facility cannot loosen the authority-wide prohibition");
+    await db.correctionsProfile.update({ where: { organisationId: authority.id }, data: { blockedTrackIds: [] } });
+    assert.equal((await manifest(0)).body.insertions[0]?.programmingSource, "CORRECTIONS_LOCAL");
     for (const [index, expectedFrequency] of [[0, 880], [2, 220]]) {
       const mediaResponse = await fetch(new URL(during[index].body.insertions[0].mediaUrl, baseUrl),
         { headers: { cookie: players[index].cookie, range: "bytes=0-16043" } });
