@@ -10,8 +10,11 @@ authoritative. Do not connect a real facility or production catalogue.
 1. A Super Admin prepares one Edge node for one active Corrections facility.
    The one-time enrolment credential expires in 15 minutes and is never
    retrievable from the fleet list.
-2. On the isolated Edge host, create an Ed25519 proof key pair. Send **only
-   the public PEM** with the enrolment request. Keep its private PEM separate
+2. On the isolated Edge host, create an Ed25519 proof key pair. POST to
+   `/api/corrections/edge/enrol` with the one-time credential in both the
+   JSON `enrolmentCredential` field and `Authorization: Bearer rvee.…` header;
+   no browser Origin header is needed. Send **only the public PEM** in the
+   JSON `proofPublicKeyPem` field. Keep its private PEM separate
    from the media-cache directory. The cloud returns the node-bound machine
    credential once. Do not use a user password, player cookie or shared
    organisation API key.

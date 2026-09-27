@@ -11,10 +11,10 @@ const testPrivateKey = createPrivateKey({ key: Buffer.concat([
 ]), format: "der", type: "pkcs8" });
 const testPublicPem = createPublicKey(testPrivateKey).export({ type: "spki", format: "pem" });
 
-async function api(path, { method = "GET", body, cookie, machine } = {}) {
-  const response = await fetch(`${baseUrl}${path}`, { method, headers: { origin: baseUrl,
+async function api(path, { method = "GET", body, cookie, machine, enrolCredential, noOrigin = false } = {}) {
+  const response = await fetch(`${baseUrl}${path}`, { method, headers: { ...(noOrigin ? {} : { origin: baseUrl }),
     ...(body !== undefined ? { "content-type": "application/json" } : {}),
-    ...(cookie ? { cookie } : {}), ...(machine ? { authorization: `Bearer ${machine}` } : {}) },
+    ...(cookie ? { cookie } : {}), ...((machine || enrolCredential) ? { authorization: `Bearer ${machine || enrolCredential}` } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body) });
   return { status: response.status, body: await response.json(), cookie: response.headers.get("set-cookie")?.split(";")[0] };
 }
@@ -70,12 +70,19 @@ test("C8A facility-bound one-use enrolment, Tier 4 gate, rotation and revocation
     assert.equal(created.status, 201, JSON.stringify(created.body));
     assert.equal(created.body.facilityId, facilities[1].id);
     const nodeId = created.body.nodeId;
+    assert.equal((await api("/api/corrections/edge/enrol", { method: "POST", noOrigin: true,
+      body: { enrolmentCredential: created.body.enrolmentCredential, proofPublicKeyPem: testPublicPem } })).status, 403);
+    assert.equal((await api("/api/corrections/edge/enrol", { method: "POST", noOrigin: true,
+      enrolCredential: `rvee.${nodeId}.${"A".repeat(43)}`,
+      body: { enrolmentCredential: created.body.enrolmentCredential, proofPublicKeyPem: testPublicPem } })).status, 401);
     const enrolled = await api("/api/corrections/edge/enrol", { method: "POST",
+      enrolCredential: created.body.enrolmentCredential, noOrigin: true,
       body: { enrolmentCredential: created.body.enrolmentCredential, softwareVersion: "c8-test",
         proofPublicKeyPem: testPublicPem } });
     assert.equal(enrolled.status, 200, JSON.stringify(enrolled.body));
     assert.equal(enrolled.body.facilityId, facilities[1].id);
     assert.equal((await api("/api/corrections/edge/enrol", { method: "POST",
+      enrolCredential: created.body.enrolmentCredential, noOrigin: true,
       body: { enrolmentCredential: created.body.enrolmentCredential, proofPublicKeyPem: testPublicPem } })).status, 401);
     const machine = enrolled.body.machineCredential;
     const heartbeat = () => api("/api/corrections/edge/heartbeat", { method: "POST", machine,
