@@ -314,6 +314,12 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
           eventType: "INTERRUPTED", occurredAt: new Date().toISOString(), positionSeconds: 1 }] } });
       assert.equal(interruptionProof.status, 200, JSON.stringify(interruptionProof.body));
       assert.equal(interruptionProof.body.accepted, 1, "the interrupted local play is recorded without a completion claim");
+      const falseCompletion = await api("/api/player/proof-of-play", { method: "POST", cookie: players[0].cookie,
+        instanceId: players[0].instanceId, body: { events: [{ eventId: randomUUID(), manifestVersion: beforeInterruption.body.version,
+          proofToken: interruptedLocal.proofToken, programmingSourceProofToken: interruptedLocal.programmingSourceProofToken,
+          scheduleItemId: interruptedLocal.scheduleItemId, itemType: "CORRECTIONS_AUDIO", programmingSource: "CORRECTIONS_LOCAL",
+          eventType: "COMPLETED", occurredAt: new Date().toISOString(), positionSeconds: 30 }] } });
+      assert.equal(falseCompletion.status, 400, "a displaced local intent cannot later claim completion");
       assert.equal(await db.proofOfPlayEvent.count({ where: { scheduleItemId: interruptedLocal.scheduleItemId,
         eventType: "COMPLETED" } }), 0, "C6 must not turn an interrupted local programme into delivered evidence");
       const cleared = await api(`/api/corrections/overrides/${started.body.override.id}/clear`, { method: "POST", cookie: manager.cookie });
