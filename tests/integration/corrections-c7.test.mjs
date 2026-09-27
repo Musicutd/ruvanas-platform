@@ -188,6 +188,18 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
       return Object.fromEntries(response.body.targetFacilityIds.map((id, index) => [id, response.body.distributionIds[index]]));
     }
     const centralIds = await distribute(central.id, facilities.map((facility) => facility.id));
+    const firstCentralSubmission = await db.correctionsSubmission.findFirst({ where: { programmeId: central.id, revision: 1 } });
+    await db.correctionsSubmission.create({ data: { programmeId: central.id, organisationId: authority.id,
+      facilityId: facilities[0].id, revision: 2, renderId: firstCentralSubmission.renderId,
+      sourceFingerprint: firstCentralSubmission.sourceFingerprint, organisationPolicyVersion: 1,
+      facilityPolicyVersion: 1, titleSnapshot: "Central C7 programme · revised",
+      evidenceSnapshot: firstCentralSubmission.evidenceSnapshot, submittedByUserId: owner.user.id,
+      status: "APPROVED", reviews: { create: { stage: "STAFF", decision: "APPROVE", note: "Synthetic revised approval",
+        evidenceSnapshot: {}, reviewedByUserId: manager.user.id } } } });
+    await db.correctionsProgramme.update({ where: { id: central.id }, data: { latestRevision: 2 } });
+    const pinnedNetwork = await api("/api/corrections/network", { cookie: owner.cookie });
+    assert.equal(pinnedNetwork.body.distributions.find((item) => item.id === centralIds[facilities[0].id])?.versionState,
+      "NEW_VERSION_AVAILABLE", "a newer approved revision must not silently replace distributed audio");
     const localAId = (await distribute(localA.id, [facilities[0].id]))[facilities[0].id];
     const localCId = (await distribute(localC.id, [facilities[2].id]))[facilities[2].id];
     const weekday = localDateTimeParts(new Date(), "Europe/Malta").weekday;
@@ -224,6 +236,32 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
         { headers: { cookie: players[index].cookie, range: "bytes=0-16043" } });
       assert.equal(mediaResponse.status, 206, `facility ${index} must fetch only its approved local audio`);
       assert.ok(Math.abs(observedTone(Buffer.from(await mediaResponse.arrayBuffer())) - expectedFrequency) < 5);
+    }
+    // C6 is above C7 even while a local window is active. Clearing an
+    // override must re-resolve the current private plan, not a stale fallback.
+    const centralRender = await db.audioRender.findUnique({ where: { id: firstCentralSubmission.renderId } });
+    const alert = await db.correctionsAnnouncement.create({ data: { organisationId: authority.id,
+      facilityId: facilities[0].id, title: "Synthetic facility A alert", mediaAssetId: centralRender.outputMediaAssetId,
+      promoVersionId: centralRender.outputPromoVersionId, status: "APPROVED", createdByUserId: owner.user.id,
+      approvedByUserId: manager.user.id, approvedAt: new Date() } });
+    await db.correctionsFacility.update({ where: { locationId: facilities[0].id }, data: { priorityEnabled: true,
+      emergencyEnabled: true } });
+    await db.correctionsFacilityGrant.update({ where: { organisationMemberId_facilityId: {
+      organisationMemberId: manager.membership.id, facilityId: facilities[0].id } }, data: {
+      canPriorityActivate: true, canPriorityStop: true, canEmergencyActivate: true, canEmergencyClear: true } });
+    for (const type of ["PRIORITY", "EMERGENCY"]) {
+      const started = await api("/api/corrections/overrides", { method: "POST", cookie: manager.cookie,
+        body: { facilityId: facilities[0].id, type, category: type === "EMERGENCY" ? "EMERGENCY_INSTRUCTION" : "OPERATIONAL_INFORMATION",
+          announcementId: alert.id, zoneIds: [zones[0].id], idempotencyKey: randomUUID(),
+          ...(type === "EMERGENCY" ? { confirmation: "START EMERGENCY" } : {}) } });
+      assert.equal(started.status, 200, JSON.stringify(started.body));
+      const interrupted = await Promise.all([manifest(0), manifest(1), manifest(2)]);
+      assert.deepEqual(interrupted.map((response) => response.body.insertions[0]?.programmingSource),
+        [`CORRECTIONS_${type}`, "CORRECTIONS_CENTRAL", "CORRECTIONS_LOCAL"]);
+      const cleared = await api(`/api/corrections/overrides/${started.body.override.id}/clear`, { method: "POST", cookie: manager.cookie });
+      assert.equal(cleared.status, 200, JSON.stringify(cleared.body));
+      assert.equal((await manifest(0)).body.insertions[0]?.programmingSource, "CORRECTIONS_LOCAL",
+        "the current valid local window resumes after the facility override");
     }
     const facilityAMedia = new URL(during[0].body.insertions[0].mediaUrl, baseUrl);
     const facilityCMedia = new URL(during[2].body.insertions[0].mediaUrl, baseUrl);

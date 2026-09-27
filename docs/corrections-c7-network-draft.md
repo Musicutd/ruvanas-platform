@@ -16,6 +16,12 @@ finished Multi-Facility Network Operations release.
   its Studio render. No audio file is copied. Withdrawal preserves the row and
   its evidence, deactivates linked windows, cancels issued intents that have not
   expired, and raises an operational notification. Historical proof remains.
+  The private network resolver now keeps using that exact approved submission
+  if a newer programme revision is approved. The dashboard labels the older
+  distribution as having a new version available; it never silently swaps the
+  scheduled render. A withdrawn source, changed Guard policy, missing media or
+  revoked QC still fails closed. Ordinary Studio/C5 latest-revision rules are
+  unchanged.
 - Weekly central/local windows now require an exact, approved distribution;
   local windows must reference a version originating at the target facility.
   The private player can resolve them into the existing signed manifest and
@@ -36,9 +42,13 @@ finished Multi-Facility Network Operations release.
 - The dashboard now separates completed central/local programmes,
   rehabilitation, announcements and request delivery from STARTED, FAILED and
   INTERRUPTED events. Categories without a working runtime remain at zero;
-  these counters do not substitute for live distribution validation.
+  these counters do not substitute for live distribution validation. It also
+  labels degraded facilities and sums central/local delivered hours solely
+  from completed, signed player proofs.
 - C6 facility Emergency/Priority controls remain unchanged. There is no
-  authority-wide Emergency action.
+  authority-wide Emergency action. Disposable C7 CI exercises Priority and
+  Emergency over an active local window and verifies the current local source
+  is re-resolved after each clear; audible live validation is still required.
 
 ## Release blockers
 

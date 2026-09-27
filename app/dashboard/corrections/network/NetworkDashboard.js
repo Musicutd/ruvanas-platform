@@ -46,7 +46,7 @@ export default function NetworkDashboard() {
         <option value="">All facilities</option>{data.facilities.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
       </select></label>
       <section className={styles.metrics} aria-label="Network operations summary">
-        {[["Facilities", `${data.totals.activeFacilities} / ${data.totals.facilities}`], ["Secure areas", data.totals.zones],
+        {[["Facilities", `${data.totals.activeFacilities} / ${data.totals.facilities}`], ["Degraded facilities", data.totals.degradedFacilities], ["Secure areas", data.totals.zones],
           ["Players online", data.totals.onlinePlayers], ["Players offline", data.totals.offlinePlayers],
           ["Pending review", data.totals.pendingReviews], ["Completed player deliveries · 7d", data.totals.completedDeliveriesLast7Days],
           ["Failed player deliveries · 7d", data.totals.failedDeliveriesLast7Days],
@@ -54,6 +54,8 @@ export default function NetworkDashboard() {
           ["Rehabilitation delivered · 7d", `${(data.rehabilitationDeliveredSecondsLast7Days / 3600).toFixed(1)} h`],
           ["Central programme plays · 7d", data.deliveryMetricsLast7Days.centralProgramme],
           ["Local programme plays · 7d", data.deliveryMetricsLast7Days.localProgramme],
+          ["Central audio delivered · 7d", `${(data.deliveryMetricsLast7Days.centralDeliveredSeconds / 3600).toFixed(1)} h`],
+          ["Local audio delivered · 7d", `${(data.deliveryMetricsLast7Days.localDeliveredSeconds / 3600).toFixed(1)} h`],
           ["Central rehabilitation plays · 7d", data.deliveryMetricsLast7Days.centralRehabilitation],
           ["Local rehabilitation plays · 7d", data.deliveryMetricsLast7Days.localRehabilitation],
           ["Central announcement plays · 7d", data.deliveryMetricsLast7Days.centralAnnouncement],
@@ -67,7 +69,7 @@ export default function NetworkDashboard() {
       <section className={styles.grid}>
         <article className={styles.card}><span className={styles.eyebrow}>Shared, version-pinned audio</span><h2>Programme distribution</h2>
           <p>Each distribution records the exact reviewed submission. A facility-origin programme can be selected for that facility’s local window after central approval.</p>
-          <div className={styles.list}>{data.distributions.length ? data.distributions.map((item) => <div key={item.id} className={styles.row}><span>{item.programme.title} · revision {item.submission.revision}<small>{data.facilities.find((facility) => facility.id === item.targetFacilityId)?.name || "Other facility"} · {item.status}</small></span>
+          <div className={styles.list}>{data.distributions.length ? data.distributions.map((item) => <div key={item.id} className={styles.row}><span>{item.programme.title} · revision {item.submission.revision}<small>{data.facilities.find((facility) => facility.id === item.targetFacilityId)?.name || "Other facility"} · {item.versionState === "NEW_VERSION_AVAILABLE" ? "New revision available; pinned revision remains active" : item.versionState === "WITHDRAWN" ? "Withdrawn" : "Current"}</small></span>
             {item.status === "ACTIVE" && data.permissions.distribute && <button type="button" disabled={busy} onClick={() => submit(`/api/corrections/network/distribution/${item.id}`, "DELETE", null, "Distribution withdrawn. Historical proof remains intact.")}>Withdraw</button>}</div>) : <p>No central distributions for this view.</p>}</div>
           {data.permissions.distribute && <form onSubmit={(event) => { event.preventDefault(); submit("/api/corrections/network/distribution", "POST", distribution, "Exact approved version distributed for planning."); }}>
             <label>Approved source programme<select required value={distribution.programmeId} onChange={(event) => setDistribution({ ...distribution, programmeId: event.target.value })}><option value="">Choose programme</option>{data.programmes.map((item) => <option key={item.id} value={item.id}>{item.title} · revision {item.latestRevision}</option>)}</select></label>

@@ -98,6 +98,9 @@ test("the exact submitted version keeps only current approved project sources", 
     { mediaAssetId: "voice-1", status: "READY", trashedAt: null, mediaAsset: { status: "READY" }, promoVersion: null }
   ];
   assert.equal(correctionsStudioSourcesCurrent(ids, takes), true);
+  assert.equal(correctionsStudioSourcesCurrent(ids, [{ ...takes[0], promoVersion: { ...approved,
+    promoAsset: { ...approved.promoAsset, currentApprovedVersionId: "version-2" } } }, takes[1]],
+  { requireCurrentVersion: false }), true, "a private network distribution may retain a previously approved pinned source");
   assert.equal(correctionsStudioSourcesCurrent(ids, [{ ...takes[0], promoVersion: { ...approved, status: "SUPERSEDED" } }, takes[1]]), false);
   assert.equal(correctionsStudioSourcesCurrent(ids, [takes[0]]), false);
 });
