@@ -1,9 +1,9 @@
-# C7 Inside Network: draft foundation and release stop
+# C7 Inside Network: release-validation record
 
-The C7.3B software gates are implemented and pass disposable CI. This draft
-branch is **not release-ready** until the separate three-player live and
-human-audible validation passes. It must not be merged or deployed as the
-finished Multi-Facility Network Operations release yet.
+The C7 software gates and isolated three-player live validation passed on
+2026-09-27. This is acceptance of the code foundation, **not** permission to
+deploy Ruvanas Inside to production. Production Render Auto-Deploy remains Off;
+no production migration or deployment is part of this release gate.
 
 ## Architecture used
 
@@ -32,9 +32,9 @@ finished Multi-Facility Network Operations release yet.
   explicitly approved private fallback programme. An invalid candidate falls
   through only to the next eligible private source; recipient facility policy,
   central policy, rights, exact approval and media are checked at runtime.
-  Disposable CI checks the private manifest, protected synthetic-tone media
-  fetch and signed proof for three facilities. This is **not yet real-player or
-  audible live validated**. The fallback is an approved, version-pinned
+  Disposable CI and three actual browser players checked the private manifest,
+  protected synthetic-tone media fetch, signed proof and audible isolation.
+  The fallback is an approved, version-pinned
   programme, not a general private AutoDJ music rotation or public AutoDJ.
 - Central rehabilitation and STANDARD announcements pin approved C5/C6 audio
   and target all facilities, selected facilities or Location Groups. Private
@@ -51,7 +51,9 @@ finished Multi-Facility Network Operations release yet.
   The C7 export now offers date, facility/group, central/local, content type,
   exact programme/rehabilitation/announcement and delivery-status filters. Each
   bounded CSV row retains its source proof event, exact playout intent and
-  source revision rather than only a grouped count. This is device delivery
+  source revision rather than only a grouped count. Group-targeted distributions
+  also preserve the group ID and name at distribution time, so later changes to
+  group membership or name cannot rewrite historical proof. This is device delivery
   evidence, not individual listening. Disposable CI validates the generated
   CSV against seeded, signed player proof.
 - The dashboard now separates completed central/local/fallback programmes,
@@ -62,10 +64,12 @@ finished Multi-Facility Network Operations release yet.
   from completed, signed player proofs.
 - C6 facility Emergency/Priority controls remain unchanged. There is no
   authority-wide Emergency action. Disposable C7 CI exercises Priority and
-  Emergency over an active local window and verifies the current local source
-  is re-resolved after each clear; audible live validation is still required.
+  Emergency over active private programming and verifies the current valid
+  source is re-resolved after each clear. Three browser players and a human
+  listener confirmed Priority interrupted only A and returned to Local A;
+  Emergency interrupted only A and returned to the current Central fallback.
 
-## C7.3B implementation stop gate
+## Final isolated release evidence
 
 | Software gate | Status | Evidence |
 | --- | --- | --- |
@@ -80,18 +84,23 @@ finished Multi-Facility Network Operations release yet.
 | Tier enforcement | COMPLETE/PASS | Tier 4 access and Tier 3 denial tested at route level. |
 | Security isolation | COMPLETE/PASS | Raw IDs, cross-facility content, unauthorised roles and public exchange denied. |
 | C6 precedence | COMPLETE/PASS | Priority/Emergency interruption and return to current source tested by route. |
+| Three real browser players | COMPLETE/PASS | A/B/C played distinct synthetic WAVs concurrently; a human listener confirmed the key central/local/return transitions. |
+| Facility group | COMPLETE/PASS | Group North reached A+B, not C; player proof and CSV tie the exact group to A/B's approved version. |
+| Offline player | COMPLETE/PASS | B disconnected, had no delivery proof for the expiring item, and rejoined on the current fallback without replay. |
+| C6 audible precedence | COMPLETE/PASS | Human listener confirmed Priority and Emergency interruption and return; interrupted intents had no false completion. |
 
 The fallback here is a separately approved, version-pinned private programme,
 not a general AutoDJ music rotation. No public AutoDJ content can enter Inside.
 
-## Remaining release blocker
-
-Run the isolated three-actual-player central→local→central test across A, B and
-C. Include central rehabilitation, STANDARD announcement, private syndication,
-group targeting, withdrawal/fallback, facility/central policy, offline player,
-and C6 Priority/Emergency return. Human listening must confirm the audible
-transitions; synthetic media fetch and proof records alone cannot do that.
-Until then PR #216 remains Draft and is not merge- or production-launch-ready.
+The synthetic lab used a disposable local PostgreSQL database and three
+separate browser player sessions. A human listener confirmed central/local
+switching, concurrent facility isolation, rehabilitation and announcement
+targeting, syndication, group distribution, private fallback, and C6 Priority
+and Emergency return. Signed STARTED/COMPLETED/INTERRUPTED proof and the bounded
+CSV were correlated with those observations. Failed or offline playback was
+not counted as delivered. The focused C7 integration test, full unit suite,
+static checks, Prisma generation/migration and production-style build passed.
+GitHub CI and the final PR merge decision remain separate checks.
 
 The existing production Render service must retain Auto-Deploy OFF. C8 and
 Secure Edge are out of scope for this branch.
