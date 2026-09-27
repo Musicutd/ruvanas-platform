@@ -1,7 +1,9 @@
 # C7 Inside Network: draft foundation and release stop
 
-This branch is **not C7-complete**. It must not be merged or deployed as the
-finished Multi-Facility Network Operations release.
+The C7.3B software gates are implemented and pass disposable CI. This draft
+branch is **not release-ready** until the separate three-player live and
+human-audible validation passes. It must not be merged or deployed as the
+finished Multi-Facility Network Operations release yet.
 
 ## Architecture used
 
@@ -50,8 +52,8 @@ finished Multi-Facility Network Operations release.
   exact programme/rehabilitation/announcement and delivery-status filters. Each
   bounded CSV row retains its source proof event, exact playout intent and
   source revision rather than only a grouped count. This is device delivery
-  evidence, not individual listening. Disposable CI must still validate the
-  generated file against actual seeded proof before the report gate can pass.
+  evidence, not individual listening. Disposable CI validates the generated
+  CSV against seeded, signed player proof.
 - The dashboard now separates completed central/local/fallback programmes,
   rehabilitation, announcements and request delivery from STARTED, FAILED and
   INTERRUPTED events. Categories without a working runtime remain at zero;
@@ -63,29 +65,33 @@ finished Multi-Facility Network Operations release.
   Emergency over an active local window and verifies the current local source
   is re-resolved after each clear; audible live validation is still required.
 
-## Release blockers
+## C7.3B implementation stop gate
 
-1. Run an actual isolated three-player central→local→central test, including
-   C6 interruption, source withdrawal and offline devices. CI now verifies
-   protected synthetic audio delivery, signed proof and withdrawal evidence,
-   but not audible player transitions, gap-free return or offline recovery.
-2. Verify the approved private programme fallback, operational alert,
-   signed proof, withdrawal and report classification in disposable CI. A
-   broader private AutoDJ rotation, if later required, needs a separate rights,
-   policy and proof design; public AutoDJ must not be enabled for Inside.
-3. Verify private syndication, centrally targeted announcements and
-   rehabilitation assignment in disposable CI. Do not expose contributor or
-   family-request details across facilities.
-4. Verify the expanded tenant-scoped, proof-level network export against seeded
-   player proof in disposable CI and run a privacy/security review. The report
-   work alone does not complete network analytics or the live release gate.
-5. Run a disposable non-production database and browser/player E2E across a
-   Tier 4 authority and three facilities, including group targeting, policy
-   restrictions, central→local→central return, withdrawal and safe fallback.
-   The pure window test is not a substitute for this E2E.
-6. Validate the migration on the disposable database and rerun C1–C6,
-   Studio, player, product and Super Admin regression checks before requesting
-   review. Production migrations and deployment remain prohibited.
+| Software gate | Status | Evidence |
+| --- | --- | --- |
+| Central/local runtime wiring | COMPLETE/PASS | Three synthetic facilities use private manifests and signed proof. |
+| Central rehabilitation | COMPLETE/PASS | C5 approved audio, targeted distribution, withdrawal and evidence tested. |
+| Central announcements | COMPLETE/PASS | STANDARD C6 audio is version-pinned and scheduled without an override. |
+| Private syndication | COMPLETE/PASS | Facility origin, separate central acceptance, isolation and withdrawal tested. |
+| Withdrawal/fallback | COMPLETE/PASS | Stale intents are cancelled; approved private fallback or no-source alert resolves. |
+| Network analytics | COMPLETE/PASS | Delivery counts and hours derive from completed signed player proof. |
+| Report export | COMPLETE/PASS | Bounded tenant-scoped CSV filters and exact historical proof/version tested. |
+| Policy inheritance | COMPLETE/PASS | Authority and recipient facility restrictions are rechecked at runtime. |
+| Tier enforcement | COMPLETE/PASS | Tier 4 access and Tier 3 denial tested at route level. |
+| Security isolation | COMPLETE/PASS | Raw IDs, cross-facility content, unauthorised roles and public exchange denied. |
+| C6 precedence | COMPLETE/PASS | Priority/Emergency interruption and return to current source tested by route. |
+
+The fallback here is a separately approved, version-pinned private programme,
+not a general AutoDJ music rotation. No public AutoDJ content can enter Inside.
+
+## Remaining release blocker
+
+Run the isolated three-actual-player central→local→central test across A, B and
+C. Include central rehabilitation, STANDARD announcement, private syndication,
+group targeting, withdrawal/fallback, facility/central policy, offline player,
+and C6 Priority/Emergency return. Human listening must confirm the audible
+transitions; synthetic media fetch and proof records alone cannot do that.
+Until then PR #216 remains Draft and is not merge- or production-launch-ready.
 
 The existing production Render service must retain Auto-Deploy OFF. C8 and
 Secure Edge are out of scope for this branch.
