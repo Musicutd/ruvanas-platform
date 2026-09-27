@@ -146,7 +146,7 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
         sessionTokenHash: hashPlayerToken(token, process.env.SESSION_SECRET), enrolledAt: new Date(), lastHeartbeatAt: new Date() } });
       return { player, cookie: `ruvanas_player=${token}`, instanceId: randomUUID() };
     }));
-    async function approvedProgramme(facilityIndex, label, frequency) {
+    async function approvedProgramme(facilityIndex, label, frequency, createdByUserId = owner.user.id) {
       const audio = syntheticWav(frequency);
       const storageKey = `c7-test/${suffix}/${label}.wav`;
       mediaObjects.set(storageKey, audio);
@@ -170,7 +170,7 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
         outputMediaAsset: true, outputPromoVersion: true, version: { select: { state: true } },
         project: { select: { organisationId: true, createdByUserId: true, currentVersion: true, title: true } } } }));
       const programme = await db.correctionsProgramme.create({ data: { organisationId: authority.id, facilityId: facilities[facilityIndex].id,
-        title: label, createdByUserId: owner.user.id, status: "APPROVED", latestRevision: 1 } });
+        title: label, createdByUserId, status: "APPROVED", latestRevision: 1 } });
       const submission = await db.correctionsSubmission.create({ data: { programmeId: programme.id, organisationId: authority.id,
         facilityId: facilities[facilityIndex].id, revision: 1, renderId: render.id, sourceFingerprint: evidence.fingerprint,
         organisationPolicyVersion: 1, facilityPolicyVersion: 1, titleSnapshot: label, evidenceSnapshot: evidence,
@@ -420,6 +420,9 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
     assert.equal((await api("/api/corrections/network/audio-distribution", { method: "POST", cookie: manager.cookie,
       body: { kind: "REHABILITATION", contentId: rehab.id, allFacilities: true, territoryCode: "MT", rightsConfirmed: true } })).status, 403);
     const rehabIds = Object.fromEntries(rehabDistribution.body.targetFacilityIds.map((id, index) => [id, rehabDistribution.body.distributionIds[index]]));
+    assert.equal((await api(`/api/corrections/network/audio-distribution/${rehabIds[facilities[1].id]}`,
+      { method: "DELETE", cookie: manager.cookie })).status, 403,
+      "facility A staff cannot withdraw the central distribution assigned to facility B");
     assert.equal((await api("/api/corrections/network/windows", { method: "POST", cookie: owner.cookie,
       body: { facilityId: facilities[2].id, kind: "CENTRAL", audioDistributionId: rehabIds[facilities[0].id],
         weekday, startMinute: 0, endMinute: 1440, mandatory: true, allowedContentTypes: ["REHABILITATION"] } })).status, 409);
@@ -433,6 +436,8 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
     await audioWindow(0, rehabIds[facilities[0].id], "REHABILITATION");
     await audioWindow(1, rehabIds[facilities[1].id], "REHABILITATION");
     const rehabManifests = await Promise.all([manifest(0), manifest(1), manifest(2)]);
+    for (const response of rehabManifests) assert.equal(response.status, 200, JSON.stringify(response.body));
+    for (const response of rehabManifests) assert.ok(Array.isArray(response.body.insertions), JSON.stringify(response.body));
     assert.deepEqual(rehabManifests.map((response) => response.body.insertions[0]?.programmingSource),
       ["CORRECTIONS_CENTRAL_REHAB", "CORRECTIONS_CENTRAL_REHAB", "CORRECTIONS_CENTRAL"]);
     const rehabInsertion = rehabManifests[0].body.insertions[0];
@@ -479,6 +484,8 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
     await audioWindow(0, announcementIds[facilities[0].id], "ANNOUNCEMENT");
     await audioWindow(1, announcementIds[facilities[1].id], "ANNOUNCEMENT");
     const announcementManifests = await Promise.all([manifest(0), manifest(1), manifest(2)]);
+    for (const response of announcementManifests) assert.equal(response.status, 200, JSON.stringify(response.body));
+    for (const response of announcementManifests) assert.ok(Array.isArray(response.body.insertions), JSON.stringify(response.body));
     assert.deepEqual(announcementManifests.map((response) => response.body.insertions[0]?.programmingSource),
       ["CORRECTIONS_CENTRAL_ANNOUNCE", "CORRECTIONS_CENTRAL_ANNOUNCE", "CORRECTIONS_CENTRAL"]);
     const announcementInsertion = announcementManifests[1].body.insertions[0];
@@ -516,6 +523,55 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
     assert.equal((await manifest(0)).body.insertions[0]?.programmingSource, "CORRECTIONS_CENTRAL");
     assert.equal((await manifest(1)).body.insertions[0]?.programmingSource, "CORRECTIONS_CENTRAL");
 
+    const facilityOfferProgramme = await approvedProgramme(0, "Facility-made syndicated programme", 990, manager.user.id);
+    assert.equal((await api("/api/corrections/network/distribution", { method: "POST", cookie: owner.cookie,
+      body: { programmeId: facilityOfferProgramme.id, facilityIds: [facilities[1].id] } })).status, 409,
+      "a raw facility programme ID cannot bypass central syndication acceptance");
+    assert.equal((await api("/api/corrections/network/syndication", { method: "POST", cookie: contributor.cookie,
+      body: { programmeId: facilityOfferProgramme.id } })).status, 403);
+    const offered = await api("/api/corrections/network/syndication", { method: "POST", cookie: manager.cookie,
+      body: { programmeId: facilityOfferProgramme.id } });
+    assert.equal(offered.status, 201, JSON.stringify(offered.body));
+    assert.equal((await api(`/api/corrections/network/syndication/${offered.body.id}`, { method: "PATCH",
+      cookie: manager.cookie, body: { decision: "ACCEPTED" } })).status, 403,
+      "the offering facility staff cannot accept its own offer");
+    assert.equal((await api(`/api/corrections/network/syndication/${offered.body.id}`, { method: "PATCH",
+      cookie: owner.cookie, body: { decision: "ACCEPTED" } })).status, 200);
+    const syndicated = await api("/api/corrections/network/distribution", { method: "POST", cookie: owner.cookie,
+      body: { programmeId: facilityOfferProgramme.id, syndicationOfferId: offered.body.id,
+        facilityIds: [facilities[1].id] } });
+    assert.equal(syndicated.status, 201, JSON.stringify(syndicated.body));
+    const syndicatedWindow = await api("/api/corrections/network/windows", { method: "POST", cookie: owner.cookie,
+      body: { facilityId: facilities[1].id, kind: "CENTRAL", distributionId: syndicated.body.distributionIds[0],
+        weekday, startMinute: 0, endMinute: 1440, mandatory: true, allowedContentTypes: ["PROGRAMME"] } });
+    assert.equal(syndicatedWindow.status, 201, JSON.stringify(syndicatedWindow.body));
+    const syndicationManifest = await manifest(1);
+    assert.equal(syndicationManifest.status, 200, JSON.stringify(syndicationManifest.body));
+    assert.equal(syndicationManifest.body.insertions[0]?.programmingSource, "CORRECTIONS_SYNDICATED");
+    assert.equal((await manifest(2)).body.insertions[0]?.programmingSource, "CORRECTIONS_CENTRAL",
+      "an unselected facility never receives private syndication");
+    const syndicatedItem = syndicationManifest.body.insertions[0];
+    const syndicatedProof = await api("/api/player/proof-of-play", { method: "POST", cookie: players[1].cookie,
+      instanceId: players[1].instanceId, body: { events: [{ eventId: randomUUID(), manifestVersion: syndicationManifest.body.version,
+        proofToken: syndicatedItem.proofToken, programmingSourceProofToken: syndicatedItem.programmingSourceProofToken,
+        scheduleItemId: syndicatedItem.scheduleItemId, itemType: "CORRECTIONS_AUDIO", programmingSource: "CORRECTIONS_SYNDICATED",
+        eventType: "COMPLETED", occurredAt: new Date().toISOString(), positionSeconds: 30 }] } });
+    assert.equal(syndicatedProof.status, 200, JSON.stringify(syndicatedProof.body));
+    assert.equal(syndicatedProof.body.accepted, 1);
+    assert.equal((await api("/api/corrections/network", { cookie: owner.cookie })).body.deliveryMetricsLast7Days.syndicatedProgramme, 1);
+    const syndicationCsv = await fetch(`${baseUrl}/api/corrections/network/report/export?classification=SYNDICATED&kind=PROGRAMME`,
+      { headers: { cookie: owner.cookie } });
+    assert.equal(syndicationCsv.status, 200);
+    assert.match(await syndicationCsv.text(), /SYNDICATED,PROGRAMME,CORRECTIONS_SYNDICATED,COMPLETED/);
+    const withdrawnOffer = await api(`/api/corrections/network/syndication/${offered.body.id}`, { method: "PATCH",
+      cookie: owner.cookie, body: { decision: "WITHDRAWN" } });
+    assert.equal(withdrawnOffer.status, 200, JSON.stringify(withdrawnOffer.body));
+    assert.equal((await manifest(1)).body.insertions[0]?.programmingSource, "CORRECTIONS_CENTRAL",
+      "withdrawing an accepted offer cancels future private playback and returns to central default");
+    assert.match(await (await fetch(`${baseUrl}/api/corrections/network/report/export?classification=SYNDICATED`,
+      { headers: { cookie: owner.cookie } })).text(), /CORRECTIONS_SYNDICATED,COMPLETED/,
+      "historical evidence survives syndication withdrawal");
+
     await db.player.update({ where: { id: players[1].player.id }, data: { status: "OFFLINE", lastHeartbeatAt: new Date(Date.now() - 180_000) } });
     const degraded = await api("/api/corrections/network", { cookie: owner.cookie });
     assert.equal(degraded.status, 200);
@@ -527,6 +583,9 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
     assert.equal((await api("/api/corrections/network", { cookie: owner.cookie })).status, 403);
     assert.equal((await api("/api/corrections/network/audio-distribution", { method: "POST", cookie: owner.cookie,
       body: { kind: "REHABILITATION", contentId: rehab.id, allFacilities: true, territoryCode: "MT", rightsConfirmed: true } })).status, 403);
+    assert.equal((await api("/api/corrections/network/syndication", { cookie: owner.cookie })).status, 403);
+    assert.equal((await api("/api/corrections/network/syndication", { method: "POST", cookie: manager.cookie,
+      body: { programmeId: facilityOfferProgramme.id } })).status, 403);
     assert.equal((await fetch(`${baseUrl}/api/corrections/network/report/export`, { headers: { cookie: owner.cookie } })).status, 403);
     assert.equal((await api("/api/corrections/network", { cookie: manager.cookie })).status, 403);
   } finally {
@@ -539,6 +598,7 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
       await db.correctionsNetworkWindow.deleteMany({ where: { organisationId: authority.id } });
       await db.correctionsNetworkAudioDistribution.deleteMany({ where: { organisationId: authority.id } });
       await db.correctionsProgrammeDistribution.deleteMany({ where: { organisationId: authority.id } });
+      await db.correctionsSyndicationOffer.deleteMany({ where: { organisationId: authority.id } });
       await db.correctionsAnnouncement.deleteMany({ where: { organisationId: authority.id } });
       await db.correctionsRehabProgrammeItem.deleteMany({ where: { programme: { organisationId: authority.id } } });
       await db.correctionsRehabContent.deleteMany({ where: { organisationId: authority.id } });

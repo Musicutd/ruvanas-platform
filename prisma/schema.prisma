@@ -1939,6 +1939,7 @@ model Organisation {
   correctionsNetworkWindows            CorrectionsNetworkWindow[]
   correctionsDistributions             CorrectionsProgrammeDistribution[]
   correctionsNetworkAudioDistributions CorrectionsNetworkAudioDistribution[]
+  correctionsSyndicationOffers CorrectionsSyndicationOffer[]
   schoolSafeguardingReadiness        SchoolSafeguardingReadiness?
   schoolSafeguardingReviews          SchoolSafeguardingReview[]
   schoolRetentionHolds               SchoolRetentionHold[]
@@ -2767,6 +2768,7 @@ model Location {
   correctionsDistributionSources CorrectionsProgrammeDistribution[] @relation("CorrectionsDistributionSource")
   correctionsAudioDistributionTargets CorrectionsNetworkAudioDistribution[] @relation("CorrectionsAudioDistributionTarget")
   correctionsAudioDistributionSources CorrectionsNetworkAudioDistribution[] @relation("CorrectionsAudioDistributionSource")
+  correctionsSyndicationSources CorrectionsSyndicationOffer[]
 
   @@unique([organisationId, slug])
   @@index([organisationId])
@@ -2925,6 +2927,7 @@ model CorrectionsProgramme {
   rehabItems CorrectionsRehabProgrammeItem[]
   playoutIntents PlayoutIntent[]
   networkDistributions CorrectionsProgrammeDistribution[]
+  syndicationOffers CorrectionsSyndicationOffer[]
 
   @@index([organisationId, facilityId, status])
   @@index([facilityId, updatedAt])
@@ -2959,6 +2962,7 @@ model CorrectionsSubmission {
   playoutIntents PlayoutIntent[]
   contributor CorrectionsContributor? @relation(fields: [contributorId], references: [id], onDelete: Restrict)
   networkDistributions CorrectionsProgrammeDistribution[]
+  syndicationOffers CorrectionsSyndicationOffer[]
   studioSession CorrectionsStudioSession? @relation(fields: [studioSessionId], references: [id], onDelete: Restrict)
   studioProject AudioProject? @relation("CorrectionsSubmittedProject", fields: [studioProjectId], references: [id], onDelete: Restrict)
   studioVersion AudioProjectVersion? @relation("CorrectionsSubmittedVersion", fields: [studioVersionId], references: [id], onDelete: Restrict)
@@ -3168,6 +3172,7 @@ model CorrectionsProgrammeDistribution {
   effectiveUntil     DateTime?
   createdByUserId    String
   withdrawnAt        DateTime?
+  syndicationOfferId String?
   createdAt          DateTime @default(now())
 
   organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
@@ -3175,10 +3180,36 @@ model CorrectionsProgrammeDistribution {
   targetFacility Location @relation("CorrectionsDistributionTarget", fields: [targetFacilityId], references: [id], onDelete: Restrict)
   programme CorrectionsProgramme @relation(fields: [programmeId], references: [id], onDelete: Restrict)
   submission CorrectionsSubmission @relation(fields: [submissionId], references: [id], onDelete: Restrict)
+  syndicationOffer CorrectionsSyndicationOffer? @relation(fields: [syndicationOfferId], references: [id], onDelete: Restrict)
   windows CorrectionsNetworkWindow[]
 
   @@unique([submissionId, targetFacilityId])
   @@index([organisationId, targetFacilityId, status])
+  @@index([syndicationOfferId])
+}
+
+// A facility-made exact approved submission requires a separate central
+// acceptance before it can enter the private cross-facility network.
+model CorrectionsSyndicationOffer {
+  id               String @id @default(cuid())
+  organisationId   String
+  sourceFacilityId String
+  programmeId      String
+  submissionId     String @unique
+  status           String @default("OFFERED")
+  offeredByUserId  String
+  acceptedByUserId String?
+  offeredAt        DateTime @default(now())
+  acceptedAt       DateTime?
+  withdrawnAt      DateTime?
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  sourceFacility Location @relation(fields: [sourceFacilityId], references: [id], onDelete: Restrict)
+  programme CorrectionsProgramme @relation(fields: [programmeId], references: [id], onDelete: Restrict)
+  submission CorrectionsSubmission @relation(fields: [submissionId], references: [id], onDelete: Restrict)
+  distributions CorrectionsProgrammeDistribution[]
+
+  @@index([organisationId, status])
+  @@index([sourceFacilityId, status])
 }
 
 // A published announcement pins a single approved audio version. Editing
