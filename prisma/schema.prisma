@@ -3136,6 +3136,8 @@ model CorrectionsNetworkAudioDistribution {
   organisationId       String
   sourceFacilityId     String?
   targetFacilityId     String
+  targetGroupId        String?
+  targetGroupName      String?
   kind                 String
   rehabilitationId     String?
   announcementId       String?
@@ -3172,6 +3174,8 @@ model CorrectionsProgrammeDistribution {
   organisationId     String
   sourceFacilityId   String
   targetFacilityId   String
+  targetGroupId      String?
+  targetGroupName    String?
   programmeId        String
   submissionId       String
   status             CorrectionsDistributionStatus @default(ACTIVE)

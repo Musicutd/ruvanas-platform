@@ -46,9 +46,11 @@ async function api(path, { method = "GET", body, cookie, instanceId } = {}) {
 
 test("C7 network routes require current Tier 4 and explicit cross-facility authority", async () => {
   const databaseUrl = process.env.DATABASE_URL || "";
-  if (process.env.GITHUB_ACTIONS !== "true" || databaseUrl !== "postgresql://postgres:postgres@localhost:5432/ruvanas" ||
-      !process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 32) {
-    throw new Error("C7 integration runs only against the isolated GitHub Actions test database.");
+  const ciDatabase = process.env.GITHUB_ACTIONS === "true" && databaseUrl === "postgresql://postgres:postgres@localhost:5432/ruvanas";
+  const disposableLocalDatabase = process.env.C7_LOCAL_INTEGRATION === "true" &&
+    databaseUrl === "postgresql://c7lab@127.0.0.1:5547/ruvanas_c7_live";
+  if ((!ciDatabase && !disposableLocalDatabase) || !process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 32) {
+    throw new Error("C7 integration runs only against the isolated CI or exact disposable local test database.");
   }
   const db = new PrismaClient();
   const mediaObjects = new Map();
@@ -117,7 +119,7 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
     assert.equal(ownerNetwork.body.permissions.distribute, true);
     const emptyReport = await fetch(`${baseUrl}/api/corrections/network/report/export`, { headers: { cookie: owner.cookie } });
     assert.equal(emptyReport.status, 200);
-    assert.match(await emptyReport.text(), /^occurredAt,facility,facilityId,classification,kind,source,status,proofEventId,playoutIntentId,sourceRevision,programmeId,submissionId,rehabilitationId,announcementId\r\n$/);
+    assert.match(await emptyReport.text(), /^occurredAt,facility,facilityId,facilityGroup,facilityGroupId,classification,kind,source,status,proofEventId,playoutIntentId,sourceRevision,programmeId,submissionId,rehabilitationId,announcementId\r\n$/);
     assert.equal((await fetch(`${baseUrl}/api/corrections/network/report/export`, { headers: { cookie: contributor.cookie } })).status, 403);
     assert.equal((await fetch(`${baseUrl}/api/corrections/network/report/export?facilityId=${foreign.id}`, { headers: { cookie: owner.cookie } })).status, 404);
     assert.equal((await api("/api/corrections/network", { cookie: manager.cookie })).status, 403);
@@ -204,6 +206,10 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
     assert.equal(groupDistribution.status, 201, JSON.stringify(groupDistribution.body));
     assert.deepEqual(groupDistribution.body.targetFacilityIds, [facilities[0].id, facilities[1].id].sort(),
       "a group distribution must not silently reach facility C");
+    assert.deepEqual(await db.correctionsProgrammeDistribution.findMany({ where: { programmeId: grouped.id },
+      select: { targetGroupId: true, targetGroupName: true }, orderBy: { targetFacilityId: "asc" } }),
+    [{ targetGroupId: group.id, targetGroupName: group.name }, { targetGroupId: group.id, targetGroupName: group.name }],
+    "the exact group targeting choice is preserved for historical proof reports");
     assert.equal((await db.correctionsProgrammeDistribution.count({ where: { programmeId: grouped.id,
       targetFacilityId: facilities[2].id } })), 0);
     assert.equal((await api("/api/corrections/network/windows", { method: "POST", cookie: owner.cookie,
@@ -433,6 +439,9 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
       body: { kind: "REHABILITATION", contentId: rehab.id, groupId: group.id, territoryCode: "MT", rightsConfirmed: true } });
     assert.equal(rehabDistribution.status, 201, JSON.stringify(rehabDistribution.body));
     assert.deepEqual(rehabDistribution.body.targetFacilityIds, [facilities[0].id, facilities[1].id].sort());
+    assert.deepEqual(await db.correctionsNetworkAudioDistribution.findMany({ where: { rehabilitationId: rehab.id },
+      select: { targetGroupId: true, targetGroupName: true }, orderBy: { targetFacilityId: "asc" } }),
+    [{ targetGroupId: group.id, targetGroupName: group.name }, { targetGroupId: group.id, targetGroupName: group.name }]);
     assert.equal((await api("/api/corrections/network/audio-distribution", { method: "POST", cookie: manager.cookie,
       body: { kind: "REHABILITATION", contentId: rehab.id, allFacilities: true, territoryCode: "MT", rightsConfirmed: true } })).status, 403);
     const rehabIds = Object.fromEntries(rehabDistribution.body.targetFacilityIds.map((id, index) => [id, rehabDistribution.body.distributionIds[index]]));
@@ -472,7 +481,17 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
     const rehabCsv = await fetch(`${baseUrl}/api/corrections/network/report/export?groupId=${group.id}&kind=REHABILITATION&source=CORRECTIONS_CENTRAL_REHAB`,
       { headers: { cookie: owner.cookie } });
     assert.equal(rehabCsv.status, 200);
-    assert.match(await rehabCsv.text(), /CENTRAL,REHABILITATION,CORRECTIONS_CENTRAL_REHAB,COMPLETED/);
+    const rehabCsvText = await rehabCsv.text();
+    assert.match(rehabCsvText, /CENTRAL,REHABILITATION,CORRECTIONS_CENTRAL_REHAB,COMPLETED/);
+    assert.ok(rehabCsvText.includes(`Northern facilities,${group.id},CENTRAL,REHABILITATION`),
+      "export attributes signed rehabilitation proof to its historical target group");
+    await db.locationGroup.update({ where: { id: group.id }, data: { name: "Renamed northern group" } });
+    const historicalGroupCsv = await fetch(`${baseUrl}/api/corrections/network/report/export?groupId=${group.id}&kind=REHABILITATION`,
+      { headers: { cookie: owner.cookie } });
+    assert.equal(historicalGroupCsv.status, 200);
+    assert.ok((await historicalGroupCsv.text()).includes(`Northern facilities,${group.id},CENTRAL,REHABILITATION`),
+      "renaming a facility group cannot rewrite the group name attached to historical delivery proof");
+    await db.locationGroup.update({ where: { id: group.id }, data: { name: "Northern facilities" } });
     const withdrawnRehab = await api(`/api/corrections/network/audio-distribution/${rehabIds[facilities[0].id]}`,
       { method: "DELETE", cookie: owner.cookie });
     assert.equal(withdrawnRehab.status, 200, JSON.stringify(withdrawnRehab.body));
@@ -520,7 +539,10 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
     const announcementCsv = await fetch(`${baseUrl}/api/corrections/network/report/export?groupId=${group.id}&kind=ANNOUNCEMENT&source=CORRECTIONS_CENTRAL_ANNOUNCE`,
       { headers: { cookie: owner.cookie } });
     assert.equal(announcementCsv.status, 200);
-    assert.match(await announcementCsv.text(), /CENTRAL,ANNOUNCEMENT,CORRECTIONS_CENTRAL_ANNOUNCE,COMPLETED/);
+    const announcementCsvText = await announcementCsv.text();
+    assert.match(announcementCsvText, /CENTRAL,ANNOUNCEMENT,CORRECTIONS_CENTRAL_ANNOUNCE,COMPLETED/);
+    assert.ok(announcementCsvText.includes(`Northern facilities,${group.id},CENTRAL,ANNOUNCEMENT`),
+      "export attributes signed standard-announcement proof to its historical target group");
     await db.correctionsFacility.update({ where: { locationId: facilities[0].id }, data: {
       blockedTrackIds: [announcementRender.outputMediaAssetId] } });
     assert.equal((await manifest(0)).body.insertions[0]?.programmingSource, "CORRECTIONS_CENTRAL",

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { correctionsNetworkPermission, normalizeCorrectionsNetworkWindow, correctionsWindowConflict, resolveCorrectionsNetworkWindow, rankCorrectionsNetworkWindows, resolveCorrectionsDistributionTargets } from "../lib/corrections-network-policy.mjs";
 import { correctionsPolicyEligibility } from "../lib/corrections-policy.mjs";
 import { correctionsNetworkSourcePolicy } from "../lib/corrections-network-source-policy.mjs";
-import { normaliseCorrectionsNetworkReportFilters, correctionsNetworkReportCsv } from "../lib/corrections-network-report.mjs";
+import { correctionsNetworkDistributionReference, normaliseCorrectionsNetworkReportFilters, correctionsNetworkReportCsv } from "../lib/corrections-network-report.mjs";
 
 const scope = { tier: 4, correctionsEnabled: true, organisationId: "authority", memberId: "member" };
 const grant = { organisationId: "authority", organisationMemberId: "member", canView: true, canManage: true, canProgramme: true, canDistribute: true, canReport: true };
@@ -95,6 +95,11 @@ test("three facility plans isolate local windows and resume the central plan", (
 });
 
 test("network export filters are bounded and CSV cannot inject formulas or private details", () => {
+  assert.deepEqual(correctionsNetworkDistributionReference("c7:window-1:distribution-2:revision-3"),
+    { type: "programme", id: "distribution-2" });
+  assert.deepEqual(correctionsNetworkDistributionReference("c7a:window-1:audio-2:fingerprint-3"),
+    { type: "audio", id: "audio-2" });
+  assert.equal(correctionsNetworkDistributionReference("c6:window-1:distribution-2:revision-3"), null);
   const filters = normaliseCorrectionsNetworkReportFilters({ from: "2026-09-01", to: "2026-09-07", groupId: "north", source: "CORRECTIONS_LOCAL", status: "COMPLETED" });
   assert.equal(filters.groupId, "north");
   assert.equal(filters.until.toISOString(), "2026-09-08T00:00:00.000Z");
@@ -106,10 +111,13 @@ test("network export filters are bounded and CSV cannot inject formulas or priva
   assert.throws(() => normaliseCorrectionsNetworkReportFilters({ kind: "REQUEST", programmeId: "programme-a" }));
   assert.throws(() => normaliseCorrectionsNetworkReportFilters({ rehabilitationId: "bad,name" }));
   const csv = correctionsNetworkReportCsv([{ occurredAt: "2026-09-07T10:00:00.000Z", facility: "=private", facilityId: "a",
+    facilityGroup: "=North", facilityGroupId: "north",
     classification: "LOCAL", kind: "PROGRAMME", source: "CORRECTIONS_LOCAL", status: "COMPLETED",
     proofEventId: "proof-a", playoutIntentId: "intent-a", sourceRevision: "c7:version-a",
     programmeId: "programme-a", submissionId: "submission-a" }]);
   assert.match(csv, /'=private/);
+  assert.match(csv, /facilityGroup,facilityGroupId/);
+  assert.match(csv, /'=North,north,LOCAL/);
   assert.match(csv, /proof-a,intent-a,c7:version-a,programme-a,submission-a/);
   assert.doesNotMatch(csv, /contributor|family|requestBody/i);
 });
