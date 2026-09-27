@@ -45,3 +45,18 @@ test("transaction retry does not hide unrelated database failures", async () => 
   );
   assert.equal(isRetryableTransactionError(failure), false);
 });
+
+test("a contested transaction can use a bounded retry budget", async () => {
+  let attempts = 0;
+  const database = {
+    async $transaction(operation) {
+      attempts += 1;
+      if (attempts < 5) throw Object.assign(new Error("serialization conflict"), { code: "P2034" });
+      return operation({ ok: true });
+    }
+  };
+  const result = await runSerializableTransaction(database, async (tx) => tx.ok,
+    { maxAttempts: 5, retryDelayMs: 1 });
+  assert.equal(result, true);
+  assert.equal(attempts, 5);
+});
