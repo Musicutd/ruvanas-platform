@@ -1,10 +1,15 @@
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { createPrivateKey, createPublicKey, randomUUID } from "node:crypto";
 import test from "node:test";
 import bcrypt from "bcryptjs";
 import { PrismaClient } from "@prisma/client";
+import { verifyEdgeManifest } from "../../lib/corrections-edge-manifest.mjs";
 
 const baseUrl = process.env.INTEGRATION_BASE_URL || "http://127.0.0.1:3108";
+const testPrivateKey = createPrivateKey({ key: Buffer.concat([
+  Buffer.from("302e020100300506032b657004220420", "hex"), Buffer.alloc(32, 7)
+]), format: "der", type: "pkcs8" });
+const testPublicPem = createPublicKey(testPrivateKey).export({ type: "spki", format: "pem" });
 
 async function api(path, { method = "GET", body, cookie, machine } = {}) {
   const response = await fetch(`${baseUrl}${path}`, { method, headers: { origin: baseUrl,
@@ -37,6 +42,7 @@ test("C8A facility-bound one-use enrolment, Tier 4 gate, rotation and revocation
       await db.subscription.create({ data: { organisationId: organisation.id, planId: plan.id, status: "ACTIVE" } });
     }
     const [tier3, tier4] = organisations;
+    await db.correctionsProfile.create({ data: { organisationId: tier4.id, policyConfiguredAt: new Date() } });
     const facilities = [];
     for (const [organisation, label] of [[tier3, "tier3"], [tier4, "A"], [tier4, "B"]]) {
       facilities.push(await db.location.create({ data: { organisationId: organisation.id, name: `C8 ${label}`,
@@ -73,6 +79,20 @@ test("C8A facility-bound one-use enrolment, Tier 4 gate, rotation and revocation
       body: { softwareVersion: "c8-test", storageHealth: "HEALTHY", syncStatus: "IDLE",
         pendingProofCount: 0, cachedContentCount: 0 } });
     assert.equal((await heartbeat()).status, 200);
+    const manifest = await api("/api/corrections/edge/manifest", { machine });
+    assert.equal(manifest.status, 200, JSON.stringify(manifest.body));
+    assert.equal(verifyEdgeManifest(manifest.body, testPublicPem, {
+      nodeId, organisationId: tier4.id, facilityId: facilities[1].id
+    }), true);
+    assert.equal(manifest.body.payload.content.length, 0);
+    const receipt = await api("/api/corrections/edge/sync", { method: "POST", machine,
+      body: { sequence: manifest.body.payload.sequence, version: manifest.body.version, downloaded: 0, reused: 0 } });
+    assert.equal(receipt.status, 200, JSON.stringify(receipt.body));
+    assert.notEqual((await db.correctionsEdgeNode.findUnique({ where: { id: nodeId } })).lastSuccessfulSyncAt, null);
+    assert.equal((await api("/api/corrections/edge/sync", { method: "POST", machine,
+      body: { sequence: manifest.body.payload.sequence, version: "0".repeat(64), downloaded: 0, reused: 0 } })).status, 409);
+    assert.equal((await api("/api/corrections/edge/media/arbitrary-id", { machine })).status, 404);
+    assert.equal((await api("/api/corrections/edge/manifest", { machine: `${machine}altered` })).status, 401);
     const list = await api("/api/admin/corrections/edge", { cookie: adminCookie });
     assert.equal(list.status, 200);
     const listed = list.body.nodes.find((node) => node.id === nodeId);

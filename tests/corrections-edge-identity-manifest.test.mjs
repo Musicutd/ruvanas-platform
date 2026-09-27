@@ -39,7 +39,7 @@ test("Ed25519 manifest rejects tampering, replay, other facility/node, expiry, u
   const now = new Date("2026-09-27T12:00:00.000Z");
   const scope = { organisationId: "orgA", facilityId: "facilityA", nodeId };
   const payload = { schema: 1, ...scope, sequence: 1, issuedAt: now.toISOString(),
-    validUntil: new Date(now.getTime() + 24 * 60 * 60_000).toISOString(), zones: [], content: [] };
+    validUntil: new Date(now.getTime() + 24 * 60 * 60_000).toISOString(), zones: [], windows: [], overrides: [], content: [] };
   const envelope = signEdgeManifest(payload, privatePem);
   assert.equal(verifyEdgeManifest(envelope, publicPem, scope, { now }), true);
   assert.equal(verifyEdgeManifest(envelope, publicPem, { ...scope, facilityId: "facilityB" }, { now }), false);
