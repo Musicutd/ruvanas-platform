@@ -184,10 +184,18 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
     const csv = await report.text();
     assert.match(csv, /CORRECTIONS_LOCAL,COMPLETED,1/);
     assert.ok(!csv.includes("Synthetic facility B") && !csv.includes("Synthetic facility C") && !csv.includes("contributor"));
-    await api(`/api/corrections/network/windows/${localAWindow}`, { method: "DELETE", cookie: owner.cookie });
+    const withdrawn = await api(`/api/corrections/network/distribution/${localAId}`, { method: "DELETE", cookie: owner.cookie });
+    assert.equal(withdrawn.status, 200, JSON.stringify(withdrawn.body));
+    const cancelledLocal = await db.playoutIntent.findFirst({ where: { playerId: players[0].player.id,
+      sourceRevision: { startsWith: `c7:${localAWindow}:${localAId}:` } }, select: { id: true, cancelledAt: true } });
+    assert.ok(cancelledLocal?.cancelledAt, "withdrawal cancels the issued local intent");
+    assert.equal(await db.proofOfPlayEvent.count({ where: { playoutIntentId: cancelledLocal.id, eventType: "COMPLETED" } }), 1,
+      "withdrawal preserves historical signed delivery evidence");
+    const afterWithdrawal = await Promise.all([manifest(0), manifest(1), manifest(2)]);
+    assert.deepEqual(afterWithdrawal.map((response) => response.body.insertions[0]?.programmingSource),
+      ["CORRECTIONS_CENTRAL", "CORRECTIONS_CENTRAL", "CORRECTIONS_LOCAL"]);
     await api(`/api/corrections/network/windows/${localCWindow}`, { method: "DELETE", cookie: owner.cookie });
     for (let index = 0; index < 3; index += 1) assert.equal((await manifest(index)).body.insertions[0]?.programmingSource, "CORRECTIONS_CENTRAL");
-    await api(`/api/corrections/network/distribution/${localAId}`, { method: "DELETE", cookie: owner.cookie });
     assert.equal((await api("/api/corrections/network/windows", { method: "POST", cookie: owner.cookie,
       body: { facilityId: facilities[0].id, kind: "LOCAL", distributionId: localAId, weekday,
         startMinute: 0, endMinute: 1440, allowedContentTypes: ["PROGRAMME"] } })).status, 409);

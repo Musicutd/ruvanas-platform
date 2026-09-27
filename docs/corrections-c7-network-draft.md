@@ -14,7 +14,8 @@ finished Multi-Facility Network Operations release.
   facility policy. Local settings can tighten, but cannot relax a central block.
 - Distribution rows refer to an exact Guard-approved Corrections submission and
   its Studio render. No audio file is copied. Withdrawal preserves the row and
-  its evidence, and deactivates its linked planned windows.
+  its evidence, deactivates linked windows, cancels issued intents that have not
+  expired, and raises an operational notification. Historical proof remains.
 - Weekly central/local windows now require an exact, approved distribution;
   local windows must reference a version originating at the target facility.
   The private player can resolve them into the existing signed manifest and
