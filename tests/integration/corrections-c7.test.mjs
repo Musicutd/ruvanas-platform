@@ -295,6 +295,10 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
       organisationMemberId: manager.membership.id, facilityId: facilities[0].id } }, data: {
       canPriorityActivate: true, canPriorityStop: true, canEmergencyActivate: true, canEmergencyClear: true } });
     for (const type of ["PRIORITY", "EMERGENCY"]) {
+      const beforeInterruption = await manifest(0);
+      assert.equal(beforeInterruption.status, 200);
+      const interruptedLocal = beforeInterruption.body.insertions[0];
+      assert.equal(interruptedLocal.programmingSource, "CORRECTIONS_LOCAL");
       const started = await api("/api/corrections/overrides", { method: "POST", cookie: manager.cookie,
         body: { facilityId: facilities[0].id, type, category: type === "EMERGENCY" ? "EMERGENCY_INSTRUCTION" : "OPERATIONAL_INFORMATION",
           announcementId: alert.id, zoneIds: [zones[0].id], idempotencyKey: randomUUID(),
@@ -303,6 +307,15 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
       const interrupted = await Promise.all([manifest(0), manifest(1), manifest(2)]);
       assert.deepEqual(interrupted.map((response) => response.body.insertions[0]?.programmingSource),
         [`CORRECTIONS_${type}`, "CORRECTIONS_CENTRAL", "CORRECTIONS_LOCAL"]);
+      const interruptionProof = await api("/api/player/proof-of-play", { method: "POST", cookie: players[0].cookie,
+        instanceId: players[0].instanceId, body: { events: [{ eventId: randomUUID(), manifestVersion: beforeInterruption.body.version,
+          proofToken: interruptedLocal.proofToken, programmingSourceProofToken: interruptedLocal.programmingSourceProofToken,
+          scheduleItemId: interruptedLocal.scheduleItemId, itemType: "CORRECTIONS_AUDIO", programmingSource: "CORRECTIONS_LOCAL",
+          eventType: "INTERRUPTED", occurredAt: new Date().toISOString(), positionSeconds: 1 }] } });
+      assert.equal(interruptionProof.status, 200, JSON.stringify(interruptionProof.body));
+      assert.equal(interruptionProof.body.accepted, 1, "the interrupted local play is recorded without a completion claim");
+      assert.equal(await db.proofOfPlayEvent.count({ where: { scheduleItemId: interruptedLocal.scheduleItemId,
+        eventType: "COMPLETED" } }), 0, "C6 must not turn an interrupted local programme into delivered evidence");
       const cleared = await api(`/api/corrections/overrides/${started.body.override.id}/clear`, { method: "POST", cookie: manager.cookie });
       assert.equal(cleared.status, 200, JSON.stringify(cleared.body));
       assert.equal((await manifest(0)).body.insertions[0]?.programmingSource, "CORRECTIONS_LOCAL",
