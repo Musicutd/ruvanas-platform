@@ -343,6 +343,8 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
       await db.rightsUsageLedgerEvent.deleteMany({ where: { organisationId: authority.id } });
       await db.proofOfPlayEvent.deleteMany({ where: { organisationId: authority.id } });
       await db.playoutIntent.deleteMany({ where: { organisationId: authority.id } });
+      await db.correctionsOverride.deleteMany({ where: { organisationId: authority.id } });
+      await db.correctionsAnnouncement.deleteMany({ where: { organisationId: authority.id } });
       await db.correctionsNetworkWindow.deleteMany({ where: { organisationId: authority.id } });
       await db.correctionsProgrammeDistribution.deleteMany({ where: { organisationId: authority.id } });
       await db.correctionsReview.deleteMany({ where: { submission: { organisationId: authority.id } } });
