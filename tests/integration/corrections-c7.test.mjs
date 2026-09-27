@@ -86,7 +86,9 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
     }
     const owner = await member("OWNER", "c7-owner");
     const manager = await member("MANAGER", "c7-manager");
+    const facilityOnlyManager = await member("MANAGER", "c7-facility-only-manager");
     const contributor = await member("CONTENT_EDITOR", "c7-contributor");
+    const facilityAContributor = await member("CONTENT_EDITOR", "c7-facility-a-contributor");
     const otherOwner = await member("OWNER", "c7-other", outsider);
     const facilities = [];
     for (const name of ["A", "B", "C"]) {
@@ -101,6 +103,12 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
       locations: { create: [{ locationId: facilities[0].id }, { locationId: facilities[1].id }] } } });
     await db.correctionsFacilityGrant.create({ data: { organisationId: authority.id, organisationMemberId: manager.membership.id,
       facilityId: facilities[0].id, permission: "MANAGER", createdByUserId: owner.user.id } });
+    await db.correctionsFacilityGrant.create({ data: { organisationId: authority.id,
+      organisationMemberId: facilityOnlyManager.membership.id, facilityId: facilities[0].id,
+      permission: "MANAGER", createdByUserId: owner.user.id } });
+    await db.correctionsFacilityGrant.create({ data: { organisationId: authority.id,
+      organisationMemberId: facilityAContributor.membership.id, facilityId: facilities[0].id,
+      permission: "EDITOR", createdByUserId: owner.user.id } });
 
     const ownerNetwork = await api("/api/corrections/network", { cookie: owner.cookie });
     assert.equal(ownerNetwork.status, 200, JSON.stringify(ownerNetwork.body));
@@ -128,7 +136,7 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
       body: { memberId: contributor.membership.id, canView: true } })).status, 403);
     assert.equal((await api("/api/corrections/network/distribution", { method: "POST", cookie: manager.cookie,
       body: { programmeId: "not-approved", facilityIds: [facilities[1].id] } })).status, 403);
-    assert.equal((await api("/api/corrections/network/windows", { method: "POST", cookie: manager.cookie,
+    assert.equal((await api("/api/corrections/network/windows", { method: "POST", cookie: facilityOnlyManager.cookie,
       body: { facilityId: facilities[1].id, kind: "LOCAL", weekday: 1, startMinute: 600, endMinute: 660,
         distributionId: "not-approved", allowedContentTypes: ["PROGRAMME"] } })).status, 403);
 
@@ -183,6 +191,13 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
     const central = await approvedProgramme(0, "Central C7 programme", 440);
     const localA = await approvedProgramme(0, "Facility A programme", 880);
     const localC = await approvedProgramme(2, "Facility C programme", 220);
+    const facilityBPrivate = await approvedProgramme(1, "Facility B private programme", 175);
+    assert.equal((await api(`/api/corrections/programmes/${facilityBPrivate.id}`,
+      { cookie: facilityAContributor.cookie })).status, 404,
+    "a contributor assigned only to A cannot read B programme content by raw ID");
+    assert.equal((await api("/api/corrections/network/syndication", { method: "POST",
+      cookie: facilityAContributor.cookie, body: { programmeId: facilityBPrivate.id } })).status, 403,
+    "an A contributor cannot offer B content to the network");
     const grouped = await approvedProgramme(0, "Group-only C7 programme", 660);
     const groupDistribution = await api("/api/corrections/network/distribution", { method: "POST", cookie: owner.cookie,
       body: { programmeId: grouped.id, groupId: group.id } });
@@ -584,7 +599,7 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
     // resort. It must never borrow the ordinary public AutoDJ path.
     const fallbackProgramme = await approvedProgramme(0, "Private fallback programme", 120);
     const fallbackId = (await distribute(fallbackProgramme.id, [facilities[0].id]))[facilities[0].id];
-    assert.equal((await api("/api/corrections/network/windows", { method: "POST", cookie: manager.cookie,
+    assert.equal((await api("/api/corrections/network/windows", { method: "POST", cookie: facilityOnlyManager.cookie,
       body: { facilityId: facilities[0].id, kind: "FALLBACK", distributionId: fallbackId,
         weekday, startMinute: 0, endMinute: 1440, allowedContentTypes: ["PROGRAMME"] } })).status, 403,
       "a facility-only manager cannot configure network fallback authority");
