@@ -532,6 +532,13 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
     const offered = await api("/api/corrections/network/syndication", { method: "POST", cookie: manager.cookie,
       body: { programmeId: facilityOfferProgramme.id } });
     assert.equal(offered.status, 201, JSON.stringify(offered.body));
+    assert.equal((await api("/api/corrections/network/syndication", { cookie: contributor.cookie })).status, 403);
+    const radioExchange = await api("/api/radio-syndication", { cookie: owner.cookie });
+    assert.ok(!JSON.stringify(radioExchange.body).includes(facilityOfferProgramme.title),
+      "a private Inside offer never appears in Online Radio syndication");
+    const schoolExchange = await api("/api/school-radio/network/exchange", { cookie: owner.cookie });
+    assert.ok(!JSON.stringify(schoolExchange.body).includes(facilityOfferProgramme.title),
+      "a private Inside offer never appears in School exchange");
     assert.equal((await api(`/api/corrections/network/syndication/${offered.body.id}`, { method: "PATCH",
       cookie: manager.cookie, body: { decision: "ACCEPTED" } })).status, 403,
       "the offering facility staff cannot accept its own offer");

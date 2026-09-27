@@ -322,7 +322,7 @@ export async function POST(request) {
         });
       }
       return { inserted, rightsLedgerCount };
-    });
+    }, { maxAttempts: 8, retryDelayMs: 25 });
 
     return NextResponse.json({
       ok: true,

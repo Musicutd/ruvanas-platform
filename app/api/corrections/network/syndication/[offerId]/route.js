@@ -10,6 +10,6 @@ export async function PATCH(request, { params }) {
   try {
     const input = await request.json();
     return correctionsResponse({ ok: true, ...await decideCorrectionsSyndication(access, params.offerId,
-      String(input.decision || "").toUpperCase()) });
+      String(input.decision || "").toUpperCase()) }, 200);
   } catch (error) { return correctionsError(error); }
 }

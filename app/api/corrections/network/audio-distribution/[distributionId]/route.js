@@ -7,6 +7,6 @@ export const dynamic = "force-dynamic";
 export async function DELETE(_request, { params }) {
   const access = await correctionsRequestContext();
   if (!access.ok) return correctionsResponse(access);
-  try { return correctionsResponse({ ok: true, ...await withdrawCorrectionsNetworkAudioDistribution(access, params.distributionId) }); }
+  try { return correctionsResponse({ ok: true, ...await withdrawCorrectionsNetworkAudioDistribution(access, params.distributionId) }, 200); }
   catch (error) { return correctionsError(error); }
 }
