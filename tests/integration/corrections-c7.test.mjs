@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { createServer } from "node:http";
 import test from "node:test";
 import bcrypt from "bcryptjs";
 import { PrismaClient } from "@prisma/client";
@@ -8,6 +9,32 @@ import { correctionsRenderEvidence } from "../../lib/corrections-workflow.mjs";
 import { localDateTimeParts } from "../../lib/opening-hours.mjs";
 
 const baseUrl = process.env.INTEGRATION_BASE_URL || "http://127.0.0.1:3100";
+
+function syntheticWav(frequency) {
+  const sampleRate = 8000;
+  const samples = sampleRate * 30;
+  const wav = Buffer.alloc(44 + samples * 2);
+  wav.write("RIFF", 0, "ascii"); wav.writeUInt32LE(wav.length - 8, 4);
+  wav.write("WAVEfmt ", 8, "ascii"); wav.writeUInt32LE(16, 16);
+  wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22);
+  wav.writeUInt32LE(sampleRate, 24); wav.writeUInt32LE(sampleRate * 2, 28);
+  wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34);
+  wav.write("data", 36, "ascii"); wav.writeUInt32LE(samples * 2, 40);
+  for (let index = 0; index < samples; index += 1) {
+    wav.writeInt16LE(Math.round(Math.sin(2 * Math.PI * frequency * index / sampleRate) * 8000), 44 + index * 2);
+  }
+  return wav;
+}
+
+function observedTone(wav) {
+  assert.equal(wav.toString("ascii", 0, 4), "RIFF");
+  assert.equal(wav.readUInt32LE(24), 8000);
+  let crossings = 0;
+  for (let index = 1; index < 8000; index += 1) {
+    if (wav.readInt16LE(44 + (index - 1) * 2) <= 0 && wav.readInt16LE(44 + index * 2) > 0) crossings += 1;
+  }
+  return crossings;
+}
 
 async function api(path, { method = "GET", body, cookie, instanceId } = {}) {
   const response = await fetch(`${baseUrl}${path}`, { method, headers: { origin: baseUrl,
@@ -24,11 +51,26 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
     throw new Error("C7 integration runs only against the isolated GitHub Actions test database.");
   }
   const db = new PrismaClient();
+  const mediaObjects = new Map();
+  const mediaStore = createServer((request, response) => {
+    const path = new URL(request.url, "http://127.0.0.1:9107").pathname;
+    const prefix = "/c7-test/";
+    const bytes = path.startsWith(prefix) ? mediaObjects.get(decodeURIComponent(path.slice(prefix.length))) : null;
+    if (!bytes || request.method !== "GET") { response.writeHead(404); response.end(); return; }
+    const match = /^bytes=(\d+)-(\d*)$/.exec(request.headers.range || "");
+    const start = match ? Number(match[1]) : 0;
+    const end = match ? Math.min(match[2] ? Number(match[2]) : bytes.length - 1, bytes.length - 1) : bytes.length - 1;
+    if (start > end || end >= bytes.length) { response.writeHead(416); response.end(); return; }
+    response.writeHead(match ? 206 : 200, { "Content-Type": "audio/wav", "Content-Length": end - start + 1,
+      ...(match ? { "Content-Range": `bytes ${start}-${end}/${bytes.length}` } : {}) });
+    response.end(bytes.subarray(start, end + 1));
+  });
   const suffix = randomUUID().slice(0, 8);
   const password = `C7-test-${randomUUID()}!`;
   const users = [];
   let authority, outsider, plan;
   try {
+    await new Promise((resolve, reject) => mediaStore.once("error", reject).listen(9107, "127.0.0.1", resolve));
     plan = await db.plan.create({ data: { name: `C7 ${suffix}`, code: `C7_${suffix}`, productFamily: "CORRECTIONS", tierNumber: 4,
       monthlyPriceCents: 49900, storageLimitGb: 10, listenerLimit: 100, maxBitrateKbps: 128, correctionsRadioEnabled: true, stationLimit: 4 } });
     authority = await db.organisation.create({ data: { name: `Synthetic C7 authority ${suffix}`, slug: `c7-${suffix}` } });
@@ -104,12 +146,15 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
         sessionTokenHash: hashPlayerToken(token, process.env.SESSION_SECRET), enrolledAt: new Date(), lastHeartbeatAt: new Date() } });
       return { player, cookie: `ruvanas_player=${token}`, instanceId: randomUUID() };
     }));
-    async function approvedProgramme(facilityIndex, label) {
+    async function approvedProgramme(facilityIndex, label, frequency) {
+      const audio = syntheticWav(frequency);
+      const storageKey = `c7-test/${suffix}/${label}.wav`;
+      mediaObjects.set(storageKey, audio);
       const media = await db.mediaAsset.create({ data: { organisationId: authority.id, libraryType: "ORGANISATION_PROMO", name: label,
-        originalName: `${label}.mp3`, storageKey: `c7-test/${suffix}/${label}.mp3`, mimeType: "audio/mpeg", sizeBytes: BigInt(1024),
+        originalName: `${label}.wav`, storageKey, mimeType: "audio/wav", sizeBytes: BigInt(audio.length),
         durationSeconds: 30, mediaType: "ANNOUNCEMENT", status: "READY" } });
       const promo = await db.promoAsset.create({ data: { organisationId: authority.id, name: label, mediaType: "ANNOUNCEMENT" } });
-      const checksum = "a".repeat(63) + String(facilityIndex);
+      const checksum = createHash("sha256").update(audio).digest("hex");
       const promoVersion = await db.promoVersion.create({ data: { promoAssetId: promo.id, mediaAssetId: media.id, version: 1,
         status: "APPROVED", qcStatus: "PASSED", checksumSha256: checksum } });
       await db.promoAsset.update({ where: { id: promo.id }, data: { currentApprovedVersionId: promoVersion.id } });
@@ -134,9 +179,9 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
         note: "Synthetic network approval", evidenceSnapshot: {}, reviewedByUserId: manager.user.id } });
       return programme;
     }
-    const central = await approvedProgramme(0, "Central C7 programme");
-    const localA = await approvedProgramme(0, "Facility A programme");
-    const localC = await approvedProgramme(2, "Facility C programme");
+    const central = await approvedProgramme(0, "Central C7 programme", 440);
+    const localA = await approvedProgramme(0, "Facility A programme", 880);
+    const localC = await approvedProgramme(2, "Facility C programme", 220);
     async function distribute(programmeId, facilityIds) {
       const response = await api("/api/corrections/network/distribution", { method: "POST", cookie: owner.cookie, body: { programmeId, facilityIds } });
       assert.equal(response.status, 201, JSON.stringify(response.body));
@@ -158,7 +203,11 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
     for (let index = 0; index < 3; index += 1) {
       const response = await manifest(index);
       assert.equal(response.status, 200, JSON.stringify(response.body));
-      assert.equal(response.body.insertions.find((item) => item.programmingSource === "CORRECTIONS_CENTRAL")?.title, central.title);
+      const insertion = response.body.insertions.find((item) => item.programmingSource === "CORRECTIONS_CENTRAL");
+      assert.equal(insertion?.title, central.title);
+      const mediaResponse = await fetch(new URL(insertion.mediaUrl, baseUrl), { headers: { cookie: players[index].cookie, range: "bytes=0-16043" } });
+      assert.equal(mediaResponse.status, 206, `facility ${index} must fetch central audio through the private player route`);
+      assert.ok(Math.abs(observedTone(Buffer.from(await mediaResponse.arrayBuffer())) - 440) < 5);
     }
     assert.equal((await api("/api/corrections/network/windows", { method: "POST", cookie: owner.cookie,
       body: { facilityId: facilities[1].id, kind: "LOCAL", distributionId: localAId, weekday,
@@ -170,6 +219,12 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
       ["CORRECTIONS_LOCAL", "CORRECTIONS_CENTRAL", "CORRECTIONS_LOCAL"]);
     assert.deepEqual(during.map((response) => response.body.insertions[0]?.title),
       [localA.title, central.title, localC.title]);
+    for (const [index, expectedFrequency] of [[0, 880], [2, 220]]) {
+      const mediaResponse = await fetch(new URL(during[index].body.insertions[0].mediaUrl, baseUrl),
+        { headers: { cookie: players[index].cookie, range: "bytes=0-16043" } });
+      assert.equal(mediaResponse.status, 206, `facility ${index} must fetch only its approved local audio`);
+      assert.ok(Math.abs(observedTone(Buffer.from(await mediaResponse.arrayBuffer())) - expectedFrequency) < 5);
+    }
     const localInsertion = during[0].body.insertions[0];
     const localProof = await api("/api/player/proof-of-play", { method: "POST", cookie: players[0].cookie, instanceId: players[0].instanceId,
       body: { events: [{ eventId: randomUUID(), manifestVersion: during[0].body.version,
@@ -205,6 +260,7 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
     assert.equal((await fetch(`${baseUrl}/api/corrections/network/report/export`, { headers: { cookie: owner.cookie } })).status, 403);
     assert.equal((await api("/api/corrections/network", { cookie: manager.cookie })).status, 403);
   } finally {
+    if (mediaStore.listening) await new Promise((resolve) => mediaStore.close(resolve));
     if (authority) {
       await db.rightsUsageLedgerEvent.deleteMany({ where: { organisationId: authority.id } });
       await db.proofOfPlayEvent.deleteMany({ where: { organisationId: authority.id } });

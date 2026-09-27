@@ -81,6 +81,14 @@ jobs:
         run: npm run build
 
       - name: Start application for route-level tests
+        env:
+          # Disposable C7 object-store fixture. These are test-only values;
+          # the server is started by the C7 integration test, never production.
+          R2_ACCOUNT_ID: ci-local
+          R2_ACCESS_KEY_ID: ci-test
+          R2_SECRET_ACCESS_KEY: ci-test
+          R2_BUCKET_NAME: c7-test
+          R2_ENDPOINT: http://127.0.0.1:9107
         run: |
           npm start -- --hostname 127.0.0.1 --port 3100 > /tmp/ruvanas-next.log 2>&1 &
           echo $! > /tmp/ruvanas-next.pid
