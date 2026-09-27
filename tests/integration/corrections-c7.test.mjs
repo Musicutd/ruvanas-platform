@@ -240,6 +240,11 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
         eventType: "COMPLETED", occurredAt: new Date().toISOString(), positionSeconds: 30 }] } });
     assert.equal(localProof.status, 200, JSON.stringify(localProof.body));
     assert.equal(localProof.body.accepted, 1);
+    const afterProofMetrics = await api("/api/corrections/network", { cookie: owner.cookie });
+    assert.equal(afterProofMetrics.status, 200);
+    assert.equal(afterProofMetrics.body.deliveryMetricsLast7Days.localProgramme, 1);
+    assert.equal(afterProofMetrics.body.deliveryMetricsLast7Days.centralProgramme, 0,
+      "a fetched tone without signed completion is not central delivery evidence");
     const report = await fetch(`${baseUrl}/api/corrections/network/report/export?facilityId=${facilities[0].id}&source=CORRECTIONS_LOCAL&status=COMPLETED`,
       { headers: { cookie: owner.cookie } });
     assert.equal(report.status, 200);
@@ -278,6 +283,13 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
     assert.equal((await api("/api/corrections/network/windows", { method: "POST", cookie: owner.cookie,
       body: { facilityId: facilities[0].id, kind: "LOCAL", distributionId: localAId, weekday,
         startMinute: 0, endMinute: 1440, allowedContentTypes: ["PROGRAMME"] } })).status, 409);
+
+    await db.player.update({ where: { id: players[1].player.id }, data: { status: "OFFLINE", lastHeartbeatAt: new Date(Date.now() - 180_000) } });
+    const degraded = await api("/api/corrections/network", { cookie: owner.cookie });
+    assert.equal(degraded.status, 200);
+    assert.equal(degraded.body.facilities.find((item) => item.id === facilities[1].id)?.offlinePlayers, 1);
+    assert.equal(degraded.body.deliveryMetricsLast7Days.centralProgramme, 0,
+      "an offline facility with no completed proof is never counted delivered");
 
     await db.plan.update({ where: { id: plan.id }, data: { tierNumber: 3 } });
     assert.equal((await api("/api/corrections/network", { cookie: owner.cookie })).status, 403);
