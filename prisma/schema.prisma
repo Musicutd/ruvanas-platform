@@ -567,6 +567,13 @@ enum CorrectionsDistributionStatus {
   WITHDRAWN
 }
 
+enum CorrectionsEdgeNodeStatus {
+  PENDING_ENROLMENT
+  ACTIVE
+  REVOKED
+  DECOMMISSIONED
+}
+
 enum CorrectionsContributorStatus {
   ACTIVE
   ARCHIVED
@@ -1946,6 +1953,7 @@ model Organisation {
   correctionsDistributions             CorrectionsProgrammeDistribution[]
   correctionsNetworkAudioDistributions CorrectionsNetworkAudioDistribution[]
   correctionsSyndicationOffers CorrectionsSyndicationOffer[]
+  correctionsEdgeNodes CorrectionsEdgeNode[]
   schoolSafeguardingReadiness        SchoolSafeguardingReadiness?
   schoolSafeguardingReviews          SchoolSafeguardingReview[]
   schoolRetentionHolds               SchoolRetentionHold[]
@@ -2775,6 +2783,7 @@ model Location {
   correctionsAudioDistributionTargets CorrectionsNetworkAudioDistribution[] @relation("CorrectionsAudioDistributionTarget")
   correctionsAudioDistributionSources CorrectionsNetworkAudioDistribution[] @relation("CorrectionsAudioDistributionSource")
   correctionsSyndicationSources CorrectionsSyndicationOffer[]
+  correctionsEdgeNodes CorrectionsEdgeNode[]
 
   @@unique([organisationId, slug])
   @@index([organisationId])
@@ -2910,6 +2919,59 @@ model CorrectionsFacility {
   updatedAt          DateTime  @updatedAt
 
   location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+}
+
+// One Edge machine is pinned to one existing Corrections facility. The machine
+// credential is hashed; the enrolment token is one-use and short-lived.
+model CorrectionsEdgeNode {
+  id                   String @id @default(cuid())
+  organisationId       String
+  facilityId           String
+  name                 String
+  status               CorrectionsEdgeNodeStatus @default(PENDING_ENROLMENT)
+  enrolmentTokenHash   String? @unique @db.Char(64)
+  enrolmentExpiresAt   DateTime?
+  credentialHash       String? @unique @db.Char(64)
+  keyVersion           Int @default(0)
+  enrolledAt           DateTime?
+  lastSeenAt           DateTime?
+  lastSyncAt           DateTime?
+  lastSuccessfulSyncAt DateTime?
+  softwareVersion      String?
+  storageHealth        String?
+  syncStatus           String?
+  pendingProofCount    Int @default(0)
+  cachedContentCount   Int @default(0)
+  revokedAt            DateTime?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  facility Location @relation(fields: [facilityId], references: [id], onDelete: Restrict)
+  manifests CorrectionsEdgeManifest[]
+
+  @@index([organisationId, facilityId, status])
+  @@index([status, lastSeenAt])
+}
+
+// Signed snapshots are immutable evidence. A newer snapshot never rewrites an
+// earlier authorisation or its delivery history.
+model CorrectionsEdgeManifest {
+  id String @id @default(cuid())
+  nodeId String
+  sequence Int
+  version String @db.Char(64)
+  payload Json
+  signature String
+  validFrom DateTime
+  validUntil DateTime
+  createdAt DateTime @default(now())
+
+  node CorrectionsEdgeNode @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+
+  @@unique([nodeId, sequence])
+  @@unique([nodeId, version])
+  @@index([nodeId, validUntil])
 }
 
 model CorrectionsProgramme {
