@@ -227,6 +227,10 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
     const localAWindow = await createWindow(0, "LOCAL", localAId);
     const localCWindow = await createWindow(2, "LOCAL", localCId);
     const during = await Promise.all([manifest(0), manifest(1), manifest(2)]);
+    for (const [index, response] of during.entries()) {
+      assert.equal(response.status, 200, `facility ${index} manifest: ${JSON.stringify(response.body)}`);
+      assert.ok(Array.isArray(response.body.insertions), `facility ${index} must receive a manifest insertion list`);
+    }
     assert.deepEqual(during.map((response) => response.body.insertions[0]?.programmingSource),
       ["CORRECTIONS_LOCAL", "CORRECTIONS_CENTRAL", "CORRECTIONS_LOCAL"]);
     assert.deepEqual(during.map((response) => response.body.insertions[0]?.title),
