@@ -274,9 +274,12 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
       { headers: { cookie: players[1].cookie } })).status, 404, "B cannot fetch A local audio with its own valid listener token");
     assert.equal((await fetch(`${baseUrl}${facilityCMedia.pathname}${facilityAMedia.search}`,
       { headers: { cookie: players[0].cookie } })).status, 404, "A cannot fetch C local audio");
-    const localInsertion = during[0].body.insertions[0];
+    const resumedLocal = await manifest(0);
+    assert.equal(resumedLocal.status, 200, JSON.stringify(resumedLocal.body));
+    const localInsertion = resumedLocal.body.insertions[0];
+    assert.equal(localInsertion?.programmingSource, "CORRECTIONS_LOCAL");
     const localProof = await api("/api/player/proof-of-play", { method: "POST", cookie: players[0].cookie, instanceId: players[0].instanceId,
-      body: { events: [{ eventId: randomUUID(), manifestVersion: during[0].body.version,
+      body: { events: [{ eventId: randomUUID(), manifestVersion: resumedLocal.body.version,
         proofToken: localInsertion.proofToken, programmingSourceProofToken: localInsertion.programmingSourceProofToken,
         scheduleItemId: localInsertion.scheduleItemId, itemType: "CORRECTIONS_AUDIO", programmingSource: "CORRECTIONS_LOCAL",
         eventType: "COMPLETED", occurredAt: new Date().toISOString(), positionSeconds: 30 }] } });
@@ -309,8 +312,8 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
     assert.ok(!(await otherOrganisation.text()).includes(recordedProof.id), "another authority cannot export this proof");
     const withdrawn = await api(`/api/corrections/network/distribution/${localAId}`, { method: "DELETE", cookie: owner.cookie });
     assert.equal(withdrawn.status, 200, JSON.stringify(withdrawn.body));
-    const cancelledLocal = await db.playoutIntent.findFirst({ where: { playerId: players[0].player.id,
-      sourceRevision: { startsWith: `c7:${localAWindow}:${localAId}:` } }, select: { id: true, cancelledAt: true } });
+    const cancelledLocal = await db.playoutIntent.findFirst({ where: { id: recordedProof.playoutIntentId,
+      playerId: players[0].player.id, sourceRevision: { startsWith: `c7:${localAWindow}:${localAId}:` } }, select: { id: true, cancelledAt: true } });
     assert.ok(cancelledLocal?.cancelledAt, "withdrawal cancels the issued local intent");
     assert.equal(await db.proofOfPlayEvent.count({ where: { playoutIntentId: cancelledLocal.id, eventType: "COMPLETED" } }), 1,
       "withdrawal preserves historical signed delivery evidence");
