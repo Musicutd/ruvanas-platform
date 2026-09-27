@@ -123,7 +123,7 @@ export default function PlayerPage() {
 
   const queuePlaybackEvent = useCallback((event) => {
     writePlaybackQueue(appendPlaybackEvent(readPlaybackQueue(), event));
-    flushPlaybackQueue();
+    return flushPlaybackQueue();
   }, [flushPlaybackQueue]);
 
   const loadManifest = useCallback(async () => {
@@ -355,7 +355,7 @@ export default function PlayerPage() {
 
   const playbackEvent = useCallback((item, eventType, audioElement, failureReason = null) => {
     if (!item || !manifest) return;
-    queuePlaybackEvent({
+    return queuePlaybackEvent({
       eventId: crypto.randomUUID(),
       manifestVersion: manifest.version,
       proofToken: item.proofToken,
@@ -436,13 +436,17 @@ export default function PlayerPage() {
     playbackEvent(activeInsertion, "STARTED", event.currentTarget);
   }
 
-  function finishTrack(event) {
+  async function finishTrack(event) {
     if (!activeInsertion) return;
-    playbackEvent(activeInsertion, "COMPLETED", event.currentTarget);
+    const proof = playbackEvent(activeInsertion, "COMPLETED", event.currentTarget);
     rememberPlayedInsertion(activeInsertion.scheduleItemId, "COMPLETED", activeInsertion.programmingSource);
     startedPlaybackKey.current = null;
     activeInsertionIdRef.current = null;
     setActiveInsertionId(null);
+    if (["CORRECTIONS_CENTRAL", "CORRECTIONS_LOCAL"].includes(activeInsertion.programmingSource)) {
+      await proof;
+      loadManifest().catch(() => setMessage("The private schedule will refresh shortly."));
+    }
   }
 
   function failTrack(event) {

@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { correctionsNetworkPermission, normalizeCorrectionsNetworkWindow, correctionsWindowConflict, resolveCorrectionsNetworkWindow, resolveCorrectionsDistributionTargets } from "../lib/corrections-network-policy.mjs";
+import { correctionsNetworkPermission, normalizeCorrectionsNetworkWindow, correctionsWindowConflict, resolveCorrectionsNetworkWindow, rankCorrectionsNetworkWindows, resolveCorrectionsDistributionTargets } from "../lib/corrections-network-policy.mjs";
 import { correctionsPolicyEligibility } from "../lib/corrections-policy.mjs";
+import { normaliseCorrectionsNetworkReportFilters, correctionsNetworkReportCsv } from "../lib/corrections-network-report.mjs";
 
 const scope = { tier: 4, correctionsEnabled: true, organisationId: "authority", memberId: "member" };
 const grant = { organisationId: "authority", organisationMemberId: "member", canView: true, canManage: true, canProgramme: true, canDistribute: true, canReport: true };
@@ -26,16 +27,19 @@ test("central music restrictions remain effective even when a facility permits m
 });
 
 test("central mandatory windows win, local windows beat only optional central default", () => {
-  const central = { facilityId: "a", kind: "CENTRAL", weekday: 1, startMinute: 0, endMinute: 1440, active: true, mandatory: false };
-  const local = { facilityId: "a", kind: "LOCAL", weekday: 1, startMinute: 600, endMinute: 660, active: true, mandatory: false };
+  const central = { facilityId: "a", kind: "CENTRAL", distributionId: "central-version", weekday: 1, startMinute: 0, endMinute: 1440, active: true, mandatory: false };
+  const local = { facilityId: "a", kind: "LOCAL", distributionId: "local-version", weekday: 1, startMinute: 600, endMinute: 660, active: true, mandatory: false };
   assert.equal(correctionsWindowConflict(central, local), null);
   assert.equal(resolveCorrectionsNetworkWindow([central, local], { facilityId: "a", weekday: 1, minute: 610 }), local);
   assert.equal(resolveCorrectionsNetworkWindow([central, local], { facilityId: "a", weekday: 1, minute: 665 }), central);
   assert.equal(resolveCorrectionsNetworkWindow([central, local], { facilityId: "b", weekday: 1, minute: 610 }), null);
   assert.equal(correctionsWindowConflict({ ...central, mandatory: true }, local), "MANDATORY_CENTRAL_CONFLICT");
   assert.equal(resolveCorrectionsNetworkWindow([{ ...central, mandatory: true }, local], { facilityId: "a", weekday: 1, minute: 610 }).kind, "CENTRAL");
-  assert.equal(normalizeCorrectionsNetworkWindow({ kind: "LOCAL", weekday: 1, startMinute: 600, endMinute: 660, allowedContentTypes: ["PROGRAMME"] }).kind, "LOCAL");
-  assert.throws(() => normalizeCorrectionsNetworkWindow({ kind: "LOCAL", weekday: 1, startMinute: 600, endMinute: 660, allowedContentTypes: ["PROGRAMME"], mandatory: true }));
+  assert.deepEqual(rankCorrectionsNetworkWindows([central, local], { facilityId: "a", weekday: 1, minute: 610 }), [local, central]);
+  assert.deepEqual(rankCorrectionsNetworkWindows([{ ...local, distributionId: null }, central], { facilityId: "a", weekday: 1, minute: 610 }), [central]);
+  assert.equal(normalizeCorrectionsNetworkWindow({ kind: "LOCAL", weekday: 1, startMinute: 600, endMinute: 660, distributionId: "approved-local-version", allowedContentTypes: ["PROGRAMME"] }).distributionId, "approved-local-version");
+  assert.throws(() => normalizeCorrectionsNetworkWindow({ kind: "LOCAL", weekday: 1, startMinute: 600, endMinute: 660, allowedContentTypes: ["PROGRAMME"] }));
+  assert.throws(() => normalizeCorrectionsNetworkWindow({ kind: "LOCAL", weekday: 1, startMinute: 600, endMinute: 660, distributionId: "approved-local-version", allowedContentTypes: ["PROGRAMME"], mandatory: true }));
 });
 
 test("distribution targeting refuses foreign or inactive facility IDs", () => {
@@ -46,9 +50,9 @@ test("distribution targeting refuses foreign or inactive facility IDs", () => {
 });
 
 test("three facility plans isolate local windows and resume the central plan", () => {
-  const central = ["a", "b", "c"].map((facilityId) => ({ facilityId, kind: "CENTRAL", weekday: 1, startMinute: 0, endMinute: 1440, active: true, mandatory: false }));
-  const localA = { facilityId: "a", kind: "LOCAL", weekday: 1, startMinute: 600, endMinute: 660, active: true };
-  const localC = { facilityId: "c", kind: "LOCAL", weekday: 1, startMinute: 780, endMinute: 840, active: true };
+  const central = ["a", "b", "c"].map((facilityId) => ({ facilityId, kind: "CENTRAL", distributionId: `central-${facilityId}`, weekday: 1, startMinute: 0, endMinute: 1440, active: true, mandatory: false }));
+  const localA = { facilityId: "a", kind: "LOCAL", distributionId: "local-a", weekday: 1, startMinute: 600, endMinute: 660, active: true };
+  const localC = { facilityId: "c", kind: "LOCAL", distributionId: "local-c", weekday: 1, startMinute: 780, endMinute: 840, active: true };
   const windows = [...central, localA, localC];
   for (const minute of [599, 660, 900]) assert.equal(resolveCorrectionsNetworkWindow(windows, { facilityId: "a", weekday: 1, minute }).kind, "CENTRAL");
   assert.equal(resolveCorrectionsNetworkWindow(windows, { facilityId: "a", weekday: 1, minute: 610 }), localA);
@@ -56,4 +60,16 @@ test("three facility plans isolate local windows and resume the central plan", (
   assert.equal(resolveCorrectionsNetworkWindow(windows, { facilityId: "c", weekday: 1, minute: 610 }).kind, "CENTRAL");
   assert.equal(resolveCorrectionsNetworkWindow(windows, { facilityId: "c", weekday: 1, minute: 800 }), localC);
   assert.equal(resolveCorrectionsNetworkWindow(windows, { facilityId: "foreign", weekday: 1, minute: 610 }), null);
+});
+
+test("network export filters are bounded and CSV cannot inject formulas or private details", () => {
+  const filters = normaliseCorrectionsNetworkReportFilters({ from: "2026-09-01", to: "2026-09-07", groupId: "north", source: "CORRECTIONS_LOCAL", status: "COMPLETED" });
+  assert.equal(filters.groupId, "north");
+  assert.equal(filters.until.toISOString(), "2026-09-08T00:00:00.000Z");
+  assert.throws(() => normaliseCorrectionsNetworkReportFilters({ from: "2026-01-01", to: "2026-09-01" }));
+  assert.throws(() => normaliseCorrectionsNetworkReportFilters({ facilityId: "a", groupId: "north" }));
+  assert.throws(() => normaliseCorrectionsNetworkReportFilters({ source: "ONLINE_RADIO" }));
+  const csv = correctionsNetworkReportCsv([{ date: "2026-09-07", facility: "=private", source: "CORRECTIONS_LOCAL", status: "COMPLETED", playerEvents: 2 }]);
+  assert.match(csv, /'=private/);
+  assert.doesNotMatch(csv, /contributor|family|requestBody/i);
 });

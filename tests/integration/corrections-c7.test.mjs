@@ -3,12 +3,16 @@ import { randomUUID } from "node:crypto";
 import test from "node:test";
 import bcrypt from "bcryptjs";
 import { PrismaClient } from "@prisma/client";
+import { hashPlayerToken } from "../../lib/player-tokens.mjs";
+import { correctionsRenderEvidence } from "../../lib/corrections-workflow.mjs";
+import { localDateTimeParts } from "../../lib/opening-hours.mjs";
 
 const baseUrl = process.env.INTEGRATION_BASE_URL || "http://127.0.0.1:3100";
 
-async function api(path, { method = "GET", body, cookie } = {}) {
+async function api(path, { method = "GET", body, cookie, instanceId } = {}) {
   const response = await fetch(`${baseUrl}${path}`, { method, headers: { origin: baseUrl,
-    ...(body !== undefined ? { "content-type": "application/json" } : {}), ...(cookie ? { cookie } : {}) },
+    ...(body !== undefined ? { "content-type": "application/json" } : {}), ...(cookie ? { cookie } : {}),
+    ...(instanceId ? { "x-ruvanas-player-instance": instanceId } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body) });
   return { status: response.status, body: await response.json(), cookie: response.headers.get("set-cookie")?.split(";")[0] };
 }
@@ -61,6 +65,11 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
     assert.equal(ownerNetwork.body.totals.facilities, 3);
     assert.equal(ownerNetwork.body.groups.find((item) => item.id === group.id)?.facilityIds.length, 2);
     assert.equal(ownerNetwork.body.permissions.distribute, true);
+    const emptyReport = await fetch(`${baseUrl}/api/corrections/network/report/export`, { headers: { cookie: owner.cookie } });
+    assert.equal(emptyReport.status, 200);
+    assert.match(await emptyReport.text(), /^date,facility,source,status,playerEvents\r\n$/);
+    assert.equal((await fetch(`${baseUrl}/api/corrections/network/report/export`, { headers: { cookie: contributor.cookie } })).status, 403);
+    assert.equal((await fetch(`${baseUrl}/api/corrections/network/report/export?facilityId=${foreign.id}`, { headers: { cookie: owner.cookie } })).status, 404);
     assert.equal((await api("/api/corrections/network", { cookie: manager.cookie })).status, 403);
     assert.equal((await api("/api/corrections/network", { cookie: contributor.cookie })).status, 403);
     assert.equal((await api(`/api/corrections/network?facilityId=${foreign.id}`, { cookie: owner.cookie })).status, 404);
@@ -79,14 +88,140 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
       body: { programmeId: "not-approved", facilityIds: [facilities[1].id] } })).status, 403);
     assert.equal((await api("/api/corrections/network/windows", { method: "POST", cookie: manager.cookie,
       body: { facilityId: facilities[1].id, kind: "LOCAL", weekday: 1, startMinute: 600, endMinute: 660,
-        allowedContentTypes: ["PROGRAMME"] } })).status, 403);
+        distributionId: "not-approved", allowedContentTypes: ["PROGRAMME"] } })).status, 403);
+
+    // Exercise the real private manifest and signed proof routes, not merely
+    // the window resolver. The synthetic media metadata is isolated to CI.
+    const configuredAt = new Date();
+    await db.correctionsProfile.create({ data: { organisationId: authority.id, policyConfiguredAt: configuredAt } });
+    const zones = await Promise.all(facilities.map((facility) => db.zone.findFirst({ where: { locationId: facility.id } })));
+    const station = await db.station.create({ data: { organisationId: authority.id, productFamily: "CORRECTIONS", name: "Synthetic C7 Inside", slug: `c7-inside-${suffix}`, status: "ACTIVE", listenerLimit: 10, storageLimitGb: 1, maxBitrateKbps: 128 } });
+    const channel = await db.channel.create({ data: { organisationId: authority.id, stationId: station.id, name: "Synthetic private channel", slug: `c7-private-${suffix}`, status: "ACTIVE", musicRightsUse: "CORRECTIONS_RADIO" } });
+    await db.channelAssignment.createMany({ data: zones.map((zone) => ({ channelId: channel.id, zoneId: zone.id, activeFrom: new Date(Date.now() - 60_000) })) });
+    const players = await Promise.all(zones.map(async (zone, index) => {
+      const token = `c7-${index}-${randomUUID()}`;
+      const player = await db.player.create({ data: { organisationId: authority.id, zoneId: zone.id, name: `Synthetic C7 player ${index}`, status: "ONLINE",
+        sessionTokenHash: hashPlayerToken(token, process.env.SESSION_SECRET), enrolledAt: new Date(), lastHeartbeatAt: new Date() } });
+      return { player, cookie: `ruvanas_player=${token}`, instanceId: randomUUID() };
+    }));
+    async function approvedProgramme(facilityIndex, label) {
+      const media = await db.mediaAsset.create({ data: { organisationId: authority.id, libraryType: "ORGANISATION_PROMO", name: label,
+        originalName: `${label}.mp3`, storageKey: `c7-test/${suffix}/${label}.mp3`, mimeType: "audio/mpeg", sizeBytes: BigInt(1024),
+        durationSeconds: 30, mediaType: "ANNOUNCEMENT", status: "READY" } });
+      const promo = await db.promoAsset.create({ data: { organisationId: authority.id, name: label, mediaType: "ANNOUNCEMENT" } });
+      const checksum = "a".repeat(63) + String(facilityIndex);
+      const promoVersion = await db.promoVersion.create({ data: { promoAssetId: promo.id, mediaAssetId: media.id, version: 1,
+        status: "APPROVED", qcStatus: "PASSED", checksumSha256: checksum } });
+      await db.promoAsset.update({ where: { id: promo.id }, data: { currentApprovedVersionId: promoVersion.id } });
+      const project = await db.audioProject.create({ data: { organisationId: authority.id, title: label, editDecision: {}, createdByUserId: owner.user.id } });
+      const version = await db.audioProjectVersion.create({ data: { projectId: project.id, version: 1,
+        state: { editor: { clips: [{ kind: "SOURCE", mediaAssetId: media.id }] } }, createdByUserId: owner.user.id } });
+      await db.audioTake.create({ data: { organisationId: authority.id, projectId: project.id, mediaAssetId: media.id,
+        promoVersionId: promoVersion.id, recordedByUserId: owner.user.id, status: "READY", sourceEditDecision: {} } });
+      const render = await db.audioRender.create({ data: { organisationId: authority.id, projectId: project.id, versionId: version.id,
+        outputMediaAssetId: media.id, outputPromoVersionId: promoVersion.id, requestedByUserId: owner.user.id,
+        preset: "SPEECH_MP3", status: "SUCCEEDED", completedAt: new Date(), resultJson: { checksumSha256: checksum } } });
+      const evidence = correctionsRenderEvidence(await db.audioRender.findUnique({ where: { id: render.id }, include: {
+        outputMediaAsset: true, outputPromoVersion: true, version: { select: { state: true } },
+        project: { select: { organisationId: true, createdByUserId: true, currentVersion: true, title: true } } } }));
+      const programme = await db.correctionsProgramme.create({ data: { organisationId: authority.id, facilityId: facilities[facilityIndex].id,
+        title: label, createdByUserId: owner.user.id, status: "APPROVED", latestRevision: 1 } });
+      const submission = await db.correctionsSubmission.create({ data: { programmeId: programme.id, organisationId: authority.id,
+        facilityId: facilities[facilityIndex].id, revision: 1, renderId: render.id, sourceFingerprint: evidence.fingerprint,
+        organisationPolicyVersion: 1, facilityPolicyVersion: 1, titleSnapshot: label, evidenceSnapshot: evidence,
+        submittedByUserId: owner.user.id, status: "APPROVED" } });
+      await db.correctionsReview.create({ data: { submissionId: submission.id, stage: "STAFF", decision: "APPROVE",
+        note: "Synthetic network approval", evidenceSnapshot: {}, reviewedByUserId: manager.user.id } });
+      return programme;
+    }
+    const central = await approvedProgramme(0, "Central C7 programme");
+    const localA = await approvedProgramme(0, "Facility A programme");
+    const localC = await approvedProgramme(2, "Facility C programme");
+    async function distribute(programmeId, facilityIds) {
+      const response = await api("/api/corrections/network/distribution", { method: "POST", cookie: owner.cookie, body: { programmeId, facilityIds } });
+      assert.equal(response.status, 201, JSON.stringify(response.body));
+      return Object.fromEntries(response.body.targetFacilityIds.map((id, index) => [id, response.body.distributionIds[index]]));
+    }
+    const centralIds = await distribute(central.id, facilities.map((facility) => facility.id));
+    const localAId = (await distribute(localA.id, [facilities[0].id]))[facilities[0].id];
+    const localCId = (await distribute(localC.id, [facilities[2].id]))[facilities[2].id];
+    const weekday = localDateTimeParts(new Date(), "Europe/Malta").weekday;
+    async function createWindow(facilityIndex, kind, distributionId) {
+      const response = await api("/api/corrections/network/windows", { method: "POST", cookie: owner.cookie,
+        body: { facilityId: facilities[facilityIndex].id, kind, distributionId, weekday,
+          startMinute: 0, endMinute: 1440, allowedContentTypes: ["PROGRAMME"] } });
+      assert.equal(response.status, 201, JSON.stringify(response.body));
+      return response.body.window.id;
+    }
+    for (let index = 0; index < 3; index += 1) await createWindow(index, "CENTRAL", centralIds[facilities[index].id]);
+    async function manifest(index) { return api("/api/player/manifest", { cookie: players[index].cookie, instanceId: players[index].instanceId }); }
+    for (let index = 0; index < 3; index += 1) {
+      const response = await manifest(index);
+      assert.equal(response.status, 200, JSON.stringify(response.body));
+      assert.equal(response.body.insertions.find((item) => item.programmingSource === "CORRECTIONS_CENTRAL")?.title, central.title);
+    }
+    assert.equal((await api("/api/corrections/network/windows", { method: "POST", cookie: owner.cookie,
+      body: { facilityId: facilities[1].id, kind: "LOCAL", distributionId: localAId, weekday,
+        startMinute: 0, endMinute: 1440, allowedContentTypes: ["PROGRAMME"] } })).status, 409);
+    const localAWindow = await createWindow(0, "LOCAL", localAId);
+    const localCWindow = await createWindow(2, "LOCAL", localCId);
+    const during = await Promise.all([manifest(0), manifest(1), manifest(2)]);
+    assert.deepEqual(during.map((response) => response.body.insertions[0]?.programmingSource),
+      ["CORRECTIONS_LOCAL", "CORRECTIONS_CENTRAL", "CORRECTIONS_LOCAL"]);
+    assert.deepEqual(during.map((response) => response.body.insertions[0]?.title),
+      [localA.title, central.title, localC.title]);
+    const localInsertion = during[0].body.insertions[0];
+    const localProof = await api("/api/player/proof-of-play", { method: "POST", cookie: players[0].cookie, instanceId: players[0].instanceId,
+      body: { events: [{ eventId: randomUUID(), manifestVersion: during[0].body.version,
+        proofToken: localInsertion.proofToken, programmingSourceProofToken: localInsertion.programmingSourceProofToken,
+        scheduleItemId: localInsertion.scheduleItemId, itemType: "CORRECTIONS_AUDIO", programmingSource: "CORRECTIONS_LOCAL",
+        eventType: "COMPLETED", occurredAt: new Date().toISOString(), positionSeconds: 30 }] } });
+    assert.equal(localProof.status, 200, JSON.stringify(localProof.body));
+    assert.equal(localProof.body.accepted, 1);
+    const report = await fetch(`${baseUrl}/api/corrections/network/report/export?facilityId=${facilities[0].id}&source=CORRECTIONS_LOCAL&status=COMPLETED`,
+      { headers: { cookie: owner.cookie } });
+    assert.equal(report.status, 200);
+    const csv = await report.text();
+    assert.match(csv, /CORRECTIONS_LOCAL,COMPLETED,1/);
+    assert.ok(!csv.includes("Synthetic facility B") && !csv.includes("Synthetic facility C") && !csv.includes("contributor"));
+    await api(`/api/corrections/network/windows/${localAWindow}`, { method: "DELETE", cookie: owner.cookie });
+    await api(`/api/corrections/network/windows/${localCWindow}`, { method: "DELETE", cookie: owner.cookie });
+    for (let index = 0; index < 3; index += 1) assert.equal((await manifest(index)).body.insertions[0]?.programmingSource, "CORRECTIONS_CENTRAL");
+    await api(`/api/corrections/network/distribution/${localAId}`, { method: "DELETE", cookie: owner.cookie });
+    assert.equal((await api("/api/corrections/network/windows", { method: "POST", cookie: owner.cookie,
+      body: { facilityId: facilities[0].id, kind: "LOCAL", distributionId: localAId, weekday,
+        startMinute: 0, endMinute: 1440, allowedContentTypes: ["PROGRAMME"] } })).status, 409);
 
     await db.plan.update({ where: { id: plan.id }, data: { tierNumber: 3 } });
     assert.equal((await api("/api/corrections/network", { cookie: owner.cookie })).status, 403);
+    assert.equal((await fetch(`${baseUrl}/api/corrections/network/report/export`, { headers: { cookie: owner.cookie } })).status, 403);
     assert.equal((await api("/api/corrections/network", { cookie: manager.cookie })).status, 403);
   } finally {
-    if (authority) await db.auditLog.deleteMany({ where: { organisationId: authority.id } });
-    if (authority) await db.organisation.delete({ where: { id: authority.id } });
+    if (authority) {
+      await db.rightsUsageLedgerEvent.deleteMany({ where: { organisationId: authority.id } });
+      await db.proofOfPlayEvent.deleteMany({ where: { organisationId: authority.id } });
+      await db.playoutIntent.deleteMany({ where: { organisationId: authority.id } });
+      await db.correctionsNetworkWindow.deleteMany({ where: { organisationId: authority.id } });
+      await db.correctionsProgrammeDistribution.deleteMany({ where: { organisationId: authority.id } });
+      await db.correctionsReview.deleteMany({ where: { submission: { organisationId: authority.id } } });
+      await db.correctionsSubmission.deleteMany({ where: { organisationId: authority.id } });
+      await db.correctionsProgramme.deleteMany({ where: { organisationId: authority.id } });
+      await db.audioTake.deleteMany({ where: { organisationId: authority.id } });
+      await db.audioRender.deleteMany({ where: { organisationId: authority.id } });
+      await db.audioProjectVersion.deleteMany({ where: { project: { organisationId: authority.id } } });
+      await db.audioProject.deleteMany({ where: { organisationId: authority.id } });
+      await db.promoAsset.updateMany({ where: { organisationId: authority.id }, data: { currentApprovedVersionId: null } });
+      await db.promoVersion.deleteMany({ where: { promoAsset: { organisationId: authority.id } } });
+      await db.promoAsset.deleteMany({ where: { organisationId: authority.id } });
+      await db.mediaAsset.deleteMany({ where: { organisationId: authority.id } });
+      await db.playerListenerLease.deleteMany({ where: { organisationId: authority.id } });
+      await db.player.deleteMany({ where: { organisationId: authority.id } });
+      await db.channelAssignment.deleteMany({ where: { channel: { organisationId: authority.id } } });
+      await db.channel.deleteMany({ where: { organisationId: authority.id } });
+      await db.station.deleteMany({ where: { organisationId: authority.id } });
+      await db.auditLog.deleteMany({ where: { organisationId: authority.id } });
+      await db.organisation.delete({ where: { id: authority.id } });
+    }
     if (outsider) await db.organisation.delete({ where: { id: outsider.id } });
     for (const user of users) await db.user.delete({ where: { id: user.id } });
     if (plan) await db.plan.delete({ where: { id: plan.id } });

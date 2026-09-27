@@ -15,29 +15,34 @@ finished Multi-Facility Network Operations release.
 - Distribution rows refer to an exact Guard-approved Corrections submission and
   its Studio render. No audio file is copied. Withdrawal preserves the row and
   its evidence, and deactivates its linked planned windows.
-- Weekly central/local windows are *planning records*. Mandatory central blocks
-  win; local blocks may cover only optional central defaults. The private player
-  has **not** been connected to these records. No network schedule or
-  distribution record currently authorises live playback.
+- Weekly central/local windows now require an exact, approved distribution;
+  local windows must reference a version originating at the target facility.
+  The private player can resolve them into the existing signed manifest and
+  `PlayoutIntent` proof path. Precedence is C6 Emergency/Priority, then a
+  mandatory central window, local window, and optional central default.
+  Invalid local content falls through to the approved central candidate.
+  This is **not yet live validated** and has no general private AutoDJ fallback.
+- The Tier 4/5 network dashboard and bounded CSV export aggregate existing
+  player proof by facility, source and status without contributor/request text.
+  These counts are device delivery evidence, not individual listening.
 - C6 facility Emergency/Priority controls remain unchanged. There is no
   authority-wide Emergency action.
 
 ## Release blockers
 
-1. Implement the Corrections-specific live schedule resolver and signed player
-   delivery for central/local windows, with current Guard, rights, source,
-   target facility policy, channel and player checks at publication and manifest
-   time. Preserve the existing general Corrections scheduler lock.
-2. Give local windows an approved, version-pinned local content selection and
-   a tested central/default fallback when local content is invalid or absent.
-   Verify Emergency > Priority > mandatory central > approved local > central
-   default without changing C6 return-to-current-programme behaviour.
+1. Run a disposable database/player test of the new central→local→central
+   resolver, including signed proof, C6 interruption, source withdrawal,
+   offline devices and a real media fetch. Prove that it does not create a
+   playback gap or false delivery claim. Current unit checks are insufficient.
+2. Finish a safe, approved private AutoDJ fallback for periods where neither
+   local nor central media can play, with a visible operational alert. Do not
+   reuse the public fallback or weaken the general Corrections schedule lock.
 3. Add private facility-to-authority and selected-facility syndication review,
    centrally targeted announcements and rehabilitation assignment. Do not
    expose contributor or family-request details across facilities.
-4. Add bounded, tenant-scoped network proof/export endpoints and audit drill-down.
-   Operational counts must remain separate from claims about individual
-   listeners or rehabilitation outcomes.
+4. Verify bounded, tenant-scoped network export against seeded player proof and
+   run a privacy/security review. The current CSV and aggregate endpoint have
+   only focused filter/empty-report coverage.
 5. Run a disposable non-production database and browser/player E2E across a
    Tier 4 authority and three facilities, including group targeting, policy
    restrictions, central→local→central return, withdrawal and safe fallback.

@@ -14,6 +14,7 @@ export default function NetworkDashboard() {
   const [distribution, setDistribution] = useState({ programmeId: "", facilityIds: [], groupId: "" });
   const [windowInput, setWindowInput] = useState({ facilityId: "", kind: "CENTRAL", weekday: 1, startMinute: 420, endMinute: 600,
     distributionId: "", mandatory: false, allowedContentTypes: ["PROGRAMME"] });
+  const [reportInput, setReportInput] = useState({ from: "", to: "", facilityId: "", groupId: "", source: "", status: "" });
   const refresh = useCallback(async () => {
     const url = facilityId ? `/api/corrections/network?facilityId=${encodeURIComponent(facilityId)}` : "/api/corrections/network";
     try {
@@ -48,16 +49,17 @@ export default function NetworkDashboard() {
           ["Players online", data.totals.onlinePlayers], ["Players offline", data.totals.offlinePlayers],
           ["Pending review", data.totals.pendingReviews], ["Completed player deliveries · 7d", data.totals.completedDeliveriesLast7Days],
           ["Failed player deliveries · 7d", data.totals.failedDeliveriesLast7Days],
+          ["Supervised Studio sessions · 7d", data.facilities.reduce((sum, item) => sum + (item.studioProductions || 0), 0)],
           ["Rehabilitation delivered · 7d", `${(data.rehabilitationDeliveredSecondsLast7Days / 3600).toFixed(1)} h`]]
           .map(([label, value]) => <article className={styles.metric} key={label}><span>{label}</span><strong>{value}</strong></article>)}
       </section>
       <section className={styles.card}><div className={styles.sectionHead}><div><span className={styles.eyebrow}>Operational health</span><h2>Facility comparison</h2></div><span>Proof, not listener tracking</span></div>
-        <div className={styles.tableWrap}><table><thead><tr><th>Facility</th><th>Areas</th><th>Online</th><th>Offline</th><th>Approved programmes</th><th>Delivered · 7d</th><th>Failed · 7d</th></tr></thead><tbody>
-          {data.facilities.map((item) => <tr key={item.id}><th scope="row">{item.name}<small>{item.status}</small></th><td>{item.zones}</td><td>{item.onlinePlayers}</td><td>{item.offlinePlayers}</td><td>{item.approvedProgrammes}</td><td>{item.completedDeliveries}</td><td>{item.failedDeliveries}</td></tr>)}
+        <div className={styles.tableWrap}><table><thead><tr><th>Facility</th><th>Areas</th><th>Online</th><th>Offline</th><th>Approved programmes</th><th>Studio · 7d</th><th>Delivered · 7d</th><th>Failed · 7d</th></tr></thead><tbody>
+          {data.facilities.map((item) => <tr key={item.id}><th scope="row">{item.name}<small>{item.status}</small></th><td>{item.zones}</td><td>{item.onlinePlayers}</td><td>{item.offlinePlayers}</td><td>{item.approvedProgrammes}</td><td>{item.studioProductions || 0}</td><td>{item.completedDeliveries}</td><td>{item.failedDeliveries}</td></tr>)}
         </tbody></table></div><p className={styles.note}>{data.note}</p></section>
       <section className={styles.grid}>
         <article className={styles.card}><span className={styles.eyebrow}>Shared, version-pinned audio</span><h2>Programme distribution</h2>
-          <p>A central distribution records the exact reviewed submission. It does not itself start playback or bypass facility policy.</p>
+          <p>Each distribution records the exact reviewed submission. A facility-origin programme can be selected for that facility’s local window after central approval.</p>
           <div className={styles.list}>{data.distributions.length ? data.distributions.map((item) => <div key={item.id} className={styles.row}><span>{item.programme.title} · revision {item.submission.revision}<small>{data.facilities.find((facility) => facility.id === item.targetFacilityId)?.name || "Other facility"} · {item.status}</small></span>
             {item.status === "ACTIVE" && data.permissions.distribute && <button type="button" disabled={busy} onClick={() => submit(`/api/corrections/network/distribution/${item.id}`, "DELETE", null, "Distribution withdrawn. Historical proof remains intact.")}>Withdraw</button>}</div>) : <p>No central distributions for this view.</p>}</div>
           {data.permissions.distribute && <form onSubmit={(event) => { event.preventDefault(); submit("/api/corrections/network/distribution", "POST", distribution, "Exact approved version distributed for planning."); }}>
@@ -66,7 +68,7 @@ export default function NetworkDashboard() {
             <fieldset><legend>Target facilities</legend><div className={styles.checks}>{data.facilities.map((item) => <label key={item.id}><input type="checkbox" checked={distribution.facilityIds.includes(item.id)} onChange={(event) => setDistribution({ ...distribution, facilityIds: event.target.checked ? [...distribution.facilityIds, item.id] : distribution.facilityIds.filter((id) => id !== item.id) })} /> {item.name}</label>)}</div></fieldset>
             <button disabled={busy || !distribution.programmeId || (!distribution.facilityIds.length && !distribution.groupId)}>Distribute approved version</button>
           </form>}</article>
-        <article className={styles.card}><span className={styles.eyebrow}>Central · local</span><h2>Weekly windows</h2><p>Mandatory central blocks cannot be replaced locally. A local block requires an approved central default covering its full time.</p>
+        <article className={styles.card}><span className={styles.eyebrow}>Central · local</span><h2>Weekly windows</h2><p>Mandatory central blocks cannot be replaced locally. Every window needs an exact approved audio version; a local block also needs a central default covering its full time.</p>
           <div className={styles.list}>{data.windows.length ? data.windows.map((item) => <div key={item.id} className={styles.row}><span>{DAYS[item.weekday]} {clock(item.startMinute)}–{clock(item.endMinute)} · {item.kind}{item.mandatory ? " · mandatory" : ""}<small>{data.facilities.find((facility) => facility.id === item.facilityId)?.name || "Other facility"} · {item.active ? "planned" : "inactive"}</small></span>{item.active && data.permissions.programme && <button type="button" disabled={busy} onClick={() => submit(`/api/corrections/network/windows/${item.id}`, "DELETE", null, "Window deactivated. The audit record is retained.")}>Deactivate</button>}</div>) : <p>No windows for this view.</p>}</div>
           {data.permissions.programme && <form onSubmit={(event) => { event.preventDefault(); submit("/api/corrections/network/windows", "POST", windowInput, "Window saved as a governed network plan."); }}>
             <div className={styles.fields}><label>Facility<select required value={windowInput.facilityId} onChange={(event) => setWindowInput({ ...windowInput, facilityId: event.target.value })}><option value="">Choose facility</option>{data.facilities.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
@@ -74,10 +76,26 @@ export default function NetworkDashboard() {
               <label>Day<select value={windowInput.weekday} onChange={(event) => setWindowInput({ ...windowInput, weekday: Number(event.target.value) })}>{DAYS.map((day, index) => <option key={day} value={index}>{day}</option>)}</select></label>
               <label>Start minute<input type="number" min="0" max="1439" value={windowInput.startMinute} onChange={(event) => setWindowInput({ ...windowInput, startMinute: Number(event.target.value) })} /></label>
               <label>End minute<input type="number" min="1" max="1440" value={windowInput.endMinute} onChange={(event) => setWindowInput({ ...windowInput, endMinute: Number(event.target.value) })} /></label>
-              {windowInput.kind === "CENTRAL" && <label>Approved distribution<select required value={windowInput.distributionId} onChange={(event) => setWindowInput({ ...windowInput, distributionId: event.target.value })}><option value="">Choose version</option>{data.distributions.filter((item) => item.status === "ACTIVE" && item.targetFacilityId === windowInput.facilityId).map((item) => <option key={item.id} value={item.id}>{item.programme.title} · revision {item.submission.revision}</option>)}</select></label>}
+              <label>Approved audio version<select required value={windowInput.distributionId} onChange={(event) => setWindowInput({ ...windowInput, distributionId: event.target.value })}><option value="">Choose version</option>{data.distributions.filter((item) => item.status === "ACTIVE" && item.targetFacilityId === windowInput.facilityId && (windowInput.kind === "CENTRAL" || item.sourceFacilityId === windowInput.facilityId)).map((item) => <option key={item.id} value={item.id}>{item.programme.title} · revision {item.submission.revision}</option>)}</select></label>
             </div>{windowInput.kind === "CENTRAL" && <label className={styles.check}><input type="checkbox" checked={windowInput.mandatory} onChange={(event) => setWindowInput({ ...windowInput, mandatory: event.target.checked })} /> Mandatory central block</label>}
-            <button disabled={busy || !windowInput.facilityId}>Save planned window</button>
+            <button disabled={busy || !windowInput.facilityId || !windowInput.distributionId}>Save planned window</button>
           </form>}</article>
+      </section>
+      {data.permissions.report && <section className={styles.card}><span className={styles.eyebrow}>Verified network evidence</span><h2>Download delivery summary</h2>
+        <p>Counts come from private player proof, not individual listening. No contributor or request text is exported.</p>
+        <div className={styles.fields}>
+          <label>From (optional)<input type="date" value={reportInput.from} onChange={(event) => setReportInput({ ...reportInput, from: event.target.value })} /></label>
+          <label>To (optional)<input type="date" value={reportInput.to} onChange={(event) => setReportInput({ ...reportInput, to: event.target.value })} /></label>
+          <label>Facility<select value={reportInput.facilityId} onChange={(event) => setReportInput({ ...reportInput, facilityId: event.target.value, groupId: "" })}><option value="">All facilities</option>{data.facilities.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+          <label>Group<select value={reportInput.groupId} onChange={(event) => setReportInput({ ...reportInput, groupId: event.target.value, facilityId: "" })}><option value="">No group filter</option>{data.groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>
+          <label>Source<select value={reportInput.source} onChange={(event) => setReportInput({ ...reportInput, source: event.target.value })}><option value="">All private sources</option>{["CORRECTIONS_CENTRAL", "CORRECTIONS_LOCAL", "CORRECTIONS_REHABILITATION", "CORRECTIONS_REQUEST", "CORRECTIONS_STANDARD", "CORRECTIONS_PRIORITY", "CORRECTIONS_EMERGENCY"].map((source) => <option key={source} value={source}>{source.replaceAll("_", " ")}</option>)}</select></label>
+          <label>Delivery status<select value={reportInput.status} onChange={(event) => setReportInput({ ...reportInput, status: event.target.value })}><option value="">All statuses</option>{["STARTED", "COMPLETED", "FAILED", "INTERRUPTED"].map((status) => <option key={status} value={status}>{status}</option>)}</select></label>
+        </div>
+        <a href={`/api/corrections/network/report/export?${new URLSearchParams(Object.entries(reportInput).filter(([, value]) => value)).toString()}`}>Download CSV →</a>
+      </section>}
+      <section className={styles.card}><span className={styles.eyebrow}>Player proof · 7 days</span><h2>Delivery by source</h2>
+        <div className={styles.activity}>{data.deliveryBySource?.length ? data.deliveryBySource.map((item) => <span key={`${item.source}:${item.status}`}>{item.source.replaceAll("_", " ")} · {item.status.toLowerCase()} · {item.playerEvents} player events</span>) : <span>No verified private player events yet.</span>}</div>
+        <p className={styles.note}>A completed player event confirms device delivery, not individual listening or a rehabilitation outcome.</p>
       </section>
       <section className={styles.card}><span className={styles.eyebrow}>Last seven days</span><h2>Network activity</h2><div className={styles.activity}><span>{data.totals.requestsLast7Days} moderated requests received</span><span>{data.totals.announcementsLast7Days} announcements prepared</span><span>{data.totals.approvedRehabilitationItems} approved rehabilitation items</span><span>{data.overrideHistory.length} recent facility overrides</span></div><p className={styles.note}>Facility Emergency and Priority controls remain in their own guarded workspace. There is no network-wide Emergency action here.</p></section>
     </>}
