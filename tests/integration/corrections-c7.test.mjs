@@ -190,6 +190,11 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
       "a group distribution must not silently reach facility C");
     assert.equal((await db.correctionsProgrammeDistribution.count({ where: { programmeId: grouped.id,
       targetFacilityId: facilities[2].id } })), 0);
+    assert.equal((await api("/api/corrections/network/windows", { method: "POST", cookie: owner.cookie,
+      body: { facilityId: facilities[2].id, kind: "CENTRAL", distributionId: groupDistribution.body.distributionIds[0],
+        weekday: localDateTimeParts(new Date(), "Europe/Malta").weekday,
+        startMinute: 0, endMinute: 1440, allowedContentTypes: ["PROGRAMME"] } })).status, 409,
+      "a raw group distribution ID cannot be scheduled at an unselected facility");
     const groupedSubmission = await db.correctionsSubmission.findFirst({ where: { programmeId: grouped.id } });
     const groupedRender = await db.audioRender.findUnique({ where: { id: groupedSubmission.renderId } });
     await db.correctionsFacility.update({ where: { locationId: facilities[1].id },
