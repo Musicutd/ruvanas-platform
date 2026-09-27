@@ -51,7 +51,13 @@ export default function NetworkDashboard() {
           ["Pending review", data.totals.pendingReviews], ["Completed player deliveries · 7d", data.totals.completedDeliveriesLast7Days],
           ["Failed player deliveries · 7d", data.totals.failedDeliveriesLast7Days],
           ["Supervised Studio sessions · 7d", data.facilities.reduce((sum, item) => sum + (item.studioProductions || 0), 0)],
-          ["Rehabilitation delivered · 7d", `${(data.rehabilitationDeliveredSecondsLast7Days / 3600).toFixed(1)} h`]]
+          ["Rehabilitation delivered · 7d", `${(data.rehabilitationDeliveredSecondsLast7Days / 3600).toFixed(1)} h`],
+          ["Central programme plays · 7d", data.deliveryMetricsLast7Days.centralProgramme],
+          ["Local programme plays · 7d", data.deliveryMetricsLast7Days.localProgramme],
+          ["Central rehabilitation plays · 7d", data.deliveryMetricsLast7Days.centralRehabilitation],
+          ["Local rehabilitation plays · 7d", data.deliveryMetricsLast7Days.localRehabilitation],
+          ["Central announcement plays · 7d", data.deliveryMetricsLast7Days.centralAnnouncement],
+          ["Request deliveries · 7d", data.deliveryMetricsLast7Days.request]]
           .map(([label, value]) => <article className={styles.metric} key={label}><span>{label}</span><strong>{value}</strong></article>)}
       </section>
       <section className={styles.card}><div className={styles.sectionHead}><div><span className={styles.eyebrow}>Operational health</span><h2>Facility comparison</h2></div><span>Proof, not listener tracking</span></div>

@@ -33,6 +33,10 @@ finished Multi-Facility Network Operations release.
   source revision rather than only a grouped count. This is device delivery
   evidence, not individual listening. Disposable CI must still validate the
   generated file against actual seeded proof before the report gate can pass.
+- The dashboard now separates completed central/local programmes,
+  rehabilitation, announcements and request delivery from STARTED, FAILED and
+  INTERRUPTED events. Categories without a working runtime remain at zero;
+  these counters do not substitute for live distribution validation.
 - C6 facility Emergency/Priority controls remain unchanged. There is no
   authority-wide Emergency action.
 
