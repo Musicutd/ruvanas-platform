@@ -60,3 +60,19 @@ test("a contested transaction can use a bounded retry budget", async () => {
   assert.equal(result, true);
   assert.equal(attempts, 5);
 });
+
+test("raw-query PostgreSQL serialization conflicts are retried, but other raw errors are not", async () => {
+  let attempts = 0;
+  const database = {
+    async $transaction(operation) {
+      attempts += 1;
+      if (attempts === 1) throw Object.assign(new Error("could not serialize access"), {
+        code: "P2010", meta: { code: "40001" }
+      });
+      return operation({ ok: true });
+    }
+  };
+  assert.equal(await runSerializableTransaction(database, async (tx) => tx.ok), true);
+  assert.equal(attempts, 2);
+  assert.equal(isRetryableTransactionError({ code: "P2010", meta: { code: "23505" } }), false);
+});
