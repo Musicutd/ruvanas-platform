@@ -526,6 +526,11 @@ enum CorrectionsFacilityGrantPermission {
   VIEWER
 }
 
+enum CorrectionsNetworkOrigin {
+  CENTRAL
+  FACILITY
+}
+
 enum CorrectionsAnnouncementStatus {
   DRAFT
   APPROVED
@@ -549,6 +554,17 @@ enum CorrectionsOverrideStatus {
   CLEARED
   SUPERSEDED
   EXPIRED
+}
+
+enum CorrectionsNetworkWindowKind {
+  CENTRAL
+  LOCAL
+  FALLBACK
+}
+
+enum CorrectionsDistributionStatus {
+  ACTIVE
+  WITHDRAWN
 }
 
 enum CorrectionsContributorStatus {
@@ -1730,6 +1746,7 @@ model User {
   createdCorrectionsContributors         CorrectionsContributor[]         @relation("CorrectionsContributorCreatedBy")
   supervisedCorrectionsStudioSessions    CorrectionsStudioSession[]       @relation("CorrectionsStudioSupervisor")
   createdCorrectionsStudioSessions       CorrectionsStudioSession[]       @relation("CorrectionsStudioCreatedBy")
+  createdCorrectionsNetworkAudioDistributions CorrectionsNetworkAudioDistribution[]
   createdSchoolAnnouncements             SchoolAnnouncement[]             @relation("SchoolAnnouncementCreatedBy")
   reviewedSchoolAnnouncements            SchoolAnnouncement[]             @relation("SchoolAnnouncementReviewedBy")
   createdSchoolNoticeboardPosts          SchoolNoticeboardPost[]          @relation("SchoolNoticeboardCreatedBy")
@@ -1924,6 +1941,11 @@ model Organisation {
   correctionsDevelopmentModules       CorrectionsDevelopmentModule[]
   correctionsAnnouncements            CorrectionsAnnouncement[]
   correctionsOverrides                CorrectionsOverride[]
+  correctionsNetworkGrants             CorrectionsNetworkGrant[]
+  correctionsNetworkWindows            CorrectionsNetworkWindow[]
+  correctionsDistributions             CorrectionsProgrammeDistribution[]
+  correctionsNetworkAudioDistributions CorrectionsNetworkAudioDistribution[]
+  correctionsSyndicationOffers CorrectionsSyndicationOffer[]
   schoolSafeguardingReadiness        SchoolSafeguardingReadiness?
   schoolSafeguardingReviews          SchoolSafeguardingReview[]
   schoolRetentionHolds               SchoolRetentionHold[]
@@ -2052,6 +2074,7 @@ model OrganisationMember {
   djAccessGrants                DjAccessGrant[]
   organisationBranchAssignments OrganisationBranchAssignment[]
   correctionsFacilityGrants     CorrectionsFacilityGrant[]
+  correctionsNetworkGrant       CorrectionsNetworkGrant?
 
   @@unique([userId, organisationId])
   @@index([organisationId])
@@ -2746,6 +2769,12 @@ model Location {
   correctionsRehabContent       CorrectionsRehabContent[]
   correctionsAnnouncements     CorrectionsAnnouncement[]
   correctionsOverrides         CorrectionsOverride[]
+  correctionsNetworkWindows    CorrectionsNetworkWindow[]
+  correctionsDistributionTargets CorrectionsProgrammeDistribution[] @relation("CorrectionsDistributionTarget")
+  correctionsDistributionSources CorrectionsProgrammeDistribution[] @relation("CorrectionsDistributionSource")
+  correctionsAudioDistributionTargets CorrectionsNetworkAudioDistribution[] @relation("CorrectionsAudioDistributionTarget")
+  correctionsAudioDistributionSources CorrectionsNetworkAudioDistribution[] @relation("CorrectionsAudioDistributionSource")
+  correctionsSyndicationSources CorrectionsSyndicationOffer[]
 
   @@unique([organisationId, slug])
   @@index([organisationId])
@@ -2891,6 +2920,7 @@ model CorrectionsProgramme {
   description     String?
   status          CorrectionsProgrammeStatus @default(DRAFT)
   latestRevision  Int                        @default(0)
+  networkOrigin   CorrectionsNetworkOrigin   @default(FACILITY)
   createdByUserId String
   createdAt       DateTime                   @default(now())
   updatedAt       DateTime                   @updatedAt
@@ -2903,6 +2933,8 @@ model CorrectionsProgramme {
   requests CorrectionsRequest[]
   rehabItems CorrectionsRehabProgrammeItem[]
   playoutIntents PlayoutIntent[]
+  networkDistributions CorrectionsProgrammeDistribution[]
+  syndicationOffers CorrectionsSyndicationOffer[]
 
   @@index([organisationId, facilityId, status])
   @@index([facilityId, updatedAt])
@@ -2936,6 +2968,8 @@ model CorrectionsSubmission {
   reviews     CorrectionsReview[]
   playoutIntents PlayoutIntent[]
   contributor CorrectionsContributor? @relation(fields: [contributorId], references: [id], onDelete: Restrict)
+  networkDistributions CorrectionsProgrammeDistribution[]
+  syndicationOffers CorrectionsSyndicationOffer[]
   studioSession CorrectionsStudioSession? @relation(fields: [studioSessionId], references: [id], onDelete: Restrict)
   studioProject AudioProject? @relation("CorrectionsSubmittedProject", fields: [studioProjectId], references: [id], onDelete: Restrict)
   studioVersion AudioProjectVersion? @relation("CorrectionsSubmittedVersion", fields: [studioVersionId], references: [id], onDelete: Restrict)
@@ -3042,6 +3076,153 @@ model CorrectionsFacilityGrant {
   @@index([organisationId, facilityId, permission])
 }
 
+// Network authority is never inferred from a facility grant. The organisation
+// owner may delegate individual C7 capabilities without granting C6 overrides.
+model CorrectionsNetworkGrant {
+  id                   String @id @default(cuid())
+  organisationId       String
+  organisationMemberId String @unique
+  canView              Boolean @default(false)
+  canManage            Boolean @default(false)
+  canPolicy            Boolean @default(false)
+  canProgramme         Boolean @default(false)
+  canDistribute        Boolean @default(false)
+  canReport            Boolean @default(false)
+  canAudit             Boolean @default(false)
+  createdByUserId      String
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  member OrganisationMember @relation(fields: [organisationMemberId], references: [id], onDelete: Cascade)
+
+  @@index([organisationId])
+}
+
+// An explicit weekly central/local schedule boundary, not a second music
+// scheduler. LIVE playout must still pass Corrections Guard and signed proof.
+model CorrectionsNetworkWindow {
+  id             String @id @default(cuid())
+  organisationId String
+  facilityId     String
+  kind           CorrectionsNetworkWindowKind
+  mandatory      Boolean @default(false)
+  distributionId String?
+  audioDistributionId String?
+  weekday        Int
+  startMinute    Int
+  endMinute      Int
+  allowedContentTypes String[] @default([])
+  active         Boolean @default(true)
+  createdByUserId String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  facility Location @relation(fields: [facilityId], references: [id], onDelete: Restrict)
+  distribution CorrectionsProgrammeDistribution? @relation(fields: [distributionId], references: [id], onDelete: Restrict)
+  audioDistribution CorrectionsNetworkAudioDistribution? @relation(fields: [audioDistributionId], references: [id], onDelete: Restrict)
+
+  @@index([organisationId, facilityId, weekday, active])
+  @@index([distributionId])
+  @@index([audioDistributionId])
+}
+
+// C7 rehabilitation and STANDARD announcement distribution pins the reviewed
+// source audio independently of a Corrections Studio programme. It never
+// grants public syndication or bypasses facility policy at playback.
+model CorrectionsNetworkAudioDistribution {
+  id                   String @id @default(cuid())
+  organisationId       String
+  sourceFacilityId     String?
+  targetFacilityId     String
+  targetGroupId        String?
+  targetGroupName      String?
+  kind                 String
+  rehabilitationId     String?
+  announcementId       String?
+  mediaAssetId         String
+  promoVersionId       String
+  sourceFingerprint    String
+  territoryCode        String
+  status               CorrectionsDistributionStatus @default(ACTIVE)
+  effectiveFrom        DateTime
+  effectiveUntil       DateTime?
+  createdByUserId      String
+  withdrawnAt          DateTime?
+  createdAt            DateTime @default(now())
+
+  organisation         Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  sourceFacility       Location? @relation("CorrectionsAudioDistributionSource", fields: [sourceFacilityId], references: [id], onDelete: Restrict)
+  targetFacility       Location @relation("CorrectionsAudioDistributionTarget", fields: [targetFacilityId], references: [id], onDelete: Restrict)
+  rehabilitation       CorrectionsRehabContent? @relation(fields: [rehabilitationId], references: [id], onDelete: Restrict)
+  announcement         CorrectionsAnnouncement? @relation(fields: [announcementId], references: [id], onDelete: Restrict)
+  mediaAsset           MediaAsset @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+  promoVersion         PromoVersion @relation(fields: [promoVersionId], references: [id], onDelete: Restrict)
+  createdBy            User @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  windows              CorrectionsNetworkWindow[]
+
+  @@unique([rehabilitationId, targetFacilityId, promoVersionId])
+  @@unique([announcementId, targetFacilityId])
+  @@index([organisationId, targetFacilityId, status])
+}
+
+// Each distribution pins exact Corrections Guard evidence. The media file is
+// shared; withdrawing distribution never erases historical approval/proof.
+model CorrectionsProgrammeDistribution {
+  id                 String @id @default(cuid())
+  organisationId     String
+  sourceFacilityId   String
+  targetFacilityId   String
+  targetGroupId      String?
+  targetGroupName    String?
+  programmeId        String
+  submissionId       String
+  status             CorrectionsDistributionStatus @default(ACTIVE)
+  effectiveFrom      DateTime
+  effectiveUntil     DateTime?
+  createdByUserId    String
+  withdrawnAt        DateTime?
+  syndicationOfferId String?
+  createdAt          DateTime @default(now())
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  sourceFacility Location @relation("CorrectionsDistributionSource", fields: [sourceFacilityId], references: [id], onDelete: Restrict)
+  targetFacility Location @relation("CorrectionsDistributionTarget", fields: [targetFacilityId], references: [id], onDelete: Restrict)
+  programme CorrectionsProgramme @relation(fields: [programmeId], references: [id], onDelete: Restrict)
+  submission CorrectionsSubmission @relation(fields: [submissionId], references: [id], onDelete: Restrict)
+  syndicationOffer CorrectionsSyndicationOffer? @relation(fields: [syndicationOfferId], references: [id], onDelete: Restrict)
+  windows CorrectionsNetworkWindow[]
+
+  @@unique([submissionId, targetFacilityId])
+  @@index([organisationId, targetFacilityId, status])
+  @@index([syndicationOfferId])
+}
+
+// A facility-made exact approved submission requires a separate central
+// acceptance before it can enter the private cross-facility network.
+model CorrectionsSyndicationOffer {
+  id               String @id @default(cuid())
+  organisationId   String
+  sourceFacilityId String
+  programmeId      String
+  submissionId     String @unique
+  status           String @default("OFFERED")
+  offeredByUserId  String
+  acceptedByUserId String?
+  offeredAt        DateTime @default(now())
+  acceptedAt       DateTime?
+  withdrawnAt      DateTime?
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  sourceFacility Location @relation(fields: [sourceFacilityId], references: [id], onDelete: Restrict)
+  programme CorrectionsProgramme @relation(fields: [programmeId], references: [id], onDelete: Restrict)
+  submission CorrectionsSubmission @relation(fields: [submissionId], references: [id], onDelete: Restrict)
+  distributions CorrectionsProgrammeDistribution[]
+
+  @@index([organisationId, status])
+  @@index([sourceFacilityId, status])
+}
+
 // A published announcement pins a single approved audio version. Editing
 // creates a new record; active intents never follow a mutable media pointer.
 model CorrectionsAnnouncement {
@@ -3065,6 +3246,7 @@ model CorrectionsAnnouncement {
   promoVersion PromoVersion @relation(fields: [promoVersionId], references: [id], onDelete: Restrict)
   overrides CorrectionsOverride[]
   playoutIntents PlayoutIntent[]
+  networkAudioDistributions CorrectionsNetworkAudioDistribution[]
 
   @@index([organisationId, facilityId, status])
 }
@@ -3194,6 +3376,7 @@ model CorrectionsRehabContent {
   mediaAsset MediaAsset @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
   programmeItems CorrectionsRehabProgrammeItem[]
   playoutIntents PlayoutIntent[]
+  networkAudioDistributions CorrectionsNetworkAudioDistribution[]
 
   @@index([organisationId, facilityId, status])
   @@index([mediaAssetId])
@@ -3766,6 +3949,7 @@ model MediaAsset {
   studioProductHandoffs StudioProductHandoff[]
   correctionsRehabContent CorrectionsRehabContent[]
   correctionsAnnouncements CorrectionsAnnouncement[]
+  correctionsNetworkAudioDistributions CorrectionsNetworkAudioDistribution[]
 
   @@unique([id, organisationId])
   @@index([organisationId])
@@ -3838,6 +4022,7 @@ model PromoVersion {
   schoolEpisodeExchangeOffers SchoolEpisodeExchangeOffer[]
   studioProductHandoffs       StudioProductHandoff[]
   correctionsAnnouncements   CorrectionsAnnouncement[]
+  correctionsNetworkAudioDistributions CorrectionsNetworkAudioDistribution[]
 
   @@unique([promoAssetId, version])
   @@unique([promoAssetId, sourceReference])

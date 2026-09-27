@@ -8,8 +8,10 @@ import {
   updatePlayedInsertionIds
 } from "@/lib/playback-queue.mjs";
 import LiveChannelPlayer from "./LiveChannelPlayer";
+import { drainProofBatch } from "@/lib/playback-proof-drain.mjs";
 
 const PLAYBACK_QUEUE_KEY = "ruvanas_proof_of_play_queue_v1";
+const REJECTED_PLAYBACK_KEY = "ruvanas_proof_of_play_rejected_v1";
 const PLAYED_INSERTIONS_KEY = "ruvanas_played_campaign_insertions_v1";
 const PLAYED_CORRECTIONS_INSERTIONS_KEY = "ruvanas_played_corrections_insertions_v1";
 const PLAYER_INSTANCE_KEY = "ruvanas_player_instance_v1";
@@ -54,6 +56,19 @@ function readPlaybackQueue() {
 
 function writePlaybackQueue(queue) {
   window.localStorage.setItem(PLAYBACK_QUEUE_KEY, JSON.stringify(queue));
+}
+
+function retainRejectedPlaybackEvent(event) {
+  try {
+    const previous = JSON.parse(window.localStorage.getItem(REJECTED_PLAYBACK_KEY) || "[]");
+    const records = Array.isArray(previous) ? previous : [];
+    const safe = { eventId: event.eventId, scheduleItemId: event.scheduleItemId,
+      eventType: event.eventType, programmingSource: event.programmingSource,
+      occurredAt: event.occurredAt, rejectedAt: new Date().toISOString() };
+    window.localStorage.setItem(REJECTED_PLAYBACK_KEY, JSON.stringify([...records, safe].slice(-500)));
+  } catch {
+    // Continue to remove a server-rejected item from the active retry queue.
+  }
 }
 
 function isCorrectionsInsertion(programmingSource) {
@@ -101,29 +116,45 @@ export default function PlayerPage() {
   const insertionMediaSourceRef = useRef(null);
   const startedPlaybackKey = useRef(null);
   const commandBusy = useRef(false);
+  const proofBusy = useRef(false);
 
   const flushPlaybackQueue = useCallback(async () => {
-    const queued = readPlaybackQueue();
-    if (!queued.length) return;
-
+    if (proofBusy.current) return;
+    proofBusy.current = true;
     try {
-      const response = await fetch("/api/player/proof-of-play", {
-        method: "POST",
-        headers: playerHeaders({ "Content-Type": "application/json" }),
-        body: JSON.stringify({ events: queued.slice(0, 100) })
-      });
-      if (!response.ok) return;
-
-      const sentIds = queued.slice(0, 100).map((event) => event.eventId);
-      writePlaybackQueue(removePlaybackEvents(readPlaybackQueue(), sentIds));
+      for (let batch = 0; batch < 5; batch += 1) {
+        const queued = readPlaybackQueue().slice(0, 100);
+        if (!queued.length) break;
+        const progressed = await drainProofBatch(queued, {
+          send: async (events) => {
+            const response = await fetch("/api/player/proof-of-play", {
+              method: "POST",
+              headers: playerHeaders({ "Content-Type": "application/json" }),
+              body: JSON.stringify({ events })
+            });
+            return response.status;
+          },
+          accepted: async (events) => {
+            writePlaybackQueue(removePlaybackEvents(readPlaybackQueue(), events.map((event) => event.eventId)));
+          },
+          rejected: async (event) => {
+            retainRejectedPlaybackEvent(event);
+            writePlaybackQueue(removePlaybackEvents(readPlaybackQueue(), [event.eventId]));
+            setMessage("One past playback report could not be verified and was retained on this device for review. It was not counted as delivered.");
+          }
+        });
+        if (!progressed) break;
+      }
     } catch {
       // Keep the queue on this device and retry after connectivity returns.
+    } finally {
+      proofBusy.current = false;
     }
   }, []);
 
   const queuePlaybackEvent = useCallback((event) => {
     writePlaybackQueue(appendPlaybackEvent(readPlaybackQueue(), event));
-    flushPlaybackQueue();
+    return flushPlaybackQueue();
   }, [flushPlaybackQueue]);
 
   const loadManifest = useCallback(async () => {
@@ -355,7 +386,7 @@ export default function PlayerPage() {
 
   const playbackEvent = useCallback((item, eventType, audioElement, failureReason = null) => {
     if (!item || !manifest) return;
-    queuePlaybackEvent({
+    return queuePlaybackEvent({
       eventId: crypto.randomUUID(),
       manifestVersion: manifest.version,
       proofToken: item.proofToken,
@@ -436,13 +467,17 @@ export default function PlayerPage() {
     playbackEvent(activeInsertion, "STARTED", event.currentTarget);
   }
 
-  function finishTrack(event) {
+  async function finishTrack(event) {
     if (!activeInsertion) return;
-    playbackEvent(activeInsertion, "COMPLETED", event.currentTarget);
+    const proof = playbackEvent(activeInsertion, "COMPLETED", event.currentTarget);
     rememberPlayedInsertion(activeInsertion.scheduleItemId, "COMPLETED", activeInsertion.programmingSource);
     startedPlaybackKey.current = null;
     activeInsertionIdRef.current = null;
     setActiveInsertionId(null);
+    if (["CORRECTIONS_CENTRAL", "CORRECTIONS_LOCAL"].includes(activeInsertion.programmingSource)) {
+      await proof;
+      loadManifest().catch(() => setMessage("The private schedule will refresh shortly."));
+    }
   }
 
   function failTrack(event) {

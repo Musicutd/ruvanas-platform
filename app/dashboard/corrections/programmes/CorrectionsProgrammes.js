@@ -8,7 +8,7 @@ async function send(url, method, body) {
   return response.json();
 }
 
-function ProgrammeCard({ programme, facility, renders, refresh, setNotice }) {
+function ProgrammeCard({ programme, facility, renders, networkEnabled, refresh, setNotice }) {
   const [title, setTitle] = useState(programme.title);
   const [description, setDescription] = useState(programme.description || "");
   const [renderId, setRenderId] = useState("");
@@ -35,6 +35,15 @@ function ProgrammeCard({ programme, facility, renders, refresh, setNotice }) {
     const result = await response.json();
     setReadiness(result.readiness || null);
   };
+  const offer = async () => {
+    setBusy(true);
+    try {
+      const result = await send("/api/corrections/network/syndication", "POST", { programmeId: programme.id });
+      setNotice(result.error || (result.ok ? "Exact approved revision offered for separate central acceptance. Nothing is on air." : "Could not offer this revision."));
+      if (result.ok) await refresh();
+    } catch { setNotice("The connection failed. Please try again."); }
+    finally { setBusy(false); }
+  };
   return <article className={styles.card}>
     <div className={styles.cardHead}><div><span className={styles.eyebrow}>{programme.facilityName} · revision {programme.latestRevision}</span><h3>{programme.title}</h3><p>{programme.description || "No description yet."}</p></div><span className={styles.badge}>{programme.status.replaceAll("_", " ")}</span></div>
     {programme.submission && <p className={styles.muted}>Submitted version {programme.submission.revision} · {programme.submission.dualApprovalRequired ? "Two reviews required" : "One staff review required"} · {programme.submission.reviews.length} decision{programme.submission.reviews.length === 1 ? "" : "s"} recorded</p>}
@@ -43,6 +52,7 @@ function ProgrammeCard({ programme, facility, renders, refresh, setNotice }) {
     {canEdit && <details className={styles.details}><summary>Edit programme details</summary><div className={styles.inner}><p className={styles.muted}>Changing an approved programme immediately removes its current approval. Submit a new audio version for review.</p><div className={styles.fields}><label>Title<input value={title} onChange={(event) => setTitle(event.target.value)} minLength={3} maxLength={160} /></label><label>Description<input value={description} onChange={(event) => setDescription(event.target.value)} maxLength={2000} /></label></div><button type="button" disabled={busy} onClick={() => act("", "PATCH", { title, description }, "Draft saved. Prior approval is no longer current.")}>Save draft</button></div></details>}
     {canSubmit && <details className={styles.details}><summary>Submit audio for staff review</summary><div className={styles.inner}><p className={styles.muted}>Select a verified, approved Studio render. The exact audio checksum and policy versions are recorded; submission does not publish or schedule it.</p>{renders.length ? <div className={styles.inlineForm}><label>Approved render<select value={renderId} onChange={(event) => setRenderId(event.target.value)}><option value="">Choose approved audio</option>{renders.map((render) => <option key={render.id} value={render.id}>{render.projectTitle} · {new Date(render.completedAt).toLocaleDateString()}</option>)}</select></label><button type="button" disabled={busy || !renderId} onClick={() => act("/submit", "POST", { renderId }, "Submitted for staff review. Nothing is on air.")}>Submit for review</button></div> : <p>No verified Studio render is ready for this account yet. Audio preparation and contributor handoff are part of the next Studio stage.</p>}</div></details>}
     {canReview && reviewStage && <details className={styles.details}><summary>{reviewStage === "STAFF" ? "Staff review" : "Second facility review"}</summary><div className={styles.inner}><p className={styles.muted}>Listen to the submitted audio above before deciding. You cannot approve your own submission; a second review must be by another person.</p><div className={styles.fields}><label>Decision<select value={decision} onChange={(event) => setDecision(event.target.value)}><option value="APPROVE">Approve</option><option value="CHANGES_REQUESTED">Request changes</option><option value="REJECT">Reject</option></select></label><label>Reason or note<input value={note} onChange={(event) => setNote(event.target.value)} maxLength={2000} placeholder={decision === "APPROVE" ? "Optional" : "Required for changes or rejection"} /></label></div><button type="button" disabled={busy} onClick={() => act("/review", "POST", { stage: reviewStage, decision, note }, "Review recorded. Scheduling and playback remain disabled.")}>Record review</button></div></details>}
+    {networkEnabled && canWrite && programme.status === "APPROVED" && <button type="button" className={styles.secondaryButton} disabled={busy} onClick={offer}>Offer approved revision to Inside Network</button>}
     <button type="button" className={styles.secondaryButton} onClick={check}>Check approval evidence</button>
     {readiness && <p role="status" className={styles.muted}>{readiness.allowed ? "Approval evidence is current. Private delivery is still not enabled." : `Not ready: ${readiness.reason.replaceAll("_", " ").toLowerCase()}.`}</p>}
   </article>;
@@ -60,7 +70,8 @@ export default function CorrectionsProgrammes() {
       const [facilitiesResponse, programmesResponse] = await Promise.all([fetch("/api/corrections/facilities", { cache: "no-store" }), fetch("/api/corrections/programmes", { cache: "no-store" })]);
       const [facilities, programmes] = await Promise.all([facilitiesResponse.json(), programmesResponse.json()]);
       if (!facilities.ok || !programmes.ok) { setNotice(facilities.error || programmes.error || "Unable to load programmes."); return; }
-      setData({ facilities: facilities.facilities, programmes: programmes.programmes, renders: programmes.renders });
+      setData({ facilities: facilities.facilities, programmes: programmes.programmes, renders: programmes.renders,
+        networkEnabled: programmes.networkEnabled });
     } catch { setNotice("Unable to load programmes."); }
   }, []);
   useEffect(() => { refresh(); }, [refresh]);
@@ -80,7 +91,7 @@ export default function CorrectionsProgrammes() {
     {!data ? <p>Loading programme workspace…</p> : <>
       {editableFacilities.length > 0 && <section className={styles.card}><span className={styles.eyebrow}>1 · Draft</span><h2>Create a programme</h2><form onSubmit={create}><div className={styles.fields}><label>Facility<select value={facilityId} onChange={(event) => setFacilityId(event.target.value)} required><option value="">Choose a facility</option>{editableFacilities.map((facility) => <option key={facility.locationId} value={facility.locationId}>{facility.location.name}</option>)}</select></label><label>Programme title<input value={title} onChange={(event) => setTitle(event.target.value)} minLength={3} maxLength={160} required /></label><label>Description<input value={description} onChange={(event) => setDescription(event.target.value)} maxLength={2000} /></label></div><button disabled={busy}>Create draft</button></form></section>}
       <div className={styles.sectionHead}><div><span className={styles.eyebrow}>2 · Review queue</span><h2>Facility programmes</h2><p>{data.programmes.length ? "Only assigned facilities are shown." : "No programmes are visible for your assigned facilities yet."}</p></div></div>
-      {data.programmes.map((programme) => <ProgrammeCard key={programme.id} programme={programme} facility={data.facilities.find((item) => item.locationId === programme.facilityId)} renders={data.renders} refresh={refresh} setNotice={setNotice} />)}
+      {data.programmes.map((programme) => <ProgrammeCard key={programme.id} programme={programme} facility={data.facilities.find((item) => item.locationId === programme.facilityId)} renders={data.renders} networkEnabled={data.networkEnabled} refresh={refresh} setNotice={setNotice} />)}
       <p className={styles.footer}>C3 governance only. Contributor Studio, scheduling, secure player delivery and live radio remain later stages.</p>
     </>}
   </main>;

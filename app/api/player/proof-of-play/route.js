@@ -7,6 +7,9 @@ import { queueOutgoingWebhookEvent } from "@/lib/outgoing-webhook-service";
 import { appendRightsUsageLedger } from "@/lib/rights-royalty-service";
 import { enqueueNotificationEvent } from "@/lib/job-notification-service";
 import { runSerializableTransaction } from "@/lib/transaction-retry.mjs";
+import { correctionsNetworkIntentRefs, correctionsNetworkAudioIntentRefs,
+  validateCorrectionsNetworkIntent, validateCorrectionsNetworkInterruption,
+  validateCorrectionsNetworkAudioIntent, validateCorrectionsNetworkAudioInterruption } from "@/lib/corrections-network-player-service";
 
 export const runtime = "nodejs";
 
@@ -36,7 +39,9 @@ const eventSchema = z.object({
     "CRITICAL_FAILURE",
     "CORRECTIONS_REQUEST",
     "CORRECTIONS_REHABILITATION",
-    "CORRECTIONS_STANDARD", "CORRECTIONS_PRIORITY", "CORRECTIONS_EMERGENCY"
+    "CORRECTIONS_STANDARD", "CORRECTIONS_PRIORITY", "CORRECTIONS_EMERGENCY",
+    "CORRECTIONS_CENTRAL", "CORRECTIONS_LOCAL", "CORRECTIONS_SYNDICATED",
+    "CORRECTIONS_CENTRAL_REHAB", "CORRECTIONS_CENTRAL_ANNOUNCE", "CORRECTIONS_FALLBACK"
   ]).optional().nullable(),
   trackId: z.string().cuid().optional().nullable(),
   eventType: z.enum(["STARTED", "COMPLETED", "FAILED", "INTERRUPTED"]),
@@ -98,6 +103,7 @@ export async function POST(request) {
           correctionsRequest: { select: { id: true, organisationId: true, facilityId: true, status: true } },
           correctionsRehabContent: { select: { id: true, organisationId: true, facilityId: true } },
           correctionsAnnouncement: { select: { id: true, organisationId: true, facilityId: true, status: true, mediaAssetId: true, promoVersionId: true, title: true } },
+          correctionsProgramme: { select: { id: true, title: true } },
           correctionsOverride: { select: { id: true, organisationId: true, facilityId: true, type: true, status: true, startedAt: true, endedAt: true, expiresAt: true, targetZoneIds: true, targetPlayerIds: true } },
           promoVersion: { include: { promoAsset: { select: { id: true, name: true } } } },
           mediaAsset: true
@@ -114,13 +120,33 @@ export async function POST(request) {
       const age = now.getTime() - occurredAt.getTime();
       const track = event.itemType === "MUSIC" ? tracksById.get(event.trackId) : null;
       const intent = intentsByScheduleItemId.get(event.scheduleItemId) || null;
-      const inside = Boolean(intent?.correctionsRequestId || intent?.correctionsRehabContentId || intent?.correctionsAnnouncementId);
+      const networkRefs = correctionsNetworkIntentRefs(intent);
+      const networkAudioRefs = correctionsNetworkAudioIntentRefs(intent);
+      const inside = Boolean(intent?.correctionsRequestId || intent?.correctionsRehabContentId || intent?.correctionsAnnouncementId || networkRefs || networkAudioRefs);
+      const networkChoice = networkRefs ? event.eventType === "INTERRUPTED"
+        ? await validateCorrectionsNetworkInterruption(prisma, player, intent)
+        : await validateCorrectionsNetworkIntent(prisma, player, intent, occurredAt) : null;
+      const networkAudioChoice = networkAudioRefs ? event.eventType === "INTERRUPTED"
+        ? await validateCorrectionsNetworkAudioInterruption(prisma, player, intent)
+        : await validateCorrectionsNetworkAudioIntent(prisma, player, intent, occurredAt) : null;
       const announcement = intent?.correctionsAnnouncement || null;
       const override = intent?.correctionsOverride || null;
-      const c6 = Boolean(intent?.correctionsAnnouncementId);
+      const c6 = Boolean(intent?.correctionsAnnouncementId && !networkAudioRefs);
       const contentId = track?.id || intent?.promoVersionId || intent?.mediaAssetId;
       const endedProofAllowed = override?.endedAt && (new Date(event.occurredAt) <= override.endedAt || (event.eventType === "INTERRUPTED" && new Date(event.occurredAt).getTime() <= override.endedAt.getTime() + 15000));
-      const validIntentType = c6 ? (
+      const validIntentType = networkAudioRefs ? (
+        Boolean(networkAudioChoice) && !intent.cancelledAt && !intent.campaignId && !intent.schoolBroadcastSlotId &&
+        !intent.correctionsRequestId && !intent.correctionsProgrammeId && !intent.correctionsSubmissionId &&
+        event.itemType === "CORRECTIONS_AUDIO" && !event.trackId &&
+        event.programmingSource === (intent.correctionsRehabContentId ? "CORRECTIONS_CENTRAL_REHAB" : "CORRECTIONS_CENTRAL_ANNOUNCE")
+      ) : networkRefs ? (
+        Boolean(networkChoice) && !intent.cancelledAt && !intent.campaignId && !intent.schoolBroadcastSlotId &&
+        !intent.correctionsRequestId && !intent.correctionsRehabContentId && !intent.correctionsAnnouncementId &&
+        event.itemType === "CORRECTIONS_AUDIO" && !event.trackId &&
+        event.programmingSource === (networkChoice.window.kind === "FALLBACK" ? "CORRECTIONS_FALLBACK" :
+          networkChoice.distribution.syndicationOfferId ? "CORRECTIONS_SYNDICATED" :
+          networkChoice.window.kind === "LOCAL" ? "CORRECTIONS_LOCAL" : "CORRECTIONS_CENTRAL")
+      ) : c6 ? (
         (!intent.cancelledAt || endedProofAllowed) &&
         !intent.campaignId && !intent.schoolBroadcastSlotId && !intent.correctionsRequestId && !intent.correctionsRehabContentId &&
         event.itemType === "CORRECTIONS_AUDIO" && !event.trackId &&
@@ -155,7 +181,7 @@ export async function POST(request) {
         programmingSource: event.programmingSource
       }, event.programmingSourceProofToken, process.env.SESSION_SECRET);
       const validPromoTime = !intent || (inside
-        ? occurredAt.getTime() >= intent.plannedStart.getTime() - (event.eventType === "STARTED" ? 10_000 : 0) && occurredAt.getTime() <= intent.expiresAt.getTime()
+        ? occurredAt.getTime() >= intent.plannedStart.getTime() - (event.eventType === "STARTED" ? 10_000 : 0) && occurredAt.getTime() <= intent.expiresAt.getTime() + ((networkRefs || networkAudioRefs) && event.eventType === "INTERRUPTED" ? 15_000 : 0)
         : occurredAt.getTime() >= intent.plannedStart.getTime() - MAX_PROMO_START_EARLY_MS && occurredAt.getTime() <= intent.plannedStart.getTime() + MAX_PROMO_COMPLETION_LATE_MS);
       const validChannel = !intent?.channelId || intent.channelId === channelId;
       const validCompletion = !inside || event.eventType !== "COMPLETED" ||
@@ -164,9 +190,13 @@ export async function POST(request) {
         organisationId: player.organisationId, facilityId: player.zone.locationId, targetPlayerIds: { has: player.id },
         startedAt: { lte: occurredAt }, expiresAt: { gt: occurredAt }, OR: [{ endedAt: null }, { endedAt: { gt: occurredAt } }]
       }, select: { id: true } }));
+      const networkInterruptedEarlier = (networkRefs || networkAudioRefs) && event.eventType === "COMPLETED" && Boolean(await prisma.correctionsOverride.findFirst({ where: {
+        organisationId: player.organisationId, facilityId: player.zone.locationId, targetPlayerIds: { has: player.id },
+        startedAt: { gte: intent.plannedStart, lte: occurredAt }
+      }, select: { id: true } }));
 
       if (!contentId || !signedForPlayer || !signedProgrammingSource || !validIntentType || !validPromoTime || !validChannel || !validCompletion ||
-          interruptedByOverride ||
+          interruptedByOverride || networkInterruptedEarlier ||
           (Boolean(privateFacility) !== inside) ||
           (event.programmingSource?.startsWith("CORRECTIONS_") && !inside) ||
           (event.itemType === "CORRECTIONS_AUDIO" && !inside) ||
@@ -176,7 +206,7 @@ export async function POST(request) {
     }
 
     const result = await runSerializableTransaction(prisma, async (tx) => {
-      const insideIntentIds = intents.filter((intent) => intent.correctionsRequestId || intent.correctionsRehabContentId || intent.correctionsAnnouncementId).map((intent) => intent.id);
+      const insideIntentIds = intents.filter((intent) => intent.correctionsRequestId || intent.correctionsRehabContentId || intent.correctionsAnnouncementId || correctionsNetworkIntentRefs(intent) || correctionsNetworkAudioIntentRefs(intent)).map((intent) => intent.id);
       const previousInside = insideIntentIds.length ? await tx.proofOfPlayEvent.findMany({ where: { playoutIntentId: { in: insideIntentIds }, eventType: { in: ["STARTED", "COMPLETED", "FAILED", "INTERRUPTED"] } }, orderBy: { occurredAt: "asc" }, select: { playoutIntentId: true, eventType: true, occurredAt: true } }) : [];
       const seenInside = new Set(previousInside.filter((item) => ["COMPLETED", "FAILED"].includes(item.eventType)).map((item) => `${item.playoutIntentId}:${item.eventType}`));
       const lastStarted = new Map();
@@ -187,7 +217,7 @@ export async function POST(request) {
       }
       const acceptedEvents = events.filter((event) => {
         const intent = intentsByScheduleItemId.get(event.scheduleItemId);
-        if (!intent?.correctionsRequestId && !intent?.correctionsRehabContentId && !intent?.correctionsAnnouncementId) return true;
+        if (!intent?.correctionsRequestId && !intent?.correctionsRehabContentId && !intent?.correctionsAnnouncementId && !correctionsNetworkIntentRefs(intent) && !correctionsNetworkAudioIntentRefs(intent)) return true;
         if (event.eventType === "STARTED") {
           lastStarted.set(intent.id, new Date(event.occurredAt).getTime());
           return true;
@@ -230,8 +260,8 @@ export async function POST(request) {
             playerName: player.name,
             locationName: player.zone.location.name,
             zoneName: player.zone.name,
-            trackTitle: track?.title || intent?.correctionsAnnouncement?.title || (intent?.correctionsRequestId ? "Approved Inside request" : null) || (intent?.correctionsRehabContentId ? "Approved rehabilitation audio" : null) || intent?.schoolRundownItem?.label || intent?.schoolBroadcastSlot?.announcement?.title || intent?.schoolBroadcastSlot?.episode?.title || intent?.promoVersion?.promoAsset?.name || "Scheduled audio",
-            trackArtist: track?.artist || (intent?.correctionsRequestId || intent?.correctionsRehabContentId || intent?.correctionsAnnouncementId ? "Ruvanas Inside" : event.itemType === "SCHOOL_ANNOUNCEMENT" ? (intent?.schoolRundownItem ? "School programme" : "School announcement") : "Promotion")
+            trackTitle: track?.title || intent?.correctionsAnnouncement?.title || (intent?.correctionsRequestId ? "Approved Inside request" : null) || (intent?.correctionsRehabContentId ? "Approved rehabilitation audio" : null) || (correctionsNetworkIntentRefs(intent) ? intent?.correctionsProgramme?.title : null) || intent?.schoolRundownItem?.label || intent?.schoolBroadcastSlot?.announcement?.title || intent?.schoolBroadcastSlot?.episode?.title || intent?.promoVersion?.promoAsset?.name || "Scheduled audio",
+            trackArtist: track?.artist || (intent?.correctionsRequestId || intent?.correctionsRehabContentId || intent?.correctionsAnnouncementId || correctionsNetworkIntentRefs(intent) ? "Ruvanas Inside" : event.itemType === "SCHOOL_ANNOUNCEMENT" ? (intent?.schoolRundownItem ? "School programme" : "School announcement") : "Promotion")
           };
         }),
         skipDuplicates: true
@@ -247,7 +277,15 @@ export async function POST(request) {
             if (!recorded) await tx.auditLog.create({ data: { organisationId: player.organisationId, action: "CORRECTIONS_RESTORATION_CONFIRMED", entityType: "CorrectionsOverride", entityId: previousOverride.id, details: { playerId: player.id, zoneId: player.zoneId, resumedIntentId: intent.id, proofEventId: event.eventId } } });
           }
         }
-        if (!intent?.correctionsRequestId && !intent?.correctionsRehabContentId && !intent?.correctionsAnnouncementId) continue;
+        if (!intent?.correctionsRequestId && !intent?.correctionsRehabContentId && !intent?.correctionsAnnouncementId && !correctionsNetworkIntentRefs(intent) && !correctionsNetworkAudioIntentRefs(intent)) continue;
+        if (correctionsNetworkIntentRefs(intent) || correctionsNetworkAudioIntentRefs(intent)) {
+          if (["COMPLETED", "FAILED", "INTERRUPTED"].includes(event.eventType)) await tx.auditLog.create({ data: {
+            organisationId: player.organisationId, action: event.eventType === "COMPLETED" ? "CORRECTIONS_NETWORK_DELIVERY_CONFIRMED" : "CORRECTIONS_NETWORK_DELIVERY_ISSUE",
+            entityType: "PlayoutIntent", entityId: intent.id, details: { proofEventId: event.eventId, eventType: event.eventType,
+              programmingSource: event.programmingSource, facilityId: player.zone.locationId, zoneId: player.zoneId, playerId: player.id }
+          } });
+          continue;
+        }
         if (intent.correctionsAnnouncementId) {
           const override = intent.correctionsOverride;
           const action = event.eventType === "COMPLETED" ? "CORRECTIONS_ANNOUNCEMENT_DELIVERED" : ["FAILED", "INTERRUPTED"].includes(event.eventType) ? "CORRECTIONS_ANNOUNCEMENT_DELIVERY_ISSUE" : "CORRECTIONS_ANNOUNCEMENT_STARTED";
@@ -285,7 +323,7 @@ export async function POST(request) {
         });
       }
       return { inserted, rightsLedgerCount };
-    });
+    }, { maxAttempts: 8, retryDelayMs: 25 });
 
     return NextResponse.json({
       ok: true,

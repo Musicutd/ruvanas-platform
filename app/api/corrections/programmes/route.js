@@ -9,7 +9,8 @@ export async function GET() {
   if (!access.ok) return correctionsResponse(access);
   try {
     const [programmes, renders] = await Promise.all([listCorrectionsProgrammes(access), availableCorrectionsStudioRenders(access)]);
-    return correctionsResponse({ ok: true, programmes, renders, playbackEnabled: false });
+    return correctionsResponse({ ok: true, programmes, renders, playbackEnabled: false,
+      networkEnabled: Number(access.entitlements.planTierNumber) >= 4 });
   } catch (error) { return correctionsError(error); }
 }
 
