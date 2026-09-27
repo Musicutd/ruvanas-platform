@@ -22,7 +22,9 @@ finished Multi-Facility Network Operations release.
   `PlayoutIntent` proof path. Precedence is C6 Emergency/Priority, then a
   mandatory central window, local window, and optional central default.
   Invalid local content falls through to the approved central candidate.
-  This is **not yet live validated** and has no general private AutoDJ fallback.
+  Disposable CI checks the private manifest, protected synthetic-tone media
+  fetch and signed proof for three facilities. This is **not yet real-player or
+  audible live validated** and has no general private AutoDJ fallback.
 - The Tier 4/5 network dashboard and bounded CSV export aggregate existing
   player proof by facility, source and status without contributor/request text.
   These counts are device delivery evidence, not individual listening.
@@ -31,10 +33,10 @@ finished Multi-Facility Network Operations release.
 
 ## Release blockers
 
-1. Run a disposable database/player test of the new central→local→central
-   resolver, including signed proof, C6 interruption, source withdrawal,
-   offline devices and a real media fetch. Prove that it does not create a
-   playback gap or false delivery claim. Current unit checks are insufficient.
+1. Run an actual isolated three-player central→local→central test, including
+   C6 interruption, source withdrawal and offline devices. CI now verifies
+   protected synthetic audio delivery, signed proof and withdrawal evidence,
+   but not audible player transitions, gap-free return or offline recovery.
 2. Finish a safe, approved private AutoDJ fallback for periods where neither
    local nor central media can play, with a visible operational alert. Do not
    reuse the public fallback or weaken the general Corrections schedule lock.

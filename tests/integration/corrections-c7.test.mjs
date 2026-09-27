@@ -225,6 +225,13 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
       assert.equal(mediaResponse.status, 206, `facility ${index} must fetch only its approved local audio`);
       assert.ok(Math.abs(observedTone(Buffer.from(await mediaResponse.arrayBuffer())) - expectedFrequency) < 5);
     }
+    const facilityAMedia = new URL(during[0].body.insertions[0].mediaUrl, baseUrl);
+    const facilityCMedia = new URL(during[2].body.insertions[0].mediaUrl, baseUrl);
+    const facilityBListener = new URL(during[1].body.insertions[0].mediaUrl, baseUrl).search;
+    assert.equal((await fetch(`${baseUrl}${facilityAMedia.pathname}${facilityBListener}`,
+      { headers: { cookie: players[1].cookie } })).status, 404, "B cannot fetch A local audio with its own valid listener token");
+    assert.equal((await fetch(`${baseUrl}${facilityCMedia.pathname}${facilityAMedia.search}`,
+      { headers: { cookie: players[0].cookie } })).status, 404, "A cannot fetch C local audio");
     const localInsertion = during[0].body.insertions[0];
     const localProof = await api("/api/player/proof-of-play", { method: "POST", cookie: players[0].cookie, instanceId: players[0].instanceId,
       body: { events: [{ eventId: randomUUID(), manifestVersion: during[0].body.version,
