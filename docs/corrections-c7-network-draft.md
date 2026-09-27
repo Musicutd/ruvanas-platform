@@ -27,7 +27,12 @@ finished Multi-Facility Network Operations release.
   audible live validated** and has no general private AutoDJ fallback.
 - The Tier 4/5 network dashboard and bounded CSV export aggregate existing
   player proof by facility, source and status without contributor/request text.
-  These counts are device delivery evidence, not individual listening.
+  The C7.2 export now offers date, facility/group, central/local, content type,
+  exact programme/rehabilitation/announcement and delivery-status filters. Each
+  bounded CSV row retains its source proof event, exact playout intent and
+  source revision rather than only a grouped count. This is device delivery
+  evidence, not individual listening. Disposable CI must still validate the
+  generated file against actual seeded proof before the report gate can pass.
 - C6 facility Emergency/Priority controls remain unchanged. There is no
   authority-wide Emergency action.
 
@@ -43,9 +48,9 @@ finished Multi-Facility Network Operations release.
 3. Add private facility-to-authority and selected-facility syndication review,
    centrally targeted announcements and rehabilitation assignment. Do not
    expose contributor or family-request details across facilities.
-4. Verify bounded, tenant-scoped network export against seeded player proof and
-   run a privacy/security review. The current CSV and aggregate endpoint have
-   only focused filter/empty-report coverage.
+4. Verify the expanded tenant-scoped, proof-level network export against seeded
+   player proof in disposable CI and run a privacy/security review. The report
+   work alone does not complete network analytics or the live release gate.
 5. Run a disposable non-production database and browser/player E2E across a
    Tier 4 authority and three facilities, including group targeting, policy
    restrictions, central→local→central return, withdrawal and safe fallback.

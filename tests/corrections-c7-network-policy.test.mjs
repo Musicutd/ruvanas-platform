@@ -69,7 +69,15 @@ test("network export filters are bounded and CSV cannot inject formulas or priva
   assert.throws(() => normaliseCorrectionsNetworkReportFilters({ from: "2026-01-01", to: "2026-09-01" }));
   assert.throws(() => normaliseCorrectionsNetworkReportFilters({ facilityId: "a", groupId: "north" }));
   assert.throws(() => normaliseCorrectionsNetworkReportFilters({ source: "ONLINE_RADIO" }));
-  const csv = correctionsNetworkReportCsv([{ date: "2026-09-07", facility: "=private", source: "CORRECTIONS_LOCAL", status: "COMPLETED", playerEvents: 2 }]);
+  assert.deepEqual(normaliseCorrectionsNetworkReportFilters({ kind: "PROGRAMME", classification: "LOCAL" }).allowedSources, ["CORRECTIONS_LOCAL"]);
+  assert.throws(() => normaliseCorrectionsNetworkReportFilters({ kind: "PROGRAMME", source: "CORRECTIONS_STANDARD" }));
+  assert.throws(() => normaliseCorrectionsNetworkReportFilters({ kind: "REQUEST", programmeId: "programme-a" }));
+  assert.throws(() => normaliseCorrectionsNetworkReportFilters({ rehabilitationId: "bad,name" }));
+  const csv = correctionsNetworkReportCsv([{ occurredAt: "2026-09-07T10:00:00.000Z", facility: "=private", facilityId: "a",
+    classification: "LOCAL", kind: "PROGRAMME", source: "CORRECTIONS_LOCAL", status: "COMPLETED",
+    proofEventId: "proof-a", playoutIntentId: "intent-a", sourceRevision: "c7:version-a",
+    programmeId: "programme-a", submissionId: "submission-a" }]);
   assert.match(csv, /'=private/);
+  assert.match(csv, /proof-a,intent-a,c7:version-a,programme-a,submission-a/);
   assert.doesNotMatch(csv, /contributor|family|requestBody/i);
 });

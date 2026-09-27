@@ -109,7 +109,7 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
     assert.equal(ownerNetwork.body.permissions.distribute, true);
     const emptyReport = await fetch(`${baseUrl}/api/corrections/network/report/export`, { headers: { cookie: owner.cookie } });
     assert.equal(emptyReport.status, 200);
-    assert.match(await emptyReport.text(), /^date,facility,source,status,playerEvents\r\n$/);
+    assert.match(await emptyReport.text(), /^occurredAt,facility,facilityId,classification,kind,source,status,proofEventId,playoutIntentId,sourceRevision,programmeId,submissionId,rehabilitationId,announcementId\r\n$/);
     assert.equal((await fetch(`${baseUrl}/api/corrections/network/report/export`, { headers: { cookie: contributor.cookie } })).status, 403);
     assert.equal((await fetch(`${baseUrl}/api/corrections/network/report/export?facilityId=${foreign.id}`, { headers: { cookie: owner.cookie } })).status, 404);
     assert.equal((await api("/api/corrections/network", { cookie: manager.cookie })).status, 403);
@@ -244,8 +244,22 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
       { headers: { cookie: owner.cookie } });
     assert.equal(report.status, 200);
     const csv = await report.text();
-    assert.match(csv, /CORRECTIONS_LOCAL,COMPLETED,1/);
+    assert.match(csv, /LOCAL,PROGRAMME,CORRECTIONS_LOCAL,COMPLETED/);
+    const recordedProof = await db.proofOfPlayEvent.findFirst({ where: { organisationId: authority.id, playerId: players[0].player.id,
+      programmingSource: "CORRECTIONS_LOCAL", eventType: "COMPLETED" }, select: { id: true, playoutIntentId: true } });
+    assert.ok(recordedProof);
+    assert.ok(csv.includes(recordedProof.id) && csv.includes(recordedProof.playoutIntentId), "export preserves source proof references");
     assert.ok(!csv.includes("Synthetic facility B") && !csv.includes("Synthetic facility C") && !csv.includes("contributor"));
+    const noCentral = await fetch(`${baseUrl}/api/corrections/network/report/export?facilityId=${facilities[0].id}&classification=CENTRAL&kind=PROGRAMME&status=COMPLETED`,
+      { headers: { cookie: owner.cookie } });
+    assert.equal(noCentral.status, 200);
+    assert.ok(!(await noCentral.text()).includes(recordedProof.id), "central filter excludes local proof");
+    const exactProgramme = await fetch(`${baseUrl}/api/corrections/network/report/export?kind=PROGRAMME&programmeId=${localA.id}`, { headers: { cookie: owner.cookie } });
+    assert.equal(exactProgramme.status, 200);
+    assert.ok((await exactProgramme.text()).includes(recordedProof.id));
+    const otherOrganisation = await fetch(`${baseUrl}/api/corrections/network/report/export?programmeId=${localA.id}`, { headers: { cookie: otherOwner.cookie } });
+    assert.equal(otherOrganisation.status, 200);
+    assert.ok(!(await otherOrganisation.text()).includes(recordedProof.id), "another authority cannot export this proof");
     const withdrawn = await api(`/api/corrections/network/distribution/${localAId}`, { method: "DELETE", cookie: owner.cookie });
     assert.equal(withdrawn.status, 200, JSON.stringify(withdrawn.body));
     const cancelledLocal = await db.playoutIntent.findFirst({ where: { playerId: players[0].player.id,
@@ -253,6 +267,9 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
     assert.ok(cancelledLocal?.cancelledAt, "withdrawal cancels the issued local intent");
     assert.equal(await db.proofOfPlayEvent.count({ where: { playoutIntentId: cancelledLocal.id, eventType: "COMPLETED" } }), 1,
       "withdrawal preserves historical signed delivery evidence");
+    const afterWithdrawalExport = await fetch(`${baseUrl}/api/corrections/network/report/export?facilityId=${facilities[0].id}&kind=PROGRAMME&status=COMPLETED`,
+      { headers: { cookie: owner.cookie } });
+    assert.ok((await afterWithdrawalExport.text()).includes(recordedProof.id), "withdrawal preserves exportable historical proof");
     const afterWithdrawal = await Promise.all([manifest(0), manifest(1), manifest(2)]);
     assert.deepEqual(afterWithdrawal.map((response) => response.body.insertions[0]?.programmingSource),
       ["CORRECTIONS_CENTRAL", "CORRECTIONS_CENTRAL", "CORRECTIONS_LOCAL"]);

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { CORRECTIONS_NETWORK_REPORT_SOURCES, CORRECTIONS_NETWORK_REPORT_KINDS, correctionsNetworkReportClassification } from "@/lib/corrections-network-report.mjs";
 import styles from "./network.module.css";
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -14,7 +15,7 @@ export default function NetworkDashboard() {
   const [distribution, setDistribution] = useState({ programmeId: "", facilityIds: [], groupId: "" });
   const [windowInput, setWindowInput] = useState({ facilityId: "", kind: "CENTRAL", weekday: 1, startMinute: 420, endMinute: 600,
     distributionId: "", mandatory: false, allowedContentTypes: ["PROGRAMME"] });
-  const [reportInput, setReportInput] = useState({ from: "", to: "", facilityId: "", groupId: "", source: "", status: "" });
+  const [reportInput, setReportInput] = useState({ from: "", to: "", facilityId: "", groupId: "", classification: "", kind: "", programmeId: "", rehabilitationId: "", announcementId: "", source: "", status: "" });
   const refresh = useCallback(async () => {
     const url = facilityId ? `/api/corrections/network?facilityId=${encodeURIComponent(facilityId)}` : "/api/corrections/network";
     try {
@@ -81,14 +82,19 @@ export default function NetworkDashboard() {
             <button disabled={busy || !windowInput.facilityId || !windowInput.distributionId}>Save planned window</button>
           </form>}</article>
       </section>
-      {data.permissions.report && <section className={styles.card}><span className={styles.eyebrow}>Verified network evidence</span><h2>Download delivery summary</h2>
-        <p>Counts come from private player proof, not individual listening. No contributor or request text is exported.</p>
+      {data.permissions.report && <section className={styles.card}><span className={styles.eyebrow}>Verified network evidence</span><h2>Download delivery proof</h2>
+        <p>Each row links to an actual private player proof and exact playout intent. No contributor or family-request text is exported.</p>
         <div className={styles.fields}>
           <label>From (optional)<input type="date" value={reportInput.from} onChange={(event) => setReportInput({ ...reportInput, from: event.target.value })} /></label>
           <label>To (optional)<input type="date" value={reportInput.to} onChange={(event) => setReportInput({ ...reportInput, to: event.target.value })} /></label>
           <label>Facility<select value={reportInput.facilityId} onChange={(event) => setReportInput({ ...reportInput, facilityId: event.target.value, groupId: "" })}><option value="">All facilities</option>{data.facilities.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
           <label>Group<select value={reportInput.groupId} onChange={(event) => setReportInput({ ...reportInput, groupId: event.target.value, facilityId: "" })}><option value="">No group filter</option>{data.groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>
-          <label>Source<select value={reportInput.source} onChange={(event) => setReportInput({ ...reportInput, source: event.target.value })}><option value="">All private sources</option>{["CORRECTIONS_CENTRAL", "CORRECTIONS_LOCAL", "CORRECTIONS_REHABILITATION", "CORRECTIONS_REQUEST", "CORRECTIONS_STANDARD", "CORRECTIONS_PRIORITY", "CORRECTIONS_EMERGENCY"].map((source) => <option key={source} value={source}>{source.replaceAll("_", " ")}</option>)}</select></label>
+          <label>Central or local<select value={reportInput.classification} onChange={(event) => setReportInput({ ...reportInput, classification: event.target.value, source: "" })}><option value="">All</option><option value="CENTRAL">Central</option><option value="LOCAL">Local</option><option value="FACILITY">Other facility delivery</option></select></label>
+          <label>Content type<select value={reportInput.kind} onChange={(event) => setReportInput({ ...reportInput, kind: event.target.value, source: "", programmeId: "", rehabilitationId: "", announcementId: "" })}><option value="">All</option><option value="PROGRAMME">Programme</option><option value="REHABILITATION">Rehabilitation</option><option value="ANNOUNCEMENT">Announcement</option><option value="REQUEST">Request delivery</option></select></label>
+          <label>Source<select value={reportInput.source} onChange={(event) => setReportInput({ ...reportInput, source: event.target.value })}><option value="">All matching sources</option>{CORRECTIONS_NETWORK_REPORT_SOURCES.filter((source) => (!reportInput.kind || CORRECTIONS_NETWORK_REPORT_KINDS[reportInput.kind].includes(source)) && (!reportInput.classification || correctionsNetworkReportClassification(source) === reportInput.classification)).map((source) => <option key={source} value={source}>{source.replaceAll("_", " ")}</option>)}</select></label>
+          {reportInput.kind === "PROGRAMME" && <label>Programme<select value={reportInput.programmeId} onChange={(event) => setReportInput({ ...reportInput, programmeId: event.target.value })}><option value="">All programmes</option>{data.reportOptions.programmes.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>}
+          {reportInput.kind === "REHABILITATION" && <label>Rehabilitation audio<select value={reportInput.rehabilitationId} onChange={(event) => setReportInput({ ...reportInput, rehabilitationId: event.target.value })}><option value="">All rehabilitation</option>{data.reportOptions.rehabilitation.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>}
+          {reportInput.kind === "ANNOUNCEMENT" && <label>Announcement<select value={reportInput.announcementId} onChange={(event) => setReportInput({ ...reportInput, announcementId: event.target.value })}><option value="">All announcements</option>{data.reportOptions.announcements.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>}
           <label>Delivery status<select value={reportInput.status} onChange={(event) => setReportInput({ ...reportInput, status: event.target.value })}><option value="">All statuses</option>{["STARTED", "COMPLETED", "FAILED", "INTERRUPTED"].map((status) => <option key={status} value={status}>{status}</option>)}</select></label>
         </div>
         <a href={`/api/corrections/network/report/export?${new URLSearchParams(Object.entries(reportInput).filter(([, value]) => value)).toString()}`}>Download CSV →</a>
