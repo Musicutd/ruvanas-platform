@@ -19,7 +19,9 @@ async function api(path, { method = "GET", body, cookie, machine } = {}) {
   return { status: response.status, body: await response.json(), cookie: response.headers.get("set-cookie")?.split(";")[0] };
 }
 
-test("C8A facility-bound one-use enrolment, Tier 4 gate, rotation and revocation", async () => {
+test("C8A facility-bound one-use enrolment, Tier 4 gate, rotation and revocation", {
+  skip: process.env.C8_LOCAL_INTEGRATION !== "true" ? "Requires the explicitly selected isolated C8 lab." : false
+}, async () => {
   if (process.env.C8_LOCAL_INTEGRATION !== "true" ||
       process.env.DATABASE_URL !== "postgresql://c8lab@127.0.0.1:5548/ruvanas_c8_migration_clean" ||
       !process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 32) {
