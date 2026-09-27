@@ -526,6 +526,31 @@ enum CorrectionsFacilityGrantPermission {
   VIEWER
 }
 
+enum CorrectionsAnnouncementStatus {
+  DRAFT
+  APPROVED
+  ARCHIVED
+}
+
+enum CorrectionsAnnouncementApprovalMode {
+  CREATOR_PUBLISH
+  EXPLICIT
+  DUAL
+}
+
+enum CorrectionsOverrideType {
+  PRIORITY
+  EMERGENCY
+}
+
+enum CorrectionsOverrideStatus {
+  ACTIVE
+  COMPLETED
+  CLEARED
+  SUPERSEDED
+  EXPIRED
+}
+
 enum CorrectionsContributorStatus {
   ACTIVE
   ARCHIVED
@@ -1897,6 +1922,8 @@ model Organisation {
   correctionsRehabCategories          CorrectionsRehabCategory[]
   correctionsRehabContent             CorrectionsRehabContent[]
   correctionsDevelopmentModules       CorrectionsDevelopmentModule[]
+  correctionsAnnouncements            CorrectionsAnnouncement[]
+  correctionsOverrides                CorrectionsOverride[]
   schoolSafeguardingReadiness        SchoolSafeguardingReadiness?
   schoolSafeguardingReviews          SchoolSafeguardingReview[]
   schoolRetentionHolds               SchoolRetentionHold[]
@@ -2717,6 +2744,8 @@ model Location {
   correctionsStudioSessions     CorrectionsStudioSession[]
   correctionsRequests           CorrectionsRequest[]
   correctionsRehabContent       CorrectionsRehabContent[]
+  correctionsAnnouncements     CorrectionsAnnouncement[]
+  correctionsOverrides         CorrectionsOverride[]
 
   @@unique([organisationId, slug])
   @@index([organisationId])
@@ -2843,6 +2872,11 @@ model CorrectionsFacility {
   songRequestsEnabled Boolean @default(false)
   messageRequestsEnabled Boolean @default(false)
   dedicationsEnabled Boolean @default(false)
+  announcementApprovalMode CorrectionsAnnouncementApprovalMode @default(EXPLICIT)
+  priorityEnabled Boolean @default(false)
+  emergencyEnabled Boolean @default(false)
+  emergencyDualControl Boolean @default(false)
+  emergencyDrillsEnabled Boolean @default(false)
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
@@ -2991,6 +3025,10 @@ model CorrectionsFacilityGrant {
   organisationMemberId String
   facilityId           String
   permission           CorrectionsFacilityGrantPermission
+  canPriorityActivate  Boolean @default(false)
+  canPriorityStop      Boolean @default(false)
+  canEmergencyActivate Boolean @default(false)
+  canEmergencyClear    Boolean @default(false)
   createdByUserId      String
   createdAt            DateTime                           @default(now())
   updatedAt            DateTime                           @updatedAt
@@ -3002,6 +3040,61 @@ model CorrectionsFacilityGrant {
 
   @@unique([organisationMemberId, facilityId])
   @@index([organisationId, facilityId, permission])
+}
+
+// A published announcement pins a single approved audio version. Editing
+// creates a new record; active intents never follow a mutable media pointer.
+model CorrectionsAnnouncement {
+  id               String @id @default(cuid())
+  organisationId   String
+  facilityId       String
+  title            String
+  mediaAssetId     String
+  promoVersionId   String
+  status           CorrectionsAnnouncementStatus @default(DRAFT)
+  createdByUserId  String
+  approvedByUserId String?
+  secondApproverUserId String?
+  createdAt        DateTime @default(now())
+  approvedAt       DateTime?
+  archivedAt       DateTime?
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  facility Location @relation(fields: [facilityId], references: [id], onDelete: Restrict)
+  mediaAsset MediaAsset @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+  promoVersion PromoVersion @relation(fields: [promoVersionId], references: [id], onDelete: Restrict)
+  overrides CorrectionsOverride[]
+  playoutIntents PlayoutIntent[]
+
+  @@index([organisationId, facilityId, status])
+}
+
+model CorrectionsOverride {
+  id                  String @id @default(cuid())
+  organisationId      String
+  facilityId          String
+  announcementId      String
+  type                CorrectionsOverrideType
+  status              CorrectionsOverrideStatus @default(ACTIVE)
+  category            String
+  drill               Boolean @default(false)
+  targetZoneIds        String[]
+  targetPlayerIds      String[]
+  idempotencyKey      String
+  initiatedByUserId   String
+  confirmedByUserId   String?
+  startedAt           DateTime @default(now())
+  expiresAt           DateTime
+  endedAt             DateTime?
+  endedByUserId       String?
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  facility Location @relation(fields: [facilityId], references: [id], onDelete: Restrict)
+  announcement CorrectionsAnnouncement @relation(fields: [announcementId], references: [id], onDelete: Restrict)
+  playoutIntents PlayoutIntent[]
+
+  @@unique([organisationId, idempotencyKey])
+  @@index([organisationId, facilityId, status, expiresAt])
 }
 
 // Staff may approve a separate on-air version; the original request is evidence.
@@ -3672,6 +3765,7 @@ model MediaAsset {
   podcastEpisodes       SchoolPodcastEpisode[]
   studioProductHandoffs StudioProductHandoff[]
   correctionsRehabContent CorrectionsRehabContent[]
+  correctionsAnnouncements CorrectionsAnnouncement[]
 
   @@unique([id, organisationId])
   @@index([organisationId])
@@ -3743,6 +3837,7 @@ model PromoVersion {
   retailMediaCreatives        RetailMediaOrderCreative[]
   schoolEpisodeExchangeOffers SchoolEpisodeExchangeOffer[]
   studioProductHandoffs       StudioProductHandoff[]
+  correctionsAnnouncements   CorrectionsAnnouncement[]
 
   @@unique([promoAssetId, version])
   @@unique([promoAssetId, sourceReference])
@@ -7412,6 +7507,8 @@ model PlayoutIntent {
   correctionsProgrammeId String?
   correctionsSubmissionId String?
   correctionsTrackId String?
+  correctionsAnnouncementId String?
+  correctionsOverrideId String?
   cancelledAt DateTime?
   promoVersionId        String?
   mediaAssetId          String
@@ -7437,6 +7534,8 @@ model PlayoutIntent {
   correctionsProgramme CorrectionsProgramme? @relation(fields: [correctionsProgrammeId], references: [id], onDelete: Restrict)
   correctionsSubmission CorrectionsSubmission? @relation(fields: [correctionsSubmissionId], references: [id], onDelete: Restrict)
   correctionsTrack Track? @relation(fields: [correctionsTrackId], references: [id], onDelete: Restrict)
+  correctionsAnnouncement CorrectionsAnnouncement? @relation(fields: [correctionsAnnouncementId], references: [id], onDelete: Restrict)
+  correctionsOverride CorrectionsOverride? @relation(fields: [correctionsOverrideId], references: [id], onDelete: Restrict)
   promoVersion        PromoVersion?        @relation(fields: [promoVersionId], references: [id], onDelete: Restrict)
   mediaAsset          MediaAsset           @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
   playbackEvents      ProofOfPlayEvent[]
@@ -7453,6 +7552,8 @@ model PlayoutIntent {
   @@index([correctionsRequestId, plannedStart])
   @@index([correctionsRehabContentId, plannedStart])
   @@index([correctionsProgrammeId, plannedStart])
+  @@index([correctionsAnnouncementId, plannedStart])
+  @@index([correctionsOverrideId, plannedStart])
   @@index([promoVersionId, plannedStart])
   @@index([locationId, plannedStart])
   @@index([expiresAt])

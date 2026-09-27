@@ -30,6 +30,7 @@ export async function GET(request) {
 
     const assignment = player.zone.channelAssignments[0];
     const channel = assignment?.channel || null;
+    const privateFacility = await prisma.correctionsFacility.findFirst({ where: { locationId: player.zone.locationId, location: { organisationId: player.organisationId } }, select: { locationId: true } });
 
     return NextResponse.json({
       player: {
@@ -42,7 +43,7 @@ export async function GET(request) {
         ? {
             id: channel.id,
             name: channel.name,
-            streamUrl: channel.station?.streamConfig?.streamUrl || null
+            streamUrl: privateFacility ? null : channel.station?.streamConfig?.streamUrl || null
           }
         : null,
       heartbeatIntervalSeconds: PLAYER_HEARTBEAT_INTERVAL_SECONDS,
