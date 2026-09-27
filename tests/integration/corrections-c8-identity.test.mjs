@@ -69,11 +69,12 @@ test("C8A facility-bound one-use enrolment, Tier 4 gate, rotation and revocation
     assert.equal(created.body.facilityId, facilities[1].id);
     const nodeId = created.body.nodeId;
     const enrolled = await api("/api/corrections/edge/enrol", { method: "POST",
-      body: { enrolmentCredential: created.body.enrolmentCredential, softwareVersion: "c8-test" } });
+      body: { enrolmentCredential: created.body.enrolmentCredential, softwareVersion: "c8-test",
+        proofPublicKeyPem: testPublicPem } });
     assert.equal(enrolled.status, 200, JSON.stringify(enrolled.body));
     assert.equal(enrolled.body.facilityId, facilities[1].id);
     assert.equal((await api("/api/corrections/edge/enrol", { method: "POST",
-      body: { enrolmentCredential: created.body.enrolmentCredential } })).status, 401);
+      body: { enrolmentCredential: created.body.enrolmentCredential, proofPublicKeyPem: testPublicPem } })).status, 401);
     const machine = enrolled.body.machineCredential;
     const heartbeat = () => api("/api/corrections/edge/heartbeat", { method: "POST", machine,
       body: { softwareVersion: "c8-test", storageHealth: "HEALTHY", syncStatus: "IDLE",
@@ -99,6 +100,9 @@ test("C8A facility-bound one-use enrolment, Tier 4 gate, rotation and revocation
     assert.equal(listed?.facilityId, facilities[1].id);
     assert.equal(listed?.effectiveStatus, "ONLINE");
     assert.equal(JSON.stringify(listed).includes(machine), false);
+    const adminPage = await fetch(`${baseUrl}/admin/corrections/edge`, { headers: { cookie: adminCookie } });
+    assert.equal(adminPage.status, 200);
+    assert.match(await adminPage.text(), /Secure Edge control centre/);
     const rotate = await api(`/api/admin/corrections/edge/${nodeId}`, { method: "POST", cookie: adminCookie,
       body: { action: "ROTATE_CREDENTIAL" } });
     assert.equal(rotate.status, 200, JSON.stringify(rotate.body));

@@ -74,8 +74,88 @@ until every required C8 gate is demonstrated with isolated synthetic media.
   repository has unrelated baseline schema-diff noise; no C8-specific drift
   appeared after the C8A migration.
 
-**Not yet complete:** the cloud does not yet issue playable manifests, media
-or an Edge proof path. No Edge runtime is connected to a player. The heartbeat
-is a bounded machine report, not evidence of successful playback or sync.
-These omissions keep C8A non-operational by design. No release gate for
-offline playback is claimed by this checkpoint.
+## C8B–C8D implementation evidence (still Draft)
+
+- The cloud issues a 24-hour Ed25519-signed, sequenced, node/facility-bound
+  snapshot of currently eligible C7 network windows, C6 overrides, zones,
+  players, content checksums, policy versions and expiry. Its protected media
+  endpoint first checks current manifest membership, then revalidates the
+  approved source, rights use, territory, facility and entitlement. It cannot
+  serve an arbitrary asset or another facility's content.
+- Edge media is AES-256-GCM encrypted under a separately provisioned cache
+  key. Opaque filenames, 0700 directories, 0600 files, checksums, quarantine,
+  staged download and atomic manifest-pointer activation prevent ordinary
+  filesystem browsing, partial activation and corrupt playback. Delta sync
+  reuses exact content. Withdrawal evicts content after the next authorised
+  sync. A disconnected Edge can retain previously signed content only until
+  its manifest expires; expiry causes controlled silence, not public fallback.
+- A private LAN player service requires a cloud-signed node/facility/zone/
+  player grant, and TLS off loopback. Only the player's *current* resolved
+  content has a temporary opaque route. C7 ranking and C6 override choice
+  come from the existing pure policy modules; the Edge does not approve or
+  schedule anything. An online credential rejection persists a local
+  suspension, so cached audio stops across process restarts until a valid
+  cloud sync succeeds.
+- At enrolment, the Edge registers a separate Ed25519 proof public key. A
+  private-key-signed, hash-chained, append-only local journal records the
+  exact signed manifest, player, content, source, session and event time.
+  Journal failure prevents starting playback. The cloud verifies the key,
+  chain, historical manifest, player/facility scope, source choice and event
+  order. Replays are idempotent; altered replays are rejected. Accepted
+  events create ordinary `PlayoutIntent` and `ProofOfPlayEvent` rows for C7
+  reporting, with full 64-hex manifest identity retained in immutable Edge
+  evidence and separate occurrence/ingestion times. These are machine/player
+  delivery claims, never proof of human listening.
+- Super Admin can prepare/rotate/revoke nodes and inspect narrow fleet health.
+  Inside Tier 4/5 authority can view only its own fleet health. No page shows
+  decrypted catalogue media. Decommission still requires verified local
+  removal of encrypted cache and keys; remote secure erase is **not** claimed.
+- The isolated PostgreSQL migration database applied 129 migrations.
+  Synthetic route-level tests cover one-use enrolment, Tier 3 denial,
+  cross-facility media denial, signed manifests, protected R2, withdrawal,
+  proof forgery, replay/deduplication and C7 report materialisation. Pure
+  runtime tests cover atomic cache, delta reuse, corruption quarantine,
+  expiry, suspension, player grants and C6/C7 precedence.
+- An isolated full-stack synthetic run starts the actual cloud app, mock
+  protected object storage and local Edge HTTP runtime. It confirms online
+  media delivery, disconnects the Edge's cloud transport, confirms local
+  private delivery and accumulating proof, withdraws the programme in the
+  cloud while disconnected, reconnects, evicts the content, uploads the
+  signed backlog exactly once and verifies both C7 operational metrics and
+  CSV evidence. This is **not** an audible facility-player test and therefore
+  does not by itself satisfy the final live gate.
+
+## Open C8 release gates — do not merge
+
+- An isolated *live* Edge/player test must disconnect cloud access, keep
+  approved audio playing on a facility LAN, queue real player proof, then
+  reconnect and verify heartbeat, changed manifest, proof upload, dedup and
+  reporting. Synthetic HTTP tests are valuable but are not this gate.
+- Repeat live tests for withdrawal while offline, expired manifest, corrupted
+  media with online repair, credential rotation/revocation, cross-facility
+  attack, C7 multi-facility distribution and C6 Priority/Emergency/return.
+- The currently signed cache intentionally includes only approved private
+  organisation promo renders. It does **not** cache licensed catalogue masters.
+  This is fail-closed, not a claim that catalogue-specific Edge rights sync
+  has been completed. Catalogue protection must be validated before that
+  category is added to the Edge manifest.
+- A production player acquisition/handoff path for local Edge grants and
+  endpoint discovery is not yet wired into the existing browser player.
+  The authenticated local endpoint alone is not a verified facility player
+  deployment. Until then, mark local player integration incomplete.
+- Full C1–C7, Studio, six existing products, recovery, catalogue, security,
+  static and CI regression remains to be completed. Keep the PR Draft.
+
+## Residual threat notes
+
+A stolen machine credential can impersonate its one facility until revoked;
+the separate proof key is required to forge delivery evidence. A stolen disk
+without the separately provisioned cache key has encrypted objects, but a
+fully compromised Edge host can access audio while it plays. Offline
+revocation is unknowable until reconnect and is bounded by manifest expiry;
+online 401/403 suspends the local player service. Local wall-clock rollback is
+checked against a MAC-protected trusted-time record plus monotonic time while
+the process runs; a hostile administrator with both the encryption key and a
+full disk snapshot can still roll back state across reboot. Physical hardening
+and trustworthy time are deployment requirements, not solved by application
+code alone.

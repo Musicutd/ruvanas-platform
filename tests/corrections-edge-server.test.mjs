@@ -6,6 +6,7 @@ import path from "node:path";
 import test from "node:test";
 import { CorrectionsEdgeCache, edgeContentKey } from "../edge/cache.mjs";
 import { createCorrectionsEdgeServer } from "../edge/server.mjs";
+import { CorrectionsEdgeProofQueue } from "../edge/proof-queue.mjs";
 import { signEdgeManifest } from "../lib/corrections-edge-manifest.mjs";
 import { issueCorrectionsEdgePlayerGrant } from "../lib/corrections-edge-player-grant.mjs";
 
@@ -38,9 +39,11 @@ test("authenticated local player sees only its current private media; C6 overrid
       startedAt: new Date(current.getTime() - 5000).toISOString(),
       expiresAt: new Date(current.getTime() + 50_000).toISOString() }] : [],
     content: override ? [normalItem, emergencyItem] : [normalItem] }, privatePem);
-  const edge = createCorrectionsEdgeServer({ cache });
+  const proofQueue = new CorrectionsEdgeProofQueue({ root: path.join(root, "proof"), privateKeyPem: privatePem, scope });
+  const edge = createCorrectionsEdgeServer({ cache, proofQueue });
   try {
     await cache.initialise();
+    await proofQueue.initialise();
     await cache.sync(make(1));
     const address = await edge.listen();
     const url = `http://127.0.0.1:${address.port}`;
@@ -54,10 +57,24 @@ test("authenticated local player sees only its current private media; C6 overrid
     assert.equal(normalState.source, "CORRECTIONS_CENTRAL");
     const audio = await fetch(`${url}${normalState.mediaUrl}`, { headers: auth });
     assert.deepEqual(Buffer.from(await audio.arrayBuffer()), normal);
+    assert.equal(proofQueue.pendingCount, 1);
+    assert.equal(proofQueue.pending()[0].payload.eventType, "STARTED");
     const range = await fetch(`${url}${normalState.mediaUrl}`, { headers: { ...auth, range: "bytes=0-6" } });
     assert.equal(range.status, 206);
     assert.deepEqual(Buffer.from(await range.arrayBuffer()), normal.subarray(0, 7));
-    assert.equal((await fetch(`${url}/v1/media/${"0".repeat(64)}`, { headers: auth })).status, 404);
+    const impossibleComplete = await fetch(`${url}/v1/proof`, { method: "POST", headers: { ...auth,
+      "content-type": "application/json" }, body: JSON.stringify({ sessionId: normalState.sessionId,
+      eventType: "COMPLETED", positionSeconds: 20 }) });
+    assert.equal(impossibleComplete.status, 400);
+    const failure = await fetch(`${url}/v1/proof`, { method: "POST", headers: { ...auth,
+      "content-type": "application/json" }, body: JSON.stringify({ sessionId: normalState.sessionId,
+      eventType: "FAILED", positionSeconds: 0 }) });
+    assert.equal(failure.status, 200);
+    assert.equal(proofQueue.pendingCount, 2);
+    assert.equal((await fetch(`${url}/v1/proof`, { method: "POST", headers: { ...auth,
+      "content-type": "application/json" }, body: JSON.stringify({ sessionId: normalState.sessionId,
+      eventType: "FAILED", positionSeconds: 0 }) })).status, 400);
+    assert.equal((await fetch(`${url}/v1/media/${"0".repeat(64)}`, { headers: auth })).status, 403);
     const wrongGrant = issueCorrectionsEdgePlayerGrant({ ...scope, zoneId: "zoneB", playerId: "playerB" }, privatePem,
       { now: current, validUntil: new Date(current.getTime() + 60 * 60_000) });
     assert.equal((await fetch(`${url}/v1/playback`, { headers: {
@@ -69,7 +86,7 @@ test("authenticated local player sees only its current private media; C6 overrid
     await cache.sync(make(2, true));
     const interrupted = await (await fetch(`${url}/v1/playback`, { headers: auth })).json();
     assert.equal(interrupted.source, "CORRECTIONS_EMERGENCY");
-    assert.equal((await fetch(`${url}${normalState.mediaUrl}`, { headers: auth })).status, 404);
+    assert.equal((await fetch(`${url}${normalState.mediaUrl}`, { headers: auth })).status, 403);
     assert.deepEqual(Buffer.from(await (await fetch(`${url}${interrupted.mediaUrl}`, { headers: auth })).arrayBuffer()), emergency);
     await cache.sync(make(3));
     const returned = await (await fetch(`${url}/v1/playback`, { headers: auth })).json();

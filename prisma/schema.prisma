@@ -2932,6 +2932,9 @@ model CorrectionsEdgeNode {
   enrolmentTokenHash   String? @unique @db.Char(64)
   enrolmentExpiresAt   DateTime?
   credentialHash       String? @unique @db.Char(64)
+  proofPublicKeyPem    String?
+  lastProofSequence    Int @default(0)
+  lastProofHash        String? @db.Char(64)
   keyVersion           Int @default(0)
   enrolledAt           DateTime?
   lastSeenAt           DateTime?
@@ -2949,6 +2952,7 @@ model CorrectionsEdgeNode {
   organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   facility Location @relation(fields: [facilityId], references: [id], onDelete: Restrict)
   manifests CorrectionsEdgeManifest[]
+  proofEvents CorrectionsEdgeProofEvent[]
 
   @@index([organisationId, facilityId, status])
   @@index([status, lastSeenAt])
@@ -2972,6 +2976,27 @@ model CorrectionsEdgeManifest {
   @@unique([nodeId, sequence])
   @@unique([nodeId, version])
   @@index([nodeId, validUntil])
+}
+
+// Immutable machine-signed playback evidence, retained separately from media.
+// Ingestion time is independent of the offline event time.
+model CorrectionsEdgeProofEvent {
+  id String @id @default(cuid())
+  nodeId String
+  sequence Int
+  eventId String @unique
+  previousHash String? @db.Char(64)
+  eventHash String @db.Char(64)
+  signature String
+  payload Json
+  occurredAt DateTime
+  receivedAt DateTime @default(now())
+  proofOfPlayEventId String? @unique
+
+  node CorrectionsEdgeNode @relation(fields: [nodeId], references: [id], onDelete: Restrict)
+
+  @@unique([nodeId, sequence])
+  @@index([nodeId, occurredAt])
 }
 
 model CorrectionsProgramme {

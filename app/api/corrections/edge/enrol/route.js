@@ -4,7 +4,8 @@ import { enrolCorrectionsEdge } from "@/lib/corrections-edge-service";
 import { correctionsError } from "@/lib/corrections-http";
 
 export const runtime = "nodejs";
-const schema = z.object({ enrolmentCredential: z.string().min(20).max(150), softwareVersion: z.string().trim().max(60).optional() });
+const schema = z.object({ enrolmentCredential: z.string().min(20).max(150), softwareVersion: z.string().trim().max(60).optional(),
+  proofPublicKeyPem: z.string().min(80).max(500) });
 
 export async function POST(request) {
   const parsed = schema.safeParse(await request.json().catch(() => null));

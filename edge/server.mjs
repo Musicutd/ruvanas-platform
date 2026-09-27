@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import http from "node:http";
 import https from "node:https";
 import { verifyCorrectionsEdgePlayerGrant } from "../lib/corrections-edge-player-grant.mjs";
@@ -12,6 +12,7 @@ function respond(response, status, body, headers = {}) {
 }
 
 function playerGrant(request, cache) {
+  if (cache.suspended) return null;
   const auth = request.headers.authorization || "";
   if (!auth.startsWith("Edge ") || auth.length > 5000) return null;
   let grant;
@@ -28,16 +29,27 @@ function mediaOpaque(cache, grant, contentKey) {
     .digest("hex");
 }
 
-export function createCorrectionsEdgeServer({ cache, host = "127.0.0.1", port = 0, tlsKeyPem, tlsCertPem }) {
+async function smallBody(request) {
+  let text = "";
+  for await (const chunk of request) {
+    text += chunk.toString("utf8");
+    if (text.length > 16_384) throw new Error("Edge player request is too large.");
+  }
+  return JSON.parse(text);
+}
+
+export function createCorrectionsEdgeServer({ cache, proofQueue = null, host = "127.0.0.1", port = 0, tlsKeyPem, tlsCertPem }) {
   if (!cache || (host !== "127.0.0.1" && host !== "localhost" && (!tlsKeyPem || !tlsCertPem))) {
     throw new Error("A non-loopback Edge player service requires configured TLS.");
   }
   const unavailable = new Set();
+  const sessions = new Map();
   let seenCacheRevision = cache.cacheRevision;
   const handler = async (request, response) => {
     try {
       if (seenCacheRevision !== cache.cacheRevision) { unavailable.clear(); seenCacheRevision = cache.cacheRevision; }
-      const pathname = new URL(request.url, "https://edge.invalid").pathname;
+      const url = new URL(request.url, "https://edge.invalid");
+      const pathname = url.pathname;
       const grant = playerGrant(request, cache);
       if (!grant) return respond(response, 401, { error: "A current, scoped Edge player grant is required." });
       const decision = resolveCorrectionsEdgePlayback(cache.active?.payload, {
@@ -50,12 +62,26 @@ export function createCorrectionsEdgeServer({ cache, host = "127.0.0.1", port = 
           unavailable.add(decision.contentKey);
           return respond(response, 200, { state: "CONTENT_UNAVAILABLE", refreshAfterSeconds: 5 });
         }
-        return respond(response, 200, { state: "READY", source: decision.source,
-          mediaUrl: `/v1/media/${mediaOpaque(cache, grant, decision.contentKey)}`,
+        const sessionId = randomUUID();
+        if (proofQueue) {
+          if (sessions.size >= 5000) for (const [id, session] of sessions) {
+            if (cache.trustedNow().getTime() - session.createdAt > 2 * 60 * 60_000 || session.ended) sessions.delete(id);
+          }
+          if (sessions.size >= 5000) return respond(response, 503, { error: "Edge player session capacity reached." });
+          sessions.set(sessionId, { playerId: grant.playerId, zoneId: grant.zoneId, decision,
+            manifestVersion: cache.active.version, createdAt: cache.trustedNow().getTime(), startedAt: null, ended: false });
+        }
+        return respond(response, 200, { state: "READY", source: decision.source, sessionId,
+          mediaUrl: `/v1/media/${mediaOpaque(cache, grant, decision.contentKey)}?session=${sessionId}`,
           durationSeconds: decision.item.durationSeconds, manifestVersion: cache.active.version,
           refreshAfterSeconds: 5 });
       }
       if (request.method === "GET" && /^\/v1\/media\/[a-f0-9]{64}$/.test(pathname)) {
+        const session = proofQueue ? sessions.get(url.searchParams.get("session")) : null;
+        if (proofQueue && (!session || session.playerId !== grant.playerId || session.zoneId !== grant.zoneId ||
+            session.manifestVersion !== cache.active?.version || session.decision.contentKey !== decision.contentKey || session.ended)) {
+          return respond(response, 403, { error: "This player session is not current." });
+        }
         if (decision.state !== "READY" || pathname.slice(10) !== mediaOpaque(cache, grant, decision.contentKey)) {
           return respond(response, 404, { error: "Media is not this player's current approved item." });
         }
@@ -69,11 +95,47 @@ export function createCorrectionsEdgeServer({ cache, host = "127.0.0.1", port = 
         if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < start || start >= total) {
           response.writeHead(416, { "Content-Range": `bytes */${total}` }); return response.end();
         }
+        if (proofQueue && !session.startedAt) {
+          const now = cache.trustedNow();
+          await proofQueue.append({ schema: 1, ...cache.scope, zoneId: grant.zoneId, playerId: grant.playerId,
+            eventId: randomUUID(), sessionId: url.searchParams.get("session"), manifestVersion: cache.active.version,
+            contentKey: decision.contentKey, programmingSource: decision.source, windowId: decision.windowId || null,
+            overrideId: decision.overrideId || null, eventType: "STARTED", occurredAt: now.toISOString(), positionSeconds: 0 });
+          session.startedAt = now.getTime();
+        }
         response.writeHead(match ? 206 : 200, { "Content-Type": media.mimeType,
           "Content-Length": end - start + 1, "Accept-Ranges": "bytes", "Cache-Control": "private, no-store",
           "Content-Disposition": "inline", "X-Content-Type-Options": "nosniff",
           ...(match ? { "Content-Range": `bytes ${start}-${end}/${total}` } : {}) });
         return response.end(media.bytes.subarray(start, end + 1));
+      }
+      if (request.method === "POST" && pathname === "/v1/proof" && proofQueue) {
+        const body = await smallBody(request);
+        const session = sessions.get(body?.sessionId);
+        if (!session || session.playerId !== grant.playerId || session.zoneId !== grant.zoneId ||
+            !session.startedAt || session.ended || !["COMPLETED", "FAILED", "INTERRUPTED"].includes(body.eventType)) {
+          return respond(response, 400, { error: "No started Edge playback session matches this proof." });
+        }
+        const now = cache.trustedNow();
+        const position = Number(body.positionSeconds);
+        const duration = session.decision.item.durationSeconds;
+        if (body.eventType === "COMPLETED" && (cache.active?.version !== session.manifestVersion ||
+            decision.state !== "READY" || decision.contentKey !== session.decision.contentKey ||
+            decision.source !== session.decision.source)) {
+          return respond(response, 409, { error: "Current private programming changed; report interruption instead." });
+        }
+        if (!Number.isSafeInteger(position) || position < 0 || position > Math.ceil(duration) + 5 ||
+            (body.eventType === "COMPLETED" && (position < Math.max(1, Math.floor(duration - 5)) ||
+              now.getTime() - session.startedAt < Math.max(1, duration - 5) * 1000))) {
+          return respond(response, 400, { error: "The claimed playback duration is not possible." });
+        }
+        await proofQueue.append({ schema: 1, ...cache.scope, zoneId: grant.zoneId, playerId: grant.playerId,
+          eventId: randomUUID(), sessionId: body.sessionId, manifestVersion: session.manifestVersion,
+          contentKey: session.decision.contentKey, programmingSource: session.decision.source,
+          windowId: session.decision.windowId || null, overrideId: session.decision.overrideId || null,
+          eventType: body.eventType, occurredAt: now.toISOString(), positionSeconds: position });
+        session.ended = true;
+        return respond(response, 200, { queued: true, pendingProofCount: proofQueue.pendingCount });
       }
       return respond(response, 404, { error: "No such Edge player action." });
     } catch { return respond(response, 503, { error: "Edge playback is unavailable." }); }

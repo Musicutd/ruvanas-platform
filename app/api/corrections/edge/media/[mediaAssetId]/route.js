@@ -8,7 +8,8 @@ export const runtime = "nodejs";
 
 export async function GET(request, { params }) {
   try { const node = await authenticateCorrectionsEdge(request);
-    const asset = await authorisedCorrectionsEdgeMedia(node, String(params.mediaAssetId || ""));
+    const { mediaAssetId } = await params;
+    const asset = await authorisedCorrectionsEdgeMedia(node, String(mediaAssetId || ""));
     return protectedAudioResponse(request, asset); }
   catch (error) { return correctionsError(error); }
 }

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requirePlatformAdmin } from "@/lib/access-control";
 import { createCorrectionsEdgeNode } from "@/lib/corrections-edge-service";
 import { correctionsError } from "@/lib/corrections-http";
+import { correctionsEdgeEffectiveStatus } from "@/lib/corrections-edge-status.mjs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,12 +26,12 @@ export async function GET(request) {
     orderBy: { createdAt: "desc" }, take: 200, select: { id: true, organisationId: true, facilityId: true, name: true,
       status: true, keyVersion: true, enrolledAt: true, lastSeenAt: true, lastSyncAt: true, lastSuccessfulSyncAt: true,
       softwareVersion: true, storageHealth: true, syncStatus: true, pendingProofCount: true, cachedContentCount: true,
-      revokedAt: true, facility: { select: { name: true } }, manifests: { orderBy: { sequence: "desc" }, take: 1,
+      revokedAt: true, lastProofSequence: true, organisation: { select: { name: true } },
+      facility: { select: { name: true } }, manifests: { orderBy: { sequence: "desc" }, take: 1,
         select: { sequence: true, version: true, validUntil: true } } } });
-  const now = Date.now();
+  const now = new Date();
   return NextResponse.json({ nodes: nodes.map((node) => ({ ...node,
-    effectiveStatus: node.status !== "ACTIVE" ? node.status : !node.lastSeenAt || now - node.lastSeenAt.getTime() > 90_000 ? "OFFLINE" :
-      node.syncStatus === "DEGRADED" || node.storageHealth === "DEGRADED" ? "DEGRADED" : "ONLINE" })) },
+    effectiveStatus: correctionsEdgeEffectiveStatus(node, now) })) },
     { headers: { "Cache-Control": "private, no-store" } });
 }
 

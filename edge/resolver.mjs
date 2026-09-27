@@ -28,8 +28,8 @@ export function resolveCorrectionsEdgePlayback(payload, { zoneId, playerId, inst
     if (window.effectiveUntil && now >= new Date(window.effectiveUntil)) continue;
     const item = available.get(window.contentKey);
     if (!item || unavailableContentKeys.has(window.contentKey)) continue;
-    return { state: "READY", source: window.kind === "FALLBACK" ? "CORRECTIONS_FALLBACK" :
-      window.kind === "LOCAL" ? "CORRECTIONS_LOCAL" : "CORRECTIONS_CENTRAL",
+    return { state: "READY", source: window.programmingSource || (window.kind === "FALLBACK" ? "CORRECTIONS_FALLBACK" :
+      window.kind === "LOCAL" ? "CORRECTIONS_LOCAL" : "CORRECTIONS_CENTRAL"),
       contentKey: window.contentKey, item, windowId: window.id, sourceRevision: window.sourceRevision };
   }
   return { state: "NO_APPROVED_SOURCE" };

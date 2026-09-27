@@ -13,14 +13,20 @@ const scope = { nodeId: required("EDGE_NODE_ID"), organisationId: required("EDGE
   facilityId: required("EDGE_FACILITY_ID") };
 const client = new CorrectionsEdgeSyncClient({ cloudUrl: required("EDGE_CLOUD_URL"),
   machineCredential: required("EDGE_MACHINE_CREDENTIAL"), root: required("EDGE_CACHE_DIR"),
-  cacheKey: required("EDGE_CACHE_KEY"), publicKeyPem: required("EDGE_CLOUD_PUBLIC_KEY"), scope });
+  cacheKey: required("EDGE_CACHE_KEY"), publicKeyPem: required("EDGE_CLOUD_PUBLIC_KEY"),
+  proofPrivateKeyPem: required("EDGE_PROOF_PRIVATE_KEY"), scope });
 try { await client.initialise(); }
-catch { /* Expired/corrupt state stays unavailable until a signed sync succeeds. */ }
+catch (error) {
+  if (!/active Edge manifest is invalid or expired/.test(error.message)) throw error;
+  // An expired manifest is unavailable; a signed online sync may replace it.
+  // A damaged proof journal, trusted clock or key fails startup instead.
+}
 try { await client.sync({ softwareVersion: process.env.EDGE_SOFTWARE_VERSION || "c8-development" }); }
 catch { console.warn("Secure Edge cloud sync unavailable; only a still-valid signed local state can play."); }
 const tlsKeyPem = process.env.EDGE_LOCAL_TLS_KEY?.replace(/\\n/g, "\n");
 const tlsCertPem = process.env.EDGE_LOCAL_TLS_CERT?.replace(/\\n/g, "\n");
-const local = createCorrectionsEdgeServer({ cache: client.cache, host, port, tlsKeyPem, tlsCertPem });
+const local = createCorrectionsEdgeServer({ cache: client.cache, proofQueue: client.proofQueue,
+  host, port, tlsKeyPem, tlsCertPem });
 await local.listen();
 console.info("Secure Edge private player service started.");
 

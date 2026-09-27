@@ -11,6 +11,7 @@ export const runtime = "nodejs";
 
 export async function POST(_request, { params }) {
   try {
+    const { nodeId } = await params;
     const player = await getCurrentPlayer();
     if (!player || player.status === "DISABLED" || !player.enrolledAt) {
       return NextResponse.json({ error: "Enrol this private player first." }, { status: 401 });
@@ -20,7 +21,7 @@ export async function POST(_request, { params }) {
       return NextResponse.json({ error: "Secure Edge requires Inside Tier 4 or 5." }, { status: 403 });
     }
     const now = new Date();
-    const node = await prisma.correctionsEdgeNode.findFirst({ where: { id: params.nodeId, organisationId: player.organisationId,
+    const node = await prisma.correctionsEdgeNode.findFirst({ where: { id: nodeId, organisationId: player.organisationId,
       facilityId: player.zone.locationId, status: "ACTIVE", revokedAt: null } });
     if (!node) return NextResponse.json({ error: "No active Edge is authorised for this facility." }, { status: 404 });
     const latest = await prisma.correctionsEdgeManifest.findFirst({ where: { nodeId: node.id,

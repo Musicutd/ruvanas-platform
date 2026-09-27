@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
-import { createHash, createPrivateKey, createPublicKey, randomUUID } from "node:crypto";
+import { createHash, createPrivateKey, createPublicKey, randomBytes, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 import bcrypt from "bcryptjs";
 import { PrismaClient } from "@prisma/client";
@@ -9,6 +12,9 @@ import { correctionsRenderEvidence } from "../../lib/corrections-workflow.mjs";
 import { localDateTimeParts } from "../../lib/opening-hours.mjs";
 import { verifyEdgeManifest } from "../../lib/corrections-edge-manifest.mjs";
 import { verifyCorrectionsEdgePlayerGrant } from "../../lib/corrections-edge-player-grant.mjs";
+import { signCorrectionsEdgeProof } from "../../lib/corrections-edge-proof.mjs";
+import { CorrectionsEdgeSyncClient } from "../../edge/sync-client.mjs";
+import { createCorrectionsEdgeServer } from "../../edge/server.mjs";
 
 const baseUrl = process.env.INTEGRATION_BASE_URL || "http://127.0.0.1:3108";
 const testPrivateKey = createPrivateKey({ key: Buffer.concat([
@@ -42,7 +48,7 @@ test("C8B signed C7 manifest/media is exact, protected, facility-scoped and with
     response.writeHead(200, { "Content-Type": "audio/wav", "Content-Length": mediaBytes.length });
     response.end(mediaBytes);
   });
-  let organisation, plan, media, promo, users = [];
+  let organisation, plan, media, promo, users = [], edgeRoot, localEdge;
   try {
     await new Promise((resolve, reject) => mockR2.once("error", reject).listen(9108, "127.0.0.1", resolve));
     plan = await db.plan.create({ data: { name: `C8 manifest ${suffix}`, code: `C8_MANIFEST_${suffix}`,
@@ -62,6 +68,8 @@ test("C8B signed C7 manifest/media is exact, protected, facility-scoped and with
     const admin = await user("SUPER_ADMIN", "admin-manifest");
     const owner = await user("OWNER", "owner-manifest");
     const manager = await user("MANAGER", "manager-manifest");
+    await db.organisationMember.create({ data: { organisationId: organisation.id, userId: owner.user.id,
+      role: "OWNER" } });
     const facilities = [];
     for (const label of ["A", "B"]) facilities.push(await db.location.create({ data: {
       organisationId: organisation.id, name: `C8 facility ${label}`, slug: `c8-${label}-${suffix}`,
@@ -86,7 +94,7 @@ test("C8B signed C7 manifest/media is exact, protected, facility-scoped and with
     }
     media = await db.mediaAsset.create({ data: { organisationId: organisation.id, libraryType: "ORGANISATION_PROMO",
       name: "C8 approved programme", originalName: "synthetic.wav", storageKey, mimeType: "audio/wav",
-      sizeBytes: BigInt(mediaBytes.length), durationSeconds: 30, mediaType: "ANNOUNCEMENT", status: "READY" } });
+      sizeBytes: BigInt(mediaBytes.length), durationSeconds: 2, mediaType: "ANNOUNCEMENT", status: "READY" } });
     promo = await db.promoAsset.create({ data: { organisationId: organisation.id, name: "C8 approved programme", mediaType: "ANNOUNCEMENT" } });
     const checksum = createHash("sha256").update(mediaBytes).digest("hex");
     const promoVersion = await db.promoVersion.create({ data: { promoAssetId: promo.id, mediaAssetId: media.id,
@@ -126,12 +134,15 @@ test("C8B signed C7 manifest/media is exact, protected, facility-scoped and with
         body: { organisationId: organisation.id, facilityId: facility.id, name: `Synthetic Edge ${facility.name}` } });
       assert.equal(created.status, 201, JSON.stringify(created.body));
       const enrolled = await api("/api/corrections/edge/enrol", { method: "POST",
-        body: { enrolmentCredential: created.body.enrolmentCredential } });
+        body: { enrolmentCredential: created.body.enrolmentCredential, proofPublicKeyPem: testPublicPem } });
       assert.equal(enrolled.status, 200, JSON.stringify(enrolled.body));
       return { id: created.body.nodeId, credential: enrolled.body.machineCredential };
     }
     const edgeA = await edgeFor(facilities[0]);
     const edgeB = await edgeFor(facilities[1]);
+    const insideFleet = await fetch(`${baseUrl}/dashboard/corrections/edge`, { headers: { cookie: owner.cookie } });
+    assert.equal(insideFleet.status, 200);
+    assert.match(await insideFleet.text(), /Secure Edge fleet/);
     const manifestA = await api("/api/corrections/edge/manifest", { machine: edgeA.credential });
     assert.equal(manifestA.status, 200, JSON.stringify(manifestA.body));
     assert.equal(verifyEdgeManifest(manifestA.body, testPublicPem,
@@ -153,15 +164,106 @@ test("C8B signed C7 manifest/media is exact, protected, facility-scoped and with
       { headers: { authorization: `Bearer ${edgeA.credential}` } });
     assert.equal(protectedResponse.status, 200);
     assert.deepEqual(Buffer.from(await protectedResponse.arrayBuffer()), mediaBytes);
+    const content = manifestA.body.payload.content[0];
+    const signedWindow = manifestA.body.payload.windows[0];
+    const scope = { nodeId: edgeA.id, organisationId: organisation.id, facilityId: facilities[0].id };
+    const sessionId = randomUUID();
+    const startTime = new Date(Math.max(Date.now(), Date.parse(manifestA.body.payload.issuedAt) + 100));
+    const baseProof = { schema: 1, ...scope, zoneId: facilities[0].zones[0].id,
+      playerId: players[0].player.id, sessionId, manifestVersion: manifestA.body.version,
+      contentKey: `${content.mediaAssetId}:${content.promoVersionId}:${content.sha256}`,
+      programmingSource: signedWindow.programmingSource, windowId: signedWindow.id, overrideId: null };
+    const started = signCorrectionsEdgeProof(1, null, { ...baseProof, eventId: randomUUID(),
+      eventType: "STARTED", occurredAt: startTime.toISOString(), positionSeconds: 0 },
+      testPrivateKey.export({ type: "pkcs8", format: "pem" }));
+    const completed = signCorrectionsEdgeProof(2, started.eventHash, { ...baseProof, eventId: randomUUID(),
+      eventType: "COMPLETED", occurredAt: new Date(startTime.getTime() + 2000).toISOString(), positionSeconds: 2 },
+      testPrivateKey.export({ type: "pkcs8", format: "pem" }));
+    const rejectedCrossFacility = await api("/api/corrections/edge/proof", { method: "POST", machine: edgeB.credential,
+      body: { records: [started] } });
+    assert.equal(rejectedCrossFacility.status, 400);
+    const rejectedForgery = await api("/api/corrections/edge/proof", { method: "POST", machine: edgeA.credential,
+      body: { records: [{ ...started, payload: { ...started.payload, contentKey: "other:version:" + "0".repeat(64) } }] } });
+    assert.equal(rejectedForgery.status, 409, JSON.stringify(rejectedForgery.body));
+    const proofUpload = await api("/api/corrections/edge/proof", { method: "POST", machine: edgeA.credential,
+      body: { records: [started, completed] } });
+    assert.equal(proofUpload.status, 200, JSON.stringify(proofUpload.body));
+    assert.equal(proofUpload.body.accepted, 2);
+    const replay = await api("/api/corrections/edge/proof", { method: "POST", machine: edgeA.credential,
+      body: { records: [started, completed] } });
+    assert.equal(replay.status, 200, JSON.stringify(replay.body));
+    assert.equal(replay.body.duplicates, 2);
+    assert.equal(await db.proofOfPlayEvent.count({ where: { organisationId: organisation.id,
+      playerId: players[0].player.id, programmingSource: "CORRECTIONS_CENTRAL" } }), 2);
+    assert.equal(await db.playoutIntent.count({ where: { organisationId: organisation.id,
+      correctionsProgrammeId: programme.id, correctionsSubmissionId: submission.id } }), 1);
+    // Real Edge runtime against the isolated cloud: disconnect, keep serving
+    // signed private audio, queue local proof, withdraw, reconnect and evict.
+    const edgeC = await edgeFor(facilities[0]);
+    edgeRoot = await mkdtemp(path.join(os.tmpdir(), "ruvanas-c8-reconnect-"));
+    let cloudConnected = true;
+    const runtime = new CorrectionsEdgeSyncClient({ cloudUrl: baseUrl,
+      machineCredential: edgeC.credential, root: edgeRoot, cacheKey: randomBytes(32),
+      publicKeyPem: testPublicPem, proofPrivateKeyPem: testPrivateKey.export({ type: "pkcs8", format: "pem" }),
+      scope: { ...scope, nodeId: edgeC.id },
+      fetchImpl: (url, options) => cloudConnected ? fetch(url, options) : Promise.reject(new Error("isolated cloud link disconnected")) });
+    await runtime.initialise();
+    const initialSync = await runtime.sync({ softwareVersion: "c8-isolated-runtime" });
+    assert.equal(initialSync.downloaded, 1);
+    localEdge = createCorrectionsEdgeServer({ cache: runtime.cache, proofQueue: runtime.proofQueue });
+    const address = await localEdge.listen();
+    const localUrl = `http://127.0.0.1:${address.port}`;
+    const localGrant = await api(`/api/player/edge-grant/${edgeC.id}`, { method: "POST", cookie: players[0].cookie });
+    assert.equal(localGrant.status, 200);
+    const headers = { authorization: `Edge ${Buffer.from(JSON.stringify(localGrant.body)).toString("base64url")}` };
+    const before = await (await fetch(`${localUrl}/v1/playback`, { headers })).json();
+    assert.equal(before.state, "READY");
+    assert.deepEqual(Buffer.from(await (await fetch(`${localUrl}${before.mediaUrl}`, { headers })).arrayBuffer()), mediaBytes);
+    cloudConnected = false;
+    await assert.rejects(runtime.sync(), /disconnected/);
+    const offline = await (await fetch(`${localUrl}/v1/playback`, { headers })).json();
+    assert.equal(offline.state, "READY");
+    assert.deepEqual(Buffer.from(await (await fetch(`${localUrl}${offline.mediaUrl}`, { headers })).arrayBuffer()), mediaBytes);
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    const localCompletion = await fetch(`${localUrl}/v1/proof`, { method: "POST", headers: {
+      ...headers, "content-type": "application/json" }, body: JSON.stringify({ sessionId: offline.sessionId,
+      eventType: "COMPLETED", positionSeconds: 2 }) });
+    assert.equal(localCompletion.status, 200, await localCompletion.text());
+    assert.equal(runtime.proofQueue.pendingCount, 3);
     await db.correctionsProgrammeDistribution.update({ where: { id: distribution.id }, data: { status: "WITHDRAWN", withdrawnAt: new Date() } });
     await db.correctionsNetworkWindow.update({ where: { id: window.id }, data: { active: false } });
+    // The disconnected node cannot learn the withdrawal, but its *previously*
+    // signed authority is bounded; reconnect must remove the item.
+    assert.equal((await (await fetch(`${localUrl}/v1/playback`, { headers })).json()).state, "READY");
+    cloudConnected = true;
+    const reconnected = await runtime.sync({ softwareVersion: "c8-isolated-runtime" });
+    assert.equal(reconnected.proofUploaded, 3);
+    assert.equal(runtime.proofQueue.pendingCount, 0);
+    assert.equal(runtime.cache.active.payload.content.length, 0);
+    assert.equal((await (await fetch(`${localUrl}/v1/playback`, { headers })).json()).state, "NO_APPROVED_SOURCE");
+    assert.equal(await db.correctionsEdgeProofEvent.count({ where: { nodeId: edgeC.id } }), 3);
+    assert.equal((await runtime.sync()).proofUploaded, 0, "reconnect must not duplicate accepted proof");
+    const network = await api("/api/corrections/network", { cookie: owner.cookie });
+    assert.equal(network.status, 200, JSON.stringify(network.body));
+    assert.ok(network.body.deliveryMetricsLast7Days.centralProgramme >= 2,
+      "C7 operational analytics must include reconciled Edge completion evidence");
+    const date = new Date().toISOString().slice(0, 10);
+    const report = await fetch(`${baseUrl}/api/corrections/network/report/export?from=${date}&to=${date}&status=COMPLETED`,
+      { headers: { cookie: owner.cookie } });
+    assert.equal(report.status, 200);
+    assert.match(await report.text(), /CORRECTIONS_CENTRAL/);
     const withdrawn = await api("/api/corrections/edge/manifest", { machine: edgeA.credential });
     assert.equal(withdrawn.status, 200);
     assert.equal(withdrawn.body.payload.content.length, 0);
     assert.equal((await api(`/api/corrections/edge/media/${media.id}`, { machine: edgeA.credential })).status, 404);
   } finally {
+    if (localEdge) await new Promise((resolve) => localEdge.server.close(resolve));
+    if (edgeRoot) { assert.equal(path.dirname(edgeRoot), os.tmpdir()); await rm(edgeRoot, { recursive: true, force: true }); }
     if (mockR2.listening) await new Promise((resolve) => mockR2.close(resolve));
     if (organisation) {
+      await db.correctionsEdgeProofEvent.deleteMany({ where: { node: { organisationId: organisation.id } } });
+      await db.proofOfPlayEvent.deleteMany({ where: { organisationId: organisation.id } });
+      await db.playoutIntent.deleteMany({ where: { organisationId: organisation.id } });
       await db.correctionsEdgeNode.deleteMany({ where: { organisationId: organisation.id } });
       await db.correctionsNetworkWindow.deleteMany({ where: { organisationId: organisation.id } });
       await db.correctionsProgrammeDistribution.deleteMany({ where: { organisationId: organisation.id } });
@@ -184,6 +286,7 @@ test("C8B signed C7 manifest/media is exact, protected, facility-scoped and with
       await db.station.deleteMany({ where: { organisationId: organisation.id } });
       await db.location.deleteMany({ where: { organisationId: organisation.id } });
       await db.auditLog.deleteMany({ where: { organisationId: organisation.id } });
+      await db.organisationMember.deleteMany({ where: { organisationId: organisation.id } });
       await db.subscription.deleteMany({ where: { organisationId: organisation.id } });
       await db.organisation.delete({ where: { id: organisation.id } });
     }

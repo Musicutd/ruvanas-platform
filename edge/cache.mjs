@@ -60,6 +60,7 @@ export class CorrectionsEdgeCache {
     this.trustedBaseMs = 0;
     this.lastClockPersistMs = 0;
     this.active = null;
+    this.suspended = true; // Fail closed until persisted authorisation state is checked.
     this.cacheRevision = 0;
   }
 
@@ -68,6 +69,8 @@ export class CorrectionsEdgeCache {
     await mkdir(path.join(this.root, "objects"), { recursive: true, mode: 0o700 });
     await mkdir(path.join(this.root, "quarantine"), { recursive: true, mode: 0o700 });
     const clock = await this.readClock();
+    const suspension = await this.readSuspension();
+    this.suspended = Boolean(suspension);
     this.trustedBaseMs = clock?.time || 0;
     this.lastClockPersistMs = this.trustedBaseMs;
     this.monotonicBase = process.hrtime.bigint();
@@ -107,6 +110,42 @@ export class CorrectionsEdgeCache {
     const temporary = path.join(this.root, `clock-${randomUUID()}.tmp`);
     await writeFile(temporary, JSON.stringify(record), { mode: 0o600, flag: "wx" });
     await rename(temporary, path.join(this.root, "clock.json"));
+  }
+
+  async readSuspension() {
+    try {
+      const record = JSON.parse(await readFile(path.join(this.root, "suspension.json"), "utf8"));
+      const expected = createHmac("sha256", this.key).update(`${record.time}:${record.reason}`).digest("hex");
+      if (!Number.isSafeInteger(record.time) || !["CLOUD_REJECTED", "LOCAL_OPERATOR"].includes(record.reason) ||
+          !/^[a-f0-9]{64}$/.test(record.mac || "") ||
+          !timingSafeEqual(Buffer.from(record.mac, "hex"), Buffer.from(expected, "hex"))) {
+        throw new Error("Edge suspension record failed integrity verification.");
+      }
+      return record;
+    } catch (error) { if (error.code === "ENOENT") return null; throw error; }
+  }
+
+  async suspend(reason = "CLOUD_REJECTED") {
+    if (!["CLOUD_REJECTED", "LOCAL_OPERATOR"].includes(reason)) throw new Error("Invalid Edge suspension reason.");
+    const time = this.trustedNow().getTime();
+    const record = { time, reason,
+      mac: createHmac("sha256", this.key).update(`${time}:${reason}`).digest("hex") };
+    const temporary = path.join(this.root, `suspension-${randomUUID()}.tmp`);
+    await writeFile(temporary, JSON.stringify(record), { mode: 0o600, flag: "wx" });
+    await rename(temporary, path.join(this.root, "suspension.json"));
+    this.suspended = true;
+    this.cacheRevision += 1;
+  }
+
+  async resumeAfterCloudValidation() {
+    if (!this.suspended) return;
+    if (!this.active || !verifyEdgeManifest(this.active, this.publicKeyPem, this.scope,
+      { now: this.trustedNow(), lastSequence: this.active.payload.sequence - 1 })) {
+      throw new Error("A current cloud-authorised manifest is required to resume Edge playback.");
+    }
+    await unlink(path.join(this.root, "suspension.json"));
+    this.suspended = false;
+    this.cacheRevision += 1;
   }
 
   async validMedia(item) {
@@ -192,6 +231,7 @@ export class CorrectionsEdgeCache {
 
   async readMedia(contentKey) {
     const now = this.trustedNow();
+    if (this.suspended) throw new Error("Edge playback is suspended after cloud authorisation was rejected.");
     if (!this.active || new Date(this.active.payload.validUntil) <= now) {
       throw new Error("Edge offline authorisation expired; playback is suspended.");
     }

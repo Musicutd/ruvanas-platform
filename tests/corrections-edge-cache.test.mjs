@@ -83,3 +83,45 @@ test("a corrupt cache object is quarantined and produces no playback", async () 
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("cloud rejection suspends local playback across restart until a fresh authorised sync", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "ruvanas-c8-suspend-"));
+  const bytes = Buffer.from("synthetic offline audio");
+  const item = media(bytes, "media-suspend");
+  const create = () => new CorrectionsEdgeCache({ root, key, publicKeyPem, scope,
+    now: () => initial, fetchMedia: async () => bytes });
+  try {
+    const cache = create();
+    await cache.initialise();
+    await cache.sync(envelope(1, [item]));
+    await cache.suspend("CLOUD_REJECTED");
+    await assert.rejects(cache.readMedia(edgeContentKey(item)), /suspended/);
+    const restarted = create();
+    await restarted.initialise();
+    await assert.rejects(restarted.readMedia(edgeContentKey(item)), /suspended/);
+    await restarted.sync(envelope(1, [item]));
+    await restarted.resumeAfterCloudValidation();
+    assert.deepEqual((await restarted.readMedia(edgeContentKey(item))).bytes, bytes);
+  } finally {
+    assert.equal(path.dirname(root), os.tmpdir());
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("clock rollback cannot extend an Edge manifest or media rights", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "ruvanas-c8-clock-"));
+  const bytes = Buffer.from("synthetic clock audio");
+  const item = media(bytes, "media-clock");
+  let now = new Date(initial);
+  const cache = new CorrectionsEdgeCache({ root, key, publicKeyPem, scope,
+    now: () => now, fetchMedia: async () => bytes });
+  try {
+    await cache.initialise();
+    await cache.sync(envelope(1, [item]));
+    now = new Date(initial.getTime() - 6 * 60_000);
+    await assert.rejects(cache.readMedia(edgeContentKey(item)), /clock moved behind/);
+  } finally {
+    assert.equal(path.dirname(root), os.tmpdir());
+    await rm(root, { recursive: true, force: true });
+  }
+});

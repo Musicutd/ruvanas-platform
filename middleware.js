@@ -8,6 +8,13 @@ function isServiceAccountApiRequest(request) {
     /^Bearer\s+rvsa_[a-f0-9]{12}_[a-f0-9]{64}$/i.test(request.headers.get("authorization") || "");
 }
 
+function isCorrectionsEdgeMachineRequest(request) {
+  // Machine APIs authenticate a facility-bound bearer credential in the
+  // handler. They have no browser-cookie authority or CSRF Origin contract.
+  return /^\/api\/corrections\/edge\/(heartbeat|sync|proof)$/.test(request.nextUrl.pathname) &&
+    /^Bearer rve\.[a-z0-9]{20,40}\.[A-Za-z0-9_-]{43}$/.test(request.headers.get("authorization") || "");
+}
+
 function allowedOrigins(request) {
   const configured = (process.env.ALLOWED_ORIGINS || "")
     .split(",")
@@ -50,7 +57,7 @@ export async function middleware(request) {
     );
   }
 
-  if (!SAFE_METHODS.has(request.method) && !isServiceAccountApiRequest(request)) {
+  if (!SAFE_METHODS.has(request.method) && !isServiceAccountApiRequest(request) && !isCorrectionsEdgeMachineRequest(request)) {
     const origin = request.headers.get("origin");
 
     if (!origin || !allowedOrigins(request).has(origin)) {
