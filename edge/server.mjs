@@ -1,4 +1,4 @@
-import { createHash, randomBytes, randomUUID, sign, timingSafeEqual } from "node:crypto";
+import { createHmac, randomBytes, randomUUID, sign, timingSafeEqual } from "node:crypto";
 import http from "node:http";
 import https from "node:https";
 import { verifyCorrectionsEdgePlayerGrant } from "../lib/corrections-edge-player-grant.mjs";
@@ -37,7 +37,8 @@ function playerGrant(request, cache) {
 }
 
 function mediaOpaque(cache, grant, contentKey) {
-  return createHash("sha256").update([cache.scope.nodeId, grant.playerId, cache.active.version, contentKey].join(":"))
+  return createHmac("sha256", cache.key)
+    .update([cache.scope.nodeId, grant.playerId, cache.active.version, contentKey].join(":"))
     .digest("hex");
 }
 

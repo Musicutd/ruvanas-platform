@@ -31,7 +31,8 @@ test("authenticated local player sees only its current private media; C6 overrid
   const make = (sequence, override = false) => signEdgeManifest({ schema: 1, ...scope, sequence,
     issuedAt: new Date(current.getTime() - 5000).toISOString(),
     validUntil: new Date(current.getTime() + 60 * 60_000).toISOString(), timezone: "UTC",
-    zones: [{ id: "zoneA", channelId: "channelA", playerIds: ["playerA"] }],
+    zones: [{ id: "zoneA", channelId: "channelA", playerIds: ["playerA"] },
+      { id: "zoneB", channelId: "channelB", playerIds: ["playerB"] }],
     windows: [{ id: "central", facilityId: scope.facilityId, kind: "CENTRAL", mandatory: false,
       distributionId: "d1", weekday: current.getUTCDay(), startMinute: 0, endMinute: 1440,
       contentKey: edgeContentKey(normalItem) }],
@@ -74,11 +75,38 @@ test("authenticated local player sees only its current private media; C6 overrid
       origin: browserOrigin, authorization: `EdgeSession ${localLease.accessToken}` } });
     assert.equal(sessionPlayback.status, 200);
     const sessionState = await sessionPlayback.json();
+    const guessablePath = `/v1/media/${createHash("sha256").update([
+      scope.nodeId, "playerA", cache.active.version, edgeContentKey(normalItem)
+    ].join(":")).digest("hex")}`;
+    assert.notEqual(new URL(sessionState.mediaUrl, url).pathname, guessablePath,
+      "local media paths must not be derivable from public content metadata");
+    assert.equal((await fetch(`${url}${guessablePath}${new URL(sessionState.mediaUrl, url).search}`,
+      { headers: { origin: browserOrigin } })).status, 404);
     assert.equal((await fetch(`${url}${sessionState.mediaUrl.split("&ticket=")[0]}&ticket=wrong`, {
       headers: { origin: browserOrigin } })).status, 403);
     const browserMedia = await fetch(`${url}${sessionState.mediaUrl}`, { headers: { origin: browserOrigin } });
     assert.equal(browserMedia.status, 200);
     assert.deepEqual(Buffer.from(await browserMedia.arrayBuffer()), normal);
+    const zoneBGrant = grantFor({ zoneId: "zoneB", playerId: "playerB" });
+    const zoneBSession = await fetch(`${url}/v1/session`, { method: "POST",
+      headers: { origin: browserOrigin, "content-type": "application/json" },
+      body: JSON.stringify({ grant: zoneBGrant }) });
+    assert.equal(zoneBSession.status, 200);
+    const zoneBLease = await zoneBSession.json();
+    const zoneBState = await (await fetch(`${url}/v1/playback`, { headers: {
+      origin: browserOrigin, authorization: `EdgeSession ${zoneBLease.accessToken}` } })).json();
+    assert.equal(zoneBState.state, "READY");
+    assert.notEqual(new URL(zoneBState.mediaUrl, url).pathname,
+      new URL(sessionState.mediaUrl, url).pathname, "each zone/player needs a distinct protected media path");
+    const forgedCrossZoneUrl = new URL(sessionState.mediaUrl, url);
+    forgedCrossZoneUrl.searchParams.set("session", zoneBState.sessionId);
+    forgedCrossZoneUrl.searchParams.set("ticket", new URL(zoneBState.mediaUrl, url).searchParams.get("ticket"));
+    assert.equal((await fetch(forgedCrossZoneUrl, { headers: { origin: browserOrigin } })).status, 404,
+      "a Zone B session cannot request Zone A's opaque media path");
+    assert.equal((await fetch(`${url}/v1/proof`, { method: "POST", headers: {
+      origin: browserOrigin, authorization: `EdgeSession ${zoneBLease.accessToken}`,
+      "content-type": "application/json" }, body: JSON.stringify({ sessionId: sessionState.sessionId,
+      eventType: "FAILED", positionSeconds: 0 }) })).status, 400);
     cache.suspended = true;
     assert.equal((await fetch(`${url}${sessionState.mediaUrl}`, { headers: {
       origin: browserOrigin } })).status, 401, "a suspended Edge cannot use an earlier browser media ticket");
@@ -114,7 +142,7 @@ test("authenticated local player sees only its current private media; C6 overrid
       "content-type": "application/json" }, body: JSON.stringify({ sessionId: normalState.sessionId,
       eventType: "FAILED", positionSeconds: 0 }) })).status, 400);
     assert.equal((await fetch(`${url}/v1/media/${"0".repeat(64)}`, { headers: auth })).status, 401);
-    const wrongGrant = grantFor({ zoneId: "zoneB", playerId: "playerB" });
+    const wrongGrant = grantFor({ zoneId: "zoneC", playerId: "playerC" });
     assert.equal((await fetch(`${url}/v1/playback`, { headers: {
       authorization: `Edge ${Buffer.from(JSON.stringify(wrongGrant)).toString("base64url")}` } })).status, 401);
     const otherFacility = grantFor({ facilityId: "facilityB" });
