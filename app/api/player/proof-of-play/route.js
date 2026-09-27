@@ -41,7 +41,7 @@ const eventSchema = z.object({
     "CORRECTIONS_REHABILITATION",
     "CORRECTIONS_STANDARD", "CORRECTIONS_PRIORITY", "CORRECTIONS_EMERGENCY",
     "CORRECTIONS_CENTRAL", "CORRECTIONS_LOCAL", "CORRECTIONS_SYNDICATED",
-    "CORRECTIONS_CENTRAL_REHAB", "CORRECTIONS_CENTRAL_ANNOUNCE"
+    "CORRECTIONS_CENTRAL_REHAB", "CORRECTIONS_CENTRAL_ANNOUNCE", "CORRECTIONS_FALLBACK"
   ]).optional().nullable(),
   trackId: z.string().cuid().optional().nullable(),
   eventType: z.enum(["STARTED", "COMPLETED", "FAILED", "INTERRUPTED"]),
@@ -143,7 +143,8 @@ export async function POST(request) {
         Boolean(networkChoice) && !intent.cancelledAt && !intent.campaignId && !intent.schoolBroadcastSlotId &&
         !intent.correctionsRequestId && !intent.correctionsRehabContentId && !intent.correctionsAnnouncementId &&
         event.itemType === "CORRECTIONS_AUDIO" && !event.trackId &&
-        event.programmingSource === (networkChoice.distribution.syndicationOfferId ? "CORRECTIONS_SYNDICATED" :
+        event.programmingSource === (networkChoice.window.kind === "FALLBACK" ? "CORRECTIONS_FALLBACK" :
+          networkChoice.distribution.syndicationOfferId ? "CORRECTIONS_SYNDICATED" :
           networkChoice.window.kind === "LOCAL" ? "CORRECTIONS_LOCAL" : "CORRECTIONS_CENTRAL")
       ) : c6 ? (
         (!intent.cancelledAt || endedProofAllowed) &&

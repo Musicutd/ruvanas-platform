@@ -30,6 +30,7 @@ test("central music restrictions remain effective even when a facility permits m
 test("central mandatory windows win, local windows beat only optional central default", () => {
   const central = { facilityId: "a", kind: "CENTRAL", distributionId: "central-version", weekday: 1, startMinute: 0, endMinute: 1440, active: true, mandatory: false };
   const local = { facilityId: "a", kind: "LOCAL", distributionId: "local-version", weekday: 1, startMinute: 600, endMinute: 660, active: true, mandatory: false };
+  const fallback = { facilityId: "a", kind: "FALLBACK", distributionId: "private-fallback", weekday: 1, startMinute: 0, endMinute: 1440, active: true, mandatory: false };
   assert.equal(correctionsWindowConflict(central, local), null);
   assert.equal(resolveCorrectionsNetworkWindow([central, local], { facilityId: "a", weekday: 1, minute: 610 }), local);
   assert.equal(resolveCorrectionsNetworkWindow([central, local], { facilityId: "a", weekday: 1, minute: 665 }), central);
@@ -42,6 +43,13 @@ test("central mandatory windows win, local windows beat only optional central de
     [mandatoryAnnouncement, central], "the valid central default remains a fallback after mandatory audio");
   assert.equal(resolveCorrectionsNetworkWindow([{ ...central, mandatory: true }, local], { facilityId: "a", weekday: 1, minute: 610 }).kind, "CENTRAL");
   assert.deepEqual(rankCorrectionsNetworkWindows([central, local], { facilityId: "a", weekday: 1, minute: 610 }), [local, central]);
+  assert.deepEqual(rankCorrectionsNetworkWindows([fallback, central, local], { facilityId: "a", weekday: 1, minute: 610 }), [local, central, fallback]);
+  assert.equal(correctionsWindowConflict(central, fallback), null);
+  assert.equal(correctionsWindowConflict(fallback, local), null);
+  assert.equal(correctionsWindowConflict(fallback, { ...fallback, distributionId: "another" }), "OVERLAPPING_SAME_KIND");
+  assert.equal(normalizeCorrectionsNetworkWindow({ kind: "FALLBACK", weekday: 1, startMinute: 0, endMinute: 1440, distributionId: "private-fallback", allowedContentTypes: ["PROGRAMME"] }).kind, "FALLBACK");
+  assert.throws(() => normalizeCorrectionsNetworkWindow({ kind: "FALLBACK", weekday: 1, startMinute: 0, endMinute: 1440, audioDistributionId: "audio", allowedContentTypes: ["ANNOUNCEMENT"] }));
+  assert.throws(() => normalizeCorrectionsNetworkWindow({ kind: "FALLBACK", weekday: 1, startMinute: 0, endMinute: 1440, distributionId: "private-fallback", mandatory: true, allowedContentTypes: ["PROGRAMME"] }));
   assert.deepEqual(rankCorrectionsNetworkWindows([{ ...local, distributionId: null }, central], { facilityId: "a", weekday: 1, minute: 610 }), [central]);
   assert.equal(normalizeCorrectionsNetworkWindow({ kind: "LOCAL", weekday: 1, startMinute: 600, endMinute: 660, distributionId: "approved-local-version", allowedContentTypes: ["PROGRAMME"] }).distributionId, "approved-local-version");
   assert.throws(() => normalizeCorrectionsNetworkWindow({ kind: "LOCAL", weekday: 1, startMinute: 600, endMinute: 660, allowedContentTypes: ["PROGRAMME"] }));

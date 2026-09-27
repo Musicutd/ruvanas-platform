@@ -554,6 +554,7 @@ enum CorrectionsOverrideStatus {
 enum CorrectionsNetworkWindowKind {
   CENTRAL
   LOCAL
+  FALLBACK
 }
 
 enum CorrectionsDistributionStatus {

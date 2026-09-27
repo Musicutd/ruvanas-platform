@@ -579,6 +579,47 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
       { headers: { cookie: owner.cookie } })).text(), /CORRECTIONS_SYNDICATED,COMPLETED/,
       "historical evidence survives syndication withdrawal");
 
+    // A separately approved, version-pinned private programme is the last
+    // resort. It must never borrow the ordinary public AutoDJ path.
+    const fallbackProgramme = await approvedProgramme(0, "Private fallback programme", 120);
+    const fallbackId = (await distribute(fallbackProgramme.id, [facilities[0].id]))[facilities[0].id];
+    assert.equal((await api("/api/corrections/network/windows", { method: "POST", cookie: manager.cookie,
+      body: { facilityId: facilities[0].id, kind: "FALLBACK", distributionId: fallbackId,
+        weekday, startMinute: 0, endMinute: 1440, allowedContentTypes: ["PROGRAMME"] } })).status, 403,
+      "a facility-only manager cannot configure network fallback authority");
+    const fallbackWindow = await createWindow(0, "FALLBACK", fallbackId);
+    assert.equal((await manifest(0)).body.insertions[0]?.programmingSource, "CORRECTIONS_CENTRAL",
+      "an approved fallback never replaces valid central programming");
+    assert.equal((await api(`/api/corrections/network/distribution/${centralIds[facilities[0].id]}`,
+      { method: "DELETE", cookie: owner.cookie })).status, 200);
+    const fallbackManifest = await manifest(0);
+    assert.equal(fallbackManifest.body.insertions[0]?.programmingSource, "CORRECTIONS_FALLBACK",
+      "withdrawal must resolve the approved private fallback, not public audio or silence");
+    assert.equal(fallbackManifest.body.programmingAlert?.code, "CORRECTIONS_PRIVATE_FALLBACK");
+    assert.equal((await manifest(1)).body.insertions[0]?.programmingSource, "CORRECTIONS_CENTRAL",
+      "unaffected facilities retain their own current programme");
+    const fallbackItem = fallbackManifest.body.insertions[0];
+    const fallbackMedia = await fetch(new URL(fallbackItem.mediaUrl, baseUrl), { headers: {
+      cookie: players[0].cookie, range: "bytes=0-16043" } });
+    assert.equal(fallbackMedia.status, 206);
+    assert.ok(Math.abs(observedTone(Buffer.from(await fallbackMedia.arrayBuffer())) - 120) < 5);
+    const fallbackProof = await api("/api/player/proof-of-play", { method: "POST", cookie: players[0].cookie,
+      instanceId: players[0].instanceId, body: { events: [{ eventId: randomUUID(), manifestVersion: fallbackManifest.body.version,
+        proofToken: fallbackItem.proofToken, programmingSourceProofToken: fallbackItem.programmingSourceProofToken,
+        scheduleItemId: fallbackItem.scheduleItemId, itemType: "CORRECTIONS_AUDIO", programmingSource: "CORRECTIONS_FALLBACK",
+        eventType: "COMPLETED", occurredAt: new Date().toISOString(), positionSeconds: 30 }] } });
+    assert.equal(fallbackProof.status, 200, JSON.stringify(fallbackProof.body));
+    assert.equal(fallbackProof.body.accepted, 1);
+    assert.equal((await api("/api/corrections/network", { cookie: owner.cookie })).body.deliveryMetricsLast7Days.fallbackProgramme, 1);
+    const fallbackCsv = await fetch(`${baseUrl}/api/corrections/network/report/export?facilityId=${facilities[0].id}&source=CORRECTIONS_FALLBACK`,
+      { headers: { cookie: owner.cookie } });
+    assert.equal(fallbackCsv.status, 200);
+    assert.match(await fallbackCsv.text(), /CENTRAL,PROGRAMME,CORRECTIONS_FALLBACK,COMPLETED/);
+    assert.equal((await api(`/api/corrections/network/windows/${fallbackWindow}`, { method: "DELETE", cookie: owner.cookie })).status, 200);
+    const noApprovedSource = await manifest(0);
+    assert.equal(noApprovedSource.body.insertions.length, 0, "private playback fails closed if every approved source is removed");
+    assert.equal(noApprovedSource.body.programmingAlert?.code, "CORRECTIONS_NO_APPROVED_SOURCE");
+
     await db.player.update({ where: { id: players[1].player.id }, data: { status: "OFFLINE", lastHeartbeatAt: new Date(Date.now() - 180_000) } });
     const degraded = await api("/api/corrections/network", { cookie: owner.cookie });
     assert.equal(degraded.status, 200);

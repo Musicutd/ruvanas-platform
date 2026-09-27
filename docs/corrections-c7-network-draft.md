@@ -26,20 +26,28 @@ finished Multi-Facility Network Operations release.
   local windows must reference a version originating at the target facility.
   The private player can resolve them into the existing signed manifest and
   `PlayoutIntent` proof path. Precedence is C6 Emergency/Priority, then a
-  mandatory central window, local window, and optional central default.
-  Invalid local content falls through to the approved central candidate.
+  mandatory central window, local window, optional central default, and an
+  explicitly approved private fallback programme. An invalid candidate falls
+  through only to the next eligible private source; recipient facility policy,
+  central policy, rights, exact approval and media are checked at runtime.
   Disposable CI checks the private manifest, protected synthetic-tone media
   fetch and signed proof for three facilities. This is **not yet real-player or
-  audible live validated** and has no general private AutoDJ fallback.
+  audible live validated**. The fallback is an approved, version-pinned
+  programme, not a general private AutoDJ music rotation or public AutoDJ.
+- Central rehabilitation and STANDARD announcements pin approved C5/C6 audio
+  and target all facilities, selected facilities or Location Groups. Private
+  syndication requires an exact facility-made revision and separate central
+  acceptance before any selected-facility distribution. Withdrawals preserve
+  historical signed delivery proof and report rows.
 - The Tier 4/5 network dashboard and bounded CSV export aggregate existing
   player proof by facility, source and status without contributor/request text.
-  The C7.2 export now offers date, facility/group, central/local, content type,
+  The C7 export now offers date, facility/group, central/local, content type,
   exact programme/rehabilitation/announcement and delivery-status filters. Each
   bounded CSV row retains its source proof event, exact playout intent and
   source revision rather than only a grouped count. This is device delivery
   evidence, not individual listening. Disposable CI must still validate the
   generated file against actual seeded proof before the report gate can pass.
-- The dashboard now separates completed central/local programmes,
+- The dashboard now separates completed central/local/fallback programmes,
   rehabilitation, announcements and request delivery from STARTED, FAILED and
   INTERRUPTED events. Categories without a working runtime remain at zero;
   these counters do not substitute for live distribution validation. It also
@@ -56,12 +64,13 @@ finished Multi-Facility Network Operations release.
    C6 interruption, source withdrawal and offline devices. CI now verifies
    protected synthetic audio delivery, signed proof and withdrawal evidence,
    but not audible player transitions, gap-free return or offline recovery.
-2. Finish a safe, approved private AutoDJ fallback for periods where neither
-   local nor central media can play, with a visible operational alert. Do not
-   reuse the public fallback or weaken the general Corrections schedule lock.
-3. Add private facility-to-authority and selected-facility syndication review,
-   centrally targeted announcements and rehabilitation assignment. Do not
-   expose contributor or family-request details across facilities.
+2. Verify the approved private programme fallback, operational alert,
+   signed proof, withdrawal and report classification in disposable CI. A
+   broader private AutoDJ rotation, if later required, needs a separate rights,
+   policy and proof design; public AutoDJ must not be enabled for Inside.
+3. Verify private syndication, centrally targeted announcements and
+   rehabilitation assignment in disposable CI. Do not expose contributor or
+   family-request details across facilities.
 4. Verify the expanded tenant-scoped, proof-level network export against seeded
    player proof in disposable CI and run a privacy/security review. The report
    work alone does not complete network analytics or the live release gate.
