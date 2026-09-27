@@ -12,12 +12,15 @@ export default function EdgeFleet({ facilities }) {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [oneTime, setOneTime] = useState(null);
+  const [endpointDrafts, setEndpointDrafts] = useState({});
   const refresh = useCallback(async () => {
     try {
       const response = await fetch("/api/admin/corrections/edge", { cache: "no-store" });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Edge fleet could not be loaded.");
       setNodes(result.nodes);
+      setEndpointDrafts((current) => Object.fromEntries(result.nodes.map((node) =>
+        [node.id, current[node.id] ?? node.playerEndpointOrigin ?? ""])));
     } catch (error) { setNotice(error.message); }
   }, []);
   useEffect(() => { refresh(); }, [refresh]);
@@ -56,6 +59,23 @@ export default function EdgeFleet({ facilities }) {
     } catch (error) { setNotice(error.message); }
     finally { setBusy(false); }
   };
+  const saveEndpoint = async (node) => {
+    const origin = (endpointDrafts[node.id] || "").trim();
+    if (!window.confirm(origin ? `Bind ${node.name} to ${origin} for private players? Check the TLS certificate and the machine identity before enabling it.` :
+      `Remove ${node.name}'s local player endpoint? Private players will stop using this Edge.`)) return;
+    setBusy(true); setNotice("");
+    try {
+      const response = await fetch(`/api/admin/corrections/edge/${encodeURIComponent(node.id)}`,
+        { method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "SET_PLAYER_ENDPOINT", origin: origin || null }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Player endpoint could not be bound.");
+      setNotice(origin ? `${node.name}: player endpoint bound. Players will verify this Edge's signing identity before sharing a grant.` :
+        `${node.name}: player endpoint removed.`);
+      await refresh();
+    } catch (error) { setNotice(error.message); }
+    finally { setBusy(false); }
+  };
   return <main className={styles.page}>
     <header className={styles.hero}><span className={styles.eyebrow}>Super Admin · Ruvanas Inside</span>
       <h1>Secure Edge control centre</h1><p>Enrol one restricted machine per facility, inspect health, and revoke access. This page never opens decrypted music.</p>
@@ -82,7 +102,12 @@ export default function EdgeFleet({ facilities }) {
           <td>{node.name}</td><td>{node.effectiveStatus}</td><td>{when(node.lastSeenAt)}</td>
           <td>{when(node.lastSuccessfulSyncAt)}</td><td>{node.manifests[0] ? `#${node.manifests[0].sequence} · until ${when(node.manifests[0].validUntil)}` : "None"}</td>
           <td>{node.cachedContentCount} cached · {node.pendingProofCount} pending</td><td>{node.softwareVersion || "Not reported"}</td>
-          <td>{node.status === "ACTIVE" ? <><button type="button" disabled={busy} onClick={() => act(node, "ROTATE_CREDENTIAL")}>Rotate</button>{" "}
+          <td>{node.status === "ACTIVE" ? <><label style={{ display: "block" }}>Trusted player endpoint
+            <input type="url" aria-label={`Trusted player endpoint for ${node.name}`} placeholder="https://edge.facility.example:8443"
+              value={endpointDrafts[node.id] || ""} onChange={(event) => setEndpointDrafts((current) =>
+                ({ ...current, [node.id]: event.target.value }))} /></label>
+            <button type="button" disabled={busy} onClick={() => saveEndpoint(node)}>Save endpoint</button>{" "}
+            <button type="button" disabled={busy} onClick={() => act(node, "ROTATE_CREDENTIAL")}>Rotate</button>{" "}
             <button type="button" disabled={busy} onClick={() => act(node, "REVOKE")}>Revoke</button>{" "}
             <button type="button" disabled={busy} onClick={() => act(node, "DECOMMISSION")}>Decommission</button></> : "—"}</td></tr>)}</tbody></table></div>}
       <p className={styles.note}>Revocation stops cloud access immediately. A disconnected Edge can retain previously signed authority only until its bounded manifest expires; secure local wipe requires on-site verification.</p></section>

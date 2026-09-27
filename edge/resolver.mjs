@@ -19,6 +19,14 @@ export function resolveCorrectionsEdgePlayback(payload, { zoneId, playerId, inst
   if (override && unavailableContentKeys.has(override.contentKey)) return { state: "OVERRIDE_MEDIA_UNAVAILABLE" };
   if (override && available.has(override.contentKey)) return { state: "READY", source: `CORRECTIONS_${override.type}`,
     contentKey: override.contentKey, item: available.get(override.contentKey), overrideId: override.id };
+  const insertion = (payload.insertions || []).filter((item) => item.facilityId === payload.facilityId &&
+    item.zoneId === zoneId && item.playerId === playerId && now >= new Date(item.plannedStart) &&
+    now < new Date(item.expiresAt) && available.has(item.contentKey) &&
+    !unavailableContentKeys.has(item.contentKey))
+    .sort((left, right) => right.plannedStart.localeCompare(left.plannedStart))[0];
+  if (insertion) return { state: "READY", source: insertion.programmingSource,
+    contentKey: insertion.contentKey, item: available.get(insertion.contentKey),
+    insertionId: insertion.id, sourceRevision: insertion.sourceRevision };
   let local;
   try { local = localDateTimeParts(now, payload.timezone); }
   catch { return { state: "CLOCK_OR_TIMEZONE_INVALID" }; }

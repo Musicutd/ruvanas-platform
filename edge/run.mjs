@@ -26,7 +26,8 @@ catch { console.warn("Secure Edge cloud sync unavailable; only a still-valid sig
 const tlsKeyPem = process.env.EDGE_LOCAL_TLS_KEY?.replace(/\\n/g, "\n");
 const tlsCertPem = process.env.EDGE_LOCAL_TLS_CERT?.replace(/\\n/g, "\n");
 const local = createCorrectionsEdgeServer({ cache: client.cache, proofQueue: client.proofQueue,
-  host, port, tlsKeyPem, tlsCertPem });
+  host, port, tlsKeyPem, tlsCertPem, endpointOrigin: process.env.EDGE_PLAYER_ORIGIN || null,
+  allowedPlayerOrigin: process.env.EDGE_CLOUD_PLAYER_ORIGIN || null });
 await local.listen();
 console.info("Secure Edge private player service started.");
 

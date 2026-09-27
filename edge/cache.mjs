@@ -190,6 +190,11 @@ export class CorrectionsEdgeCache {
     const payload = envelope.payload;
     if (payload.content.length > MAX_CONTENT || !payload.windows.every((window) =>
       window.facilityId === this.scope.facilityId && payload.content.some((item) => edgeContentKey(item) === window.contentKey)) ||
+      !Array.isArray(payload.insertions || []) || !(payload.insertions || []).every((insertion) =>
+        insertion.facilityId === this.scope.facilityId &&
+        payload.zones.some((zone) => zone.id === insertion.zoneId && zone.playerIds.includes(insertion.playerId)) &&
+        payload.content.some((item) => edgeContentKey(item) === insertion.contentKey &&
+          item.trackId === insertion.trackId && item.sourceType === "LICENSED_MUSIC")) ||
       !payload.overrides.every((override) => override.facilityId === this.scope.facilityId &&
         payload.content.some((item) => edgeContentKey(item) === override.contentKey)) ||
       payload.zones.some((zone) => !zone.id || !Array.isArray(zone.playerIds))) {

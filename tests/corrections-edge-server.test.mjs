@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createHash, generateKeyPairSync, randomBytes } from "node:crypto";
+import { createHash, generateKeyPairSync, randomBytes, randomUUID, webcrypto } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -9,6 +9,7 @@ import { createCorrectionsEdgeServer } from "../edge/server.mjs";
 import { CorrectionsEdgeProofQueue } from "../edge/proof-queue.mjs";
 import { signEdgeManifest } from "../lib/corrections-edge-manifest.mjs";
 import { issueCorrectionsEdgePlayerGrant } from "../lib/corrections-edge-player-grant.mjs";
+import { verifyCorrectionsEdgeAttestation } from "../lib/corrections-edge-attestation.mjs";
 
 test("authenticated local player sees only its current private media; C6 overrides and return follow signed sync", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "ruvanas-c8-server-"));
@@ -40,16 +41,54 @@ test("authenticated local player sees only its current private media; C6 overrid
       expiresAt: new Date(current.getTime() + 50_000).toISOString() }] : [],
     content: override ? [normalItem, emergencyItem] : [normalItem] }, privatePem);
   const proofQueue = new CorrectionsEdgeProofQueue({ root: path.join(root, "proof"), privateKeyPem: privatePem, scope });
-  const edge = createCorrectionsEdgeServer({ cache, proofQueue });
+  const browserOrigin = "http://127.0.0.1:3108";
+  const edge = createCorrectionsEdgeServer({ cache, proofQueue, allowedPlayerOrigin: browserOrigin });
   try {
     await cache.initialise();
     await proofQueue.initialise();
     await cache.sync(make(1));
     const address = await edge.listen();
     const url = `http://127.0.0.1:${address.port}`;
-    const grant = issueCorrectionsEdgePlayerGrant({ ...scope, zoneId: "zoneA", playerId: "playerA" }, privatePem,
-      { now: current, validUntil: new Date(current.getTime() + 60 * 60_000) });
-    const auth = { authorization: `Edge ${Buffer.from(JSON.stringify(grant)).toString("base64url")}` };
+    const nonce = randomUUID();
+    const attestationResponse = await fetch(`${url}/v1/attest?nonce=${nonce}`, { headers: { origin: browserOrigin } });
+    assert.equal(attestationResponse.status, 200);
+    assert.equal(attestationResponse.headers.get("access-control-allow-origin"), browserOrigin);
+    const attestation = await attestationResponse.json();
+    assert.equal(await verifyCorrectionsEdgeAttestation(attestation,
+      { ...scope, endpointOrigin: url, nonce, identityPublicKeyPem: publicKeyPem }, new Date(), webcrypto), true);
+    assert.equal(await verifyCorrectionsEdgeAttestation(attestation,
+      { ...scope, endpointOrigin: "https://other-edge.invalid", nonce, identityPublicKeyPem: publicKeyPem }, new Date(), webcrypto), false);
+    assert.equal((await fetch(`${url}/v1/attest?nonce=${nonce}`, { headers: {
+      origin: "https://unrelated.example.invalid" } })).status, 403);
+    const grantFor = (extra = {}) => issueCorrectionsEdgePlayerGrant({ ...scope, zoneId: "zoneA", playerId: "playerA",
+      manifestVersion: cache.active.version, ...extra }, privatePem,
+    { now: current, validUntil: new Date(current.getTime() + 10 * 60_000) });
+    const localSession = await fetch(`${url}/v1/session`, { method: "POST",
+      headers: { origin: browserOrigin, "content-type": "application/json" },
+      body: JSON.stringify({ grant: grantFor() }) });
+    assert.equal(localSession.status, 200);
+    const localLease = await localSession.json();
+    assert.ok(localLease.accessToken);
+    assert.ok(localLease.refreshToken);
+    const sessionPlayback = await fetch(`${url}/v1/playback`, { headers: {
+      origin: browserOrigin, authorization: `EdgeSession ${localLease.accessToken}` } });
+    assert.equal(sessionPlayback.status, 200);
+    const sessionState = await sessionPlayback.json();
+    assert.equal((await fetch(`${url}${sessionState.mediaUrl.split("&ticket=")[0]}&ticket=wrong`, {
+      headers: { origin: browserOrigin } })).status, 403);
+    const browserMedia = await fetch(`${url}${sessionState.mediaUrl}`, { headers: { origin: browserOrigin } });
+    assert.equal(browserMedia.status, 200);
+    assert.deepEqual(Buffer.from(await browserMedia.arrayBuffer()), normal);
+    cache.suspended = true;
+    assert.equal((await fetch(`${url}${sessionState.mediaUrl}`, { headers: {
+      origin: browserOrigin } })).status, 401, "a suspended Edge cannot use an earlier browser media ticket");
+    cache.suspended = false;
+    const renewed = await fetch(`${url}/v1/renew`, { method: "POST", headers: {
+      origin: browserOrigin, "content-type": "application/json" },
+      body: JSON.stringify({ refreshToken: localLease.refreshToken }) });
+    assert.equal(renewed.status, 200);
+    assert.ok((await renewed.json()).accessToken);
+    let auth = { authorization: `Edge ${Buffer.from(JSON.stringify(grantFor())).toString("base64url")}` };
     assert.equal((await fetch(`${url}/v1/playback`)).status, 401);
     const playing = await fetch(`${url}/v1/playback`, { headers: auth });
     assert.equal(playing.status, 200);
@@ -74,21 +113,21 @@ test("authenticated local player sees only its current private media; C6 overrid
     assert.equal((await fetch(`${url}/v1/proof`, { method: "POST", headers: { ...auth,
       "content-type": "application/json" }, body: JSON.stringify({ sessionId: normalState.sessionId,
       eventType: "FAILED", positionSeconds: 0 }) })).status, 400);
-    assert.equal((await fetch(`${url}/v1/media/${"0".repeat(64)}`, { headers: auth })).status, 403);
-    const wrongGrant = issueCorrectionsEdgePlayerGrant({ ...scope, zoneId: "zoneB", playerId: "playerB" }, privatePem,
-      { now: current, validUntil: new Date(current.getTime() + 60 * 60_000) });
+    assert.equal((await fetch(`${url}/v1/media/${"0".repeat(64)}`, { headers: auth })).status, 401);
+    const wrongGrant = grantFor({ zoneId: "zoneB", playerId: "playerB" });
     assert.equal((await fetch(`${url}/v1/playback`, { headers: {
       authorization: `Edge ${Buffer.from(JSON.stringify(wrongGrant)).toString("base64url")}` } })).status, 401);
-    const otherFacility = issueCorrectionsEdgePlayerGrant({ ...scope, facilityId: "facilityB", zoneId: "zoneA", playerId: "playerA" }, privatePem,
-      { now: current, validUntil: new Date(current.getTime() + 60 * 60_000) });
+    const otherFacility = grantFor({ facilityId: "facilityB" });
     assert.equal((await fetch(`${url}/v1/playback`, { headers: {
       authorization: `Edge ${Buffer.from(JSON.stringify(otherFacility)).toString("base64url")}` } })).status, 401);
     await cache.sync(make(2, true));
+    auth = { authorization: `Edge ${Buffer.from(JSON.stringify(grantFor())).toString("base64url")}` };
     const interrupted = await (await fetch(`${url}/v1/playback`, { headers: auth })).json();
     assert.equal(interrupted.source, "CORRECTIONS_EMERGENCY");
     assert.equal((await fetch(`${url}${normalState.mediaUrl}`, { headers: auth })).status, 403);
     assert.deepEqual(Buffer.from(await (await fetch(`${url}${interrupted.mediaUrl}`, { headers: auth })).arrayBuffer()), emergency);
     await cache.sync(make(3));
+    auth = { authorization: `Edge ${Buffer.from(JSON.stringify(grantFor())).toString("base64url")}` };
     const returned = await (await fetch(`${url}/v1/playback`, { headers: auth })).json();
     assert.equal(returned.source, "CORRECTIONS_CENTRAL");
   } finally {

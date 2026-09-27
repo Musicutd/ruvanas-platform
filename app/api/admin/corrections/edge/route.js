@@ -24,7 +24,7 @@ export async function GET(request) {
   const organisationId = new URL(request.url).searchParams.get("organisationId");
   const nodes = await prisma.correctionsEdgeNode.findMany({ where: organisationId ? { organisationId } : {},
     orderBy: { createdAt: "desc" }, take: 200, select: { id: true, organisationId: true, facilityId: true, name: true,
-      status: true, keyVersion: true, enrolledAt: true, lastSeenAt: true, lastSyncAt: true, lastSuccessfulSyncAt: true,
+      status: true, keyVersion: true, enrolledAt: true, playerEndpointOrigin: true, lastSeenAt: true, lastSyncAt: true, lastSuccessfulSyncAt: true,
       softwareVersion: true, storageHealth: true, syncStatus: true, pendingProofCount: true, cachedContentCount: true,
       revokedAt: true, lastProofSequence: true, organisation: { select: { name: true } },
       facility: { select: { name: true } }, manifests: { orderBy: { sequence: "desc" }, take: 1,

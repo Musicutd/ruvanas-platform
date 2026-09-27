@@ -127,6 +127,42 @@ until every required C8 gate is demonstrated with isolated synthetic media.
 
 ## Open C8 release gates — do not merge
 
+### C8.1 implementation in progress (isolated validation, not release evidence)
+
+- Super Admin may bind exactly one active Edge endpoint to an existing
+  facility. Production endpoints require HTTPS. The existing private player
+  obtains the bound node, facility, zone, manifest version and Edge proof
+  public key from its authenticated cloud state; it never accepts a listener
+  supplied LAN URL. Before sending a short-lived cloud-signed grant, the
+  browser verifies a fresh nonce challenge signed by that same Edge identity.
+  An exact cloud-player origin is required for Edge CORS. A browser-to-facility
+  TLS certificate and private-network browser policy remain live deployment
+  gates, not assumptions from route tests.
+- The local browser lease is scoped to the node, organisation, facility,
+  player, zone and exact manifest. A five-minute access token can renew locally
+  against the same unexpired signed manifest, so a previously approved player
+  can keep operating during a cloud outage. A random media-session ticket
+  permits native browser audio requests without an open media directory; the
+  Edge re-resolves the current approved item for each range request and stops
+  on manifest change, suspension or expiry. A ticket is a bearer secret in a
+  browser URL, so local TLS, no-store responses, restricted origin and
+  no-referrer headers are required; this is not DRM.
+- Licensed catalogue sync is deliberately narrow: only exact near-future,
+  staff-scheduled C5 song requests for a pinned player/zone enter a signed
+  Edge insertion. Rights use, territory, subscription catalogue level,
+  central/facility Corrections policy, current programme review and content
+  checksum are rechecked before inclusion and again before cloud media
+  transfer. No full-catalogue mirror or independent Corrections AutoDJ pool
+  is introduced. Provider identity remains abstract; Edge receives no supplier
+  URL or credential. The isolated test proved eligible delivery and central
+  block, facility block, tier downgrade, takedown and cross-facility denial.
+- Synthetic tests passed for attestation, grant-to-lease handoff, private
+  browser media ticket, invalid ticket, wrong browser origin and suspension;
+  the isolated full-stack test passed for signed licensed inclusion, private
+  C7 media, disconnected replay, withdrawal on reconnect, proof upload and
+  C7 reporting. These use synthetic bytes and **do not** establish audible
+  local-player performance.
+
 - An isolated *live* Edge/player test must disconnect cloud access, keep
   approved audio playing on a facility LAN, queue real player proof, then
   reconnect and verify heartbeat, changed manifest, proof upload, dedup and
@@ -134,15 +170,9 @@ until every required C8 gate is demonstrated with isolated synthetic media.
 - Repeat live tests for withdrawal while offline, expired manifest, corrupted
   media with online repair, credential rotation/revocation, cross-facility
   attack, C7 multi-facility distribution and C6 Priority/Emergency/return.
-- The currently signed cache intentionally includes only approved private
-  organisation promo renders. It does **not** cache licensed catalogue masters.
-  This is fail-closed, not a claim that catalogue-specific Edge rights sync
-  has been completed. Catalogue protection must be validated before that
-  category is added to the Edge manifest.
-- A production player acquisition/handoff path for local Edge grants and
-  endpoint discovery is not yet wired into the existing browser player.
-  The authenticated local endpoint alone is not a verified facility player
-  deployment. Until then, mark local player integration incomplete.
+- The catalogue and browser handoff now have code and isolated tests, but
+  remain incomplete release gates until a real browser/facility Edge runs with
+  valid TLS, two local players, audible offline C7 and connected C6 sequences.
 - Full C1–C7, Studio, six existing products, recovery, catalogue, security,
   static and CI regression remains to be completed. Keep the PR Draft.
 

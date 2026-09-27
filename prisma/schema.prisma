@@ -2933,6 +2933,7 @@ model CorrectionsEdgeNode {
   enrolmentExpiresAt   DateTime?
   credentialHash       String? @unique @db.Char(64)
   proofPublicKeyPem    String?
+  playerEndpointOrigin String?
   lastProofSequence    Int @default(0)
   lastProofHash        String? @db.Char(64)
   keyVersion           Int @default(0)
