@@ -37,7 +37,12 @@ finished Multi-Facility Network Operations release.
 - Central rehabilitation and STANDARD announcements pin approved C5/C6 audio
   and target all facilities, selected facilities or Location Groups. Private
   syndication requires an exact facility-made revision and separate central
-  acceptance before any selected-facility distribution. Withdrawals preserve
+  acceptance before any selected-facility distribution. Programme origin is
+  pinned at creation: owner-authored content is central; delegated authoring
+  remains facility-scoped even if that author later receives network powers.
+  Scheduling and runtime also reject unaccepted cross-facility distribution.
+  Existing owner-authored programmes are backfilled; ambiguous history stays
+  facility-scoped. Withdrawals preserve
   historical signed delivery proof and report rows.
 - The Tier 4/5 network dashboard and bounded CSV export aggregate existing
   player proof by facility, source and status without contributor/request text.

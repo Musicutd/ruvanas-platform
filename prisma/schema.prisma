@@ -526,6 +526,11 @@ enum CorrectionsFacilityGrantPermission {
   VIEWER
 }
 
+enum CorrectionsNetworkOrigin {
+  CENTRAL
+  FACILITY
+}
+
 enum CorrectionsAnnouncementStatus {
   DRAFT
   APPROVED
@@ -2915,6 +2920,7 @@ model CorrectionsProgramme {
   description     String?
   status          CorrectionsProgrammeStatus @default(DRAFT)
   latestRevision  Int                        @default(0)
+  networkOrigin   CorrectionsNetworkOrigin   @default(FACILITY)
   createdByUserId String
   createdAt       DateTime                   @default(now())
   updatedAt       DateTime                   @updatedAt

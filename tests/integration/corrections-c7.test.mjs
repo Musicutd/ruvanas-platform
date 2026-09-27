@@ -170,7 +170,8 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
         outputMediaAsset: true, outputPromoVersion: true, version: { select: { state: true } },
         project: { select: { organisationId: true, createdByUserId: true, currentVersion: true, title: true } } } }));
       const programme = await db.correctionsProgramme.create({ data: { organisationId: authority.id, facilityId: facilities[facilityIndex].id,
-        title: label, createdByUserId, status: "APPROVED", latestRevision: 1 } });
+        title: label, createdByUserId, networkOrigin: createdByUserId === owner.user.id ? "CENTRAL" : "FACILITY",
+        status: "APPROVED", latestRevision: 1 } });
       const submission = await db.correctionsSubmission.create({ data: { programmeId: programme.id, organisationId: authority.id,
         facilityId: facilities[facilityIndex].id, revision: 1, renderId: render.id, sourceFingerprint: evidence.fingerprint,
         organisationPolicyVersion: 1, facilityPolicyVersion: 1, titleSnapshot: label, evidenceSnapshot: evidence,
