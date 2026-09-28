@@ -100,7 +100,16 @@ export default function CorrectionsEdgePlayer({ connection }) {
           "No authorised private audio is available for this player right now.");
         return;
       }
-      if (active.current?.sessionId === result.sessionId) return;
+      if (active.current?.sessionId === result.sessionId) {
+        // A browser can pause a replaced audio source during an override
+        // transition even though the Edge session remains valid. Do not let
+        // the player display READY indefinitely while its audio is stalled.
+        if (audio.current?.paused && !audio.current.ended) {
+          try { await audio.current.play(); }
+          catch { setStatus("Press Play to resume the approved private audio."); }
+        }
+        return;
+      }
       if (active.current) {
         audio.current?.pause();
         await closePlayback("INTERRUPTED");
@@ -136,7 +145,8 @@ export default function CorrectionsEdgePlayer({ connection }) {
     <h2>Private Ruvanas Inside · Secure Edge</h2>
     <p role="status">{status}</p>
     <p>Facility player: {connection.playerId} · This player cannot browse or download the catalogue.</p>
-    {current ? <audio ref={audio} controls preload="auto" style={{ width: "100%" }}
+    {current ? <audio ref={audio} controls controlsList="nodownload noremoteplayback" preload="auto"
+      onContextMenu={(event) => event.preventDefault()} style={{ width: "100%" }}
       onEnded={async () => { await closePlayback("COMPLETED"); active.current = null; setCurrent(null); poll(); }}
       onError={async () => { await closePlayback("FAILED"); active.current = null; setCurrent(null); }} /> :
       <button type="button" onClick={poll}>Retry private connection</button>}

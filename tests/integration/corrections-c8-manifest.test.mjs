@@ -17,11 +17,30 @@ import { CorrectionsEdgeSyncClient } from "../../edge/sync-client.mjs";
 import { createCorrectionsEdgeServer } from "../../edge/server.mjs";
 
 const baseUrl = process.env.INTEGRATION_BASE_URL || "http://127.0.0.1:3108";
+const audibleLab = process.env.C8_AUDIBLE_LAB === "true";
 const playerInstanceId = randomUUID();
 const testPrivateKey = createPrivateKey({ key: Buffer.concat([
   Buffer.from("302e020100300506032b657004220420", "hex"), Buffer.alloc(32, 7)
 ]), format: "der", type: "pkcs8" });
 const testPublicPem = createPublicKey(testPrivateKey).export({ type: "spki", format: "pem" });
+
+function syntheticToneWav(frequency, seconds = 2) {
+  const sampleRate = 44_100;
+  const sampleCount = sampleRate * seconds;
+  const bytes = Buffer.alloc(44 + sampleCount * 2);
+  bytes.write("RIFF", 0); bytes.writeUInt32LE(bytes.length - 8, 4);
+  bytes.write("WAVEfmt ", 8); bytes.writeUInt32LE(16, 16);
+  bytes.writeUInt16LE(1, 20); bytes.writeUInt16LE(1, 22);
+  bytes.writeUInt32LE(sampleRate, 24); bytes.writeUInt32LE(sampleRate * 2, 28);
+  bytes.writeUInt16LE(2, 32); bytes.writeUInt16LE(16, 34);
+  bytes.write("data", 36); bytes.writeUInt32LE(sampleCount * 2, 40);
+  for (let index = 0; index < sampleCount; index += 1) {
+    const fade = Math.min(1, index / 1_000, (sampleCount - index) / 1_000);
+    bytes.writeInt16LE(Math.round(11_000 * fade * Math.sin(2 * Math.PI * frequency * index / sampleRate)),
+      44 + index * 2);
+  }
+  return bytes;
+}
 
 async function api(path, { method = "GET", body, cookie, machine, enrolCredential, noOrigin = false } = {}) {
   const response = await fetch(`${baseUrl}${path}`, { method, headers: { ...(noOrigin ? {} : { origin: baseUrl }),
@@ -44,14 +63,24 @@ test("C8B signed C7 manifest/media is exact, protected, facility-scoped and with
   const db = new PrismaClient();
   const suffix = randomUUID().slice(0, 8);
   const password = `C8-manifest-${randomUUID()}!`;
-  const mediaBytes = Buffer.from("synthetic, private C8 programme audio");
+  const mediaBytes = audibleLab ? syntheticToneWav(440) : Buffer.from("synthetic, private C8 programme audio");
   const storageKey = `c8-${suffix}/programme.wav`;
-  const licensedBytes = Buffer.from(`synthetic, licensed C8 catalogue audio ${suffix}`);
+  const localBytes = audibleLab ? syntheticToneWav(770) : null;
+  const localStorageKey = `c8-${suffix}/local.wav`;
+  const priorityBytes = audibleLab ? syntheticToneWav(990) : null;
+  const priorityStorageKey = `c8-${suffix}/priority.wav`;
+  const emergencyBytes = audibleLab ? syntheticToneWav(220) : null;
+  const emergencyStorageKey = `c8-${suffix}/emergency.wav`;
+  const licensedBytes = audibleLab ? syntheticToneWav(660) :
+    Buffer.from(`synthetic, licensed C8 catalogue audio ${suffix}`);
   const licensedChecksum = createHash("sha256").update(licensedBytes).digest("hex");
   const licensedStorageKey = `catalogue/music/${licensedChecksum}.wav`;
   const mockR2 = createServer((request, response) => {
     const objectPath = new URL(request.url, "http://localhost").pathname;
     const bytes = objectPath === `/c8-test/${storageKey}` ? mediaBytes :
+      objectPath === `/c8-test/${localStorageKey}` ? localBytes :
+      objectPath === `/c8-test/${priorityStorageKey}` ? priorityBytes :
+      objectPath === `/c8-test/${emergencyStorageKey}` ? emergencyBytes :
       objectPath === `/c8-test/${licensedStorageKey}` ? licensedBytes : null;
     if (request.method !== "GET" || !bytes) {
       response.writeHead(404); response.end(); return;
@@ -59,8 +88,10 @@ test("C8B signed C7 manifest/media is exact, protected, facility-scoped and with
     response.writeHead(200, { "Content-Type": "audio/wav", "Content-Length": bytes.length });
     response.end(bytes);
   });
-  let organisation, plan, media, promo, licensedMedia, licensedGenre, archiverUserId,
-    users = [], edgeRoot, localEdge;
+  let organisation, plan, media, promo, localMedia, localPromo, localDistribution,
+    priorityMedia, priorityPromo, emergencyMedia, emergencyPromo, labAnnouncementIds,
+    licensedMedia, licensedGenre, archiverUserId,
+    users = [], edgeRoot, localEdge, labController;
   try {
     await new Promise((resolve, reject) => mockR2.once("error", reject).listen(9108, "127.0.0.1", resolve));
     plan = await db.plan.create({ data: { name: `C8 manifest ${suffix}`, code: `C8_MANIFEST_${suffix}`,
@@ -82,15 +113,17 @@ test("C8B signed C7 manifest/media is exact, protected, facility-scoped and with
     archiverUserId = admin.user.id;
     const owner = await user("OWNER", "owner-manifest");
     const manager = await user("MANAGER", "manager-manifest");
-    await db.organisationMember.create({ data: { organisationId: organisation.id, userId: owner.user.id,
+    const ownerMembership = await db.organisationMember.create({ data: { organisationId: organisation.id, userId: owner.user.id,
       role: "OWNER" } });
+    const managerMembership = audibleLab ? await db.organisationMember.create({ data: {
+      organisationId: organisation.id, userId: manager.user.id, role: "MANAGER" } }) : null;
     const facilities = [];
     for (const label of ["A", "B"]) facilities.push(await db.location.create({ data: {
       organisationId: organisation.id, name: `C8 facility ${label}`, slug: `c8-${label}-${suffix}`,
       status: "ACTIVE", countryCode: "MT", timezone: "Europe/Malta",
       zones: { create: { name: "Wing 1", slug: "wing-1", status: "ACTIVE" } },
       correctionsFacility: { create: { policyConfiguredAt: new Date(), requestAvailability: "INTERNAL_ONLY",
-        songRequestsEnabled: true } }
+        songRequestsEnabled: true, priorityEnabled: audibleLab, emergencyEnabled: audibleLab } }
     }, include: { zones: true } }));
     const station = await db.station.create({ data: { organisationId: organisation.id, productFamily: "CORRECTIONS",
       name: "C8 private", slug: `c8-station-${suffix}`, status: "ACTIVE", listenerLimit: 10,
@@ -322,6 +355,100 @@ test("C8B signed C7 manifest/media is exact, protected, facility-scoped and with
     await db.playoutIntent.delete({ where: { id: licensedIntent.id } });
     // Real Edge runtime against the isolated cloud: disconnect, keep serving
     // signed private audio, queue local proof, withdraw, reconnect and evict.
+    const labPlayerCodes = [];
+    if (audibleLab) {
+      const staffPath = `/api/corrections/facilities/${facilities[0].id}/staff`;
+      const ownerGrant = await api(staffPath, { method: "POST", cookie: owner.cookie,
+        body: { memberId: ownerMembership.id, permission: "MANAGER",
+          canEmergencyActivate: true, canEmergencyClear: true } });
+      assert.equal(ownerGrant.status, 200, JSON.stringify(ownerGrant.body));
+      const managerGrant = await api(staffPath, { method: "POST", cookie: owner.cookie,
+        body: { memberId: managerMembership.id, permission: "MANAGER",
+          canPriorityActivate: true, canPriorityStop: true } });
+      assert.equal(managerGrant.status, 200, JSON.stringify(managerGrant.body));
+      async function approvedAnnouncement(name, bytes, storageKey) {
+        const mediaAsset = await db.mediaAsset.create({ data: { organisationId: organisation.id,
+          libraryType: "ORGANISATION_PROMO", name, originalName: `${name}.wav`, storageKey,
+          mimeType: "audio/wav", sizeBytes: BigInt(bytes.length), durationSeconds: 2,
+          mediaType: "ANNOUNCEMENT", status: "READY" } });
+        const promoAsset = await db.promoAsset.create({ data: { organisationId: organisation.id,
+          name, mediaType: "ANNOUNCEMENT" } });
+        const promoVersion = await db.promoVersion.create({ data: { promoAssetId: promoAsset.id,
+          mediaAssetId: mediaAsset.id, version: 1, status: "APPROVED", qcStatus: "PASSED",
+          checksumSha256: createHash("sha256").update(bytes).digest("hex") } });
+        await db.promoAsset.update({ where: { id: promoAsset.id },
+          data: { currentApprovedVersionId: promoVersion.id } });
+        const created = await api("/api/corrections/announcements", { method: "POST", cookie: owner.cookie,
+          body: { facilityId: facilities[0].id, title: name, promoVersionId: promoVersion.id } });
+        assert.equal(created.status, 201, JSON.stringify(created.body));
+        const approved = await api(`/api/corrections/announcements/${created.body.announcement.id}/approve`,
+          { method: "POST", cookie: manager.cookie });
+        assert.equal(approved.status, 200, JSON.stringify(approved.body));
+        return { mediaAsset, promoAsset, announcementId: created.body.announcement.id };
+      }
+      const priority = await approvedAnnouncement("C8 Priority tone", priorityBytes, priorityStorageKey);
+      priorityMedia = priority.mediaAsset; priorityPromo = priority.promoAsset;
+      const emergency = await approvedAnnouncement("C8 Emergency tone", emergencyBytes, emergencyStorageKey);
+      emergencyMedia = emergency.mediaAsset; emergencyPromo = emergency.promoAsset;
+      labAnnouncementIds = { priority: priority.announcementId, emergency: emergency.announcementId };
+      localMedia = await db.mediaAsset.create({ data: { organisationId: organisation.id,
+        libraryType: "ORGANISATION_PROMO", name: "Private local programme", originalName: "local-synthetic.wav",
+        storageKey: localStorageKey, mimeType: "audio/wav", sizeBytes: BigInt(localBytes.length),
+        durationSeconds: 2, mediaType: "ANNOUNCEMENT", status: "READY" } });
+      localPromo = await db.promoAsset.create({ data: { organisationId: organisation.id,
+        name: "Private local programme", mediaType: "ANNOUNCEMENT" } });
+      const localChecksum = createHash("sha256").update(localBytes).digest("hex");
+      const localPromoVersion = await db.promoVersion.create({ data: { promoAssetId: localPromo.id,
+        mediaAssetId: localMedia.id, version: 1, status: "APPROVED", qcStatus: "PASSED",
+        checksumSha256: localChecksum } });
+      await db.promoAsset.update({ where: { id: localPromo.id },
+        data: { currentApprovedVersionId: localPromoVersion.id } });
+      const localProject = await db.audioProject.create({ data: { organisationId: organisation.id,
+        title: "C8 local programme", editDecision: {}, createdByUserId: owner.user.id } });
+      const localProjectVersion = await db.audioProjectVersion.create({ data: { projectId: localProject.id,
+        version: 1, state: { editor: { clips: [{ kind: "SOURCE", mediaAssetId: localMedia.id }] } },
+        createdByUserId: owner.user.id } });
+      await db.audioTake.create({ data: { organisationId: organisation.id, projectId: localProject.id,
+        mediaAssetId: localMedia.id, promoVersionId: localPromoVersion.id,
+        recordedByUserId: owner.user.id, status: "READY", sourceEditDecision: {} } });
+      const localRender = await db.audioRender.create({ data: { organisationId: organisation.id,
+        projectId: localProject.id, versionId: localProjectVersion.id, outputMediaAssetId: localMedia.id,
+        outputPromoVersionId: localPromoVersion.id, requestedByUserId: owner.user.id,
+        preset: "SPEECH_MP3", status: "SUCCEEDED", completedAt: new Date(),
+        resultJson: { checksumSha256: localChecksum } } });
+      const localEvidence = correctionsRenderEvidence(await db.audioRender.findUnique({
+        where: { id: localRender.id }, include: { outputMediaAsset: true, outputPromoVersion: true,
+          version: { select: { state: true } }, project: { select: { organisationId: true,
+            createdByUserId: true, currentVersion: true, title: true } } } }));
+      const localProgramme = await db.correctionsProgramme.create({ data: { organisationId: organisation.id,
+        facilityId: facilities[0].id, title: "C8 local programme", createdByUserId: owner.user.id,
+        networkOrigin: "FACILITY", status: "APPROVED", latestRevision: 1 } });
+      const localSubmission = await db.correctionsSubmission.create({ data: { programmeId: localProgramme.id,
+        organisationId: organisation.id, facilityId: facilities[0].id, revision: 1, renderId: localRender.id,
+        sourceFingerprint: localEvidence.fingerprint, organisationPolicyVersion: 1, facilityPolicyVersion: 1,
+        titleSnapshot: "C8 local programme", evidenceSnapshot: localEvidence,
+        submittedByUserId: owner.user.id, status: "APPROVED" } });
+      await db.correctionsReview.create({ data: { submissionId: localSubmission.id, stage: "STAFF",
+        decision: "APPROVE", note: "Synthetic local-window review", evidenceSnapshot: {},
+        reviewedByUserId: manager.user.id } });
+      localDistribution = await db.correctionsProgrammeDistribution.create({ data: {
+        organisationId: organisation.id, sourceFacilityId: facilities[0].id,
+        targetFacilityId: facilities[0].id, programmeId: localProgramme.id,
+        submissionId: localSubmission.id, effectiveFrom: new Date(Date.now() - 60_000),
+        createdByUserId: owner.user.id } });
+      const wingTwo = await db.zone.create({ data: { locationId: facilities[0].id,
+        name: "Wing 2", slug: "wing-2", status: "ACTIVE" } });
+      await db.channelAssignment.create({ data: { channelId: channel.id, zoneId: wingTwo.id,
+        activeFrom: new Date(Date.now() - 60_000) } });
+      for (const [label, zoneId] of [["A", facilities[0].zones[0].id], ["B", wingTwo.id]]) {
+        const code = `C8-LAB-${randomUUID()}`;
+        const labPlayer = await db.player.create({ data: { organisationId: organisation.id, zoneId,
+          name: `C8 audible player ${label}`, status: "PENDING_ENROLMENT",
+          enrolmentTokenHash: hashPlayerToken(code, process.env.SESSION_SECRET),
+          enrolmentExpiresAt: new Date(Date.now() + 60 * 60_000), enrolledAt: new Date() } });
+        labPlayerCodes.push({ label, zoneId, playerId: labPlayer.id, code });
+      }
+    }
     const edgeC = await edgeFor(facilities[0]);
     const unbindA = await api(`/api/admin/corrections/edge/${edgeA.id}`, { method: "POST", cookie: admin.cookie,
       body: { action: "SET_PLAYER_ENDPOINT", origin: null } });
@@ -339,9 +466,101 @@ test("C8B signed C7 manifest/media is exact, protected, facility-scoped and with
     await runtime.initialise();
     const initialSync = await runtime.sync({ softwareVersion: "c8-isolated-runtime" });
     assert.equal(initialSync.downloaded, 1);
-    localEdge = createCorrectionsEdgeServer({ cache: runtime.cache, proofQueue: runtime.proofQueue });
+    localEdge = createCorrectionsEdgeServer({ cache: runtime.cache, proofQueue: runtime.proofQueue,
+      allowedPlayerOrigin: audibleLab ? baseUrl : null });
     const address = await localEdge.listen();
     const localUrl = `http://127.0.0.1:${address.port}`;
+    if (audibleLab) {
+      const localBinding = await api(`/api/admin/corrections/edge/${edgeC.id}`, { method: "POST",
+        cookie: admin.cookie, body: { action: "SET_PLAYER_ENDPOINT", origin: localUrl } });
+      assert.equal(localBinding.status, 200, JSON.stringify(localBinding.body));
+      let releaseLab;
+      let activePriorityId;
+      let activeEmergencyId;
+      labController = createServer(async (request, response) => {
+        const path = new URL(request.url, "http://127.0.0.1").pathname;
+        const send = (status, body) => { response.writeHead(status, { "Content-Type": "application/json",
+          "Cache-Control": "no-store" }); response.end(JSON.stringify(body)); };
+        try {
+          if (request.method === "GET" && path === "/status") return send(200, {
+            cloudConnected, manifestVersion: runtime.cache.active?.version,
+            pendingProof: runtime.proofQueue.pendingCount,
+            cloudProof: await db.correctionsEdgeProofEvent.count({ where: { nodeId: edgeC.id } }) });
+          if (request.method === "POST" && path === "/disconnect") {
+            cloudConnected = false; return send(200, { cloudConnected });
+          }
+          if (request.method === "POST" && path === "/schedule-local") {
+            if (!cloudConnected) return send(409, { error: "Local window must be signed before disconnection." });
+            const start = localDateTimeParts(new Date(Date.now() + 60_000), "Europe/Malta");
+            if (start.minute >= 1439) return send(409, { error: "Retry after local midnight." });
+            const localWindow = await db.correctionsNetworkWindow.create({ data: {
+              organisationId: organisation.id, facilityId: facilities[0].id, kind: "LOCAL",
+              distributionId: localDistribution.id, weekday: start.weekday,
+              startMinute: start.minute, endMinute: start.minute + 1,
+              allowedContentTypes: ["PROGRAMME"], createdByUserId: owner.user.id } });
+            const sync = await runtime.sync({ softwareVersion: "c8-audible-c7" });
+            return send(200, { windowId: localWindow.id, startsAtLocalMinute: start.minute,
+              durationMinutes: 1, sync });
+          }
+          if (request.method === "POST" && path === "/withdraw") {
+            await db.correctionsProgrammeDistribution.update({ where: { id: distribution.id },
+              data: { status: "WITHDRAWN", withdrawnAt: new Date() } });
+            await db.correctionsNetworkWindow.update({ where: { id: window.id }, data: { active: false } });
+            return send(200, { cloudConnected, withdrawnInCloud: true });
+          }
+          if (request.method === "POST" && path === "/reconnect") {
+            cloudConnected = true;
+            return send(200, { cloudConnected, sync: await runtime.sync({ softwareVersion: "c8-audible-lab" }) });
+          }
+          if (request.method === "POST" && path === "/priority") {
+            if (!cloudConnected) return send(409, { error: "Cloud cannot deliver a new override while disconnected." });
+            const started = await api("/api/corrections/overrides", { method: "POST", cookie: manager.cookie,
+              body: { facilityId: facilities[0].id, zoneIds: labPlayerCodes.map((item) => item.zoneId),
+                announcementId: labAnnouncementIds.priority, type: "PRIORITY",
+                category: "URGENT_FACILITY_NOTICE", idempotencyKey: randomUUID() } });
+            if (started.status !== 200) return send(started.status, started.body);
+            activePriorityId = started.body.override.id;
+            return send(200, { overrideId: activePriorityId, sync: await runtime.sync({ softwareVersion: "c8-audible-c6" }) });
+          }
+          if (request.method === "POST" && path === "/clear-priority") {
+            if (!cloudConnected || !activePriorityId) return send(409, { error: "No connected Priority override." });
+            const cleared = await api(`/api/corrections/overrides/${activePriorityId}/clear`,
+              { method: "POST", cookie: manager.cookie });
+            if (cleared.status !== 200) return send(cleared.status, cleared.body);
+            activePriorityId = null;
+            return send(200, { cleared: true, sync: await runtime.sync({ softwareVersion: "c8-audible-c6" }) });
+          }
+          if (request.method === "POST" && path === "/emergency") {
+            if (!cloudConnected) return send(409, { error: "Cloud cannot deliver a new override while disconnected." });
+            const started = await api("/api/corrections/overrides", { method: "POST", cookie: owner.cookie,
+              body: { facilityId: facilities[0].id, zoneIds: labPlayerCodes.map((item) => item.zoneId),
+                announcementId: labAnnouncementIds.emergency, type: "EMERGENCY",
+                category: "EMERGENCY_INSTRUCTION", confirmation: "START EMERGENCY",
+                idempotencyKey: randomUUID() } });
+            if (started.status !== 200) return send(started.status, started.body);
+            activeEmergencyId = started.body.override.id;
+            return send(200, { overrideId: activeEmergencyId, sync: await runtime.sync({ softwareVersion: "c8-audible-c6" }) });
+          }
+          if (request.method === "POST" && path === "/clear-emergency") {
+            if (!cloudConnected || !activeEmergencyId) return send(409, { error: "No connected Emergency override." });
+            const cleared = await api(`/api/corrections/overrides/${activeEmergencyId}/clear`,
+              { method: "POST", cookie: owner.cookie });
+            if (cleared.status !== 200) return send(cleared.status, cleared.body);
+            activeEmergencyId = null;
+            return send(200, { cleared: true, sync: await runtime.sync({ softwareVersion: "c8-audible-c6" }) });
+          }
+          if (request.method === "POST" && path === "/stop") {
+            send(200, { stopping: true }); releaseLab(); return;
+          }
+          return send(404, { error: "Unknown isolated C8 lab action." });
+        } catch (error) { return send(500, { error: error.message }); }
+      });
+      await new Promise((resolve, reject) => labController.once("error", reject).listen(9110, "127.0.0.1", resolve));
+      process.stdout.write(`C8_AUDIBLE_LAB_READY ${JSON.stringify({ playerUrl: `${baseUrl}/player`,
+        edgeUrl: localUrl, controlUrl: "http://127.0.0.1:9110", players: labPlayerCodes })}\n`);
+      await new Promise((resolve) => { releaseLab = resolve; });
+      return;
+    }
     const localGrant = await api(`/api/player/edge-grant/${edgeC.id}`, { method: "POST", cookie: players[0].cookie });
     assert.equal(localGrant.status, 200);
     const headers = { authorization: `Edge ${Buffer.from(JSON.stringify(localGrant.body)).toString("base64url")}` };
@@ -389,6 +608,7 @@ test("C8B signed C7 manifest/media is exact, protected, facility-scoped and with
     assert.equal(withdrawn.body.payload.content.length, 0);
     assert.equal((await api(`/api/corrections/edge/media/${media.id}`, { machine: edgeA.credential })).status, 404);
   } finally {
+    if (labController) await new Promise((resolve) => labController.close(resolve));
     if (localEdge) await new Promise((resolve) => localEdge.server.close(resolve));
     if (edgeRoot) { assert.equal(path.dirname(edgeRoot), os.tmpdir()); await rm(edgeRoot, { recursive: true, force: true }); }
     if (mockR2.listening) await new Promise((resolve) => mockR2.close(resolve));
@@ -403,6 +623,8 @@ test("C8B signed C7 manifest/media is exact, protected, facility-scoped and with
       await db.correctionsEdgeProofEvent.deleteMany({ where: { node: { organisationId: organisation.id } } });
       await db.proofOfPlayEvent.deleteMany({ where: { organisationId: organisation.id } });
       await db.playoutIntent.deleteMany({ where: { organisationId: organisation.id } });
+      await db.correctionsOverride.deleteMany({ where: { organisationId: organisation.id } });
+      await db.correctionsAnnouncement.deleteMany({ where: { organisationId: organisation.id } });
       await db.correctionsRequest.deleteMany({ where: { organisationId: organisation.id } });
       await db.correctionsEdgeNode.deleteMany({ where: { organisationId: organisation.id } });
       await db.correctionsNetworkWindow.deleteMany({ where: { organisationId: organisation.id } });
@@ -419,7 +641,20 @@ test("C8B signed C7 manifest/media is exact, protected, facility-scoped and with
         await db.promoVersion.deleteMany({ where: { promoAssetId: promo.id } });
         await db.promoAsset.delete({ where: { id: promo.id } });
       }
+      if (localPromo) {
+        await db.promoAsset.update({ where: { id: localPromo.id }, data: { currentApprovedVersionId: null } });
+        await db.promoVersion.deleteMany({ where: { promoAssetId: localPromo.id } });
+        await db.promoAsset.delete({ where: { id: localPromo.id } });
+      }
+      for (const extraPromo of [priorityPromo, emergencyPromo]) if (extraPromo) {
+        await db.promoAsset.update({ where: { id: extraPromo.id }, data: { currentApprovedVersionId: null } });
+        await db.promoVersion.deleteMany({ where: { promoAssetId: extraPromo.id } });
+        await db.promoAsset.delete({ where: { id: extraPromo.id } });
+      }
       if (media) await db.mediaAsset.delete({ where: { id: media.id } });
+      if (localMedia) await db.mediaAsset.delete({ where: { id: localMedia.id } });
+      for (const extraMedia of [priorityMedia, emergencyMedia]) if (extraMedia)
+        await db.mediaAsset.delete({ where: { id: extraMedia.id } });
       if (licensedMedia) await db.mediaAsset.delete({ where: { id: licensedMedia.id } });
       if (licensedGenre) await db.mediaGenre.delete({ where: { id: licensedGenre.id } });
       await db.player.deleteMany({ where: { organisationId: organisation.id } });
