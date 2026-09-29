@@ -29,6 +29,8 @@ The Super Admin compliance screen now offers an on-demand, organisation-scoped c
 
 This is deliberately **not** a retention candidate preview. No Corrections-specific retention period, legal-hold override, deletion executor or data-residency claim has been added. The existing general-platform retention preview does not establish whether any Corrections evidence may be deleted. Proof, audit and Edge evidence require separate mapping; Edge is not on this C7-based branch. Authority/legal decisions remain prerequisites to retention execution.
 
+The next read-only slice adds counts for accepted Inside player-proof events, their `COMPLETED` subset, and audit events whose action begins `CORRECTIONS_`. Player proof is identified by the signed, server-validated `CORRECTIONS_` programming source and tenant ID; audit counts use the tenant ID and action prefix. These counts are **not** delivery totals, retention candidates, a complete audit inventory, or evidence that legal holds have been checked. Shared platform evidence and future Edge evidence need independent policy mapping before any execution design. No retention period was selected.
+
 ## Decisions that cannot be invented in code
 
 - Identity provider and protocol, verified customer domains, and account-recovery ownership.

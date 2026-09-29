@@ -15,13 +15,14 @@ test("Inside inventory counts only one organisation and reveals no record conten
   });
 
   const result = await countCorrectionsPrivacyInventory(database, "tenant-A");
-  assert.equal(calls.length, 11);
+  assert.equal(calls.length, 14);
   assert.deepEqual(Object.keys(result), [
     "contributors", "supervisedSessions", "submittedVersions", "reviews",
     "familyRequests", "internalRequests", "requestDecisions", "developmentMilestones",
-    "rehabilitationContent", "announcements", "priorityOverrides"
+    "rehabilitationContent", "announcements", "priorityOverrides",
+    "insidePlaybackProofEvents", "insideCompletedProofEvents", "correctionsAuditEvents"
   ]);
-  assert.deepEqual(Object.values(result), Array.from({ length: 11 }, (_, index) => index + 1));
+  assert.deepEqual(Object.values(result), Array.from({ length: 14 }, (_, index) => index + 1));
   for (const { model, input } of calls) {
     assert.equal(typeof input.where, "object");
     const scope = model === "correctionsReview" ? input.where.submission?.is?.organisationId
@@ -31,6 +32,14 @@ test("Inside inventory counts only one organisation and reveals no record conten
     assert.deepEqual(Object.keys(input), ["where"]);
   }
   assert.deepEqual(calls.filter(({ model }) => model === "correctionsRequest").map(({ input }) => input.where.source), ["FAMILY", "INTERNAL"]);
+  const proofQueries = calls.filter(({ model }) => model === "proofOfPlayEvent").map(({ input }) => input.where);
+  assert.equal(proofQueries.length, 2);
+  assert.deepEqual(proofQueries.map((where) => where.programmingSource), [
+    { startsWith: "CORRECTIONS_" }, { startsWith: "CORRECTIONS_" }
+  ]);
+  assert.equal(proofQueries[0].eventType, undefined);
+  assert.equal(proofQueries[1].eventType, "COMPLETED");
+  assert.deepEqual(calls.find(({ model }) => model === "auditLog").input.where.action, { startsWith: "CORRECTIONS_" });
   assert.equal(JSON.stringify(result).includes("tenant-A"), false);
 });
 
