@@ -182,14 +182,26 @@ until every required C8 gate is demonstrated with isolated synthetic media.
   Priority and Emergency interruptions and returns, and both players stopping
   after withdrawal reached the Edge on reconnect. The player screens also
   showed Local on both zones during the offline C7 window and Central again
-  afterward; the operator confirmed the audible return, but explicit audible
-  confirmation of the higher Local phase is still pending. At one offline
+  afterward; the operator confirmed the audible return, but did not explicitly
+  confirm the higher Local phase in that run. At one offline
   snapshot, 234 signed proof events were queued locally; reconnect uploaded
   the backlog. After withdrawal, the active manifest changed, the queue was
   empty, and a repeat sync uploaded zero events without changing the 1,570
   accepted-event count. This remains a one-machine loopback test without
   production-valid Edge TLS, real facility LAN separation or appliance
   hardening. It is useful integration evidence, **not a C8 release PASS**.
+
+- A third isolated loopback replay on 29 September 2026 specifically checked
+  the missing audible C7 transition. With two separately enrolled browser
+  players, the operator heard the middle Central tone from both, then the
+  higher Local tone from both while the Edge-to-cloud TCP bridge was closed,
+  then a continuous return to the middle Central tone on both after the
+  one-minute Local window. Both player screens showed the matching programmes.
+  The Edge reported `cloudConnected: false` and 161 pending signed proof events
+  during the return; reconnect uploaded 189 queued events and reported zero
+  pending. The disposable lab test passed and was shut down. This resolves the
+  loopback audible Local confirmation gap, but does **not** satisfy the real
+  facility LAN/TLS release gate or make C8 production ready.
 
 - The loopback browser test exercises real Edge-to-cloud TCP disconnection,
   two local players, queued proof, reconnect, changed manifest and dedup.
