@@ -117,13 +117,15 @@ until every required C8 gate is demonstrated with isolated synthetic media.
   runtime tests cover atomic cache, delta reuse, corruption quarantine,
   expiry, suspension, player grants and C6/C7 precedence.
 - An isolated full-stack synthetic run starts the actual cloud app, mock
-  protected object storage and local Edge HTTP runtime. It confirms online
-  media delivery, disconnects the Edge's cloud transport, confirms local
-  private delivery and accumulating proof, withdraws the programme in the
-  cloud while disconnected, reconnects, evicts the content, uploads the
-  signed backlog exactly once and verifies both C7 operational metrics and
-  CSV evidence. This is **not** an audible facility-player test and therefore
-  does not by itself satisfy the final live gate.
+  protected object storage and local Edge HTTP runtime. A dedicated loopback
+  TCP bridge carries only Edge-to-cloud traffic; the test closes that listener
+  and its connections, verifies Edge sync fails while the cloud app remains
+  reachable, and confirms local private delivery and accumulating proof.
+  It withdraws the programme in the cloud while the Edge link is down, then
+  reconnects, evicts the content, uploads the signed backlog exactly once
+  and verifies both C7 operational metrics and CSV evidence. This is a real
+  transport interruption, but it is **not** a facility LAN/TLS or human-audible
+  test and therefore does not by itself satisfy the final live gate.
 
 ## Open C8 release gates — do not merge
 
@@ -163,10 +165,38 @@ until every required C8 gate is demonstrated with isolated synthetic media.
   C7 reporting. These use synthetic bytes and **do not** establish audible
   local-player performance.
 
-- An isolated *live* Edge/player test must disconnect cloud access, keep
-  approved audio playing on a facility LAN, queue real player proof, then
-  reconnect and verify heartbeat, changed manifest, proof upload, dedup and
-  reporting. Synthetic HTTP tests are valuable but are not this gate.
+- On 29 September 2026, an isolated loopback lab applied all 130 migrations
+  to a disposable PostgreSQL cluster and opened two separately enrolled
+  browser-player instances (Chrome and the Codex browser) on distinct zones.
+  Both displayed the signed Central programme and their browser audio
+  elements were playing. The local Edge uploaded 774 signed playback events
+  before teardown. The operator did not confirm hearing the baseline tone
+  before that first attempt was stopped; its offline/C7/C6 browser sequences
+  were not run. The lab used the development-only loopback HTTP exception,
+  not production-valid Edge TLS. The 12 Edge unit tests and the general suite
+  (975 passed, 8 skipped) passed during this attempt.
+
+- A second isolated loopback run used fresh test identities. The operator
+  confirmed both Central tones, both players' continued bounded playback
+  after cloud withdrawal while the Edge TCP bridge was closed, both audible
+  Priority and Emergency interruptions and returns, and both players stopping
+  after withdrawal reached the Edge on reconnect. The player screens also
+  showed Local on both zones during the offline C7 window and Central again
+  afterward; the operator confirmed the audible return, but explicit audible
+  confirmation of the higher Local phase is still pending. At one offline
+  snapshot, 234 signed proof events were queued locally; reconnect uploaded
+  the backlog. After withdrawal, the active manifest changed, the queue was
+  empty, and a repeat sync uploaded zero events without changing the 1,570
+  accepted-event count. This remains a one-machine loopback test without
+  production-valid Edge TLS, real facility LAN separation or appliance
+  hardening. It is useful integration evidence, **not a C8 release PASS**.
+
+- The loopback browser test exercises real Edge-to-cloud TCP disconnection,
+  two local players, queued proof, reconnect, changed manifest and dedup.
+  The remaining *live* gate must repeat this with production-valid browser
+  TLS, a genuinely separate facility LAN/Edge appliance and cloud route,
+  and confirm heartbeat, reporting and audible playback there. A same-host
+  loopback bridge is not equivalent to that deployment.
 - Repeat live tests for withdrawal while offline, expired manifest, corrupted
   media with online repair, credential rotation/revocation, cross-facility
   attack, C7 multi-facility distribution and C6 Priority/Emergency/return.

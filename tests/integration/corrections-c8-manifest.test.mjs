@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash, createPrivateKey, createPublicKey, randomBytes, randomUUID } from "node:crypto";
-import { createServer } from "node:http";
+import { createServer, request as httpRequest } from "node:http";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -91,7 +91,37 @@ test("C8B signed C7 manifest/media is exact, protected, facility-scoped and with
   let organisation, plan, media, promo, localMedia, localPromo, localDistribution,
     priorityMedia, priorityPromo, emergencyMedia, emergencyPromo, labAnnouncementIds,
     licensedMedia, licensedGenre, archiverUserId,
-    users = [], edgeRoot, localEdge, labController;
+    users = [], edgeRoot, localEdge, labController, cloudLink, cloudLinkPort;
+  let cloudConnected = false;
+  async function connectCloudLink() {
+    if (cloudLink?.listening) return;
+    cloudLink = createServer((request, response) => {
+      const target = new URL(request.url, baseUrl);
+      const upstream = httpRequest(target, { method: request.method,
+        headers: { ...request.headers, host: target.host } }, (source) => {
+        response.writeHead(source.statusCode, source.headers);
+        source.pipe(response);
+      });
+      upstream.on("error", () => {
+        if (!response.headersSent) response.writeHead(502);
+        response.end();
+      });
+      request.on("aborted", () => upstream.destroy());
+      request.pipe(upstream);
+    });
+    await new Promise((resolve, reject) => cloudLink.once("error", reject)
+      .listen(cloudLinkPort || 0, "127.0.0.1", resolve));
+    cloudLinkPort = cloudLink.address().port;
+    cloudConnected = true;
+  }
+  async function disconnectCloudLink() {
+    if (!cloudLink) return;
+    const activeLink = cloudLink;
+    activeLink.closeAllConnections();
+    await new Promise((resolve, reject) => activeLink.close((error) => error ? reject(error) : resolve()));
+    cloudLink = null;
+    cloudConnected = false;
+  }
   try {
     await new Promise((resolve, reject) => mockR2.once("error", reject).listen(9108, "127.0.0.1", resolve));
     plan = await db.plan.create({ data: { name: `C8 manifest ${suffix}`, code: `C8_MANIFEST_${suffix}`,
@@ -457,12 +487,11 @@ test("C8B signed C7 manifest/media is exact, protected, facility-scoped and with
       body: { action: "SET_PLAYER_ENDPOINT", origin: "https://edge-c.example.invalid:8443" } });
     assert.equal(bindC.status, 200, JSON.stringify(bindC.body));
     edgeRoot = await mkdtemp(path.join(os.tmpdir(), "ruvanas-c8-reconnect-"));
-    let cloudConnected = true;
-    const runtime = new CorrectionsEdgeSyncClient({ cloudUrl: baseUrl,
+    await connectCloudLink();
+    const runtime = new CorrectionsEdgeSyncClient({ cloudUrl: `http://127.0.0.1:${cloudLinkPort}`,
       machineCredential: edgeC.credential, root: edgeRoot, cacheKey: randomBytes(32),
       publicKeyPem: testPublicPem, proofPrivateKeyPem: testPrivateKey.export({ type: "pkcs8", format: "pem" }),
-      scope: { ...scope, nodeId: edgeC.id },
-      fetchImpl: (url, options) => cloudConnected ? fetch(url, options) : Promise.reject(new Error("isolated cloud link disconnected")) });
+      scope: { ...scope, nodeId: edgeC.id } });
     await runtime.initialise();
     const initialSync = await runtime.sync({ softwareVersion: "c8-isolated-runtime" });
     assert.equal(initialSync.downloaded, 1);
@@ -487,7 +516,7 @@ test("C8B signed C7 manifest/media is exact, protected, facility-scoped and with
             pendingProof: runtime.proofQueue.pendingCount,
             cloudProof: await db.correctionsEdgeProofEvent.count({ where: { nodeId: edgeC.id } }) });
           if (request.method === "POST" && path === "/disconnect") {
-            cloudConnected = false; return send(200, { cloudConnected });
+            await disconnectCloudLink(); return send(200, { cloudConnected });
           }
           if (request.method === "POST" && path === "/schedule-local") {
             if (!cloudConnected) return send(409, { error: "Local window must be signed before disconnection." });
@@ -509,7 +538,7 @@ test("C8B signed C7 manifest/media is exact, protected, facility-scoped and with
             return send(200, { cloudConnected, withdrawnInCloud: true });
           }
           if (request.method === "POST" && path === "/reconnect") {
-            cloudConnected = true;
+            await connectCloudLink();
             return send(200, { cloudConnected, sync: await runtime.sync({ softwareVersion: "c8-audible-lab" }) });
           }
           if (request.method === "POST" && path === "/priority") {
@@ -567,8 +596,11 @@ test("C8B signed C7 manifest/media is exact, protected, facility-scoped and with
     const before = await (await fetch(`${localUrl}/v1/playback`, { headers })).json();
     assert.equal(before.state, "READY");
     assert.deepEqual(Buffer.from(await (await fetch(`${localUrl}${before.mediaUrl}`, { headers })).arrayBuffer()), mediaBytes);
-    cloudConnected = false;
-    await assert.rejects(runtime.sync(), /disconnected/);
+    await disconnectCloudLink();
+    await assert.rejects(runtime.sync(), /fetch failed|ECONNREFUSED/);
+    const reachableCloud = await fetch(baseUrl, { redirect: "manual" });
+    assert.ok(reachableCloud.status >= 200 && reachableCloud.status < 500,
+      "The isolated cloud remains reachable while the Edge-specific TCP link is down.");
     const offline = await (await fetch(`${localUrl}/v1/playback`, { headers })).json();
     assert.equal(offline.state, "READY");
     assert.deepEqual(Buffer.from(await (await fetch(`${localUrl}${offline.mediaUrl}`, { headers })).arrayBuffer()), mediaBytes);
@@ -583,7 +615,7 @@ test("C8B signed C7 manifest/media is exact, protected, facility-scoped and with
     // The disconnected node cannot learn the withdrawal, but its *previously*
     // signed authority is bounded; reconnect must remove the item.
     assert.equal((await (await fetch(`${localUrl}/v1/playback`, { headers })).json()).state, "READY");
-    cloudConnected = true;
+    await connectCloudLink();
     const reconnected = await runtime.sync({ softwareVersion: "c8-isolated-runtime" });
     assert.equal(reconnected.proofUploaded, 2);
     assert.equal(runtime.proofQueue.pendingCount, 0);
@@ -609,6 +641,7 @@ test("C8B signed C7 manifest/media is exact, protected, facility-scoped and with
     assert.equal((await api(`/api/corrections/edge/media/${media.id}`, { machine: edgeA.credential })).status, 404);
   } finally {
     if (labController) await new Promise((resolve) => labController.close(resolve));
+    if (cloudLink) await disconnectCloudLink();
     if (localEdge) await new Promise((resolve) => localEdge.server.close(resolve));
     if (edgeRoot) { assert.equal(path.dirname(edgeRoot), os.tmpdir()); await rm(edgeRoot, { recursive: true, force: true }); }
     if (mockR2.listening) await new Promise((resolve) => mockR2.close(resolve));
