@@ -41,7 +41,7 @@ export default function NetworkDashboard() {
   return <main className={styles.page}>
     <header className={styles.hero}><span className={styles.eyebrow}>Ruvanas Inside · Tier 4/5</span><h1>One authority, clear control at each facility</h1>
       <p>See private delivery evidence and prepare centrally approved programmes without widening a facility’s local access.</p>
-      <a href="/dashboard/corrections">← Facility controls</a></header>
+      <a href="/dashboard/corrections">← Facility controls</a> · <a href="/dashboard/corrections/edge">Secure Edge fleet →</a></header>
     {notice && <p role="status" className={styles.notice}>{notice}</p>}
     {!data ? <p>Loading network operations…</p> : <>
       <label className={styles.switcher}>View facilities <select value={facilityId} onChange={(event) => setFacilityId(event.target.value)}>
