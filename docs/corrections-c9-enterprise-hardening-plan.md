@@ -31,6 +31,12 @@ This is deliberately **not** a retention candidate preview. No Corrections-speci
 
 The next read-only slice adds counts for accepted Inside player-proof events, their `COMPLETED` subset, and audit events whose action begins `CORRECTIONS_`. Player proof is identified by the signed, server-validated `CORRECTIONS_` programming source and tenant ID; audit counts use the tenant ID and action prefix. These counts are **not** delivery totals, retention candidates, a complete audit inventory, or evidence that legal holds have been checked. Shared platform evidence and future Edge evidence need independent policy mapping before any execution design. No retention period was selected.
 
+### C9C first implementation slice: synthetic scheduler probe
+
+Run `npm run probe:corrections-policy` for a bounded, in-process C7 scheduler exercise. The default is 24 synthetic facilities and 10,000 decisions; inputs are capped at 100 facilities and 50,000 decisions. It checks Central selection, Local precedence, return to Central, private fallback after Central withdrawal, and denial for an unknown facility. A mismatch exits nonzero. The output is aggregate only and includes an explicit scope caveat.
+
+This measures only the pure scheduling decision function. It neither starts players nor exercises the API, database, media delivery, proof pipeline, network, C6 emergency controls or C8 Edge. Its timings are local microbenchmarks, **not** capacity, availability, recovery, or service-level evidence. A customer-approved facility/player profile and isolated end-to-end environment remain necessary before C9C can pass.
+
 ## Decisions that cannot be invented in code
 
 - Identity provider and protocol, verified customer domains, and account-recovery ownership.

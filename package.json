@@ -19,6 +19,7 @@
     "test:integration": "node --test tests/integration/*.test.mjs",
     "test:performance": "node scripts/performance-smoke.mjs",
     "probe:enterprise-scale": "node scripts/enterprise-scale-probe.mjs",
+    "probe:corrections-policy": "node scripts/corrections-c9-scale-probe.mjs",
     "test:smoke": "node scripts/release-smoke.mjs",
     "verify:protected-media-backup": "node scripts/protected-media-recovery.mjs verify",
     "drill:protected-media-restore": "node scripts/protected-media-recovery.mjs drill",
