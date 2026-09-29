@@ -37,6 +37,10 @@ Run `npm run probe:corrections-policy` for a bounded, in-process C7 scheduler ex
 
 This measures only the pure scheduling decision function. It neither starts players nor exercises the API, database, media delivery, proof pipeline, network, C6 emergency controls or C8 Edge. Its timings are local microbenchmarks, **not** capacity, availability, recovery, or service-level evidence. A customer-approved facility/player profile and isolated end-to-end environment remain necessary before C9C can pass.
 
+### C9D draft release gate
+
+The current [release-readiness ledger](./corrections-c9-release-readiness.md) is explicitly **BLOCKED**. It records local code evidence separately from C8 acceptance, provider verification, authority-approved retention and residency, isolated load/recovery, current GitHub CI, production-state checks and accountable human sign-off. It grants no release authority and changes no live service.
+
 ## Decisions that cannot be invented in code
 
 - Identity provider and protocol, verified customer domains, and account-recovery ownership.
