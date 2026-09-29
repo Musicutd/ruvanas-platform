@@ -23,6 +23,12 @@ The original specification defines C9 as SSO, advanced API scopes, retention and
 3. **C9C — scale and service controls.** Define representative facility/player concurrency and recovery targets with an authority or pilot customer. Use isolated synthetic data to test current cloud paths, proof accuracy, safe interruption and failure recovery. Edge fleet and offline-scale claims stay out of scope until C8 is accepted.
 4. **C9D — formal readiness.** Gather passing code, migration, security, accessibility, operations and customer-acceptance evidence. Record untested or externally dependent items as blocked, not as passed.
 
+### C9B first implementation slice: counts-only privacy inventory
+
+The Super Admin compliance screen now offers an on-demand, organisation-scoped count of Inside contributors, supervised sessions, submitted versions, reviews, internal/family requests and decisions, milestones, rehabilitation content, announcements and overrides. It returns aggregate counts only; it does not expose names, notes, messages, render IDs or individual records. Review and milestone counts are scoped through their required parent relationships. The response is not cached.
+
+This is deliberately **not** a retention candidate preview. No Corrections-specific retention period, legal-hold override, deletion executor or data-residency claim has been added. The existing general-platform retention preview does not establish whether any Corrections evidence may be deleted. Proof, audit and Edge evidence require separate mapping; Edge is not on this C7-based branch. Authority/legal decisions remain prerequisites to retention execution.
+
 ## Decisions that cannot be invented in code
 
 - Identity provider and protocol, verified customer domains, and account-recovery ownership.
