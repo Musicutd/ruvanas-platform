@@ -23,6 +23,12 @@ The original specification defines C9 as SSO, advanced API scopes, retention and
 3. **C9C — scale and service controls.** Define representative facility/player concurrency and recovery targets with an authority or pilot customer. Use isolated synthetic data to test current cloud paths, proof accuracy, safe interruption and failure recovery. Edge fleet and offline-scale claims stay out of scope until C8 is accepted.
 4. **C9D — formal readiness.** Gather passing code, migration, security, accessibility, operations and customer-acceptance evidence. Record untested or externally dependent items as blocked, not as passed.
 
+### C9A first implementation slice: fail-closed security contract
+
+The existing session admission rule is extracted into a pure, tested function without changing the sign-in flow. Its regression cases cover revocation, cookie expiry, organisation-policy maximum age, idle expiry, and the distinction between optional SSO and a verified provider. Password sign-in remains available while `ssoRequired` is false; no provider or callback was configured.
+
+Corrections-specific tests exercise tenant/member/facility/action-bounded staff grants, supervised contributor-session expiry and cross-facility denial, and the fact that generic organisation service-account scopes grant no Corrections facility authority. There is still **no Corrections service-account API**. Any future machine API needs an explicit scope, facility authority, audit and separate review; these tests are not a substitute for an isolated end-to-end security assessment.
+
 ### C9B first implementation slice: counts-only privacy inventory
 
 The Super Admin compliance screen now offers an on-demand, organisation-scoped count of Inside contributors, supervised sessions, submitted versions, reviews, internal/family requests and decisions, milestones, rehabilitation content, announcements and overrides. It returns aggregate counts only; it does not expose names, notes, messages, render IDs or individual records. Review and milestone counts are scoped through their required parent relationships. The response is not cached.
