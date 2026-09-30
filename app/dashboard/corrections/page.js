@@ -6,5 +6,5 @@ export const metadata = { title: "Ruvanas Inside" };
 
 export default async function CorrectionsDashboard() {
   await requireSubscriberProduct("CORRECTIONS");
-  return <CorrectionsSetup />;
+  return <CorrectionsSetup demoMode={process.env.RUVANAS_ENVIRONMENT === "DEMO"} />;
 }

@@ -57,7 +57,7 @@ const platforms = [
   {
     number: "07",
     title: "Ruvanas Inside",
-    text: "A governed foundation for private correctional-facility radio and rehabilitation media. Facility controls and secure delivery are being prepared.",
+    text: "Governed tools for private correctional-facility radio and rehabilitation media. Operational use requires approved policy and dedicated delivery setup.",
     features: ["Private by design", "Facility governance", "Rehabilitation media"],
     icon: "organisations",
   },
@@ -122,7 +122,7 @@ const pricingFamilyDefinitions = [
     productId: "CORRECTIONS",
     eyebrow: "Ruvanas Inside",
     title: "Prepare secure media for correctional environments.",
-    text: "Commercial and account foundation is available; private delivery and facility governance require a later setup stage."
+    text: "Facility governance and supervised media workflows are available for evaluation. Private delivery requires approved policy and dedicated setup."
   },
 ];
 
@@ -214,6 +214,7 @@ function ArrowIcon() {
 }
 
 export default async function HomePage() {
+  const demoMode = process.env.RUVANAS_ENVIRONMENT === "DEMO";
   let approvedProductPlans = registrationProducts();
   try {
     const databasePlans = await prisma.plan.findMany({ where: { publiclyAvailable: true } });
@@ -259,6 +260,7 @@ export default async function HomePage() {
         <div className={styles.heroGrid} id="main-content">
           <div className={styles.heroCopy}>
             <p className={styles.eyebrow}><span /> Audio platforms by 21-Three</p>
+            {demoMode && <p className={styles.demoNotice}>Fictional Ruvanas Inside demo · No real facilities, customer data or live audio · Not for operational use</p>}
             <h1>Every space deserves its <em>own sound.</em></h1>
             <p className={styles.heroLead}>
               Ruvanas brings professional media within reach—from retail and schools to online stations, health, faith and other organisations.
@@ -317,13 +319,13 @@ export default async function HomePage() {
 
       <section className={styles.introStrip} aria-label="Ruvanas introduction">
         <p>One professional foundation.</p>
-        <div><span>Retail</span><i /><span>School</span><i /><span>Online</span><i /><span>Health</span><i /><span>Faith</span><i /><span>Organisations</span></div>
+        <div><span>Retail</span><i /><span>School</span><i /><span>Online</span><i /><span>Health</span><i /><span>Faith</span><i /><span>Organisations</span><i /><span>Inside</span></div>
       </section>
 
       <section className={styles.section} id="platforms">
         <div className={styles.sectionHeader}>
           <div>
-            <p className={styles.sectionEyebrow}>Six platforms. One standard.</p>
+            <p className={styles.sectionEyebrow}>{platforms.length} platforms. One standard.</p>
             <h2>Built around the way you broadcast.</h2>
           </div>
           <p>Choose the platform that fits today, then bring every channel, location and audience together as your ambitions grow.</p>
@@ -389,7 +391,7 @@ export default async function HomePage() {
         <div className={styles.pricingHeader}>
           <p className={styles.sectionEyebrow}>Plans shaped around your platform</p>
           <h2>Choose the service you need. Grow when you are ready.</h2>
-          <p>Six specialised product families each have five clear tiers, shared foundations and purpose-built workflows.</p>
+          <p>{pricingFamilyDefinitions.length} specialised product families each have five clear tiers, shared foundations and purpose-built workflows.</p>
         </div>
 
         <div className={styles.pricingFamilies}>
@@ -449,10 +451,10 @@ export default async function HomePage() {
             <p>Working with a team of professional engineers, that idea developed into <strong>Ruvanas</strong>.</p>
           </div>
 
-          <section className={styles.storyChapter} aria-labelledby="story-five-worlds">
+          <section className={styles.storyChapter} aria-labelledby="story-product-worlds">
             <p className={styles.storyChapterNumber}>01</p>
             <div>
-              <h3 id="story-five-worlds">One platform. Six specialised worlds.</h3>
+              <h3 id="story-product-worlds">One platform. {platforms.length} specialised worlds.</h3>
               <p>Ruvanas has been designed around a shared technology core, but with dedicated experiences for very different types of organisations.</p>
               <div className={styles.storyProducts}>
                 <article><span>Retail</span><p><strong>Ruvanas Retail</strong> gives retailers, hospitality businesses and other commercial organisations the tools to manage their own in-store audio, promotions, scheduling, digital displays and multi-location media.</p></article>
@@ -461,6 +463,7 @@ export default async function HomePage() {
                 <article><span>Faith</span><p><strong>Ruvanas Faith</strong> brings the traditional concept of Church Radio into a modern digital environment, giving churches, ministries and faith organisations the technology to operate their own radio channels, live services, sermons, podcasts and media networks.</p></article>
                 <article><span>Organisations</span><p><strong>Ruvanas Organisations</strong> gives NGOs, clubs, associations, community groups, civic organisations and networks technology for their own channels, announcements, events, podcasts, sponsors and displays—without becoming a CRM or administration system.</p></article>
                 <article><span>Health</span><p><strong>Ruvanas Health</strong> modernises the concept of Hospital Radio, giving hospitals and health-related organisations the tools to operate their own radio, audio and information services for patients, staff and wider communities.</p></article>
+                <article><span>Inside</span><p><strong>Ruvanas Inside</strong> brings facility governance, supervised production and private-media planning together for correctional environments, subject to approved policy and dedicated delivery setup.</p></article>
               </div>
               <p className={styles.storyPrinciple}>In every case, <strong>Ruvanas provides the platform — the subscriber operates the service.</strong></p>
             </div>

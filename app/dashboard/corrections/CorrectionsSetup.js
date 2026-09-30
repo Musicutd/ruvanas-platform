@@ -83,7 +83,7 @@ function FacilityCard({ facility, refresh, setNotice, canEdit, canAddZone, canSe
   </article>;
 }
 
-export default function CorrectionsSetup() {
+export default function CorrectionsSetup({ demoMode = false }) {
   const [data, setData] = useState(null);
   const [notice, setNotice] = useState("");
   const [policy, setPolicy] = useState(emptyPolicy);
@@ -110,10 +110,10 @@ export default function CorrectionsSetup() {
     finally { setBusy(false); }
   };
   return <main className={styles.page}>
-    <div className={styles.hero}><span className={styles.eyebrow}>Ruvanas Inside · Corrections</span><h1>Prepare your secure radio spaces</h1><p>Set up facilities and music rules first. Listening, scheduling and secure players will be added in later stages.</p><strong className={styles.locked}>● Playback is off · No public listener page</strong></div>
+    <div className={styles.hero}><span className={styles.eyebrow}>Ruvanas Inside · Corrections</span><h1>Prepare your secure radio spaces</h1><p>{demoMode ? "Explore fictional facilities, music safety rules and governed workspaces. This isolated demo has no connected audio, players or real customer records." : "Set up facilities and music rules first. Listening, scheduling and secure players will be added in later stages."}</p><strong className={styles.locked}>{demoMode ? "● Fictional demonstration · Playback disabled" : "● Playback is off · No public listener page"}</strong></div>
     {notice && <p role="status" className={styles.notice}>{notice}</p>}
     {!data ? <p>Loading your organisation’s Inside setup…</p> : <>
-      <div className={styles.steps}><span>1 · Add facility <b>{data.facilities.length ? "✓" : "—"}</b></span><span>2 · Set organisation policy <b>{data.profile?.policyConfiguredAt ? "✓" : "—"}</b></span><span>3 · Check each facility policy <b>{data.facilities.length && data.facilities.every((item) => item.policyConfiguredAt) ? "✓" : "—"}</b></span><span>4 · Private playback <b>Later</b></span></div>
+      <div className={styles.steps}><span>1 · Add facility <b>{data.facilities.length ? "✓" : "—"}</b></span><span>2 · Set organisation policy <b>{data.profile?.policyConfiguredAt ? "✓" : "—"}</b></span><span>3 · Check each facility policy <b>{data.facilities.length && data.facilities.every((item) => item.policyConfiguredAt) ? "✓" : "—"}</b></span><span>4 · Private playback <b>{demoMode ? "Not connected" : "Later"}</b></span></div>
       <section className={styles.card}><div className={styles.cardHead}><div><span className={styles.eyebrow}>Organisation-wide</span><h2>Music safety policy</h2><p>Clean versions only. Explicit tracks are always prohibited.</p></div><span className={styles.badge}>{data.profile?.policyConfiguredAt ? "Saved" : "Not reviewed"}</span></div>
         {data.canCreate ? <><PolicyFields form={policy} onChange={setPolicy} /><button disabled={busy} onClick={() => submit("/api/corrections/policy", "PATCH", { ...toPayload(policy), cleanOnly: true }, "Organisation policy saved. Playback remains off.")}>Save organisation policy</button></> : <p className={styles.muted}>Only the organisation owner can change the central policy.</p>}
       </section>
