@@ -279,7 +279,7 @@ test("general programming cannot expose or draft schedules for private Inside fa
 
     const proofBase = {
       organisationId, itemType: "PROMO", promoVersionId: promoVersion.id, mediaAssetId: media.id,
-      manifestVersion: "c9-fixture", eventType: "COMPLETED", occurredAt: new Date(),
+      manifestVersion: randomUUID().replaceAll("-", "").slice(0, 24), eventType: "COMPLETED", occurredAt: new Date(),
       trackTitle: "Fictional promotion", trackArtist: "Fictional artist"
     };
     await db.proofOfPlayEvent.createMany({ data: [
@@ -327,7 +327,7 @@ test("general programming cannot expose or draft schedules for private Inside fa
     await db.digitalSignageDeliveryProof.createMany({ data: [publicDevice, privateDevice].map((device) => ({
       clientEventId: randomUUID(), organisationId, deviceId: device.id,
       playlistId: visualPlaylist.id, playlistItemId: visualItem.id, assetId: visualAsset.id,
-      manifestVersion: "c9-fixture", eventType: "COMPLETED", occurredAt: new Date()
+      manifestVersion: randomUUID().replaceAll("-", "").slice(0, 24), eventType: "COMPLETED", occurredAt: new Date()
     })) });
     const combined = await api(`/api/reports/combined-delivery?${reportQuery}`, { cookie });
     assert.equal(combined.status, 200, await combined.clone().text());
