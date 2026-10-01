@@ -149,7 +149,8 @@ async function createFictionalInventoryEvidence(tx, context) {
     await tx.proofOfPlayEvent.create({ data: {
       clientEventId: `${marker}-${organisationId}-${kind}`, organisationId,
       playerId: player.id, zoneId: zone.id, scheduleItemId: `fictional-${marker}`,
-      mediaAssetId: trackMedia.id, trackId: track.id, manifestVersion: "fictional-probe",
+      mediaAssetId: trackMedia.id, trackId: track.id,
+      manifestVersion: randomUUID().replaceAll("-", "").slice(0, 24),
       programmingSource, eventType, occurredAt: new Date(),
       playerName: player.name, locationName: facility.name, zoneName: zone.name,
       trackTitle: "Fictional audio", trackArtist: "Fictional artist"
