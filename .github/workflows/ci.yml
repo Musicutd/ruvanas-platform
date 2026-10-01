@@ -126,6 +126,11 @@ jobs:
           INTEGRATION_BASE_URL: http://127.0.0.1:3100
         run: node --test tests/integration/corrections-c9-general-programming-boundary.test.mjs
 
+      - name: Validate C9 School and Organisations isolation from private Corrections facilities
+        env:
+          INTEGRATION_BASE_URL: http://127.0.0.1:3100
+        run: node --test tests/integration/corrections-c9-school-organisations-boundary.test.mjs
+
       - name: Show application logs after failure
         if: failure()
         run: cat /tmp/ruvanas-next.log || true

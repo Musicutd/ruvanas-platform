@@ -62,7 +62,7 @@ async function loadData(access) {
     prisma.schoolAnnouncement.findMany({ where: { organisationId, status: "APPROVED" }, orderBy: { title: "asc" }, select: { id: true, title: true, promoVersion: { select: { id: true, durationSeconds: true, mediaAsset: { select: mediaSelect } } } } }),
     prisma.audioTake.findMany({ where: { organisationId, status: "READY", project: { episodeId: { not: null }, status: { not: "ARCHIVED" } } }, orderBy: { createdAt: "desc" }, take: 100, select: { id: true, durationMs: true, promoVersionId: true, project: { select: { id: true, title: true, episodeId: true } }, mediaAsset: { select: mediaSelect } } }),
     prisma.mediaAsset.findMany({ where: { organisationId, status: "READY", mediaType: { in: ["ANNOUNCEMENT", "VOICEOVER"] }, audioTakes: { none: {} }, promoVersions: { none: {} } }, orderBy: { createdAt: "desc" }, take: 100, select: mediaSelect }),
-    prisma.location.findMany({ where: { organisationId, status: { not: "CLOSED" } }, orderBy: { name: "asc" }, select: { id: true, name: true, timezone: true, zones: { where: { status: { not: "OFFLINE" } }, orderBy: { name: "asc" }, select: { id: true, name: true } } } })
+    prisma.location.findMany({ where: { organisationId, status: { not: "CLOSED" }, correctionsFacility: { is: null } }, orderBy: { name: "asc" }, select: { id: true, name: true, timezone: true, zones: { where: { status: { not: "OFFLINE" } }, orderBy: { name: "asc" }, select: { id: true, name: true } } } })
   ]);
   return { episodes, catalogue: { tracks, jingles, announcements, takes, interviews }, locations, role: access.membership.role, canManage: isOrganisationRoleAllowed(access.membership.role, ORGANISATION_MANAGER_ROLES) };
 }
@@ -201,8 +201,8 @@ export async function POST(request) {
       const slotInput = validateSchoolBroadcastSlot(input);
       if (slotInput.startsAt < new Date(Date.now() - 5 * 60 * 1000)) throw new Error("Schedule the episode for the present or future.");
       const [location, zone, overlap] = await Promise.all([
-        slotInput.locationId ? prisma.location.findFirst({ where: { id: slotInput.locationId, organisationId, status: { not: "CLOSED" } }, select: { id: true } }) : null,
-        slotInput.zoneId ? prisma.zone.findFirst({ where: { id: slotInput.zoneId, location: { organisationId }, status: { not: "OFFLINE" } }, select: { id: true } }) : null,
+        slotInput.locationId ? prisma.location.findFirst({ where: { id: slotInput.locationId, organisationId, status: { not: "CLOSED" }, correctionsFacility: { is: null } }, select: { id: true } }) : null,
+        slotInput.zoneId ? prisma.zone.findFirst({ where: { id: slotInput.zoneId, location: { organisationId, correctionsFacility: { is: null } }, status: { not: "OFFLINE" } }, select: { id: true } }) : null,
         prisma.schoolBroadcastSlot.findFirst({ where: { organisationId, status: "APPROVED", ...(slotInput.locationId ? { locationId: slotInput.locationId } : { zoneId: slotInput.zoneId }), startsAt: { lt: slotInput.endsAt }, endsAt: { gt: slotInput.startsAt } }, select: { id: true } })
       ]);
       if ((slotInput.locationId && !location) || (slotInput.zoneId && !zone)) throw new Error("The selected school location or zone is unavailable.");

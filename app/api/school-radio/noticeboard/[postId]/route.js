@@ -12,7 +12,7 @@ export async function PATCH(request, { params }) {
   const parsed = cancelSchema.safeParse(await request.json());
   if (!parsed.success) return NextResponse.json({ error: "Provide a short reason for removing the notice." }, { status: 400 });
   const current = await prisma.schoolNoticeboardPost.findFirst({
-    where: { id: String(params.postId || ""), organisationId: access.organisation.id },
+    where: { id: String(params.postId || ""), organisationId: access.organisation.id, OR: [{ location: { correctionsFacility: { is: null } } }, { zone: { location: { correctionsFacility: { is: null } } } }] },
     select: { id: true, status: true }
   });
   if (!current) return NextResponse.json({ error: "The noticeboard post was not found." }, { status: 404 });

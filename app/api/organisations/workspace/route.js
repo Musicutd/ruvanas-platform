@@ -44,18 +44,26 @@ export async function GET() {
   const result = await access();
   if (result.error) return NextResponse.json({ error: result.error }, { status: result.status });
   const organisationId = result.organisation.id;
-  const [profile, announcements, events, sponsors, locations, stations, members, branchAssignments, autoDjPolicies] = await Promise.all([
+  const [profile, announcements, events, sponsors, locations, stations, members, branchAssignments, autoDjPolicies, privateFacilities] = await Promise.all([
     prisma.organisationMediaProfile.findUnique({ where: { organisationId } }),
     prisma.organisationAnnouncement.findMany({ where: { organisationId }, orderBy: { updatedAt: "desc" }, take: 100 }),
     prisma.organisationEvent.findMany({ where: { organisationId }, orderBy: { startsAt: "desc" }, take: 100 }),
     prisma.organisationSponsorProfile.findMany({ where: { organisationId }, orderBy: { name: "asc" }, take: 100 }),
-    prisma.location.findMany({ where: { organisationId }, select: { id: true, name: true, status: true }, orderBy: { name: "asc" }, take: 200 }),
+    prisma.location.findMany({ where: { organisationId, correctionsFacility: { is: null } }, select: { id: true, name: true, status: true }, orderBy: { name: "asc" }, take: 200 }),
     prisma.station.findMany({ where: { organisationId, productFamily: "ORGANISATIONS" }, select: { id: true, name: true, status: true, channels: { select: { id: true, name: true, status: true } } }, orderBy: { name: "asc" }, take: 100 }),
     prisma.organisationMember.findMany({ where: { organisationId }, select: { id: true, role: true, user: { select: { id: true, name: true, email: true } } }, take: 200 }),
-    prisma.organisationBranchAssignment.findMany({ where: { organisationId }, include: { location: { select: { id: true, name: true } }, organisationMember: { select: { id: true, user: { select: { name: true, email: true } } } } }, take: 500 }),
-    prisma.autoDjPolicy.findMany({ where: { organisationId, targetType: "ORGANISATIONS_CHANNEL" }, select: { id: true, name: true, state: true, enabled: true }, orderBy: { name: "asc" }, take: 100 })
+    prisma.organisationBranchAssignment.findMany({ where: { organisationId, location: { correctionsFacility: { is: null } } }, include: { location: { select: { id: true, name: true } }, organisationMember: { select: { id: true, user: { select: { name: true, email: true } } } } }, take: 500 }),
+    prisma.autoDjPolicy.findMany({ where: { organisationId, targetType: "ORGANISATIONS_CHANNEL" }, select: { id: true, name: true, state: true, enabled: true }, orderBy: { name: "asc" }, take: 100 }),
+    prisma.correctionsFacility.findMany({ where: { location: { organisationId } }, select: { locationId: true } })
   ]);
-  return NextResponse.json({ profile, announcements, events, sponsors, locations, stations, members, branchAssignments, autoDjPolicies, permissions: { role: result.context.membership.role, canManage: isOrganisationRoleAllowed(result.context.membership.role, ORGANISATION_MANAGER_ROLES), networkControls: organisationNetworkControlsEnabled(result.entitlements) }, entitlements: { planCode: result.entitlements.planCode, planTierNumber: result.entitlements.planTierNumber, stationLimit: result.entitlements.stationLimit, digitalSignageEnabled: result.entitlements.digitalSignageEnabled } });
+  const privateLocationIds = new Set(privateFacilities.map(({ locationId }) => locationId));
+  const publicAnnouncements = announcements.map((announcement) => ({
+    ...announcement,
+    targetLocationIds: Array.isArray(announcement.targetLocationIds)
+      ? announcement.targetLocationIds.filter((locationId) => !privateLocationIds.has(locationId))
+      : announcement.targetLocationIds
+  }));
+  return NextResponse.json({ profile, announcements: publicAnnouncements, events, sponsors, locations, stations, members, branchAssignments, autoDjPolicies, permissions: { role: result.context.membership.role, canManage: isOrganisationRoleAllowed(result.context.membership.role, ORGANISATION_MANAGER_ROLES), networkControls: organisationNetworkControlsEnabled(result.entitlements) }, entitlements: { planCode: result.entitlements.planCode, planTierNumber: result.entitlements.planTierNumber, stationLimit: result.entitlements.stationLimit, digitalSignageEnabled: result.entitlements.digitalSignageEnabled } });
 }
 
 export async function POST(request) {
@@ -78,7 +86,7 @@ export async function POST(request) {
       const surfaces = validateAnnouncementSurfaces(data.surfaces);
       if (data.startsAt && data.endsAt && data.endsAt <= data.startsAt) throw new Error("Announcement end must be after its start.");
       const [locations, stations] = await Promise.all([
-        prisma.location.count({ where: { organisationId, id: { in: data.targetLocationIds } } }),
+        prisma.location.count({ where: { organisationId, id: { in: data.targetLocationIds }, correctionsFacility: { is: null } } }),
         prisma.station.count({ where: { organisationId, productFamily: "ORGANISATIONS", id: { in: data.targetStationIds } } })
       ]);
       if (locations !== data.targetLocationIds.length || stations !== data.targetStationIds.length) throw new Error("Choose targets owned by the active organisation.");
@@ -88,6 +96,10 @@ export async function POST(request) {
       const announcement = await prisma.organisationAnnouncement.findFirst({ where: { id: data.announcementId, organisationId } });
       if (!announcement) return NextResponse.json({ error: "The announcement was not found." }, { status: 404 });
       const next = data.action === "APPROVE_ANNOUNCEMENT" ? "APPROVED" : data.action === "PUBLISH_ANNOUNCEMENT" ? "PUBLISHED" : "ARCHIVED";
+      if (next !== "ARCHIVED" && Array.isArray(announcement.targetLocationIds) && announcement.targetLocationIds.length) {
+        const privateTargets = await prisma.correctionsFacility.count({ where: { locationId: { in: announcement.targetLocationIds }, location: { organisationId } } });
+        if (privateTargets) throw new Error("This announcement includes a private Inside facility and cannot be approved or published here.");
+      }
       if (next === "APPROVED" && announcement.status !== "DRAFT") throw new Error("Only a draft announcement can be approved.");
       if (next === "PUBLISHED" && announcement.status !== "APPROVED") throw new Error("Approve the announcement before publishing it.");
       entity = await prisma.organisationAnnouncement.update({ where: { id: announcement.id }, data: { status: next, approvedByUserId: next === "APPROVED" ? userId : announcement.approvedByUserId, approvedAt: next === "APPROVED" ? new Date() : announcement.approvedAt, publishedByUserId: next === "PUBLISHED" ? userId : announcement.publishedByUserId, publishedAt: next === "PUBLISHED" ? new Date() : announcement.publishedAt } });
@@ -109,7 +121,7 @@ export async function POST(request) {
       entity = await prisma.organisationSponsorProfile.create({ data: { organisationId, name: data.name, legalName: data.legalName || null, disclosureText: data.disclosureText || null, createdByUserId: userId } });
     } else {
       if (!manager || !organisationNetworkControlsEnabled(result.entitlements)) return NextResponse.json({ error: "Branch delegation requires Organisations Network or Enterprise and an owner or manager." }, { status: 403 });
-      const [member, location] = await Promise.all([prisma.organisationMember.findFirst({ where: { id: data.organisationMemberId, organisationId }, select: { id: true } }), prisma.location.findFirst({ where: { id: data.locationId, organisationId }, select: { id: true } })]);
+      const [member, location] = await Promise.all([prisma.organisationMember.findFirst({ where: { id: data.organisationMemberId, organisationId }, select: { id: true } }), prisma.location.findFirst({ where: { id: data.locationId, organisationId, correctionsFacility: { is: null } }, select: { id: true } })]);
       if (!member || !location) throw new Error("Choose a member and branch owned by this organisation.");
       entity = await prisma.organisationBranchAssignment.upsert({ where: { organisationMemberId_locationId: { organisationMemberId: member.id, locationId: location.id } }, create: { organisationId, organisationMemberId: member.id, locationId: location.id, permission: data.permission, createdByUserId: userId }, update: { permission: data.permission, createdByUserId: userId } });
     }
