@@ -41,6 +41,7 @@
   font-weight: 700;
   line-height: 1.5;
 }
+.demoNotice a { color: #fff; text-underline-offset: 3px; }
 
 .header {
   position: absolute;

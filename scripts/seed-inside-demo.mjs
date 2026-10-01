@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import { PrismaClient } from "@prisma/client";
 import { findPublicPlan, publicPlanDatabaseData } from "../lib/product-plan-catalogue.mjs";
+import { insideDemoFacilities } from "../lib/inside-demo-scenario.mjs";
 
 // This script belongs only to the disposable demo branch. An exact database
 // identity check prevents an accidental invocation against another environment.
@@ -57,11 +58,7 @@ try {
       update: {}
     });
 
-    for (const [slug, name] of [
-      ["demo-alpha", "Synthetic Facility Alpha"],
-      ["demo-beta", "Synthetic Facility Beta"],
-      ["demo-gamma", "Synthetic Facility Gamma"]
-    ]) {
+    for (const { slug, name, zone, draft } of insideDemoFacilities) {
       const facility = await tx.location.upsert({
         where: { organisationId_slug: { organisationId: organisation.id, slug } },
         create: {
@@ -77,11 +74,11 @@ try {
       });
       await tx.zone.upsert({
         where: { locationId_slug: { locationId: facility.id, slug: "wing-one" } },
-        create: { locationId: facility.id, name: "Synthetic Wing One", slug: "wing-one", status: "ACTIVE" },
+        create: { locationId: facility.id, name: zone, slug: "wing-one", status: "ACTIVE" },
         update: {}
       });
-      if (slug === "demo-alpha") {
-        const title = "Synthetic orientation programme";
+      if (draft) {
+        const title = draft;
         const draft = await tx.correctionsProgramme.findFirst({
           where: { organisationId: organisation.id, facilityId: facility.id, title }
         });

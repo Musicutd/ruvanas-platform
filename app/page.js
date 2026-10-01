@@ -250,7 +250,7 @@ export default async function HomePage() {
 
           <div className={styles.navActions}>
             <a className={styles.loginLink} href="/login">Log in</a>
-            <a className={styles.navCta} href="/register/free-access">Use access code <ArrowIcon /></a>
+            <a className={styles.navCta} href={demoMode ? "/inside-demo" : "/register/free-access"}>{demoMode ? "Explore Inside demo" : "Use access code"} <ArrowIcon /></a>
           </div>
         </div>
       </header>
@@ -260,14 +260,14 @@ export default async function HomePage() {
         <div className={styles.heroGrid} id="main-content">
           <div className={styles.heroCopy}>
             <p className={styles.eyebrow}><span /> Audio platforms by 21-Three</p>
-            {demoMode && <p className={styles.demoNotice}>Fictional Ruvanas Inside demo · No real facilities, customer data or live audio · Not for operational use</p>}
+            {demoMode && <p className={styles.demoNotice}>Fictional Ruvanas Inside demo · No real facilities, customer data or live audio · Not for operational use. <a href="/inside-demo">Take the guided tour →</a></p>}
             <h1>Every space deserves its <em>own sound.</em></h1>
             <p className={styles.heroLead}>
               Ruvanas brings professional media within reach—from retail and schools to online stations, health, faith and other organisations.
             </p>
             <div className={styles.heroActions}>
-              <a className={styles.primaryButton} href="/register/free-access">Create account with code <ArrowIcon /></a>
-              <a className={styles.secondaryButton} href="/how-it-works">See how it works</a>
+              <a className={styles.primaryButton} href={demoMode ? "/inside-demo" : "/register/free-access"}>{demoMode ? "Explore the Inside demo" : "Create account with code"} <ArrowIcon /></a>
+              <a className={styles.secondaryButton} href={demoMode ? "/login" : "/how-it-works"}>{demoMode ? "Protected workspace sign-in" : "See how it works"}</a>
             </div>
             <div className={styles.heroProof} aria-label="Ruvanas platform highlights">
               <div><strong>320</strong><span>kbps high-quality audio</span></div>
@@ -276,12 +276,12 @@ export default async function HomePage() {
             </div>
           </div>
 
-          <div className={styles.heroVisual} aria-label="Illustration of the Ruvanas live audio network">
+          <div className={styles.heroVisual} aria-label={demoMode ? "Illustration only; no demo audio is playing" : "Illustration of the Ruvanas live audio network"}>
             <div className={styles.livePanel}>
               <div className={styles.panelTop}>
                 <div>
-                  <span className={styles.liveBadge}><i /> Live network</span>
-                  <p>Ruvanas master channel</p>
+                  <span className={styles.liveBadge}><i /> {demoMode ? "Illustration only" : "Live network"}</span>
+                  <p>{demoMode ? "Example channel" : "Ruvanas master channel"}</p>
                 </div>
                 <span className={styles.qualityBadge}>HQ 320</span>
               </div>
@@ -292,7 +292,7 @@ export default async function HomePage() {
                   <strong>Your brand. Your sound.</strong>
                   <small>Shared channel clock · Smooth mix</small>
                 </div>
-                <button type="button" aria-label="Playing live audio preview" disabled>
+                <button type="button" aria-label={demoMode ? "No live demo audio is available" : "Playing live audio preview"} disabled>
                   <span /><span /><span />
                 </button>
               </div>
@@ -305,7 +305,7 @@ export default async function HomePage() {
             </div>
 
             <div className={`${styles.floatingCard} ${styles.cardRetail}`}>
-              <PlatformIcon type="retail" /><span><strong>Retail</strong>12 locations online</span>
+              <PlatformIcon type="retail" /><span><strong>Retail</strong>{demoMode ? "Illustrative locations" : "12 locations online"}</span>
             </div>
             <div className={`${styles.floatingCard} ${styles.cardSchool}`}>
               <PlatformIcon type="school" /><span><strong>School</strong>Safeguarded publishing</span>
@@ -508,8 +508,8 @@ export default async function HomePage() {
           <h2>Give your audience a sound worth remembering.</h2>
         </div>
         <div className={styles.finalActions}>
-          <a className={styles.primaryButton} href="/register/free-access">Use your free-access code <ArrowIcon /></a>
-          <a className={styles.finalLogin} href="/login">Already a member? Log in</a>
+          <a className={styles.primaryButton} href={demoMode ? "/inside-demo" : "/register/free-access"}>{demoMode ? "Explore the fictional Inside tour" : "Use your free-access code"} <ArrowIcon /></a>
+          <a className={styles.finalLogin} href="/login">{demoMode ? "Protected workspace sign-in" : "Already a member? Log in"}</a>
         </div>
       </section>
 

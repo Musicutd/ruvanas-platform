@@ -26,7 +26,8 @@ test("the public homepage links to a no-login How it works guide", async () => {
     readFile(new URL("../app/dashboard/how-it-works/HowItWorksClient.js", import.meta.url), "utf8")
   ]);
   assert.match(home, /href="\/how-it-works">How it works/);
-  assert.match(home, /href="\/how-it-works">See how it works/);
+  assert.match(home, /demoMode \? "\/login" : "\/how-it-works"/);
+  assert.match(home, /demoMode \? "Protected workspace sign-in" : "See how it works"/);
   assert.match(publicPage, /<HowItWorksClient publicView \/>/);
   assert.doesNotMatch(publicPage, /getActiveOrganisationContext|redirect\(/);
   assert.match(client, /publicView \? "\/register" : product\.startHref/);
