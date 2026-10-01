@@ -126,6 +126,14 @@ async function createFictionalInventoryEvidence(tx, context) {
   const player = await tx.player.create({ data: {
     organisationId, zoneId: zone.id, name: "Fictional unconnected player"
   } });
+  const trackMedia = await tx.mediaAsset.create({ data: {
+    organisationId, name: "Fictional inventory music", originalName: "fictional-music.wav",
+    storageKey: `inside-inventory-probe/${marker}/${organisationId}/music`, mimeType: "audio/wav",
+    sizeBytes: 1024n, mediaType: "MUSIC", status: "READY"
+  } });
+  const track = await tx.track.create({ data: {
+    mediaAssetId: trackMedia.id, title: "Fictional music", artist: "Fictional artist"
+  } });
   await tx.correctionsOverride.create({ data: {
     organisationId, facilityId: facility.id, announcementId: announcement.id,
     type: "PRIORITY", status: "CLEARED", category: "fictional-probe",
@@ -141,7 +149,7 @@ async function createFictionalInventoryEvidence(tx, context) {
     await tx.proofOfPlayEvent.create({ data: {
       clientEventId: `${marker}-${organisationId}-${kind}`, organisationId,
       playerId: player.id, zoneId: zone.id, scheduleItemId: `fictional-${marker}`,
-      mediaAssetId: media.id, manifestVersion: "fictional-probe",
+      mediaAssetId: trackMedia.id, trackId: track.id, manifestVersion: "fictional-probe",
       programmingSource, eventType, occurredAt: new Date(),
       playerName: player.name, locationName: facility.name, zoneName: zone.name,
       trackTitle: "Fictional audio", trackArtist: "Fictional artist"
