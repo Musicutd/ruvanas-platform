@@ -92,11 +92,9 @@ test("general programming cannot expose or draft schedules for private Inside fa
       organisationId, name: "Legacy private rights channel", slug: `c9-private-rights-${suffix}`,
       status: "ACTIVE", musicRightsUse: "CORRECTIONS_RADIO"
     } });
-    await db.channelAssignment.createMany({ data: [
-      { channelId: normalChannel.id, zoneId: normalLocation.zones[0].id },
-      { channelId: privateChannel.id, zoneId: normalLocation.zones[0].id },
-      { channelId: privateRightsChannel.id, zoneId: normalLocation.zones[0].id }
-    ] });
+    await db.channelAssignment.create({ data: {
+      channelId: privateChannel.id, zoneId: normalLocation.zones[0].id
+    } });
 
     const login = await api("/api/auth/login", { method: "POST", body: { email: user.email, password } });
     assert.equal(login.status, 200, await login.clone().text());
@@ -134,6 +132,7 @@ test("general programming cannot expose or draft schedules for private Inside fa
     assert.equal((await api("/api/programming", { method: "POST", cookie, body: payload("LOCATION", normalLocation.id) })).status, 403);
   } finally {
     try {
+      if (organisationId) await db.musicSchedule.deleteMany({ where: { organisationId } });
       if (organisationId) await db.organisation.delete({ where: { id: organisationId } });
       if (userId) await db.user.delete({ where: { id: userId } });
       if (planIds.length) await db.plan.deleteMany({ where: { id: { in: planIds } } });
