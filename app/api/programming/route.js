@@ -72,7 +72,7 @@ async function loadProgramming(organisationId, role, entitlements) {
   const now = new Date();
   const [locations, musicModes, schedules, channels] = await Promise.all([
     prisma.location.findMany({
-      where: { organisationId, status: "ACTIVE" },
+      where: { organisationId, status: "ACTIVE", correctionsFacility: { is: null } },
       select: {
         id: true,
         organisationId: true,
@@ -107,7 +107,11 @@ async function loadProgramming(organisationId, role, entitlements) {
       orderBy: { name: "asc" }
     }),
     prisma.musicSchedule.findMany({
-      where: { organisationId },
+      where: { organisationId, AND: [
+        { OR: [{ locationId: null }, { location: { correctionsFacility: { is: null } } }] },
+        { OR: [{ zoneId: null }, { zone: { location: { correctionsFacility: { is: null } } } }] },
+        { OR: [{ locationId: { not: null } }, { zoneId: { not: null } }] }
+      ] },
       include: {
         location: { select: { id: true, name: true } },
         zone: { select: { id: true, name: true, location: { select: { id: true, name: true } } } },
@@ -120,11 +124,22 @@ async function loadProgramming(organisationId, role, entitlements) {
       take: 100
     }),
     prisma.channel.findMany({
-      where: { organisationId, status: "ACTIVE" },
+      where: { organisationId, status: "ACTIVE", AND: [
+        { OR: [
+          { station: { is: null } },
+          { station: { productFamily: null } },
+          { station: { productFamily: { not: "CORRECTIONS" } } }
+        ] },
+        { OR: [
+          { musicRightsUse: null },
+          { musicRightsUse: { not: "CORRECTIONS_RADIO" } }
+        ] }
+      ] },
       include: {
         station: { select: { id: true, name: true, status: true, productFamily: true } },
         zoneAssignments: {
-          where: { activeFrom: { lte: now }, OR: [{ activeTo: null }, { activeTo: { gt: now } }] },
+          where: { activeFrom: { lte: now }, OR: [{ activeTo: null }, { activeTo: { gt: now } }],
+            zone: { location: { correctionsFacility: { is: null } } } },
           include: { zone: { select: { id: true, name: true, location: { select: { name: true } } } } }
         },
         autoDjPolicy: {
@@ -138,6 +153,7 @@ async function loadProgramming(organisationId, role, entitlements) {
     })
   ]);
 
+  const visibleChannelIds = new Set(channels.map((channel) => channel.id));
   const targets = locations.flatMap((location) => [
     {
       id: location.id,
@@ -146,7 +162,7 @@ async function loadProgramming(organisationId, role, entitlements) {
       locationName: location.name,
       timezone: location.timezone,
       status: location.status,
-      channelIds: [...new Set(location.zones.flatMap((zone) => zone.channelAssignments.map((assignment) => assignment.channelId)))]
+      channelIds: [...new Set(location.zones.flatMap((zone) => zone.channelAssignments.map((assignment) => assignment.channelId)))].filter((id) => visibleChannelIds.has(id))
     },
     ...location.zones.map((zone) => ({
       id: zone.id,
@@ -155,7 +171,7 @@ async function loadProgramming(organisationId, role, entitlements) {
       locationName: location.name,
       timezone: location.timezone,
       status: zone.status,
-      channelIds: [...new Set(zone.channelAssignments.map((assignment) => assignment.channelId))]
+      channelIds: [...new Set(zone.channelAssignments.map((assignment) => assignment.channelId))].filter((id) => visibleChannelIds.has(id))
     }))
   ]);
 
@@ -247,9 +263,9 @@ export async function GET() {
     const context = await getActiveOrganisationContext({ subscription: { include: { plan: true, billingContract: true } } });
     if (!context) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
     if (!context.membership) return NextResponse.json({ error: "No active organisation is available." }, { status: 403 });
-    const serviceEnabled = resolveEntitlements(context.membership.organisation.subscription).serviceEnabled;
-    if (!serviceEnabled) return NextResponse.json({ error: "Radio programming is unavailable while this service is inactive." }, { status: 403 });
-    const programming = await loadProgramming(context.membership.organisationId, context.membership.role, resolveEntitlements(context.membership.organisation.subscription));
+    const entitlements = resolveEntitlements(context.membership.organisation.subscription);
+    if (!entitlements.serviceEnabled || entitlements.planProductFamily === "CORRECTIONS") return NextResponse.json({ error: "General radio programming is unavailable for this service." }, { status: 403 });
+    const programming = await loadProgramming(context.membership.organisationId, context.membership.role, entitlements);
     return NextResponse.json({ ok: true, ...programming });
   } catch (error) {
     console.error("Subscriber programming load error:", error);
@@ -262,8 +278,9 @@ export async function POST(request) {
     const context = await getActiveOrganisationContext({ subscription: { include: { plan: true, billingContract: true } } });
     if (!context) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
     if (!context.membership) return NextResponse.json({ error: "No active organisation is available." }, { status: 403 });
-    if (!resolveEntitlements(context.membership.organisation.subscription).serviceEnabled) {
-      return NextResponse.json({ error: "Radio programming is unavailable while this service is inactive." }, { status: 403 });
+    const entitlements = resolveEntitlements(context.membership.organisation.subscription);
+    if (!entitlements.serviceEnabled || entitlements.planProductFamily === "CORRECTIONS") {
+      return NextResponse.json({ error: "General radio programming is unavailable for this service." }, { status: 403 });
     }
     if (!canManageSubscriberProgramming(context.membership.role)) {
       return NextResponse.json({ error: "Only organisation owners and managers can change radio programming." }, { status: 403 });
@@ -282,8 +299,8 @@ export async function POST(request) {
 
     const organisationId = context.membership.organisationId;
     const target = data.targetType === "LOCATION"
-      ? await prisma.location.findFirst({ where: { id: data.targetId, organisationId }, select: { id: true, timezone: true } })
-      : await prisma.zone.findFirst({ where: { id: data.targetId, location: { organisationId } }, select: { id: true, location: { select: { id: true, timezone: true } } } });
+      ? await prisma.location.findFirst({ where: { id: data.targetId, organisationId, correctionsFacility: { is: null } }, select: { id: true, timezone: true } })
+      : await prisma.zone.findFirst({ where: { id: data.targetId, location: { organisationId, correctionsFacility: { is: null } } }, select: { id: true, location: { select: { id: true, timezone: true } } } });
     if (!target) return NextResponse.json({ error: "The selected listening area is not available to your organisation." }, { status: 404 });
 
     const timezone = data.targetType === "LOCATION" ? target.timezone : target.location.timezone;
