@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { insideDemoFacilities } from "@/lib/inside-demo-scenario.mjs";
+import ReviewWalkthrough from "./ReviewWalkthrough";
 import styles from "./tour.module.css";
 
 export const dynamic = "force-dynamic";
@@ -43,6 +44,7 @@ export default function InsideDemoTour() {
       <p className={styles.eyebrow}>The controlled path</p><h2 id="workflow-title">Creation is not permission to broadcast.</h2>
       <p className={styles.subcopy}>These are the intended governance stages; the public tour does not execute them or claim that live delivery has been accepted.</p>
       <ol className={styles.steps}>{steps.map(([number, title, description]) => <li key={number}><span>{number}</span><div><h3>{title}</h3><p>{description}</p></div></li>)}</ol>
+      <ReviewWalkthrough />
     </section>
     <section className={styles.boundary} aria-labelledby="boundary-title"><div><p className={styles.eyebrow}>Release boundary</p><h2 id="boundary-title">What is deliberately not live</h2></div><ul><li>No connected private player or live audio</li><li>No real facility, contributor or family request data</li><li>No public listener or automatic broadcast</li><li>No customer identity provider or approved retention policy</li><li>No claim that offline Edge delivery is release-ready</li></ul></section>
     <footer className={styles.footer}><a href="/">← Ruvanas home</a><p>Protected operational screens require a separate demo-owner sign-in. This public tour grants no account or facility access.</p></footer>
