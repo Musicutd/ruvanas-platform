@@ -6,7 +6,9 @@ const DEFAULT_RETENTION = { rawPlaybackDays: 395, playerHeartbeatDays: 90, audio
 const INSIDE_INVENTORY_LABELS = {
   contributors: "Contributors", supervisedSessions: "Supervised Studio sessions",
   supervisedStudioProjects: "Supervised Studio projects", supervisedStudioVersions: "Studio edit versions",
-  supervisedStudioTakes: "Studio source takes", supervisedStudioRenders: "Studio renders",
+  supervisedStudioTakes: "Studio source takes", supervisedStudioTracks: "Studio timeline tracks",
+  supervisedStudioClips: "Studio timeline clips", supervisedStudioMarkers: "Studio timeline markers",
+  supervisedStudioRenders: "Studio renders", supervisedStudioTranscripts: "Studio transcripts",
   studioLinkedMediaAssets: "Studio-linked media assets (may be shared)",
   submittedVersions: "Submitted versions", reviews: "Guard reviews",
   familyRequests: "Family requests", internalRequests: "Internal requests",

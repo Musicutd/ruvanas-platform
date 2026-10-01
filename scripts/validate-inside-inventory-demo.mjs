@@ -7,7 +7,8 @@ class ExpectedRollback extends Error {}
 const expectedDeltas = {
   contributors: 1, supervisedSessions: 1, supervisedStudioProjects: 1,
   supervisedStudioVersions: 1, supervisedStudioTakes: 1,
-  supervisedStudioRenders: 1, studioLinkedMediaAssets: 1,
+  supervisedStudioTracks: 1, supervisedStudioClips: 1, supervisedStudioMarkers: 1,
+  supervisedStudioRenders: 1, supervisedStudioTranscripts: 1, studioLinkedMediaAssets: 1,
   submittedVersions: 1, reviews: 1,
   familyRequests: 1, internalRequests: 1, requestDecisions: 1,
   developmentMilestones: 1, rehabilitationContent: 1,
@@ -56,6 +57,14 @@ async function createFictionalStudioEvidence(tx, { organisationId, ownerId, mark
   const track = await tx.audioTrack.create({ data: { projectId: project.id, name: "Voice" } });
   await tx.audioClip.create({ data: {
     trackId: track.id, mediaAssetId: media.id, sourceEndMs: 1000
+  } });
+  await tx.audioMarker.create({ data: {
+    projectId: project.id, positionMs: 500, type: "EDIT_NOTE",
+    label: "Fictional edit marker", createdByUserId: ownerId
+  } });
+  await tx.transcript.create({ data: {
+    organisationId, projectId: project.id, segmentsJson: [],
+    source: "MANUAL"
   } });
   const session = await tx.correctionsStudioSession.create({ data: {
     organisationId, facilityId: facility.id, contributorId: contributor.id,
