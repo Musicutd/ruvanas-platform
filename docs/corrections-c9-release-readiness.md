@@ -1,17 +1,17 @@
 # Ruvanas Inside C9 — release-readiness gate (draft)
 
-**Decision: BLOCKED.** This document is an evidence ledger, not approval to merge, migrate, deploy, enable customers, or change Render settings. It applies to the C9 branch based on C7 `main` commit `0e1deb3f8a36d18bd19574e17c4b6045b534169e`. Draft C8 PR #217 is outside this branch. GitHub CI passed both checks for Draft PR #218 at `e6949ded3c7e8671947d540456d3feecda4a6262`; subsequent changes require their own CI run after publication. Production Render state has not been freshly verified for this report.
+**Decision: BLOCKED.** This document is an evidence ledger, not approval to merge, migrate, deploy, enable customers, or change Render settings. It applies to the C9 branch based on C7 `main` commit `0e1deb3f8a36d18bd19574e17c4b6045b534169e`. Draft C8 PR #217 is outside this branch. GitHub CI passed both checks for Draft PR #218 at `39e2554e21b234859c161fd3da7ccc59a0ff9236`; subsequent changes require their own CI run after publication. Production Render state has not been freshly verified for this report.
 
 ## Evidence available in this checkout
 
 | Gate | Current evidence | Result |
 | --- | --- | --- |
-| Product-family integrity | `tests/corrections-foundation.test.mjs` asserts seven families, 35 public plans, five Corrections tiers, and fail-closed access. Full local unit suite passed on 30 September 2026: 977 passed, 8 skipped, 0 failed. | Local code evidence only |
-| Existing products and static integrity | Full `tests/*.test.mjs` suite exited 0; `scripts/ci-static-checks.mjs` passed on 30 September. The C9A slice extracts the existing session admission condition without changing its logic and adds security regressions; the rest of the branch remains C9-specific. | Local code evidence only |
-| C9 privacy inventory | Tenant-scoped, Super Admin-only aggregate counts; tests cover scope and no record-content response. It is not a retention or legal-hold decision. No live database was connected for this report. | Partial |
+| Product-family integrity | `tests/corrections-foundation.test.mjs` asserts seven families, 35 public plans, five Corrections tiers, and fail-closed access. Full local unit suite passed on 1 October 2026: 977 passed, 8 skipped, 0 failed. | Local code evidence only |
+| Existing products and static integrity | Full `tests/*.test.mjs` suite exited 0; `scripts/ci-static-checks.mjs` passed on 1 October. The C9A slice extracts the existing session admission condition without changing its logic and adds security regressions; the rest of the branch remains C9-specific. | Local code evidence only |
+| C9 privacy inventory | Tenant-scoped, Super Admin-only aggregate counts now include supervised Studio projects, edit versions, takes, renders and linked media alongside the earlier Inside records. Tests cover query scope and no record-content response. Linked media can be shared; these counts are not retention candidates or a legal-hold decision. No live database was connected for this report. | Partial |
 | C9 security contract | Local regression cases cover session revocation/expiry, optional SSO, exact service-account scopes, staff facility grants and supervised-session isolation. A further local check binds a stale-membership fallback and explicit organisation switch to the selected organisation's enterprise policy. No live customer provider, machine Corrections API, or isolated end-to-end security exercise was used. | Partial |
 | C9 policy probe | 24 synthetic facilities and 10,000 in-process C7 scheduler decisions had zero mismatches. This does not exercise player, API, database, media, proof, network, Edge, or capacity. | Partial |
-| Build | Local Next.js build exited 0 on 30 September after Prisma generation. It logged an existing Studio CSS warning and missing `DATABASE_URL` messages during static-page generation. No schema or migration was changed in C9A. | Code build only; live database untested |
+| Build | Local Next.js build exited 0 on 1 October after Prisma generation. It logged an existing Studio CSS warning and missing `DATABASE_URL` messages during static-page generation. No schema or migration was changed in this C9 slice. | Code build only; live database untested |
 
 ## Blocking evidence and decisions
 

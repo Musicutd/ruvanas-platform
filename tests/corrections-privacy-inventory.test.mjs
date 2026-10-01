@@ -15,18 +15,36 @@ test("Inside inventory counts only one organisation and reveals no record conten
   });
 
   const result = await countCorrectionsPrivacyInventory(database, "tenant-A");
-  assert.equal(calls.length, 14);
+  assert.equal(calls.length, 19);
   assert.deepEqual(Object.keys(result), [
-    "contributors", "supervisedSessions", "submittedVersions", "reviews",
+    "contributors", "supervisedSessions", "supervisedStudioProjects", "supervisedStudioVersions",
+    "supervisedStudioTakes", "supervisedStudioRenders", "studioLinkedMediaAssets",
+    "submittedVersions", "reviews",
     "familyRequests", "internalRequests", "requestDecisions", "developmentMilestones",
     "rehabilitationContent", "announcements", "priorityOverrides",
     "insidePlaybackProofEvents", "insideCompletedProofEvents", "correctionsAuditEvents"
   ]);
-  assert.deepEqual(Object.values(result), Array.from({ length: 14 }, (_, index) => index + 1));
+  assert.deepEqual(Object.values(result), Array.from({ length: 19 }, (_, index) => index + 1));
+  const projectWhere = { organisationId: "tenant-A", correctionsStudioSessions: { some: { organisationId: "tenant-A" } } };
+  const projectRelation = { is: projectWhere };
+  assert.deepEqual(calls.find(({ model }) => model === "audioProject").input.where, projectWhere);
+  assert.deepEqual(calls.find(({ model }) => model === "audioProjectVersion").input.where, { project: projectRelation });
+  for (const model of ["audioTake", "audioRender"]) {
+    assert.deepEqual(calls.find((call) => call.model === model).input.where,
+      { organisationId: "tenant-A", project: projectRelation });
+  }
+  assert.deepEqual(calls.find(({ model }) => model === "mediaAsset").input.where, {
+    organisationId: "tenant-A", OR: [
+      { audioTakes: { some: { organisationId: "tenant-A", project: projectRelation } } },
+      { audioRenderOutputs: { some: { organisationId: "tenant-A", project: projectRelation } } },
+      { audioClips: { some: { track: { is: { project: projectRelation } } } } }
+    ]
+  });
   for (const { model, input } of calls) {
     assert.equal(typeof input.where, "object");
     const scope = model === "correctionsReview" ? input.where.submission?.is?.organisationId
       : model === "correctionsContributorMilestone" ? input.where.contributor?.is?.organisationId
+        : model === "audioProjectVersion" ? input.where.project?.is?.organisationId
         : input.where.organisationId;
     assert.equal(scope, "tenant-A", `${String(model)} must be tenant-scoped`);
     assert.deepEqual(Object.keys(input), ["where"]);
