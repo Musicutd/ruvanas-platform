@@ -62,8 +62,21 @@ test("general programming cannot expose or draft schedules for private Inside fa
       zones: { create: { name: "Private wing", slug: "private-wing", status: "ACTIVE" } },
       correctionsFacility: { create: {} }
     }, include: { zones: true } });
+    const mixedGroup = await db.locationGroup.create({ data: {
+      organisationId, name: "Fictional mixed group", slug: `c9-mixed-${suffix}`,
+      locations: { create: [{ locationId: normalLocation.id }, { locationId: privateFacility.id }] }
+    } });
     const mode = await db.musicMode.create({ data: {
       organisationId, name: "Fictional approved mode", slug: `c9-mode-${suffix}`, status: "ACTIVE"
+    } });
+    const media = await db.mediaAsset.create({ data: {
+      organisationId, libraryType: "ORGANISATION_PROMO", name: "Fictional generic promotion",
+      originalName: "promotion.mp3", storageKey: `c9-integration/${suffix}.mp3`, mimeType: "audio/mpeg",
+      sizeBytes: BigInt(1024), durationSeconds: 20, mediaType: "COMMERCIAL", status: "READY"
+    } });
+    const promo = await db.promoAsset.create({ data: { organisationId, name: "Fictional generic promotion", mediaType: "COMMERCIAL" } });
+    const promoVersion = await db.promoVersion.create({ data: {
+      promoAssetId: promo.id, mediaAssetId: media.id, version: 1, status: "APPROVED", qcStatus: "PASSED", durationSeconds: 20
     } });
     const normalSchedule = await db.musicSchedule.create({ data: {
       organisationId, locationId: normalLocation.id, name: "Normal draft", timezone: "Europe/Malta",
@@ -95,6 +108,10 @@ test("general programming cannot expose or draft schedules for private Inside fa
     await db.channelAssignment.create({ data: {
       channelId: privateChannel.id, zoneId: normalLocation.zones[0].id
     } });
+    await db.channelAssignment.createMany({ data: [
+      { channelId: normalChannel.id, zoneId: normalLocation.zones[0].id },
+      { channelId: normalChannel.id, zoneId: privateFacility.zones[0].id }
+    ] });
 
     const login = await api("/api/auth/login", { method: "POST", body: { email: user.email, password } });
     assert.equal(login.status, 200, await login.clone().text());
@@ -127,12 +144,76 @@ test("general programming cannot expose or draft schedules for private Inside fa
     const normalDraft = await api("/api/programming", { method: "POST", cookie, body: payload("LOCATION", normalLocation.id) });
     assert.equal(normalDraft.status, 201, await normalDraft.clone().text());
 
+    const promotions = await api("/api/promotions", { cookie });
+    assert.equal(promotions.status, 200, await promotions.clone().text());
+    const promotionData = await promotions.json();
+    assert.ok(promotionData.targets.some(({ id }) => id === normalLocation.id));
+    assert.ok(promotionData.targets.some(({ id }) => id === normalLocation.zones[0].id));
+    assert.ok(!promotionData.targets.some(({ id }) => id === privateFacility.id || id === privateFacility.zones[0].id));
+
+    const promotionStart = new Date();
+    const promotionEnd = new Date(promotionStart.getTime() + 6 * 86_400_000);
+    const promotionPayload = (targetType, targetId) => ({
+      promoVersionId: promoVersion.id, name: "Fictional public promotion", schedulingMode: "PLAYS_PER_HOUR",
+      playsPerHour: 1, effectiveFrom: promotionStart.toISOString().slice(0, 10), effectiveTo: promotionEnd.toISOString().slice(0, 10),
+      respectOpeningHours: false, previewOnly: true,
+      targets: [{ targetType, targetId }],
+      schedules: [{ weekday: 1, startsAt: "09:00", endsAt: "10:00" }]
+    });
+    for (const [targetType, targetId] of [
+      ["LOCATION", privateFacility.id], ["ZONE", privateFacility.zones[0].id], ["CHANNEL", privateChannel.id]
+    ]) {
+      const blocked = await api("/api/promotions", { method: "POST", cookie, body: promotionPayload(targetType, targetId) });
+      assert.equal(blocked.status, 400, await blocked.clone().text());
+    }
+    for (const [targetType, targetId] of [
+      ["LOCATION", normalLocation.id], ["ALL_LOCATIONS", null], ["LOCATION_GROUP", mixedGroup.id], ["CHANNEL", normalChannel.id]
+    ]) {
+      const preview = await api("/api/promotions", { method: "POST", cookie, body: promotionPayload(targetType, targetId) });
+      assert.equal(preview.status, 200, await preview.clone().text());
+      const prepared = await preview.json();
+      assert.deepEqual(prepared.targetZones.map(({ id }) => id), [normalLocation.zones[0].id]);
+    }
+    assert.equal(await db.campaign.count({ where: { organisationId } }), 0);
+
+    const campaignBase = {
+      organisationId, promoVersionId: promoVersion.id, schedulingMode: "PLAYS_PER_HOUR",
+      effectiveFrom: promotionStart, effectiveTo: promotionEnd,
+      rule: { create: { playsPerHour: 1 } },
+      schedules: { create: { weekday: 1, windowMode: "PLAYS_PER_HOUR", startMinute: 540, endMinute: 600, playsPerHour: 1 } }
+    };
+    const privateCampaign = await db.campaign.create({ data: {
+      ...campaignBase, name: "Fictional historical private campaign", status: "PUBLISHED",
+      targets: { create: { targetType: "LOCATION", locationId: privateFacility.id } }
+    } });
+    const mixedCampaign = await db.campaign.create({ data: {
+      ...campaignBase, name: "Fictional mixed-target draft", status: "DRAFT",
+      targets: { create: [
+        { targetType: "LOCATION", locationId: normalLocation.id },
+        { targetType: "LOCATION", locationId: privateFacility.id }
+      ] }
+    } });
+    const historicalList = await api("/api/promotions", { cookie });
+    assert.equal(historicalList.status, 200, await historicalList.clone().text());
+    const listedCampaigns = (await historicalList.json()).campaigns;
+    assert.ok(!listedCampaigns.some(({ id }) => id === privateCampaign.id));
+    assert.deepEqual(listedCampaigns.find(({ id }) => id === mixedCampaign.id)?.targets.map(({ label }) => label), [normalLocation.name]);
+    const historicalPreview = await api("/api/promotions", { method: "POST", cookie, body: promotionPayload("LOCATION", normalLocation.id) });
+    assert.equal(historicalPreview.status, 200, await historicalPreview.clone().text());
+
     await db.subscription.update({ where: { organisationId }, data: { planId: insidePlan.id } });
     assert.equal((await api("/api/programming", { cookie })).status, 403);
     assert.equal((await api("/api/programming", { method: "POST", cookie, body: payload("LOCATION", normalLocation.id) })).status, 403);
+    assert.equal((await api("/api/promotions", { cookie })).status, 403);
+    assert.equal((await api("/api/promotions", { method: "POST", cookie, body: promotionPayload("LOCATION", normalLocation.id) })).status, 403);
+    assert.equal((await api(`/api/promotions/${normalSchedule.id}`, { method: "PATCH", cookie, body: { action: "PUBLISH" } })).status, 403);
   } finally {
     try {
       if (organisationId) await db.musicSchedule.deleteMany({ where: { organisationId } });
+      if (organisationId) await db.campaign.deleteMany({ where: { organisationId } });
+      if (organisationId) await db.promoVersion.deleteMany({ where: { promoAsset: { organisationId } } });
+      if (organisationId) await db.promoAsset.deleteMany({ where: { organisationId } });
+      if (organisationId) await db.mediaAsset.deleteMany({ where: { organisationId } });
       if (organisationId) await db.organisation.delete({ where: { id: organisationId } });
       if (userId) await db.user.delete({ where: { id: userId } });
       if (planIds.length) await db.plan.deleteMany({ where: { id: { in: planIds } } });

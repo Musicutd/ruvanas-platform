@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { getActiveOrganisationContext } from "@/lib/auth";
+import { resolveEntitlements } from "@/lib/entitlements.mjs";
 import SkipLink from "@/app/components/SkipLink";
 import PromotionWorkspace from "./PromotionWorkspace";
 import styles from "./promotions.module.css";
@@ -9,9 +10,10 @@ export const dynamic = "force-dynamic";
 
 export default async function SubscriberPromotionsPage({ searchParams }) {
   const query = await searchParams;
-  const context = await getActiveOrganisationContext();
+  const context = await getActiveOrganisationContext({ subscription: { include: { plan: true, billingContract: true } } });
   if (!context) redirect("/login");
   if (!context.membership) redirect("/dashboard");
+  if (resolveEntitlements(context.membership.organisation.subscription).planProductFamily === "CORRECTIONS") notFound();
 
   return (
     <main className={styles.page}>
