@@ -69,6 +69,10 @@ test("general programming cannot expose or draft schedules for private Inside fa
       organisationId, name: "Fictional mixed group", slug: `c9-mixed-${suffix}`,
       locations: { create: [{ locationId: normalLocation.id }, { locationId: privateFacility.id }] }
     } });
+    const privateGroup = await db.locationGroup.create({ data: {
+      organisationId, name: "Fictional private group", slug: `c9-private-${suffix}`,
+      locations: { create: { locationId: privateFacility.id } }
+    } });
     const mode = await db.musicMode.create({ data: {
       organisationId, name: "Fictional approved mode", slug: `c9-mode-${suffix}`, status: "ACTIVE"
     } });
@@ -200,6 +204,10 @@ test("general programming cannot expose or draft schedules for private Inside fa
         { targetType: "LOCATION", locationId: privateFacility.id }
       ] }
     } });
+    const normalCampaign = await db.campaign.create({ data: {
+      ...campaignBase, name: "Fictional normal campaign", status: "PUBLISHED",
+      targets: { create: { targetType: "LOCATION", locationId: normalLocation.id } }
+    } });
     const historicalList = await api("/api/promotions", { cookie });
     assert.equal(historicalList.status, 200, await historicalList.clone().text());
     const listedCampaigns = (await historicalList.json()).campaigns;
@@ -208,15 +216,79 @@ test("general programming cannot expose or draft schedules for private Inside fa
     const historicalPreview = await api("/api/promotions", { method: "POST", cookie, body: promotionPayload("LOCATION", normalLocation.id) });
     assert.equal(historicalPreview.status, 200, await historicalPreview.clone().text());
 
+    const normalPlayer = await db.player.create({ data: {
+      organisationId, zoneId: normalLocation.zones[0].id, name: "Fictional shop player"
+    } });
+    const privatePlayer = await db.player.create({ data: {
+      organisationId, zoneId: privateFacility.zones[0].id, name: "Fictional private player"
+    } });
+    const intentBase = {
+      organisationId, promoVersionId: promoVersion.id, mediaAssetId: media.id,
+      locationTimezone: "Europe/Malta", locationGroups: [], publicationRevision: 1,
+      sourceRevision: `c9-fixture-${suffix}`, plannedStart: new Date(),
+      expiresAt: new Date(Date.now() + 60_000)
+    };
+    await db.playoutIntent.createMany({ data: [
+      { ...intentBase, scheduleItemId: randomUUID(), playerId: normalPlayer.id,
+        zoneId: normalLocation.zones[0].id, campaignId: normalCampaign.id,
+        locationId: normalLocation.id, locationName: normalLocation.name },
+      { ...intentBase, scheduleItemId: randomUUID(), playerId: privatePlayer.id,
+        zoneId: privateFacility.zones[0].id, campaignId: privateCampaign.id,
+        locationId: privateFacility.id, locationName: privateFacility.name }
+    ] });
+    const reportDates = {
+      from: new Date(Date.now() - 86_400_000).toISOString().slice(0, 10),
+      to: new Date(Date.now() + 86_400_000).toISOString().slice(0, 10)
+    };
+    const reportQuery = new URLSearchParams(reportDates).toString();
+    const report = await api(`/api/reports/campaign-proof?${reportQuery}`, { cookie });
+    assert.equal(report.status, 200, await report.clone().text());
+    const reportBody = await report.json();
+    assert.equal(reportBody.report.summary.planned, 1);
+    assert.equal(reportBody.report.rows[0].locationName, normalLocation.name);
+    assert.ok(reportBody.dimensions.locations.some(({ id }) => id === normalLocation.id));
+    assert.ok(!reportBody.dimensions.locations.some(({ id }) => id === privateFacility.id));
+    assert.ok(reportBody.dimensions.locationGroups.some(({ id }) => id === mixedGroup.id));
+    assert.ok(!reportBody.dimensions.locationGroups.some(({ id }) => id === privateGroup.id));
+    assert.ok(reportBody.dimensions.campaigns.some(({ id }) => id === normalCampaign.id));
+    assert.ok(reportBody.dimensions.campaigns.some(({ id }) => id === mixedCampaign.id));
+    assert.ok(!reportBody.dimensions.campaigns.some(({ id }) => id === privateCampaign.id));
+    const privateReport = await api(`/api/reports/campaign-proof?${reportQuery}&locationId=${privateFacility.id}`, { cookie });
+    assert.equal(privateReport.status, 200, await privateReport.clone().text());
+    assert.equal((await privateReport.json()).report.summary.planned, 0);
+
+    const exportRequest = await api("/api/reports/campaign-proof/exports", { method: "POST", cookie, body: reportDates });
+    assert.equal(exportRequest.status, 202, await exportRequest.clone().text());
+    const exportUrl = (await exportRequest.json()).job.statusUrl;
+    let exportStatus;
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      const response = await api(exportUrl, { cookie });
+      assert.equal(response.status, 200, await response.clone().text());
+      exportStatus = (await response.json()).job;
+      if (exportStatus.status === "READY") break;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    assert.equal(exportStatus.status, "READY", exportStatus.error || "Export did not complete");
+    const csvResponse = await api(exportStatus.downloadUrl, { cookie });
+    assert.equal(csvResponse.status, 200, await csvResponse.clone().text());
+    const csv = await csvResponse.text();
+    assert.match(csv, /Fictional normal shop/);
+    assert.doesNotMatch(csv, /Fictional private facility/);
+
     await db.subscription.update({ where: { organisationId }, data: { planId: insidePlan.id } });
     assert.equal((await api("/api/programming", { cookie })).status, 403);
     assert.equal((await api("/api/programming", { method: "POST", cookie, body: payload("LOCATION", normalLocation.id) })).status, 403);
     assert.equal((await api("/api/promotions", { cookie })).status, 403);
     assert.equal((await api("/api/promotions", { method: "POST", cookie, body: promotionPayload("LOCATION", normalLocation.id) })).status, 403);
     assert.equal((await api(`/api/promotions/${normalSchedule.id}`, { method: "PATCH", cookie, body: { action: "PUBLISH" } })).status, 403);
+    assert.equal((await api("/api/reports/campaign-proof", { cookie })).status, 403);
+    assert.equal((await api("/api/reports/campaign-proof/exports", { method: "POST", cookie, body: {} })).status, 403);
+    assert.equal((await api(exportUrl, { cookie })).status, 403);
+    assert.equal((await api(exportStatus.downloadUrl, { cookie })).status, 403);
   } finally {
     try {
       if (organisationId) await db.musicSchedule.deleteMany({ where: { organisationId } });
+      if (organisationId) await db.playoutIntent.deleteMany({ where: { organisationId } });
       if (organisationId) await db.campaign.deleteMany({ where: { organisationId } });
       if (organisationId) await db.promoVersion.deleteMany({ where: { promoAsset: { organisationId } } });
       if (organisationId) await db.promoAsset.deleteMany({ where: { organisationId } });
