@@ -5,6 +5,9 @@ import { useMemo, useState } from "react";
 const DEFAULT_RETENTION = { rawPlaybackDays: 395, playerHeartbeatDays: 90, audioProjectDays: 730, supportTicketDays: 730, auditDays: 2555 };
 const INSIDE_INVENTORY_LABELS = {
   contributors: "Contributors", supervisedSessions: "Supervised Studio sessions",
+  supervisedStudioProjects: "Supervised Studio projects", supervisedStudioVersions: "Studio edit versions",
+  supervisedStudioTakes: "Studio source takes", supervisedStudioRenders: "Studio renders",
+  studioLinkedMediaAssets: "Studio-linked media assets (may be shared)",
   submittedVersions: "Submitted versions", reviews: "Guard reviews",
   familyRequests: "Family requests", internalRequests: "Internal requests",
   requestDecisions: "Request decisions", developmentMilestones: "Development milestones",
@@ -141,7 +144,7 @@ export default function ComplianceOperations({ role, organisations, supportTicke
         <div style={styles.compactList}>{selected.retentionJobs?.map((job) => <p key={job.id}><strong>{job.status}</strong> · {new Date(job.createdAt).toLocaleString()} · No deletion · {JSON.stringify(job.candidateCounts || {})}</p>)}</div>
         <div style={styles.subsection}>
           <h3 style={styles.subheading}>Ruvanas Inside record counts (initial inventory)</h3>
-          <p style={styles.help}>Counts only for the selected organisation. Proof and audit counts use Corrections source/action labels; they are not a complete legal evidence assessment. Edge evidence is not included. This is not a deletion preview or a retention decision; Corrections records need separate legal-hold and authority-approved rules.</p>
+          <p style={styles.help}>Counts only for the selected organisation. Studio-linked media can also be used elsewhere and must not be treated as deletion candidates. Proof and audit counts use Corrections source/action labels; they are not a complete legal evidence assessment. Edge evidence is not included. This is not a deletion preview or a retention decision; Corrections records need separate legal-hold and authority-approved rules.</p>
           <button type="button" disabled={busy} style={styles.secondary} onClick={loadInsideInventory}>Count Inside records</button>
           {insideInventory?.organisationId === selected.id && <div style={styles.metrics} aria-live="polite">
             {Object.entries(INSIDE_INVENTORY_LABELS).map(([key, label]) => <Metric key={key} label={label} value={insideInventory.counts[key]} />)}
