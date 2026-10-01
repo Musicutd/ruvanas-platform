@@ -120,18 +120,18 @@ async function createFictionalInventoryEvidence(tx, context) {
     organisationId, facilityId: facility.id, title: "Fictional announcement draft",
     mediaAssetId: media.id, promoVersionId: promoVersion.id, createdByUserId: ownerId
   } });
-  await tx.correctionsOverride.create({ data: {
-    organisationId, facilityId: facility.id, announcementId: announcement.id,
-    type: "PRIORITY", status: "CLEARED", category: "fictional-probe",
-    targetZoneIds: [], targetPlayerIds: [], idempotencyKey: marker,
-    initiatedByUserId: ownerId, expiresAt: new Date(Date.now() + 60_000),
-    endedAt: new Date(), endedByUserId: ownerId
-  } });
   const zone = await tx.zone.create({ data: {
     locationId: facility.id, name: "Fictional inventory zone", slug: marker
   } });
   const player = await tx.player.create({ data: {
     organisationId, zoneId: zone.id, name: "Fictional unconnected player"
+  } });
+  await tx.correctionsOverride.create({ data: {
+    organisationId, facilityId: facility.id, announcementId: announcement.id,
+    type: "PRIORITY", status: "CLEARED", category: "fictional-probe",
+    targetZoneIds: [zone.id], targetPlayerIds: [player.id], idempotencyKey: marker,
+    initiatedByUserId: ownerId, expiresAt: new Date(Date.now() + 60_000),
+    endedAt: new Date(), endedByUserId: ownerId
   } });
   for (const [kind, eventType, programmingSource] of [
     ["started", "STARTED", "CORRECTIONS_PROGRAMME"],
