@@ -228,14 +228,16 @@ test("general programming cannot expose or draft schedules for private Inside fa
       sourceRevision: `c9-fixture-${suffix}`, plannedStart: new Date(),
       expiresAt: new Date(Date.now() + 60_000)
     };
-    await db.playoutIntent.createMany({ data: [
-      { ...intentBase, scheduleItemId: randomUUID(), playerId: normalPlayer.id,
-        zoneId: normalLocation.zones[0].id, campaignId: normalCampaign.id,
-        locationId: normalLocation.id, locationName: normalLocation.name },
-      { ...intentBase, scheduleItemId: randomUUID(), playerId: privatePlayer.id,
-        zoneId: privateFacility.zones[0].id, campaignId: privateCampaign.id,
-        locationId: privateFacility.id, locationName: privateFacility.name }
-    ] });
+    const normalIntent = await db.playoutIntent.create({ data: {
+      ...intentBase, scheduleItemId: randomUUID(), playerId: normalPlayer.id,
+      zoneId: normalLocation.zones[0].id, campaignId: normalCampaign.id,
+      locationId: normalLocation.id, locationName: normalLocation.name
+    } });
+    const privateIntent = await db.playoutIntent.create({ data: {
+      ...intentBase, scheduleItemId: randomUUID(), playerId: privatePlayer.id,
+      zoneId: privateFacility.zones[0].id, campaignId: privateCampaign.id,
+      locationId: privateFacility.id, locationName: privateFacility.name
+    } });
     const reportDates = {
       from: new Date(Date.now() - 86_400_000).toISOString().slice(0, 10),
       to: new Date(Date.now() + 86_400_000).toISOString().slice(0, 10)
@@ -281,13 +283,16 @@ test("general programming cannot expose or draft schedules for private Inside fa
       trackTitle: "Fictional promotion", trackArtist: "Fictional artist"
     };
     await db.proofOfPlayEvent.createMany({ data: [
-      { ...proofBase, clientEventId: randomUUID(), scheduleItemId: randomUUID(),
+      { ...proofBase, clientEventId: randomUUID(), scheduleItemId: normalIntent.scheduleItemId,
+        playoutIntentId: normalIntent.id,
         playerId: normalPlayer.id, zoneId: normalLocation.zones[0].id, campaignId: normalCampaign.id,
         playerName: normalPlayer.name, locationName: normalLocation.name, zoneName: normalLocation.zones[0].name },
-      { ...proofBase, clientEventId: randomUUID(), scheduleItemId: randomUUID(),
+      { ...proofBase, clientEventId: randomUUID(), scheduleItemId: privateIntent.scheduleItemId,
+        playoutIntentId: privateIntent.id,
         playerId: privatePlayer.id, zoneId: privateFacility.zones[0].id, campaignId: privateCampaign.id,
         playerName: privatePlayer.name, locationName: privateFacility.name, zoneName: privateFacility.zones[0].name },
-      { ...proofBase, clientEventId: randomUUID(), scheduleItemId: randomUUID(),
+      { ...proofBase, clientEventId: randomUUID(), scheduleItemId: normalIntent.scheduleItemId,
+        playoutIntentId: normalIntent.id,
         playerId: normalPlayer.id, zoneId: normalLocation.zones[0].id, campaignId: normalCampaign.id,
         programmingSource: "CORRECTIONS_PROGRAMME", playerName: normalPlayer.name,
         locationName: "Fictional private snapshot", zoneName: normalLocation.zones[0].name }
