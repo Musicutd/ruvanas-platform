@@ -78,16 +78,15 @@ try {
         update: {}
       });
       if (draft) {
-        const title = draft;
-        const draft = await tx.correctionsProgramme.findFirst({
-          where: { organisationId: organisation.id, facilityId: facility.id, title }
+        const existingDraft = await tx.correctionsProgramme.findFirst({
+          where: { organisationId: organisation.id, facilityId: facility.id, title: draft }
         });
-        if (!draft) {
+        if (!existingDraft) {
           await tx.correctionsProgramme.create({
             data: {
               organisationId: organisation.id,
               facilityId: facility.id,
-              title,
+              title: draft,
               description: "Fictional draft for exploring the review workflow. It contains no audio and cannot be broadcast.",
               createdByUserId: owner.id
             }

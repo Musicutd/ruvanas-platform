@@ -13,8 +13,11 @@ test("Inside public tour uses only the three fictional seeded facilities", () =>
 test("Inside tour is DEMO-only and cannot expose an operational API", () => {
   const page = readFileSync(new URL("../app/inside-demo/page.js", import.meta.url), "utf8");
   const home = readFileSync(new URL("../app/page.js", import.meta.url), "utf8");
+  const seed = readFileSync(new URL("../scripts/seed-inside-demo.mjs", import.meta.url), "utf8");
   assert.match(page, /process\.env\.RUVANAS_ENVIRONMENT !== "DEMO"\) notFound\(\)/);
   assert.match(page, /robots: \{ index: false, follow: false \}/);
   assert.doesNotMatch(page, /fetch\(|prisma|\/api\/|<form|<button/);
   assert.match(home, /demoMode \? "\/inside-demo" : "\/register\/free-access"/);
+  assert.match(seed, /for \(const \{ slug, name, zone, draft \} of insideDemoFacilities\)/);
+  assert.doesNotMatch(seed, /const draft\s*=/);
 });
