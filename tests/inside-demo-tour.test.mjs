@@ -21,6 +21,9 @@ test("Inside tour is DEMO-only and cannot expose an operational API", () => {
   assert.doesNotMatch(page, /fetch\(|prisma|\/api\/|<form|<button/);
   assert.doesNotMatch(walkthrough, /fetch\(|prisma|\/api\/|<form|localStorage|sessionStorage/);
   assert.match(walkthrough, /browser-only/);
+  assert.match(page, /href="#review-example"/);
+  assert.match(walkthrough, /id="review-example"/);
+  assert.match(walkthrough, /contributors cannot see staff approval controls/);
   assert.match(home, /demoMode \? "\/inside-demo" : "\/register\/free-access"/);
   assert.match(seed, /for \(const \{ slug, name, zone, draft \} of insideDemoFacilities\)/);
   assert.doesNotMatch(seed, /const draft\s*=/);

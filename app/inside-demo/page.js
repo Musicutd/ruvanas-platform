@@ -29,7 +29,10 @@ export default function InsideDemoTour() {
       <h1>Private media starts with <em>clear authority.</em></h1>
       <p className={styles.lead}>This read-only tour explains how Ruvanas Inside separates facility policy, supervised creation, staff review and later delivery. Every facility and programme shown here is fictional.</p>
       <div className={styles.warning}><strong>Demonstration only.</strong> No real facility, person, customer record, audio file or player is connected. Nothing on this page can schedule or broadcast.</div>
-      <a className={styles.jump} href="#facilities">See the fictional facilities ↓</a>
+      <div className={styles.heroActions}>
+        <a className={styles.jumpPrimary} href="#review-example">Try the fictional review →</a>
+        <a className={styles.jump} href="#facilities">See the fictional facilities ↓</a>
+      </div>
     </section>
     <section className={styles.section} id="facilities" aria-labelledby="facilities-title">
       <p className={styles.eyebrow}>A safe example network</p>

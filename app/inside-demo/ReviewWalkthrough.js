@@ -17,7 +17,7 @@ export default function ReviewWalkthrough() {
   const canSubmit = state.status === "DRAFT" || state.status === "CHANGES_REQUESTED";
   const canReview = state.status === "PENDING_REVIEW";
 
-  return <div className={styles.walkthrough}>
+  return <div className={styles.walkthrough} id="review-example">
     <div className={styles.walkthroughIntro}>
       <div><p className={styles.eyebrow}>Click-through example · browser only</p><h3>Follow one fictional submission</h3></div>
       <p>Try the hand-off yourself. These controls change only this illustration in your browser. They do not sign you in, create a record, approve content, or contact a player.</p>
@@ -26,6 +26,7 @@ export default function ReviewWalkthrough() {
       <span>Current example</span><strong>{statusLabels[state.status]}</strong>
       <p>{state.history.length ? `Exact version: SYNTHETIC-RENDER-${String(state.revision).padStart(3, "0")}` : "There is no submitted version yet."}</p>
     </div>
+    <p className={styles.roleNote}>This public example shows both fictional roles so you can understand the hand-off. In the real workspace, contributors cannot see staff approval controls or approve their own work.</p>
     <div className={styles.reviewActions}>
       {canSubmit && <button type="button" onClick={() => dispatch("SUBMIT")}>Simulate contributor {state.status === "DRAFT" ? "submission" : "resubmission"}</button>}
       {canReview && <>
