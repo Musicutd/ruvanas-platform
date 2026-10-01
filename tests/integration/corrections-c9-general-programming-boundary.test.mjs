@@ -275,6 +275,68 @@ test("general programming cannot expose or draft schedules for private Inside fa
     assert.match(csv, /Fictional normal shop/);
     assert.doesNotMatch(csv, /Fictional private facility/);
 
+    const proofBase = {
+      organisationId, itemType: "PROMO", promoVersionId: promoVersion.id, mediaAssetId: media.id,
+      manifestVersion: "c9-fixture", eventType: "COMPLETED", occurredAt: new Date(),
+      trackTitle: "Fictional promotion", trackArtist: "Fictional artist"
+    };
+    await db.proofOfPlayEvent.createMany({ data: [
+      { ...proofBase, clientEventId: randomUUID(), scheduleItemId: randomUUID(),
+        playerId: normalPlayer.id, zoneId: normalLocation.zones[0].id, campaignId: normalCampaign.id,
+        playerName: normalPlayer.name, locationName: normalLocation.name, zoneName: normalLocation.zones[0].name },
+      { ...proofBase, clientEventId: randomUUID(), scheduleItemId: randomUUID(),
+        playerId: privatePlayer.id, zoneId: privateFacility.zones[0].id, campaignId: privateCampaign.id,
+        playerName: privatePlayer.name, locationName: privateFacility.name, zoneName: privateFacility.zones[0].name },
+      { ...proofBase, clientEventId: randomUUID(), scheduleItemId: randomUUID(),
+        playerId: normalPlayer.id, zoneId: normalLocation.zones[0].id, campaignId: normalCampaign.id,
+        programmingSource: "CORRECTIONS_PROGRAMME", playerName: normalPlayer.name,
+        locationName: "Fictional private snapshot", zoneName: normalLocation.zones[0].name }
+    ] });
+    const visualAsset = await db.digitalSignageAsset.create({ data: {
+      organisationId, uploadedByUserId: userId, name: "Fictional visual advert",
+      originalName: "advert.png", storageKey: `c9-integration/${suffix}.png`, mimeType: "image/png",
+      sizeBytes: BigInt(1024), checksumSha256: randomUUID().replaceAll("-", "").repeat(2), width: 100, height: 100
+    } });
+    const visualLayout = await db.digitalSignageLayout.create({ data: {
+      organisationId, createdByUserId: userId, name: `Fictional visual layout ${suffix}`,
+      canvasWidth: 1920, canvasHeight: 1080
+    } });
+    const visualRegion = await db.digitalSignageLayoutRegion.create({ data: {
+      layoutId: visualLayout.id, name: "Main", x: 0, y: 0, width: 1920, height: 1080
+    } });
+    const visualPlaylist = await db.digitalSignagePlaylist.create({ data: {
+      organisationId, layoutId: visualLayout.id, createdByUserId: userId,
+      name: `Fictional visual playlist ${suffix}`
+    } });
+    const visualItem = await db.digitalSignagePlaylistItem.create({ data: {
+      playlistId: visualPlaylist.id, regionId: visualRegion.id, assetId: visualAsset.id, position: 1
+    } });
+    const publicDevice = await db.digitalSignageDevice.create({ data: {
+      organisationId, zoneId: normalLocation.zones[0].id, createdByUserId: userId,
+      name: "Fictional shop screen", viewportWidth: 1920, viewportHeight: 1080
+    } });
+    const privateDevice = await db.digitalSignageDevice.create({ data: {
+      organisationId, zoneId: privateFacility.zones[0].id, createdByUserId: userId,
+      name: "Fictional private screen", viewportWidth: 1920, viewportHeight: 1080
+    } });
+    await db.digitalSignageDeliveryProof.createMany({ data: [publicDevice, privateDevice].map((device) => ({
+      clientEventId: randomUUID(), organisationId, deviceId: device.id,
+      playlistId: visualPlaylist.id, playlistItemId: visualItem.id, assetId: visualAsset.id,
+      manifestVersion: "c9-fixture", eventType: "COMPLETED", occurredAt: new Date()
+    })) });
+    const combined = await api(`/api/reports/combined-delivery?${reportQuery}`, { cookie });
+    assert.equal(combined.status, 200, await combined.clone().text());
+    const combinedReport = (await combined.json()).report;
+    assert.equal(combinedReport.summary.audioCompleted, 1);
+    assert.equal(combinedReport.summary.visualCompleted, 1);
+    assert.equal(combinedReport.rows.length, 2);
+    assert.ok(combinedReport.rows.every(({ location }) => location === normalLocation.name));
+    const combinedCsv = await api(`/api/reports/combined-delivery/export?${reportQuery}`, { cookie });
+    assert.equal(combinedCsv.status, 200, await combinedCsv.clone().text());
+    const combinedText = await combinedCsv.text();
+    assert.match(combinedText, /Fictional normal shop/);
+    assert.doesNotMatch(combinedText, /Fictional private facility|Fictional private snapshot/);
+
     await db.subscription.update({ where: { organisationId }, data: { planId: insidePlan.id } });
     assert.equal((await api("/api/programming", { cookie })).status, 403);
     assert.equal((await api("/api/programming", { method: "POST", cookie, body: payload("LOCATION", normalLocation.id) })).status, 403);
@@ -285,9 +347,19 @@ test("general programming cannot expose or draft schedules for private Inside fa
     assert.equal((await api("/api/reports/campaign-proof/exports", { method: "POST", cookie, body: {} })).status, 403);
     assert.equal((await api(exportUrl, { cookie })).status, 403);
     assert.equal((await api(exportStatus.downloadUrl, { cookie })).status, 403);
+    assert.equal((await api("/api/reports/combined-delivery", { cookie })).status, 403);
+    assert.equal((await api("/api/reports/combined-delivery/export", { cookie })).status, 403);
   } finally {
     try {
       if (organisationId) await db.musicSchedule.deleteMany({ where: { organisationId } });
+      if (organisationId) await db.digitalSignageDeliveryProof.deleteMany({ where: { organisationId } });
+      if (organisationId) await db.digitalSignagePlaylistItem.deleteMany({ where: { playlist: { organisationId } } });
+      if (organisationId) await db.digitalSignagePlaylist.deleteMany({ where: { organisationId } });
+      if (organisationId) await db.digitalSignageLayoutRegion.deleteMany({ where: { layout: { organisationId } } });
+      if (organisationId) await db.digitalSignageLayout.deleteMany({ where: { organisationId } });
+      if (organisationId) await db.digitalSignageDevice.deleteMany({ where: { organisationId } });
+      if (organisationId) await db.digitalSignageAsset.deleteMany({ where: { organisationId } });
+      if (organisationId) await db.proofOfPlayEvent.deleteMany({ where: { organisationId } });
       if (organisationId) await db.playoutIntent.deleteMany({ where: { organisationId } });
       if (organisationId) await db.campaign.deleteMany({ where: { organisationId } });
       if (organisationId) await db.promoVersion.deleteMany({ where: { promoAsset: { organisationId } } });
