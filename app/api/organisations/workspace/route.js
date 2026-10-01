@@ -53,7 +53,7 @@ export async function GET() {
     prisma.station.findMany({ where: { organisationId, productFamily: "ORGANISATIONS" }, select: { id: true, name: true, status: true, channels: { select: { id: true, name: true, status: true } } }, orderBy: { name: "asc" }, take: 100 }),
     prisma.organisationMember.findMany({ where: { organisationId }, select: { id: true, role: true, user: { select: { id: true, name: true, email: true } } }, take: 200 }),
     prisma.organisationBranchAssignment.findMany({ where: { organisationId, location: { correctionsFacility: { is: null } } }, include: { location: { select: { id: true, name: true } }, organisationMember: { select: { id: true, user: { select: { name: true, email: true } } } } }, take: 500 }),
-    prisma.autoDjPolicy.findMany({ where: { organisationId, targetType: "ORGANISATIONS_CHANNEL" }, select: { id: true, name: true, state: true, enabled: true }, orderBy: { name: "asc" }, take: 100 }),
+    prisma.autoDjPolicy.findMany({ where: { organisationId, targetType: "ORGANISATIONS_CHANNEL", channel: { station: { productFamily: "ORGANISATIONS" } } }, select: { id: true, state: true, enabled: true, channel: { select: { name: true } } }, orderBy: { channel: { name: "asc" } }, take: 100 }),
     prisma.correctionsFacility.findMany({ where: { location: { organisationId } }, select: { locationId: true } })
   ]);
   const privateLocationIds = new Set(privateFacilities.map(({ locationId }) => locationId));
@@ -63,7 +63,7 @@ export async function GET() {
       ? announcement.targetLocationIds.filter((locationId) => !privateLocationIds.has(locationId))
       : announcement.targetLocationIds
   }));
-  return NextResponse.json({ profile, announcements: publicAnnouncements, events, sponsors, locations, stations, members, branchAssignments, autoDjPolicies, permissions: { role: result.context.membership.role, canManage: isOrganisationRoleAllowed(result.context.membership.role, ORGANISATION_MANAGER_ROLES), networkControls: organisationNetworkControlsEnabled(result.entitlements) }, entitlements: { planCode: result.entitlements.planCode, planTierNumber: result.entitlements.planTierNumber, stationLimit: result.entitlements.stationLimit, digitalSignageEnabled: result.entitlements.digitalSignageEnabled } });
+  return NextResponse.json({ profile, announcements: publicAnnouncements, events, sponsors, locations, stations, members, branchAssignments, autoDjPolicies: autoDjPolicies.map(({ channel, ...policy }) => ({ ...policy, name: channel.name })), permissions: { role: result.context.membership.role, canManage: isOrganisationRoleAllowed(result.context.membership.role, ORGANISATION_MANAGER_ROLES), networkControls: organisationNetworkControlsEnabled(result.entitlements) }, entitlements: { planCode: result.entitlements.planCode, planTierNumber: result.entitlements.planTierNumber, stationLimit: result.entitlements.stationLimit, digitalSignageEnabled: result.entitlements.digitalSignageEnabled } });
 }
 
 export async function POST(request) {
@@ -107,7 +107,7 @@ export async function POST(request) {
       const window = validateOrganisationEventWindow(data);
       const station = data.stationId ? await prisma.station.findFirst({ where: { id: data.stationId, organisationId, productFamily: "ORGANISATIONS" }, select: { id: true } }) : null;
       const channel = data.channelId ? await prisma.channel.findFirst({ where: { id: data.channelId, organisationId, station: { productFamily: "ORGANISATIONS" }, ...(data.stationId ? { stationId: data.stationId } : {}) }, select: { id: true, stationId: true } }) : null;
-      const fallback = data.fallbackAutoDjPolicyId ? await prisma.autoDjPolicy.findFirst({ where: { id: data.fallbackAutoDjPolicyId, organisationId, targetType: "ORGANISATIONS_CHANNEL" }, select: { id: true } }) : null;
+      const fallback = data.fallbackAutoDjPolicyId ? await prisma.autoDjPolicy.findFirst({ where: { id: data.fallbackAutoDjPolicyId, organisationId, targetType: "ORGANISATIONS_CHANNEL", channel: { station: { productFamily: "ORGANISATIONS" } } }, select: { id: true } }) : null;
       if ((data.stationId && !station) || (data.channelId && !channel) || (data.fallbackAutoDjPolicyId && !fallback)) throw new Error("Choose event resources owned by this organisation.");
       entity = await prisma.organisationEvent.create({ data: { organisationId, title: data.title, description: data.description || null, ...window, timezone: data.timezone, stationId: station?.id || channel?.stationId || null, channelId: channel?.id || null, fallbackAutoDjPolicyId: fallback?.id || null, createdByUserId: userId } });
     } else if (data.action === "TRANSITION_EVENT") {
