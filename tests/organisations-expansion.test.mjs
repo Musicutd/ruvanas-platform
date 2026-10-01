@@ -88,7 +88,7 @@ test("ORG.12-ORG.13 public education and release boundaries are explicit", async
     readFile(new URL("../lib/user-experience-navigation.mjs", import.meta.url), "utf8"),
     readFile(new URL("../app/dashboard/organisations/workspace/OrganisationsWorkspace.js", import.meta.url), "utf8")
   ]);
-  assert.match(homepage, /Six platforms\. One standard/);
+  assert.match(homepage, /Seven platforms\. One standard/);
   assert.match(homepage, /Ruvanas Organisations/);
   assert.match(howItWorks, /id: "organisations"/);
   assert.match(navigation, /organisationsHome|SUBSCRIBER_PRODUCT_LIST/);
