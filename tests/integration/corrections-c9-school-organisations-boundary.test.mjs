@@ -145,6 +145,20 @@ test("School and Organisations cannot expose or target private Inside facilities
       organisationId, organisationMemberId: member.id, locationId: privateFacility.id,
       permission: "MANAGER", createdByUserId: userId
     } });
+    for (const [label, query] of [
+      ["Organisations profile", () => db.organisationMediaProfile.findUnique({ where: { organisationId } })],
+      ["Organisations announcements", () => db.organisationAnnouncement.findMany({ where: { organisationId }, orderBy: { updatedAt: "desc" }, take: 100 })],
+      ["Organisations events", () => db.organisationEvent.findMany({ where: { organisationId }, orderBy: { startsAt: "desc" }, take: 100 })],
+      ["Organisations sponsors", () => db.organisationSponsorProfile.findMany({ where: { organisationId }, orderBy: { name: "asc" }, take: 100 })],
+      ["public Organisations locations", () => db.location.findMany({ where: { organisationId, correctionsFacility: { is: null } }, select: { id: true, name: true, status: true }, orderBy: { name: "asc" }, take: 200 })],
+      ["Organisations stations", () => db.station.findMany({ where: { organisationId, productFamily: "ORGANISATIONS" }, select: { id: true, name: true, status: true, channels: { select: { id: true, name: true, status: true } } }, orderBy: { name: "asc" }, take: 100 })],
+      ["Organisations members", () => db.organisationMember.findMany({ where: { organisationId }, select: { id: true, role: true, user: { select: { id: true, name: true, email: true } } }, take: 200 })],
+      ["filtered Organisations branches", () => db.organisationBranchAssignment.findMany({ where: { organisationId, location: { correctionsFacility: { is: null } } }, include: { location: { select: { id: true, name: true } }, organisationMember: { select: { id: true, user: { select: { name: true, email: true } } } } }, take: 500 })],
+      ["Organisations AutoDJ", () => db.autoDjPolicy.findMany({ where: { organisationId, targetType: "ORGANISATIONS_CHANNEL" }, select: { id: true, name: true, state: true, enabled: true }, orderBy: { name: "asc" }, take: 100 })],
+      ["private facility IDs", () => db.correctionsFacility.findMany({ where: { location: { organisationId } }, select: { locationId: true } })]
+    ]) {
+      try { await query(); } catch (error) { throw new Error(`${label}: ${error instanceof Error ? error.message : String(error)}`); }
+    }
     const workspace = await api("/api/organisations/workspace", { cookie });
     assert.equal(workspace.status, 200, await workspace.clone().text());
     const data = await workspace.json();
