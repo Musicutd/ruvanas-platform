@@ -57,6 +57,9 @@ test("general programming cannot expose or draft schedules for private Inside fa
       organisationId, name: "Fictional normal shop", slug: `c9-shop-${suffix}`, status: "ACTIVE",
       zones: { create: { name: "Shop floor", slug: "shop-floor", status: "ACTIVE" } }
     }, include: { zones: true } });
+    const sideZone = await db.zone.create({ data: {
+      locationId: normalLocation.id, name: "Shop side room", slug: "shop-side-room", status: "ACTIVE"
+    } });
     const privateFacility = await db.location.create({ data: {
       organisationId, name: "Fictional private facility", slug: `c9-inside-${suffix}`, status: "ACTIVE",
       zones: { create: { name: "Private wing", slug: "private-wing", status: "ACTIVE" } },
@@ -106,7 +109,7 @@ test("general programming cannot expose or draft schedules for private Inside fa
       status: "ACTIVE", musicRightsUse: "CORRECTIONS_RADIO"
     } });
     await db.channelAssignment.create({ data: {
-      channelId: privateChannel.id, zoneId: normalLocation.zones[0].id
+      channelId: privateChannel.id, zoneId: sideZone.id
     } });
     await db.channelAssignment.createMany({ data: [
       { channelId: normalChannel.id, zoneId: normalLocation.zones[0].id },
@@ -149,6 +152,7 @@ test("general programming cannot expose or draft schedules for private Inside fa
     const promotionData = await promotions.json();
     assert.ok(promotionData.targets.some(({ id }) => id === normalLocation.id));
     assert.ok(promotionData.targets.some(({ id }) => id === normalLocation.zones[0].id));
+    assert.ok(promotionData.targets.some(({ id }) => id === sideZone.id));
     assert.ok(!promotionData.targets.some(({ id }) => id === privateFacility.id || id === privateFacility.zones[0].id));
 
     const promotionStart = new Date();
@@ -166,13 +170,16 @@ test("general programming cannot expose or draft schedules for private Inside fa
       const blocked = await api("/api/promotions", { method: "POST", cookie, body: promotionPayload(targetType, targetId) });
       assert.equal(blocked.status, 400, await blocked.clone().text());
     }
-    for (const [targetType, targetId] of [
-      ["LOCATION", normalLocation.id], ["ALL_LOCATIONS", null], ["LOCATION_GROUP", mixedGroup.id], ["CHANNEL", normalChannel.id]
+    for (const [targetType, targetId, expectedZoneIds] of [
+      ["LOCATION", normalLocation.id, [normalLocation.zones[0].id, sideZone.id]],
+      ["ALL_LOCATIONS", null, [normalLocation.zones[0].id, sideZone.id]],
+      ["LOCATION_GROUP", mixedGroup.id, [normalLocation.zones[0].id, sideZone.id]],
+      ["CHANNEL", normalChannel.id, [normalLocation.zones[0].id]]
     ]) {
       const preview = await api("/api/promotions", { method: "POST", cookie, body: promotionPayload(targetType, targetId) });
       assert.equal(preview.status, 200, await preview.clone().text());
       const prepared = await preview.json();
-      assert.deepEqual(prepared.targetZones.map(({ id }) => id), [normalLocation.zones[0].id]);
+      assert.deepEqual(prepared.targetZones.map(({ id }) => id), expectedZoneIds.sort());
     }
     assert.equal(await db.campaign.count({ where: { organisationId } }), 0);
 
