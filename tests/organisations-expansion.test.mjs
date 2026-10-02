@@ -66,6 +66,10 @@ test("ORG.5-ORG.10 reuse shared production, rights, display and branch foundatio
   assert.match(workspaceRoute, /Choose at least one publication surface|validateAnnouncementSurfaces/);
   assert.match(workspaceRoute, /organisationNetworkControlsEnabled/);
   assert.match(dashboard, /dashboard\/digital-signage/);
+  assert.match(dashboard, /action: "CORRECTIONS_FACILITY_CREATED", entityType: "Location"/);
+  assert.match(dashboard, /hasPrivateInsideResources = Boolean\(privateFacility \|\| historicFacilityAudit/);
+  assert.match(dashboard, /NOT EXISTS \(SELECT 1 FROM "AuditLog" a/);
+  assert.match(dashboard, /correctionsFacility: \{ is: null \}/);
   assert.match(schema, /model OrganisationBranchAssignment/);
   assert.match(migration, /Ruvanas Organisations QA/);
   assert.doesNotMatch(schema, /model (Donor|Voter|Election|Payroll|Accounting|MembershipRecord|Employee)/);

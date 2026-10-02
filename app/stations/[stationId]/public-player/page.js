@@ -4,14 +4,16 @@ import { prisma } from "@/lib/prisma";
 import PublicPlayerSettings from "./PublicPlayerSettings";
 import { subscriberProductForStationFamily } from "@/lib/product-access.mjs";
 import { requireSubscriberProduct } from "@/lib/subscriber-product-access";
+import { GENERAL_STATION_MANAGEMENT_WHERE } from "@/lib/general-station-boundary.mjs";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Public player | Ruvanas" };
 
 export default async function PublicPlayerSettingsPage({ params }) {
+  const { stationId } = await params;
   const context = await getActiveOrganisationContext();
   if (!context?.membership) redirect("/login");
-  const station = await prisma.station.findFirst({ where: { id: params.stationId, organisationId: context.membership.organisationId }, select: { id: true, name: true, slug: true, status: true, productFamily: true, publicPlayerEnabled: true, publicPlayerTagline: true, publicPlayerAccent: true, listenerRequestsEnabled: true, listenerRequestInstructions: true, listenerLimit: true } });
+  const station = await prisma.station.findFirst({ where: { id: stationId, organisationId: context.membership.organisationId, ...GENERAL_STATION_MANAGEMENT_WHERE }, select: { id: true, name: true, slug: true, status: true, productFamily: true, publicPlayerEnabled: true, publicPlayerTagline: true, publicPlayerAccent: true, listenerRequestsEnabled: true, listenerRequestInstructions: true, listenerLimit: true } });
   if (!station) notFound();
   if (station.productFamily === "CORRECTIONS") notFound();
   const productKey = subscriberProductForStationFamily(station.productFamily);

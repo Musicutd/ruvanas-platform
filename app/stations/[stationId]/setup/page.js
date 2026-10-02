@@ -4,6 +4,7 @@ import { getActiveOrganisationContext } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import SkipLink from "@/app/components/SkipLink";
 import ContextHelp from "@/app/components/ContextHelp";
+import { GENERAL_STATION_MANAGEMENT_WHERE } from "@/lib/general-station-boundary.mjs";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Station setup status | Ruvanas" };
@@ -13,7 +14,7 @@ export default async function StationSetupPage({ params }) {
   if (!context?.membership) redirect("/login");
   const { stationId } = await params;
   const station = await prisma.station.findFirst({
-    where: { id: stationId, organisationId: context.membership.organisationId },
+    where: { id: stationId, organisationId: context.membership.organisationId, ...GENERAL_STATION_MANAGEMENT_WHERE },
     select: { id: true, name: true, status: true, streamConfig: { select: { id: true } } }
   });
   if (!station) notFound();

@@ -3,12 +3,13 @@ import { prisma } from "@/lib/prisma";
 import { requireOrganisationProductAccess, ORGANISATION_CONTENT_ROLES } from "@/lib/access-control";
 import { LISTENER_REQUEST_STATUSES, safeListenerRequest } from "@/lib/listener-interaction.mjs";
 import { subscriberProductForStationFamily } from "@/lib/product-access.mjs";
+import { GENERAL_STATION_MANAGEMENT_WHERE } from "@/lib/general-station-boundary.mjs";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request, { params }) {
   try {
-    const station = await prisma.station.findUnique({ where: { id: String(params.stationId || "") }, select: { id: true, organisationId: true, productFamily: true } });
+    const station = await prisma.station.findFirst({ where: { id: String(params.stationId || ""), ...GENERAL_STATION_MANAGEMENT_WHERE }, select: { id: true, organisationId: true, productFamily: true } });
     if (!station) return NextResponse.json({ error: "Station not found." }, { status: 404 });
     const access = await requireOrganisationProductAccess(station.organisationId, subscriberProductForStationFamily(station.productFamily), ORGANISATION_CONTENT_ROLES);
     if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });

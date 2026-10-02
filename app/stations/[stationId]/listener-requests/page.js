@@ -5,14 +5,16 @@ import ListenerRequestWorkspace from "./ListenerRequestWorkspace";
 import styles from "./listener-requests.module.css";
 import { subscriberProductForStationFamily } from "@/lib/product-access.mjs";
 import { requireSubscriberProduct } from "@/lib/subscriber-product-access";
+import { GENERAL_STATION_MANAGEMENT_WHERE } from "@/lib/general-station-boundary.mjs";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Listener requests | Ruvanas" };
 
 export default async function ListenerRequestsPage({ params }) {
+  const { stationId } = await params;
   const context = await getActiveOrganisationContext();
   if (!context?.membership) redirect("/login");
-  const station = await prisma.station.findFirst({ where: { id: params.stationId, organisationId: context.membership.organisationId }, select: { id: true, name: true, productFamily: true, listenerRequestsEnabled: true } });
+  const station = await prisma.station.findFirst({ where: { id: stationId, organisationId: context.membership.organisationId, ...GENERAL_STATION_MANAGEMENT_WHERE }, select: { id: true, name: true, productFamily: true, listenerRequestsEnabled: true } });
   if (!station) notFound();
   const productKey = subscriberProductForStationFamily(station.productFamily);
   await requireSubscriberProduct(productKey);

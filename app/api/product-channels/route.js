@@ -12,7 +12,7 @@ async function access(productKey) {
   if (!product) return { error: "Choose Health, Faith or Organisations.", status: 400 };
   const context = await getActiveOrganisationContext({
     subscription: { include: { plan: true, billingContract: true } },
-    stations: { where: { productFamily: product.key }, include: { channels: true }, orderBy: { createdAt: "asc" } }
+    stations: { where: { productFamily: product.key }, select: { id: true, name: true, audiencePolicy: true, status: true }, orderBy: { createdAt: "asc" } }
   });
   if (!context?.membership) return { error: "Sign in and choose your organisation.", status: 401 };
   const entitlements = resolveEntitlements(context.membership.organisation.subscription);
@@ -47,7 +47,7 @@ export async function POST(request) {
       listenerRequestInstructions: product.key === "HEALTH" ? "Share only a song or artist. Do not include medical or patient information." : null,
       listenerLimit: entitlements.listenerLimit, storageLimitGb: entitlements.storageLimitGb, maxBitrateKbps: entitlements.maxBitrateKbps,
       channels: { create: { name, slug: `${slugify(name)}-${Math.random().toString(36).slice(2, 7)}`, status: "ACTIVE", musicRightsUse: product.rightsUse, organisation: { connect: { id: organisation.id } } } }
-    }, include: { channels: true } });
+    }, select: { id: true, name: true, audiencePolicy: true, status: true } });
     await tx.auditLog.create({ data: { organisationId: organisation.id, actorUserId: context.user.id, action: `${product.key}_CHANNEL_CREATED`, entityType: "Station", entityId: created.id, details: { audiencePolicy, planCode: entitlements.planCode } } });
     return created;
   });
