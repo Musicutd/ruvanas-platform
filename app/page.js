@@ -2,6 +2,8 @@ import styles from "./home.module.css";
 import { prisma } from "@/lib/prisma";
 import { registrationProducts, registrationProductsFromDatabasePlans } from "@/lib/registration-experience.mjs";
 import { SELF_SERVICE_REGISTRATION_ENABLED } from "@/lib/registration-availability.mjs";
+import { redirect } from "next/navigation";
+import { isInsideDemoEnvironment } from "@/lib/inside-demo-environment.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -214,6 +216,8 @@ function ArrowIcon() {
 }
 
 export default async function HomePage() {
+  if (isInsideDemoEnvironment()) redirect("/inside-demo");
+
   let approvedProductPlans = registrationProducts();
   try {
     const databasePlans = await prisma.plan.findMany({ where: { publiclyAvailable: true } });

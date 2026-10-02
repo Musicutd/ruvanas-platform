@@ -10,6 +10,8 @@ import {
   SELF_SERVICE_REGISTRATION_MESSAGE
 } from "@/lib/registration-availability.mjs";
 import styles from "./register.module.css";
+import { notFound } from "next/navigation";
+import { isInsideDemoEnvironment } from "@/lib/inside-demo-environment.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +23,8 @@ export const metadata = {
 };
 
 export default async function RegisterPage({ searchParams }) {
+  if (isInsideDemoEnvironment()) notFound();
+
   if (!SELF_SERVICE_REGISTRATION_ENABLED) {
     return (
       <main className={styles.page}>

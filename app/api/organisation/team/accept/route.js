@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { createSession } from "@/lib/auth";
 import { consumeRateLimit, createRateLimitKey } from "@/lib/rate-limit";
 import { getRequestId, securityLog } from "@/lib/security-log";
+import { isInsideDemoEnvironment } from "@/lib/inside-demo-environment.mjs";
 import {
   hashOrganisationInvitationToken,
   isInvitationActive,
@@ -26,6 +27,8 @@ async function loadInvitation(token) {
 }
 
 export async function POST(request) {
+  if (isInsideDemoEnvironment()) return denied(403, "Account invitations are unavailable in this fictional demo.");
+
   try {
     const body = await request.json();
     const action = String(body.action || "INSPECT").trim().toUpperCase();

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { createSession } from "@/lib/auth";
 import { consumeRateLimit, createRateLimitKey } from "@/lib/rate-limit";
+import { isInsideDemoEnvironment } from "@/lib/inside-demo-environment.mjs";
 import {
   SCHOOL_STUDENT_ACCESS_POLICY_VERSION,
   assertSchoolStudentInvitationEligibility,
@@ -16,6 +17,10 @@ const acceptSchema = z.object({
 });
 
 export async function POST(request) {
+  if (isInsideDemoEnvironment()) {
+    return NextResponse.json({ error: "Account invitations are unavailable in this fictional demo." }, { status: 403 });
+  }
+
   const parsed = acceptSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json({ error: "Use the complete invitation link and choose a password of at least 12 characters." }, { status: 400 });
