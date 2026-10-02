@@ -118,7 +118,10 @@ test("existing public listener authority cannot relay a station after it gains p
     await expectDenied(historical);
 
     const facilityStation = await stationWithListener("ONLINE", "facility");
-    await db.channelAssignment.create({ data: { channelId: facilityStation.channel.id, zoneId: location.zones[0].id } });
+    const facilityZone = await db.zone.create({ data: {
+      locationId: location.id, name: "Facility zone", slug: "facility-zone", status: "ACTIVE"
+    } });
+    await db.channelAssignment.create({ data: { channelId: facilityStation.channel.id, zoneId: facilityZone.id } });
     await expectPublicMetadata(facilityStation);
     await db.correctionsFacility.create({ data: { locationId: location.id } });
     await expectDenied(facilityStation);
