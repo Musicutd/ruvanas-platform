@@ -134,7 +134,9 @@ test("general School Studio cannot access or purge supervised Corrections takes"
     const deleted = await deletion;
     const guarded = await concurrentSubmissionGuard;
     assert.equal(guarded.ok, false);
-    assert.match(guarded.error.message, /source recording.*no longer available/i);
+    // The race can be rejected by either the missing/deleted media check or
+    // the AudioTake tombstone check, depending on the serializable retry.
+    assert.match(guarded.error.message, /source.*no longer available/i);
     assert.equal(deleted.status, "ARCHIVED");
     assert.deepEqual(deletedKeys, [normalMedia.storageKey]);
     assert.equal((await db.mediaAsset.findUnique({ where: { id: normalMedia.id } })).status, "DELETED");
