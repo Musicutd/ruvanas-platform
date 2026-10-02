@@ -25,6 +25,7 @@ test("generic rights routes exclude private Inside evidence while retaining ordi
 
   const db = new PrismaClient();
   const suffix = randomUUID();
+  const manifestVersion = suffix.replaceAll("-", "").slice(0, 24);
   let planId;
   try {
     const plan = await db.plan.create({ data: {
@@ -115,7 +116,7 @@ test("generic rights routes exclude private Inside evidence while retaining ordi
       clientEventId: randomUUID(), organisationId: mixed.organisation.id,
       playerId: privatePlayer.id, zoneId: privateFacility.zones[0].id,
       scheduleItemId: randomUUID(), itemType: "MUSIC", trackId: privateLegacyTrack.track.id,
-      mediaAssetId: privateLegacyTrack.media.id, manifestVersion: "c9-ci-private-legacy",
+      mediaAssetId: privateLegacyTrack.media.id, manifestVersion,
       programmingSource: "CORRECTIONS_LOCAL", eventType: "STARTED", occurredAt: new Date(),
       playerName: privatePlayer.name, locationName: privateFacility.name,
       zoneName: privateFacility.zones[0].name, trackTitle: privateLegacyTrack.track.title,
@@ -137,7 +138,7 @@ test("generic rights routes exclude private Inside evidence while retaining ordi
         clientEventId: eventId, organisationId: mixed.organisation.id, playerId: player.id, zoneId: zone.id,
         scheduleItemId: randomUUID(), itemType: "MUSIC", trackId: asset.track.id, mediaAssetId: asset.media.id,
         channelId,
-        manifestVersion: "c9-ci", programmingSource, eventType: "COMPLETED", occurredAt,
+        manifestVersion, programmingSource, eventType: "COMPLETED", occurredAt,
         positionSeconds: 180, playerName: player.name, locationName: location.name, zoneName: zone.name,
         trackTitle: asset.track.title, trackArtist: asset.track.artist
       } });
