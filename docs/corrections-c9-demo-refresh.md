@@ -7,17 +7,20 @@ This branch is based on C9 commit `696b70370e6e3746bc5a082f4071f438ab7677bf`. It
 - The tour at `/inside-demo` exists only when `RUVANAS_ENVIRONMENT=DEMO` exactly. Its three facility labels and submission-review transitions are synthetic browser state; they do not call an API, persist a record, or play audio.
 - In DEMO mode, `/` redirects to the tour. The four public registration/invitation pages return 404, and their account-creation endpoints return 403 before parsing or database access. This includes the local registration-test bypass.
 - Existing owner sign-in and privileged administration remain available for **synthetic-only** private checks. The demo database must remain separate from production and contain no real customer or facility information.
+- The existing demo service's startup command expects `scripts/seed-inside-demo.mjs`. This branch carries that seed and its rollback-only, 23-field inventory validator from the currently deployed demo branch. The seed refuses to run unless the environment marker, Render service name, database host/name and separate strong demo password all match its named demo resources. A rotated demo password now replaces the old hash on the next guarded start.
 - Outside DEMO mode, the existing registration, invitation, Studio, product-access, and other six-product behavior is unchanged by these guards. The Inside tour returns 404.
 - The public `ruvanas.com` Coming Soon page and production Render service are outside this branch. No production migration or deployment is part of this work.
 
 ## Local evidence, 2 October 2026
 
 - `node --test tests/inside-demo-registration-boundary.test.mjs tests/inside-demo-tour.test.mjs tests/self-service-registration-closed.test.mjs`: 8 passed.
-- `npm test`: 1,018 passed, 8 skipped, 0 failed after Prisma Client generation.
-- `npm run ci:static`: passed, 1,488 files checked.
+- `npm test`: 1,020 passed, 8 skipped, 0 failed after Prisma Client generation, including the seed-boundary tests.
+- `npm run ci:static`: passed, 1,492 files checked.
 - `npm run build`: passed; it emitted the existing Studio CSS warning and expected missing-local-`DATABASE_URL` messages while generating pages without a database.
 - With the built app started locally in DEMO mode, GET `/` redirected to `/inside-demo`; GET `/inside-demo` returned 200; the four registration/invitation pages returned 404; and same-origin POSTs to the four account-creation endpoints returned the DEMO-specific 403 response. These tests used no database.
 - In a separate local run with `RUVANAS_ENVIRONMENT=LOCAL`, the tour returned 404 and the four existing registration/invitation pages remained reachable (200). This checks that the new page guards are DEMO-only, not that public account creation is enabled outside DEMO.
+- The ported seed and validator passed syntax checks; database-free focused tests passed, and an incorrect service name was rejected before any database connection. The validator has **not** run against the demo database at this branch head; its rollback behavior requires the isolated demo environment.
+- A read-only Render dashboard inspection on 2 October showed the existing demo web service on the Free plan, tracking `codex/ruvanas-inside-demo-20260930` at deployed `b65cfab`, with Auto-Deploy and PR previews Off. The production `ruvanas-platform` service still showed deployed `bff07f3`, Auto-Deploy Off, PR previews Off, and Maintenance Mode Enabled. These are time-bound observations, not future guarantees.
 
 ## Before any demo-service update
 
