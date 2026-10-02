@@ -156,6 +156,11 @@ jobs:
           INTEGRATION_BASE_URL: http://127.0.0.1:3100
         run: node --test tests/integration/corrections-c9-school-studio-boundary.test.mjs
 
+      - name: Validate C9 School editorial content excludes historical private Corrections links
+        env:
+          INTEGRATION_BASE_URL: http://127.0.0.1:3100
+        run: node --test tests/integration/corrections-c9-school-content-boundary.test.mjs
+
       - name: Show application logs after failure
         if: failure()
         run: cat /tmp/ruvanas-next.log || true

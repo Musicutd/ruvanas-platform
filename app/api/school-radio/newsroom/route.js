@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { ORGANISATION_CONTENT_ROLES, ORGANISATION_MANAGER_ROLES, isOrganisationRoleAllowed } from "@/lib/permissions.mjs";
 import { requireActiveSchoolRadio } from "@/lib/school-radio-access";
 import { NEWSROOM_PRODUCTS, normalizeNewsSources, transitionNewsStory } from "@/lib/newsroom.mjs";
+import { GENERAL_STUDIO_MEDIA_ASSET_WHERE } from "@/lib/studio-general-asset-boundary.mjs";
+import { generalSchoolNewsStoryWhere, generalSchoolRundownWhere } from "@/lib/school-general-content-boundary.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -28,10 +30,10 @@ export async function GET() {
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const organisationId = access.organisation.id;
   const [stories, programmes, episodes, interviewAssets] = await Promise.all([
-    prisma.schoolNewsStory.findMany({ where: { organisationId, product: NEWSROOM_PRODUCTS.SCHOOL_RADIO, status: { not: "ARCHIVED" } }, orderBy: [{ deadline: "asc" }, { updatedAt: "desc" }], take: 200, include }),
+    prisma.schoolNewsStory.findMany({ where: { organisationId, product: NEWSROOM_PRODUCTS.SCHOOL_RADIO, status: { not: "ARCHIVED" }, ...generalSchoolNewsStoryWhere(organisationId) }, orderBy: [{ deadline: "asc" }, { updatedAt: "desc" }], take: 200, include }),
     prisma.schoolProgramme.findMany({ where: { organisationId, status: "ACTIVE" }, orderBy: { title: "asc" }, select: { id: true, title: true } }),
-    prisma.schoolEpisode.findMany({ where: { organisationId, status: { not: "ARCHIVED" } }, orderBy: { createdAt: "desc" }, take: 100, select: { id: true, title: true, programmeId: true } }),
-    prisma.mediaAsset.findMany({ where: { organisationId, status: "READY", mimeType: { startsWith: "audio/" } }, orderBy: { createdAt: "desc" }, take: 150, select: { id: true, name: true, originalName: true, durationSeconds: true } })
+    prisma.schoolEpisode.findMany({ where: { organisationId, status: { not: "ARCHIVED" }, OR: [{ rundown: { is: null } }, { rundown: { is: generalSchoolRundownWhere(organisationId) } }] }, orderBy: { createdAt: "desc" }, take: 100, select: { id: true, title: true, programmeId: true } }),
+    prisma.mediaAsset.findMany({ where: { organisationId, status: "READY", mimeType: { startsWith: "audio/" }, ...GENERAL_STUDIO_MEDIA_ASSET_WHERE }, orderBy: { createdAt: "desc" }, take: 150, select: { id: true, name: true, originalName: true, durationSeconds: true } })
   ]);
   return NextResponse.json({ stories, programmes, episodes, interviewAssets, permissions: { canModerate: isOrganisationRoleAllowed(access.membership.role, ORGANISATION_MANAGER_ROLES) }, templates: ["NEWS_BULLETIN", "INTERVIEW", "SPORTS_RESULT", "SCHOOL_NOTICE", "FEATURE_STORY"] });
 }
@@ -47,14 +49,14 @@ export async function POST(request) {
     let result;
     if (data.action === "CREATE") {
       if (data.programmeId && !await prisma.schoolProgramme.findFirst({ where: { id: data.programmeId, organisationId, status: "ACTIVE" }, select: { id: true } })) throw new Error("Choose an active programme from this school.");
-      if (data.episodeId && !await prisma.schoolEpisode.findFirst({ where: { id: data.episodeId, organisationId }, select: { id: true } })) throw new Error("Choose an episode from this school.");
+      if (data.episodeId && !await prisma.schoolEpisode.findFirst({ where: { id: data.episodeId, organisationId, OR: [{ rundown: { is: null } }, { rundown: { is: generalSchoolRundownWhere(organisationId) } }] }, select: { id: true } })) throw new Error("Choose an episode from this school.");
       result = await prisma.schoolNewsStory.create({ data: { organisationId, product: NEWSROOM_PRODUCTS.SCHOOL_RADIO, programmeId: data.programmeId || null, episodeId: data.episodeId || null, title: data.title, type: data.type, pitch: data.pitch || null, deadline: data.deadline ? new Date(data.deadline) : null, createdByUserId: access.user.id } });
       await prisma.newsStoryDecision.create({ data: { organisationId, storyId: result.id, action: "CREATE", fromStatus: result.status, toStatus: result.status, actorUserId: access.user.id } });
     } else {
-      const story = await prisma.schoolNewsStory.findFirst({ where: { id: data.storyId, organisationId, product: NEWSROOM_PRODUCTS.SCHOOL_RADIO } });
+      const story = await prisma.schoolNewsStory.findFirst({ where: { id: data.storyId, organisationId, product: NEWSROOM_PRODUCTS.SCHOOL_RADIO, ...generalSchoolNewsStoryWhere(organisationId) } });
       if (!story) return NextResponse.json({ error: "The newsroom story was not found." }, { status: 404 });
       if (data.action === "SAVE") {
-        if (data.interviewMediaAssetId && !await prisma.mediaAsset.findFirst({ where: { id: data.interviewMediaAssetId, organisationId, status: "READY", mimeType: { startsWith: "audio/" } }, select: { id: true } })) throw new Error("Choose an available interview recording from this school.");
+        if (data.interviewMediaAssetId && !await prisma.mediaAsset.findFirst({ where: { id: data.interviewMediaAssetId, organisationId, status: "READY", mimeType: { startsWith: "audio/" }, ...GENERAL_STUDIO_MEDIA_ASSET_WHERE }, select: { id: true } })) throw new Error("Choose an available interview recording from this school.");
         const sources = normalizeNewsSources(data.sources);
         result = await prisma.$transaction(async (tx) => {
           const latest = await tx.newsStoryRevision.findFirst({ where: { storyId: story.id }, orderBy: { revision: "desc" }, select: { revision: true } });
