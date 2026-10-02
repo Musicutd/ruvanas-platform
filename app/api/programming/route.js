@@ -8,6 +8,7 @@ import { musicModeIsPlayable, playableLiveMusicModeEntries } from "@/lib/music-m
 import { cataloguePlaybackTrackInclude } from "@/lib/catalogue-playback-include";
 import { rightsUseForChannel } from "@/lib/subscriber-playlist-service.mjs";
 import { assertCorrectionsSchedulingAllowed } from "@/lib/corrections-scheduling-lock.mjs";
+import { GENERAL_STUDIO_CHANNEL_WHERE } from "@/lib/studio-general-output-boundary.mjs";
 import {
   canManageSubscriberProgramming,
   previousProgrammingDate,
@@ -124,17 +125,10 @@ async function loadProgramming(organisationId, role, entitlements) {
       take: 100
     }),
     prisma.channel.findMany({
-      where: { organisationId, status: "ACTIVE", AND: [
-        { OR: [
-          { station: { is: null } },
-          { station: { productFamily: null } },
-          { station: { productFamily: { not: "CORRECTIONS" } } }
-        ] },
-        { OR: [
-          { musicRightsUse: null },
-          { musicRightsUse: { not: "CORRECTIONS_RADIO" } }
-        ] }
-      ] },
+      // A legacy ordinary-rights channel can still be assigned to a private
+      // Corrections facility. Match the shared Studio/public boundary even
+      // when the visible target itself is a normal retail location.
+      where: { organisationId, status: "ACTIVE", ...GENERAL_STUDIO_CHANNEL_WHERE },
       include: {
         station: { select: { id: true, name: true, status: true, productFamily: true } },
         zoneAssignments: {

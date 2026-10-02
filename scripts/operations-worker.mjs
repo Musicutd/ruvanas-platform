@@ -58,9 +58,9 @@ while (!stopping) {
     const studioEntitlements = await reconcileStudioProEntitlements(prisma);
     if (studioEntitlements.playoutFallbacks > 0 || studioEntitlements.broadcastsEnded > 0) writeLog("warn", "studio_pro_entitlements_reconciled", studioEntitlements);
     const studioBroadcast = await scanStudioBroadcastConnections(prisma);
-    if (studioBroadcast.scanned > 0) writeLog(studioBroadcast.reconnecting > 0 ? "warn" : "info", "studio_broadcast_destinations_scanned", studioBroadcast);
+    if (studioBroadcast.scanned > 0) writeLog(studioBroadcast.reconnecting > 0 || studioBroadcast.blocked > 0 || studioBroadcast.failed > 0 ? "warn" : "info", "studio_broadcast_destinations_scanned", studioBroadcast);
     const studioMetadata = await refreshStudioBroadcastMetadata(prisma);
-    if (studioMetadata.updated > 0) writeLog("info", "studio_broadcast_metadata_refreshed", studioMetadata);
+    if (studioMetadata.updated > 0 || studioMetadata.blocked > 0 || studioMetadata.metadataFailures > 0) writeLog(studioMetadata.blocked > 0 || studioMetadata.metadataFailures > 0 ? "warn" : "info", "studio_broadcast_metadata_refreshed", studioMetadata);
     const listenerAnalytics = await refreshPendingListenerAnalytics(prisma);
     if (listenerAnalytics.processed > 0) writeLog("info", "listener_analytics_aggregated", listenerAnalytics);
     const publicListeners = await expirePublicListenerLeases(prisma);

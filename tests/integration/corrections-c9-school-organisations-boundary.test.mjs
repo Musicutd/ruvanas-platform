@@ -161,6 +161,26 @@ test("School and Organisations cannot expose or target private Inside facilities
       organisationId, channelId: privateRightsChannel.id, targetType: "ORGANISATIONS_CHANNEL",
       rightsUse: "CORRECTIONS_RADIO"
     } });
+    const facilityAssignedStation = await db.station.create({ data: {
+      organisationId, productFamily: "ORGANISATIONS", name: "Fictional legacy assigned station",
+      slug: `c9-legacy-assigned-station-${suffix}`, status: "ACTIVE",
+      listenerLimit: 10, storageLimitGb: 1, maxBitrateKbps: 128
+    } });
+    const facilityAssignedChannel = await db.channel.create({ data: {
+      organisationId, stationId: facilityAssignedStation.id, musicRightsUse: "ORGANISATIONS_RADIO",
+      name: "Fictional legacy assigned channel", slug: `c9-legacy-assigned-channel-${suffix}`, status: "ACTIVE"
+    } });
+    const facilityAssignedPolicy = await db.autoDjPolicy.create({ data: {
+      organisationId, channelId: facilityAssignedChannel.id, targetType: "ORGANISATIONS_CHANNEL",
+      rightsUse: "ORGANISATIONS_RADIO"
+    } });
+    // An expired assignment still proves that this otherwise ordinary-rights
+    // station carried private facility audio and cannot enter the public UI.
+    await db.channelAssignment.create({ data: {
+      channelId: facilityAssignedChannel.id, zoneId: privateFacility.zones[0].id,
+      activeFrom: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000),
+      activeTo: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000)
+    } });
     const privateStation = await db.station.create({ data: {
       organisationId, productFamily: "CORRECTIONS", name: "Fictional private station",
       slug: `c9-private-station-${suffix}`, status: "ACTIVE",
@@ -217,6 +237,11 @@ test("School and Organisations cannot expose or target private Inside facilities
       surfaces: ["WEB_PLAYER"], targetLocationIds: [],
       targetStationIds: [legacyPrivateStation.id], createdByUserId: userId
     } });
+    const facilityAssignedAnnouncement = await db.organisationAnnouncement.create({ data: {
+      organisationId, title: "Fictional facility-assigned announcement", body: "Private assigned station body",
+      surfaces: ["WEB_PLAYER"], targetLocationIds: [],
+      targetStationIds: [facilityAssignedStation.id], createdByUserId: userId
+    } });
     const missingLocationId = randomUUID();
     const missingStationId = randomUUID();
     const stalePrivateAnnouncement = await db.organisationAnnouncement.create({ data: {
@@ -259,6 +284,11 @@ test("School and Organisations cannot expose or target private Inside facilities
       organisationId, title: "Fictional legacy private event", description: "Private legacy event details",
       stationId: legacyPrivateStation.id, ...eventWindow, createdByUserId: userId
     } });
+    const facilityAssignedEvent = await db.organisationEvent.create({ data: {
+      organisationId, title: "Fictional facility-assigned event", description: "Private assigned event details",
+      stationId: facilityAssignedStation.id, channelId: facilityAssignedChannel.id,
+      fallbackAutoDjPolicyId: facilityAssignedPolicy.id, ...eventWindow, createdByUserId: userId
+    } });
     const publicEvent = await db.organisationEvent.create({ data: {
       organisationId, title: "Fictional public organisation event", stationId: organisationsStation.id,
       channelId: organisationsChannel.id, fallbackAutoDjPolicyId: organisationsAutoDj.id,
@@ -299,6 +329,8 @@ test("School and Organisations cannot expose or target private Inside facilities
     assert.ok(!JSON.stringify(data).includes(privateStationAnnouncement.body));
     assert.ok(!data.announcements.some(({ id }) => id === legacyStationAnnouncement.id));
     assert.ok(!JSON.stringify(data).includes(legacyStationAnnouncement.body));
+    assert.ok(!data.announcements.some(({ id }) => id === facilityAssignedAnnouncement.id));
+    assert.ok(!JSON.stringify(data).includes(facilityAssignedAnnouncement.body));
     for (const hidden of [stalePrivateAnnouncement, staleStationAnnouncement, retiredFacilityAnnouncement]) {
       assert.ok(!data.announcements.some(({ id }) => id === hidden.id));
       assert.ok(!JSON.stringify(data).includes(hidden.body));
@@ -307,10 +339,11 @@ test("School and Organisations cannot expose or target private Inside facilities
     assert.deepEqual(data.announcements.find(({ id }) => id === mixedStaleAnnouncement.id)?.targetStationIds, [organisationsStation.id]);
     assert.ok(!data.locations.some(({ id }) => id === retiredFacilityLocation.id));
     assert.deepEqual(data.announcements.find(({ id }) => id === mixedStationAnnouncement.id)?.targetStationIds, [organisationsStation.id]);
-    assert.ok(!data.events.some(({ id }) => id === privateEvent.id || id === privateFallbackEvent.id || id === legacyPrivateEvent.id));
+    assert.ok(!data.events.some(({ id }) => id === privateEvent.id || id === privateFallbackEvent.id || id === legacyPrivateEvent.id || id === facilityAssignedEvent.id));
     assert.ok(!JSON.stringify(data).includes(privateEvent.description));
     assert.ok(!JSON.stringify(data).includes(privateFallbackEvent.description));
     assert.ok(!JSON.stringify(data).includes(legacyPrivateEvent.description));
+    assert.ok(!JSON.stringify(data).includes(facilityAssignedEvent.description));
     assert.ok(data.events.some(({ id }) => id === publicEvent.id));
     assert.ok(data.events.some(({ id }) => id === untargetedEvent.id));
     for (const hidden of [staleStationEvent, staleChannelEvent, stalePolicyEvent]) {
@@ -319,9 +352,12 @@ test("School and Organisations cannot expose or target private Inside facilities
     }
     assert.deepEqual(data.autoDjPolicies.find(({ id }) => id === organisationsAutoDj.id)?.name, organisationsChannel.name);
     assert.ok(!data.stations.some(({ id }) => id === mixedRightsStation.id));
+    assert.ok(!data.stations.some(({ id }) => id === facilityAssignedStation.id));
     assert.ok(data.stations.some(({ id }) => id === organisationsStation.id));
     assert.ok(!data.autoDjPolicies.some(({ id }) => id === privateRightsPolicy.id));
+    assert.ok(!data.autoDjPolicies.some(({ id }) => id === facilityAssignedPolicy.id));
     assert.ok(!JSON.stringify(data).includes(privateRightsChannel.name));
+    assert.ok(!JSON.stringify(data).includes(facilityAssignedChannel.name));
     const channelList = await api("/api/product-channels?product=ORGANISATIONS", { cookie });
     assert.equal(channelList.status, 200, await channelList.clone().text());
     assert.ok(!JSON.stringify(await channelList.json()).includes(privateRightsChannel.name));
@@ -340,7 +376,7 @@ test("School and Organisations cannot expose or target private Inside facilities
     for (const suffixPath of generalStationPages) {
       const normalPage = await api(`/stations/${organisationsStation.id}${suffixPath}`, { cookie });
       assert.equal(normalPage.status, 200, `Ordinary Organisations station page ${suffixPath} should remain available`);
-      for (const privateId of [privateStation.id, legacyPrivateStation.id, mixedRightsStation.id]) {
+      for (const privateId of [privateStation.id, legacyPrivateStation.id, mixedRightsStation.id, facilityAssignedStation.id]) {
         const privatePage = await api(`/stations/${privateId}${suffixPath}`, { cookie });
         assert.equal(privatePage.status, 404, `Private station page ${suffixPath} must not be available`);
       }
@@ -369,12 +405,26 @@ test("School and Organisations cannot expose or target private Inside facilities
     assert.equal(assignRetiredLocation.status, 409, await assignRetiredLocation.clone().text());
     const privateStationTarget = await action({ action: "CREATE_ANNOUNCEMENT", title: "Fictional private station target", body: "Fictional body", surfaces: ["WEB_PLAYER"], targetStationIds: [mixedRightsStation.id] });
     assert.equal(privateStationTarget.status, 409, await privateStationTarget.clone().text());
+    const assignedStationTarget = await action({ action: "CREATE_ANNOUNCEMENT", title: "Fictional assigned station target", body: "Fictional body", surfaces: ["WEB_PLAYER"], targetStationIds: [facilityAssignedStation.id] });
+    assert.equal(assignedStationTarget.status, 409, await assignedStationTarget.clone().text());
+    const archiveAssignedStation = await action({ action: "ARCHIVE_ANNOUNCEMENT", announcementId: facilityAssignedAnnouncement.id });
+    assert.equal(archiveAssignedStation.status, 409, await archiveAssignedStation.clone().text());
     const privateChannelEvent = await action({ action: "CREATE_EVENT", title: "Fictional blocked event", ...eventWindow, channelId: privateRightsChannel.id });
     assert.equal(privateChannelEvent.status, 409, await privateChannelEvent.clone().text());
     const privateStationEvent = await action({ action: "CREATE_EVENT", title: "Fictional blocked station event", ...eventWindow, stationId: mixedRightsStation.id });
     assert.equal(privateStationEvent.status, 409, await privateStationEvent.clone().text());
     const privateFallbackEventAttempt = await action({ action: "CREATE_EVENT", title: "Fictional blocked fallback event", ...eventWindow, fallbackAutoDjPolicyId: privateRightsPolicy.id });
     assert.equal(privateFallbackEventAttempt.status, 409, await privateFallbackEventAttempt.clone().text());
+    for (const target of [
+      { stationId: facilityAssignedStation.id },
+      { channelId: facilityAssignedChannel.id },
+      { fallbackAutoDjPolicyId: facilityAssignedPolicy.id }
+    ]) {
+      const assignedEvent = await action({ action: "CREATE_EVENT", title: "Fictional blocked facility event", ...eventWindow, ...target });
+      assert.equal(assignedEvent.status, 409, await assignedEvent.clone().text());
+    }
+    const activateAssignedEvent = await action({ action: "TRANSITION_EVENT", eventId: facilityAssignedEvent.id, status: "READY" });
+    assert.equal(activateAssignedEvent.status, 409, await activateAssignedEvent.clone().text());
     const publicAnnouncement = await action({ action: "CREATE_ANNOUNCEMENT", title: "Fictional school venue notice", body: "Fictional body", surfaces: ["WEB_PLAYER"], targetLocationIds: [publicLocation.id] });
     assert.equal(publicAnnouncement.status, 201, await publicAnnouncement.clone().text());
     const publicAssignment = await action({ action: "ASSIGN_BRANCH", organisationMemberId: member.id, locationId: publicLocation.id, permission: "MANAGER" });

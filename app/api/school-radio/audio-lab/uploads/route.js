@@ -7,6 +7,7 @@ import { getR2Storage } from "@/lib/r2";
 import { ORGANISATION_CONTENT_ROLES } from "@/lib/permissions.mjs";
 import { requireActiveStudio } from "@/lib/studio-access";
 import { AUDIO_LAB_UPLOAD_TTL_MS, validateAudioLabUpload } from "@/lib/audio-lab.mjs";
+import { GENERAL_STUDIO_AUDIO_PROJECT_WHERE, assertGeneralStudioAudioProject } from "@/lib/studio-general-asset-boundary.mjs";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -28,7 +29,7 @@ export async function POST(request) {
   let quarantineKey;
   try {
     const settings = validateAudioLabUpload(parsed.data);
-    const project = await prisma.audioProject.findFirst({ where: { id: parsed.data.projectId, organisationId: access.organisation.id, status: { in: ["DRAFT", "RECORDING", "READY"] } }, select: { id: true } });
+    const project = await prisma.audioProject.findFirst({ where: { id: parsed.data.projectId, organisationId: access.organisation.id, status: { in: ["DRAFT", "RECORDING", "READY"] }, ...GENERAL_STUDIO_AUDIO_PROJECT_WHERE }, select: { id: true } });
     if (!project) return NextResponse.json({ error: "The AudioLab project was not found or cannot accept another take." }, { status: 404 });
 
     const storageLimitBytes = BigInt(access.entitlements.storageLimitGb) * 1024n * 1024n * 1024n;
@@ -51,6 +52,7 @@ export async function POST(request) {
     if (!upload.UploadId) throw new Error("Storage did not create a resumable upload session.");
 
     const session = await prisma.$transaction(async (tx) => {
+      await assertGeneralStudioAudioProject(tx, access.organisation.id, project.id);
       const created = await tx.schoolAudioUploadSession.create({
         data: {
           organisationId: access.organisation.id,
@@ -77,7 +79,7 @@ export async function POST(request) {
         await r2.client.send(new AbortMultipartUploadCommand({ Bucket: r2.bucketName, Key: quarantineKey, UploadId: upload.UploadId }));
       } catch {}
     }
-    return NextResponse.json({ error: error instanceof Error ? error.message : "The resumable upload could not be started." }, { status: 500 });
+    return NextResponse.json({ error: error instanceof Error ? error.message : "The resumable upload could not be started." }, { status: error?.status || 500 });
   }
 }
 

@@ -12,6 +12,7 @@ import {
   studioHandoffKey,
   studioWorkflowPath
 } from "@/lib/studio-product-handoff.mjs";
+import { GENERAL_STUDIO_AUDIO_PROJECT_WHERE, assertGeneralStudioAudioProject, generalStudioUsableMediaAssetIds } from "@/lib/studio-general-asset-boundary.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -33,14 +34,21 @@ async function requireActiveStudio() {
 const renderInclude = {
   project: { select: { id: true, title: true, episodeId: true, currentVersion: true } },
   outputMediaAsset: { select: { id: true, name: true, status: true, durationSeconds: true } },
-  outputPromoVersion: { select: { id: true, version: true, status: true, qcStatus: true, promoAssetId: true } }
+  outputPromoVersion: { select: { id: true, version: true, status: true, qcStatus: true, promoAssetId: true, mediaAssetId: true } }
 };
 
 async function findRender(renderId, organisationId) {
   return prisma.audioRender.findFirst({
-    where: { id: renderId, organisationId, project: { type: "MULTITRACK", status: { not: "ARCHIVED" } } },
+    where: { id: renderId, organisationId, project: { is: { type: "MULTITRACK", status: { not: "ARCHIVED" }, ...GENERAL_STUDIO_AUDIO_PROJECT_WHERE } } },
     include: renderInclude
   });
+}
+
+async function assertGeneralHandoffOutput(database, organisationId, render) {
+  await assertGeneralStudioAudioProject(database, organisationId, render.projectId);
+  const ids = [...new Set([render.outputMediaAsset?.id, render.outputPromoVersion?.mediaAssetId].filter(Boolean))];
+  const usable = await generalStudioUsableMediaAssetIds(database, organisationId, ids);
+  if (usable.size !== ids.length) throw Object.assign(new Error("This Studio output is unavailable in general Studio."), { status: 403 });
 }
 
 function publicHandoff(handoff) {
@@ -60,6 +68,11 @@ export async function GET(request) {
   if (!renderId) return NextResponse.json({ error: "Choose a Studio output." }, { status: 400 });
   const render = await findRender(renderId, access.organisation.id);
   if (!render) return NextResponse.json({ error: "The Studio output was not found." }, { status: 404 });
+  try {
+    await assertGeneralHandoffOutput(prisma, access.organisation.id, render);
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "This Studio output is unavailable." }, { status: error?.status || 403 });
+  }
   const handoffs = await prisma.studioProductHandoff.findMany({ where: { renderId, organisationId: access.organisation.id }, orderBy: { createdAt: "asc" } });
   return NextResponse.json({
     destinations: studioDestinationAvailability({ entitlements: access.entitlements, project: render.project }),
@@ -77,6 +90,7 @@ export async function POST(request) {
 
   try {
     const render = assertStudioRenderReady(await findRender(renderId, access.organisation.id));
+    await assertGeneralHandoffOutput(prisma, access.organisation.id, render);
     if (!access.entitlements[definition.entitlement]) return NextResponse.json({ error: `${definition.label} is not included in this organisation's current plan.` }, { status: 403 });
     const targetEpisodeId = destination === "SCHOOL_EPISODE" ? render.project.episodeId : null;
     if (destination === "SCHOOL_EPISODE" && !targetEpisodeId) throw new Error("Link this Studio project to a School episode first.");
@@ -92,6 +106,7 @@ export async function POST(request) {
     });
 
     const handoff = await prisma.$transaction(async (tx) => {
+      await assertGeneralHandoffOutput(tx, access.organisation.id, render);
       let schoolSubmission = null;
       if (destination === "SCHOOL_EPISODE") {
         const episode = await tx.schoolEpisode.findFirst({
@@ -151,10 +166,15 @@ export async function POST(request) {
   } catch (error) {
     if (error?.code === "P2002") {
       const render = await findRender(renderId, access.organisation.id);
-      const destinationKey = studioHandoffKey({ renderId, destination, targetEpisodeId: destination === "SCHOOL_EPISODE" ? render?.project?.episodeId : null });
-      const existing = await prisma.studioProductHandoff.findUnique({ where: { destinationKey } });
-      if (existing) return NextResponse.json({ handoff: publicHandoff(existing), reused: true });
+      if (render) {
+        try {
+          await assertGeneralHandoffOutput(prisma, access.organisation.id, render);
+          const destinationKey = studioHandoffKey({ renderId, destination, targetEpisodeId: destination === "SCHOOL_EPISODE" ? render.project.episodeId : null });
+          const existing = await prisma.studioProductHandoff.findUnique({ where: { destinationKey } });
+          if (existing) return NextResponse.json({ handoff: publicHandoff(existing), reused: true });
+        } catch {}
+      }
     }
-    return NextResponse.json({ error: error instanceof Error ? error.message : "The Studio handoff could not be created." }, { status: 409 });
+    return NextResponse.json({ error: error instanceof Error ? error.message : "The Studio handoff could not be created." }, { status: error?.status || 409 });
   }
 }

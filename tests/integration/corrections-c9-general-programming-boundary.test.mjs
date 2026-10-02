@@ -133,10 +133,10 @@ test("general programming cannot expose or draft schedules for private Inside fa
     assert.ok(!retail.targets.some(({ id }) => id === privateFacility.id || id === privateFacility.zones[0].id));
     assert.ok(retail.schedules.some(({ id }) => id === normalSchedule.id));
     assert.ok(!retail.schedules.some(({ id }) => id === privateSchedule.id));
-    assert.ok(retail.channels.some(({ id }) => id === normalChannel.id));
+    assert.ok(!retail.channels.some(({ id }) => id === normalChannel.id), "a channel shared with a private facility is unavailable in general programming");
     assert.ok(!retail.channels.some(({ id }) => id === privateChannel.id));
     assert.ok(!retail.channels.some(({ id }) => id === privateRightsChannel.id));
-    assert.ok(retail.targets.every(({ channelIds }) => !channelIds.includes(privateChannel.id) && !channelIds.includes(privateRightsChannel.id)));
+    assert.ok(retail.targets.every(({ channelIds }) => !channelIds.includes(normalChannel.id) && !channelIds.includes(privateChannel.id) && !channelIds.includes(privateRightsChannel.id)));
 
     const payload = (targetType, targetId) => ({
       targetType, targetId, name: "Fictional draft", publish: false,

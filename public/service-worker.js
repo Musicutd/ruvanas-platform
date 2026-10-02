@@ -1,6 +1,7 @@
-const CACHE_VERSION = "stage-19-18-v1";
+// Purge earlier station and podcast page snapshots. A previously public
+// podcast may later use a private Corrections station or supervised audio.
+const CACHE_VERSION = "stage-19-18-v3";
 const SHELL_CACHE = `ruvanas-pwa-shell-${CACHE_VERSION}`;
-const PAGE_CACHE = `ruvanas-pwa-pages-${CACHE_VERSION}`;
 const OFFLINE_URL = "/offline";
 const APP_ICON = "/icons/ruvanas-app.svg";
 
@@ -10,18 +11,10 @@ self.addEventListener("install", (event) => {
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(Promise.all([
-    caches.keys().then((keys) => Promise.all(keys.filter((key) => key.startsWith("ruvanas-pwa-") && ![SHELL_CACHE, PAGE_CACHE].includes(key)).map((key) => caches.delete(key)))),
+    caches.keys().then((keys) => Promise.all(keys.filter((key) => key.startsWith("ruvanas-pwa-") && key !== SHELL_CACHE).map((key) => caches.delete(key)))),
     self.clients.claim()
   ]));
 });
-
-function publicPage(pathname) {
-  return /^\/(radio|podcasts)\/[^/]+/.test(pathname);
-}
-
-function pageCacheKey(url) {
-  return new Request(`${url.origin}${url.pathname}`, { method: "GET" });
-}
 
 self.addEventListener("fetch", (event) => {
   const request = event.request;
@@ -30,19 +23,9 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin || url.pathname.startsWith("/api/") || ["audio", "video"].includes(request.destination)) return;
 
   if (request.mode === "navigate") {
-    event.respondWith(fetch(request).then(async (response) => {
-      if (response.ok && publicPage(url.pathname) && (response.headers.get("content-type") || "").includes("text/html")) {
-        const cache = await caches.open(PAGE_CACHE);
-        await cache.put(pageCacheKey(url), response.clone());
-      }
-      return response;
-    }).catch(async () => {
-      if (publicPage(url.pathname)) {
-        const cached = await caches.match(pageCacheKey(url));
-        if (cached) return cached;
-      }
-      return caches.match(OFFLINE_URL);
-    }));
+    // HTML is never persisted: revocation/reclassification must not leave
+    // a readable offline copy of private station or podcast metadata.
+    event.respondWith(fetch(request).catch(() => caches.match(OFFLINE_URL)));
     return;
   }
 

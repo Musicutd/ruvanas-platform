@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getActiveOrganisationContext } from "@/lib/auth";
 import { resolveEntitlements } from "@/lib/entitlements.mjs";
+import { GENERAL_STATION_MANAGEMENT_WHERE } from "@/lib/general-station-boundary.mjs";
 import { prisma } from "@/lib/prisma";
 import { ORGANISATION_CONTENT_ROLES, ORGANISATION_MANAGER_ROLES, isOrganisationRoleAllowed } from "@/lib/permissions.mjs";
 import {
@@ -18,6 +19,12 @@ export const dynamic = "force-dynamic";
 
 const id = z.string().cuid();
 const publicChannelRights = { OR: [{ musicRightsUse: null }, { musicRightsUse: { not: "CORRECTIONS_RADIO" } }] };
+// A legacy ordinary-rights channel may still be assigned to a private Inside
+// facility. Keep the entire station out of this generic workspace in that case.
+const publicOrganisationsStationWhere = {
+  productFamily: "ORGANISATIONS",
+  channels: GENERAL_STATION_MANAGEMENT_WHERE.channels
+};
 const schema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("UPDATE_PROFILE"), template: z.enum(Object.keys(ORGANISATION_TEMPLATES)), locale: z.string().trim().min(2).max(20), timezone: z.string().trim().min(1).max(80), disclosureText: z.string().trim().max(2000).optional().nullable() }),
   z.object({ action: z.literal("CREATE_ANNOUNCEMENT"), title: z.string().trim().min(2).max(180), body: z.string().trim().min(2).max(8000), surfaces: z.array(z.enum(ORGANISATION_ANNOUNCEMENT_SURFACES)).min(1).max(5), targetLocationIds: z.array(id).max(200).default([]), targetStationIds: z.array(id).max(200).default([]), startsAt: z.coerce.date().optional().nullable(), endsAt: z.coerce.date().optional().nullable() }),
@@ -60,19 +67,16 @@ async function nonPublicResourceIds(organisationId, { stationIds = [], channelId
   // private resources must all fail closed, including after deletion.
   const [stations, channels, policies] = await Promise.all([
     stationIds.length ? prisma.station.findMany({
-      where: { organisationId, id: { in: stationIds }, productFamily: "ORGANISATIONS",
-        channels: { none: { musicRightsUse: "CORRECTIONS_RADIO" } } }, select: { id: true }
+      where: { organisationId, id: { in: stationIds }, ...publicOrganisationsStationWhere }, select: { id: true }
     }) : [],
     channelIds.length ? prisma.channel.findMany({
       where: { organisationId, id: { in: channelIds }, ...publicChannelRights,
-        station: { organisationId, productFamily: "ORGANISATIONS",
-          channels: { none: { musicRightsUse: "CORRECTIONS_RADIO" } } } }, select: { id: true }
+        station: { organisationId, ...publicOrganisationsStationWhere } }, select: { id: true }
     }) : [],
     policyIds.length ? prisma.autoDjPolicy.findMany({
       where: { organisationId, id: { in: policyIds }, targetType: "ORGANISATIONS_CHANNEL", rightsUse: { not: "CORRECTIONS_RADIO" },
         channel: { ...publicChannelRights,
-          station: { organisationId, productFamily: "ORGANISATIONS",
-            channels: { none: { musicRightsUse: "CORRECTIONS_RADIO" } } } } }, select: { id: true }
+          station: { organisationId, ...publicOrganisationsStationWhere } } }, select: { id: true }
     }) : []
   ]);
   const publicStations = new Set(stations.map(({ id }) => id));
@@ -100,10 +104,10 @@ export async function GET() {
     prisma.organisationEvent.findMany({ where: { organisationId }, orderBy: { startsAt: "desc" }, take: 100 }),
     prisma.organisationSponsorProfile.findMany({ where: { organisationId }, orderBy: { name: "asc" }, take: 100 }),
     prisma.location.findMany({ where: { organisationId, correctionsFacility: { is: null } }, select: { id: true, name: true, status: true }, orderBy: { name: "asc" }, take: 200 }),
-    prisma.station.findMany({ where: { organisationId, productFamily: "ORGANISATIONS", channels: { none: { musicRightsUse: "CORRECTIONS_RADIO" } } }, select: { id: true, name: true, status: true, channels: { where: publicChannelRights, select: { id: true, name: true, status: true } } }, orderBy: { name: "asc" }, take: 100 }),
+    prisma.station.findMany({ where: { organisationId, ...publicOrganisationsStationWhere }, select: { id: true, name: true, status: true, channels: { where: publicChannelRights, select: { id: true, name: true, status: true } } }, orderBy: { name: "asc" }, take: 100 }),
     prisma.organisationMember.findMany({ where: { organisationId }, select: { id: true, role: true, user: { select: { id: true, name: true, email: true } } }, take: 200 }),
     prisma.organisationBranchAssignment.findMany({ where: { organisationId, location: { correctionsFacility: { is: null } } }, include: { location: { select: { id: true, name: true } }, organisationMember: { select: { id: true, user: { select: { name: true, email: true } } } } }, take: 500 }),
-    prisma.autoDjPolicy.findMany({ where: { organisationId, targetType: "ORGANISATIONS_CHANNEL", rightsUse: { not: "CORRECTIONS_RADIO" }, channel: { station: { productFamily: "ORGANISATIONS", channels: { none: { musicRightsUse: "CORRECTIONS_RADIO" } } }, ...publicChannelRights } }, select: { id: true, state: true, enabled: true, channel: { select: { name: true } } }, orderBy: { channel: { name: "asc" } }, take: 100 })
+    prisma.autoDjPolicy.findMany({ where: { organisationId, targetType: "ORGANISATIONS_CHANNEL", rightsUse: { not: "CORRECTIONS_RADIO" }, channel: { station: publicOrganisationsStationWhere, ...publicChannelRights } }, select: { id: true, state: true, enabled: true, channel: { select: { name: true } } }, orderBy: { channel: { name: "asc" } }, take: 100 })
   ]);
   const referencedLocationIds = [...new Set([
     ...announcements.flatMap((announcement) => Array.isArray(announcement.targetLocationIds) ? announcement.targetLocationIds : []),
@@ -159,7 +163,7 @@ export async function POST(request) {
       if (data.startsAt && data.endsAt && data.endsAt <= data.startsAt) throw new Error("Announcement end must be after its start.");
       const [nonPublicLocations, stations] = await Promise.all([
         nonPublicLocationIds(organisationId, data.targetLocationIds),
-        prisma.station.count({ where: { organisationId, productFamily: "ORGANISATIONS", id: { in: data.targetStationIds }, channels: { none: { musicRightsUse: "CORRECTIONS_RADIO" } } } })
+        prisma.station.count({ where: { organisationId, ...publicOrganisationsStationWhere, id: { in: data.targetStationIds } } })
       ]);
       if (nonPublicLocations.size || new Set(data.targetLocationIds).size !== data.targetLocationIds.length || stations !== data.targetStationIds.length) throw new Error("Choose targets owned by the active organisation.");
       entity = await prisma.organisationAnnouncement.create({ data: { organisationId, title: data.title, body: data.body, surfaces, targetLocationIds: data.targetLocationIds, targetStationIds: data.targetStationIds, startsAt: data.startsAt || null, endsAt: data.endsAt || null, createdByUserId: userId } });
@@ -180,9 +184,9 @@ export async function POST(request) {
       entity = await prisma.organisationAnnouncement.update({ where: { id: announcement.id }, data: { status: next, approvedByUserId: next === "APPROVED" ? userId : announcement.approvedByUserId, approvedAt: next === "APPROVED" ? new Date() : announcement.approvedAt, publishedByUserId: next === "PUBLISHED" ? userId : announcement.publishedByUserId, publishedAt: next === "PUBLISHED" ? new Date() : announcement.publishedAt } });
     } else if (data.action === "CREATE_EVENT") {
       const window = validateOrganisationEventWindow(data);
-      const station = data.stationId ? await prisma.station.findFirst({ where: { id: data.stationId, organisationId, productFamily: "ORGANISATIONS", channels: { none: { musicRightsUse: "CORRECTIONS_RADIO" } } }, select: { id: true } }) : null;
-      const channel = data.channelId ? await prisma.channel.findFirst({ where: { id: data.channelId, organisationId, station: { productFamily: "ORGANISATIONS", channels: { none: { musicRightsUse: "CORRECTIONS_RADIO" } } }, ...publicChannelRights, ...(data.stationId ? { stationId: data.stationId } : {}) }, select: { id: true, stationId: true } }) : null;
-      const fallback = data.fallbackAutoDjPolicyId ? await prisma.autoDjPolicy.findFirst({ where: { id: data.fallbackAutoDjPolicyId, organisationId, targetType: "ORGANISATIONS_CHANNEL", rightsUse: { not: "CORRECTIONS_RADIO" }, channel: { station: { productFamily: "ORGANISATIONS", channels: { none: { musicRightsUse: "CORRECTIONS_RADIO" } } }, ...publicChannelRights } }, select: { id: true } }) : null;
+      const station = data.stationId ? await prisma.station.findFirst({ where: { id: data.stationId, organisationId, ...publicOrganisationsStationWhere }, select: { id: true } }) : null;
+      const channel = data.channelId ? await prisma.channel.findFirst({ where: { id: data.channelId, organisationId, station: publicOrganisationsStationWhere, ...publicChannelRights, ...(data.stationId ? { stationId: data.stationId } : {}) }, select: { id: true, stationId: true } }) : null;
+      const fallback = data.fallbackAutoDjPolicyId ? await prisma.autoDjPolicy.findFirst({ where: { id: data.fallbackAutoDjPolicyId, organisationId, targetType: "ORGANISATIONS_CHANNEL", rightsUse: { not: "CORRECTIONS_RADIO" }, channel: { station: publicOrganisationsStationWhere, ...publicChannelRights } }, select: { id: true } }) : null;
       if ((data.stationId && !station) || (data.channelId && !channel) || (data.fallbackAutoDjPolicyId && !fallback)) throw new Error("Choose event resources owned by this organisation.");
       entity = await prisma.organisationEvent.create({ data: { organisationId, title: data.title, description: data.description || null, ...window, timezone: data.timezone, stationId: station?.id || channel?.stationId || null, channelId: channel?.id || null, fallbackAutoDjPolicyId: fallback?.id || null, createdByUserId: userId } });
     } else if (data.action === "TRANSITION_EVENT") {

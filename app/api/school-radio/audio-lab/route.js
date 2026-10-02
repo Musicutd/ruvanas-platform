@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { ORGANISATION_CONTENT_ROLES } from "@/lib/permissions.mjs";
 import { requireActiveStudio } from "@/lib/studio-access";
 import { createDefaultEditDecision, normalizeEditDecision } from "@/lib/audio-lab.mjs";
+import { GENERAL_STUDIO_AUDIO_PROJECT_WHERE, GENERAL_STUDIO_MEDIA_ASSET_WHERE, assertGeneralStudioAudioProject, generalStudioUsableMediaAssetIds } from "@/lib/studio-general-asset-boundary.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -50,7 +51,7 @@ function projectInclude() {
         order: true,
         armed: true,
         locked: true,
-        clips: { select: { timelineStartMs: true, sourceStartMs: true, sourceEndMs: true } }
+        clips: { select: { mediaAssetId: true, timelineStartMs: true, sourceStartMs: true, sourceEndMs: true } }
       }
     }
   };
@@ -82,7 +83,7 @@ export async function GET() {
   const organisationId = access.organisation.id;
   const [projects, programmes, episodes, groups, trash] = await Promise.all([
     prisma.audioProject.findMany({
-      where: { organisationId, status: { not: "ARCHIVED" } },
+      where: { organisationId, status: { not: "ARCHIVED" }, ...GENERAL_STUDIO_AUDIO_PROJECT_WHERE },
       orderBy: { updatedAt: "desc" },
       take: 50,
       include: projectInclude()
@@ -91,7 +92,7 @@ export async function GET() {
     prisma.schoolEpisode.findMany({ where: { organisationId, status: { in: ["DRAFT", "CHANGES_REQUESTED"] } }, orderBy: { createdAt: "desc" }, select: { id: true, title: true, programmeId: true, status: true } }),
     prisma.studentGroup.findMany({ where: { organisationId }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
     prisma.audioTake.findMany({
-      where: { organisationId, trashedAt: { not: null }, permanentlyDeletedAt: null },
+      where: { organisationId, trashedAt: { not: null }, permanentlyDeletedAt: null, project: { is: GENERAL_STUDIO_AUDIO_PROJECT_WHERE }, mediaAsset: { is: GENERAL_STUDIO_MEDIA_ASSET_WHERE } },
       orderBy: { trashedAt: "desc" },
       take: 100,
       select: {
@@ -104,7 +105,16 @@ export async function GET() {
       }
     })
   ]);
-  return NextResponse.json({ projects, programmes, episodes, groups, trash, studioLevel: access.entitlements.studioLevel, studioProEnabled: access.entitlements.studioProEnabled, limits: { maxRecordingMb: 250, uploadPartMb: 5 } });
+  const allAssetIds = [...new Set(projects.flatMap((project) => [
+    ...project.takes.map((take) => take.mediaAsset.id),
+    ...project.tracks.flatMap((track) => track.clips.map((clip) => clip.mediaAssetId))
+  ]).filter(Boolean))];
+  const usable = await generalStudioUsableMediaAssetIds(prisma, organisationId, allAssetIds);
+  const visibleProjects = projects.filter((project) => [
+    ...project.takes.map((take) => take.mediaAsset.id),
+    ...project.tracks.flatMap((track) => track.clips.map((clip) => clip.mediaAssetId))
+  ].filter(Boolean).every((id) => usable.has(id)));
+  return NextResponse.json({ projects: visibleProjects, programmes, episodes, groups, trash, studioLevel: access.entitlements.studioLevel, studioProEnabled: access.entitlements.studioProEnabled, limits: { maxRecordingMb: 250, uploadPartMb: 5 } });
 }
 
 export async function POST(request) {
@@ -145,6 +155,7 @@ export async function PATCH(request) {
   try {
     await validateLinks(access.organisation.id, parsed.data);
     const result = await prisma.$transaction(async (tx) => {
+      await assertGeneralStudioAudioProject(tx, access.organisation.id, parsed.data.projectId);
       const current = await tx.audioProject.findFirst({ where: { id: parsed.data.projectId, organisationId: access.organisation.id, status: { not: "ARCHIVED" } } });
       if (!current) throw Object.assign(new Error("The AudioLab project was not found."), { status: 404 });
       const editDecision = normalizeEditDecision(parsed.data.editDecision);

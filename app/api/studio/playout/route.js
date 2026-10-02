@@ -5,6 +5,8 @@ import { requireActiveStudio } from "@/lib/studio-access";
 import { ORGANISATION_CONTENT_ROLES } from "@/lib/permissions.mjs";
 import { fallbackForQueue, normalizePreparedItem, playoutModeTransition, safeEndManualSession, studioQueueReadiness } from "@/lib/studio-playout.mjs";
 import { mergeStudioLibraryAssets, studioProgrammePackScope } from "@/lib/studio-library-workspace.mjs";
+import { assertGeneralStudioChannel, assertGeneralStudioPlayoutSession, GENERAL_STUDIO_CHANNEL_WHERE } from "@/lib/studio-general-output-boundary.mjs";
+import { assertGeneralStudioMediaAsset, GENERAL_STUDIO_MEDIA_ASSET_WHERE } from "@/lib/studio-general-asset-boundary.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -19,27 +21,53 @@ const commandSchema = z.object({
 });
 
 const sessionInclude = { items: { orderBy: [{ area: "asc" }, { position: "asc" }, { createdAt: "asc" }] } };
+const SESSION_PAGE_SIZE = 50;
+const VISIBLE_SESSION_LIMIT = 20;
 const assetInclude = { track: { include: { distributorItems: { select: { status: true, autoDjReady: true, canonicalGenre: { select: { active: true, providerReviewStatus: true, minimumCatalogueLevel: true } } } } } } };
 
 function requirePro(access) {
+  if (access.entitlements.planProductFamily === "CORRECTIONS") throw Object.assign(new Error("Use supervised Ruvanas Inside Studio for Corrections work."), { status: 403 });
   if (!access.entitlements.studioProEnabled) throw Object.assign(new Error("Studio Pro is required for Manual Playout."), { status: 403 });
+}
+
+async function visibleStudioSessions(organisationId) {
+  const visible = [];
+  let cursor;
+  while (visible.length < VISIBLE_SESSION_LIMIT) {
+    const page = await prisma.studioPlayoutSession.findMany({
+      where: { organisationId }, include: sessionInclude,
+      orderBy: [{ updatedAt: "desc" }, { id: "desc" }], take: SESSION_PAGE_SIZE,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {})
+    });
+    if (!page.length) break;
+    const allowed = await Promise.all(page.map(async (session) => {
+      try { await assertGeneralStudioPlayoutSession(prisma, organisationId, session.id); return session; }
+      catch (error) { if (error?.code === "CORRECTIONS_STUDIO_OUTPUT_BLOCKED") return null; throw error; }
+    }));
+    visible.push(...allowed.filter(Boolean).slice(0, VISIBLE_SESSION_LIMIT - visible.length));
+    if (page.length < SESSION_PAGE_SIZE) break;
+    cursor = page.at(-1).id;
+  }
+  return visible;
 }
 
 async function workspace(access) {
   const organisationId = access.organisation.id;
-  const [sessions, channels, assets, packs] = await Promise.all([
-    prisma.studioPlayoutSession.findMany({ where: { organisationId }, include: sessionInclude, orderBy: { updatedAt: "desc" }, take: 20 }),
-    prisma.channel.findMany({ where: { organisationId, status: "ACTIVE" }, include: { autoDjPolicy: { select: { id: true, enabled: true, state: true } }, station: { select: { id: true, name: true } } }, orderBy: { name: "asc" } }),
-    prisma.mediaAsset.findMany({ where: { status: "READY", OR: [{ organisationId }, ...(access.entitlements.licensedMusicCatalogueEnabled ? [{ organisationId: null, libraryType: "RUVANAS_CATALOGUE", track: { status: "READY", OR: [{ licenceExpiresAt: null }, { licenceExpiresAt: { gte: new Date() } }] } }] : [])] }, include: assetInclude, orderBy: { createdAt: "desc" }, take: 300 }),
+  const [visibleSessions, channels, assets, packs] = await Promise.all([
+    visibleStudioSessions(organisationId),
+    prisma.channel.findMany({ where: { organisationId, status: "ACTIVE", ...GENERAL_STUDIO_CHANNEL_WHERE }, include: { autoDjPolicy: { select: { id: true, enabled: true, state: true } }, station: { select: { id: true, name: true } } }, orderBy: { name: "asc" } }),
+    prisma.mediaAsset.findMany({ where: { status: "READY", OR: [{ organisationId }, ...(access.entitlements.licensedMusicCatalogueEnabled ? [{ organisationId: null, libraryType: "RUVANAS_CATALOGUE", track: { status: "READY", OR: [{ licenceExpiresAt: null }, { licenceExpiresAt: { gte: new Date() } }] } }] : [])], ...GENERAL_STUDIO_MEDIA_ASSET_WHERE }, include: assetInclude, orderBy: { createdAt: "desc" }, take: 300 }),
     prisma.studioProgrammePack.findMany({ where: studioProgrammePackScope(organisationId, access.entitlements.planProductFamily), include: { items: { orderBy: { position: "asc" } } }, orderBy: { updatedAt: "desc" } })
   ]);
   const packMediaIds = [...new Set(packs.flatMap((pack) => pack.items.map((item) => item.mediaAssetId)))];
   const packAssets = packMediaIds.length ? await prisma.mediaAsset.findMany({
-    where: { id: { in: packMediaIds }, status: "READY", OR: [{ organisationId }, ...(access.entitlements.licensedMusicCatalogueEnabled ? [{ organisationId: null, libraryType: "RUVANAS_CATALOGUE", track: { status: "READY", OR: [{ licenceExpiresAt: null }, { licenceExpiresAt: { gte: new Date() } }] } }] : [])] },
+    where: { id: { in: packMediaIds }, status: "READY", OR: [{ organisationId }, ...(access.entitlements.licensedMusicCatalogueEnabled ? [{ organisationId: null, libraryType: "RUVANAS_CATALOGUE", track: { status: "READY", OR: [{ licenceExpiresAt: null }, { licenceExpiresAt: { gte: new Date() } }] } }] : [])], ...GENERAL_STUDIO_MEDIA_ASSET_WHERE },
     include: assetInclude
   }) : [];
   const availableAssets = mergeStudioLibraryAssets(assets, packAssets).filter((asset) => studioQueueReadiness(asset, access.entitlements).ready);
-  return { organisation: { id: organisationId, name: access.organisation.name }, studioLevel: access.entitlements.studioLevel, productFamily: access.entitlements.planProductFamily, sessions, channels, assets: availableAssets.map((asset) => ({ id: asset.id, name: asset.name, mediaType: asset.mediaType, libraryType: asset.libraryType, durationSeconds: asset.durationSeconds, licensed: !asset.organisationId, artist: asset.track?.artist || null, title: asset.track?.title || null })), packs };
+  const safePackAssetIds = new Set(packAssets.map((asset) => asset.id));
+  const visiblePacks = packs.map((pack) => ({ ...pack, items: pack.items.filter((item) => safePackAssetIds.has(item.mediaAssetId)) }));
+  return { organisation: { id: organisationId, name: access.organisation.name }, studioLevel: access.entitlements.studioLevel, productFamily: access.entitlements.planProductFamily, sessions: visibleSessions, channels, assets: availableAssets.map((asset) => ({ id: asset.id, name: asset.name, mediaType: asset.mediaType, libraryType: asset.libraryType, durationSeconds: asset.durationSeconds, licensed: !asset.organisationId, artist: asset.track?.artist || null, title: asset.track?.title || null })), packs: visiblePacks };
 }
 
 export async function GET() {
@@ -53,6 +81,7 @@ async function findSession(tx, access, input) {
   if (!input.sessionId || input.expectedRevision == null) throw new Error("Refresh the playout workspace and try again.");
   const session = await tx.studioPlayoutSession.findFirst({ where: { id: input.sessionId, organisationId: access.organisation.id, status: { in: ["ACTIVE", "FALLBACK"] } }, include: sessionInclude });
   if (!session) throw Object.assign(new Error("The active Manual Playout session was not found."), { status: 404 });
+  await assertGeneralStudioPlayoutSession(tx, access.organisation.id, session.id);
   if (session.revision !== input.expectedRevision) throw Object.assign(new Error("The live playlist changed in another console. Refresh before continuing."), { status: 409 });
   return session;
 }
@@ -71,14 +100,29 @@ export async function POST(request) {
   const idempotencyKey = String(request.headers.get("idempotency-key") || "").trim().slice(0, 160);
   if (!idempotencyKey) return NextResponse.json({ error: "Manual Playout commands require an Idempotency-Key." }, { status: 400 });
   try {
+    if (["ADD_PREPARE", "ADD_LIVE", "ADD_PACK_ITEM"].includes(input.action) && input.mediaAssetId) {
+      const ownedAsset = await prisma.mediaAsset.findFirst({ where: { id: input.mediaAssetId, organisationId: access.organisation.id }, select: { id: true } });
+      if (ownedAsset) await assertGeneralStudioMediaAsset(prisma, access.organisation.id, ownedAsset.id);
+    }
+    if (input.action === "CREATE_SESSION" && input.channelId) await assertGeneralStudioChannel(prisma, access.organisation.id, input.channelId);
+    if (!new Set(["CREATE_SESSION", "CREATE_PACK", "ADD_PACK_ITEM"]).has(input.action) && input.sessionId) {
+      await assertGeneralStudioPlayoutSession(prisma, access.organisation.id, input.sessionId);
+    }
     const prior = await prisma.studioPlayoutCommand.findUnique({ where: { organisationId_idempotencyKey: { organisationId: access.organisation.id, idempotencyKey } } });
-    if (prior) return NextResponse.json({ ...prior.result, repeated: true });
+    if (prior) {
+      if (prior.action !== input.action) throw Object.assign(new Error("This Idempotency-Key was used for another Studio command."), { status: 409 });
+      await assertGeneralStudioPlayoutSession(prisma, access.organisation.id, prior.sessionId);
+      return NextResponse.json({ ...prior.result, repeated: true });
+    }
     if (input.action === "CREATE_SESSION") {
-      const channel = await prisma.channel.findFirst({ where: { id: input.channelId, organisationId: access.organisation.id, status: "ACTIVE" }, include: { autoDjPolicy: true } });
+      const channel = await prisma.channel.findFirst({ where: { id: input.channelId, organisationId: access.organisation.id, status: "ACTIVE", ...GENERAL_STUDIO_CHANNEL_WHERE }, include: { autoDjPolicy: true } });
       if (!channel) throw new Error("Choose an active channel owned by this organisation.");
       if (!channel.autoDjPolicy?.enabled || channel.autoDjPolicy.state !== "ACTIVE") throw new Error("Activate an AutoDJ fallback before creating a Manual Playout session.");
       const existing = await prisma.studioPlayoutSession.findFirst({ where: { organisationId: access.organisation.id, channelId: channel.id, status: { in: ["ACTIVE", "FALLBACK"] } }, include: sessionInclude });
-      if (existing) return NextResponse.json({ session: existing, repeated: true });
+      if (existing) {
+        await assertGeneralStudioPlayoutSession(prisma, access.organisation.id, existing.id);
+        return NextResponse.json({ session: existing, repeated: true });
+      }
       const session = await prisma.studioPlayoutSession.create({ data: { organisationId: access.organisation.id, channelId: channel.id, productFamily: access.entitlements.planProductFamily, title: input.title, fallbackAutoDjId: channel.autoDjPolicy.id, createdByUserId: access.user.id }, include: sessionInclude });
       await prisma.$transaction([prisma.studioPlayoutCommand.create({ data: { sessionId: session.id, organisationId: access.organisation.id, idempotencyKey, action: input.action, expectedRevision: 0, result: { sessionId: session.id }, actorUserId: access.user.id } }), prisma.auditLog.create({ data: { organisationId: access.organisation.id, actorUserId: access.user.id, action: "STUDIO_PLAYOUT_SESSION_CREATED", entityType: "StudioPlayoutSession", entityId: session.id, details: { channelId: channel.id, fallbackAutoDjId: channel.autoDjPolicy.id } } })]);
       return NextResponse.json({ session }, { status: 201 });
@@ -88,7 +132,7 @@ export async function POST(request) {
       return NextResponse.json({ pack }, { status: 201 });
     }
     if (input.action === "ADD_PACK_ITEM") {
-      const [pack, asset] = await Promise.all([prisma.studioProgrammePack.findFirst({ where: { id: input.packId, ...studioProgrammePackScope(access.organisation.id, access.entitlements.planProductFamily) } }), prisma.mediaAsset.findFirst({ where: { id: input.mediaAssetId, OR: [{ organisationId: access.organisation.id }, { organisationId: null, libraryType: "RUVANAS_CATALOGUE" }] }, include: assetInclude })]);
+      const [pack, asset] = await Promise.all([prisma.studioProgrammePack.findFirst({ where: { id: input.packId, ...studioProgrammePackScope(access.organisation.id, access.entitlements.planProductFamily) } }), prisma.mediaAsset.findFirst({ where: { id: input.mediaAssetId, OR: [{ organisationId: access.organisation.id }, { organisationId: null, libraryType: "RUVANAS_CATALOGUE" }], ...GENERAL_STUDIO_MEDIA_ASSET_WHERE }, include: assetInclude })]);
       if (!pack || !asset) throw new Error("Choose an available programme pack and protected media item.");
       const readiness = studioQueueReadiness(asset, access.entitlements); if (!readiness.ready) throw new Error(readiness.reason);
       const position = await prisma.studioProgrammePackItem.count({ where: { packId: pack.id } });
@@ -100,7 +144,7 @@ export async function POST(request) {
       const session = await findSession(tx, access, input);
       let payload = {};
       if (["ADD_PREPARE", "ADD_LIVE"].includes(input.action)) {
-        const asset = await tx.mediaAsset.findFirst({ where: { id: input.mediaAssetId, OR: [{ organisationId: access.organisation.id }, { organisationId: null, libraryType: "RUVANAS_CATALOGUE" }] }, include: assetInclude });
+        const asset = await tx.mediaAsset.findFirst({ where: { id: input.mediaAssetId, OR: [{ organisationId: access.organisation.id }, { organisationId: null, libraryType: "RUVANAS_CATALOGUE" }], ...GENERAL_STUDIO_MEDIA_ASSET_WHERE }, include: assetInclude });
         if (!asset) throw new Error("Choose protected media available to this organisation.");
         const readiness = studioQueueReadiness(asset, access.entitlements);
         const prepared = normalizePreparedItem(input, asset, { studioLevel: access.entitlements.studioLevel, readiness });
@@ -111,7 +155,7 @@ export async function POST(request) {
       } else if (input.action === "UPDATE_PREPARE") {
         const item = session.items.find((candidate) => candidate.id === input.itemId && candidate.area === "PREPARE");
         if (!item) throw new Error("Choose an item in the private Prepare area.");
-        const asset = await tx.mediaAsset.findFirst({ where: { id: item.mediaAssetId, OR: [{ organisationId: access.organisation.id }, { organisationId: null, libraryType: "RUVANAS_CATALOGUE" }] }, include: assetInclude });
+        const asset = await tx.mediaAsset.findFirst({ where: { id: item.mediaAssetId, OR: [{ organisationId: access.organisation.id }, { organisationId: null, libraryType: "RUVANAS_CATALOGUE" }], ...GENERAL_STUDIO_MEDIA_ASSET_WHERE }, include: assetInclude });
         if (!asset) throw new Error("The protected source is no longer available.");
         const readiness = studioQueueReadiness(asset, access.entitlements);
         const prepared = normalizePreparedItem({ ...item, ...input }, asset, { studioLevel: access.entitlements.studioLevel, readiness });
