@@ -57,3 +57,14 @@ test("legacy School Studio routes use the shared boundary for lists, writes, upl
   assert.match(trash, /assertGeneralStudioMediaAsset/);
   assert.ok(trash.indexOf('data: { status: "DELETED" }') < trash.indexOf("await storage.client.send(new DeleteObjectCommand"));
 });
+
+test("staff render-only submission shares the AudioLab deletion lock before Corrections Guard accepts it", async () => {
+  const service = await readFile(new URL("../lib/corrections-programmes-service.js", import.meta.url), "utf8");
+  const lock = await readFile(new URL("../lib/corrections-staff-render-source-lock.mjs", import.meta.url), "utf8");
+  const submit = service.slice(service.indexOf("export async function submitCorrectionsProgramme"), service.indexOf("export async function reviewCorrectionsProgramme"));
+  assert.match(submit, /await lockCorrectionsStaffRenderSources\(tx,/);
+  assert.ok(submit.indexOf("await lockCorrectionsStaffRenderSources") < submit.indexOf("const evidence = correctionsRenderEvidence"));
+  assert.match(lock, /"AudioProject".*FOR UPDATE/);
+  assert.match(lock, /"AudioTake".*FOR UPDATE/);
+  assert.match(lock, /take\.trashedAt \|\| take\.permanentlyDeletedAt/);
+});

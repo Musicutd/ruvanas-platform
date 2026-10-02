@@ -112,7 +112,9 @@ export async function POST(request) {
           await assertGeneralStudioDestination(prisma, access.organisation.id, destination);
         }
       }
-      return NextResponse.json({ repeated: true, command: prior.result });
+      return NextResponse.json({ repeated: true, command: prior.result,
+        ...(prior.result?.notice ? { notice: prior.result.notice } : {}),
+        ...(prior.result?.externalShutdownConfirmed === false ? { externalShutdownConfirmed: false } : {}) });
     }
     if (input.action === "QUICK_CONNECT") {
       const station = await prisma.station.findFirst({ where: { id: input.stationId, organisationId: access.organisation.id, status: "ACTIVE", streamConfig: { isNot: null }, ...GENERAL_STUDIO_STATION_WHERE }, include: { streamConfig: true } });
@@ -149,7 +151,17 @@ export async function POST(request) {
       catch (error) { if (error?.code === "CORRECTIONS_STUDIO_OUTPUT_BLOCKED") protectedStop = true; else throw error; }
     }
     let data = {};
-    if (input.action === "STOP_BROADCAST") data = { status: "ENDED", endedAt: new Date(), endedReason: "Operator ended Studio Broadcast safely." };
+    // The provider may have accepted a connect call even if the following DB
+    // write failed. No local state is proof of provider shutdown.
+    const externalShutdownUnconfirmed = input.action === "STOP_BROADCAST" && session.destinations.some((link) =>
+      ["ICECAST", "SHOUTCAST"].includes(link.destination.type)
+    );
+    const stopNotice = input.action === "STOP_BROADCAST"
+      ? externalShutdownUnconfirmed
+        ? "The Ruvanas broadcast session ended, but external source shutdown is unconfirmed. Ruvanas Super Admin must verify and disconnect any active source at the provider."
+        : "The Ruvanas broadcast session ended."
+      : null;
+    if (input.action === "STOP_BROADCAST") data = { status: "ENDED", endedAt: new Date(), endedReason: stopNotice };
     if (input.action === "SET_METADATA") {
       const playout = await prisma.studioPlayoutSession.findFirst({ where: { id: session.playoutSessionId, organisationId: access.organisation.id }, select: { currentItemId: true } });
       data = { metadataOverride: input.metadata, metadataOverrideItemId: playout?.currentItemId || null, automaticMetadata: null };
@@ -157,8 +169,10 @@ export async function POST(request) {
     if (input.action === "RESET_METADATA") data = { metadataOverride: null, metadataOverrideItemId: null, automaticMetadata: null };
     const updated = await prisma.studioBroadcastSession.update({ where: { id: session.id }, data: { ...data, revision: { increment: 1 } }, include: sessionInclude });
     await prisma.auditLog.create({ data: { organisationId: access.organisation.id, actorUserId: access.user.id, action: `STUDIO_BROADCAST_${input.action}`, entityType: "StudioBroadcastSession", entityId: session.id, details: { revision: updated.revision } } });
-    await recordBroadcastCommand(access, input, idempotencyKey, { sessionId: updated.id, revision: updated.revision }, updated.id);
-    return NextResponse.json(protectedStop ? { stopped: true, sessionId: updated.id, revision: updated.revision } : { session: updated });
+    await recordBroadcastCommand(access, input, idempotencyKey, { sessionId: updated.id, revision: updated.revision, ...(stopNotice ? { notice: stopNotice, externalShutdownConfirmed: !externalShutdownUnconfirmed ? null : false } : {}) }, updated.id);
+    return NextResponse.json(protectedStop
+      ? { stopped: true, sessionId: updated.id, revision: updated.revision, notice: stopNotice, externalShutdownConfirmed: !externalShutdownUnconfirmed ? null : false }
+      : { session: updated, ...(stopNotice ? { notice: stopNotice, externalShutdownConfirmed: !externalShutdownUnconfirmed ? null : false } : {}) });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "The broadcast command failed safely." }, { status: error?.status || 409 });
   }

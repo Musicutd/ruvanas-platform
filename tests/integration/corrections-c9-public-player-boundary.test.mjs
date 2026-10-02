@@ -121,12 +121,21 @@ test("existing public listener authority cannot relay a station after it gains p
     const facilityZone = await db.zone.create({ data: {
       locationId: location.id, name: "Facility zone", slug: "facility-zone", status: "ACTIVE"
     } });
-    await db.channelAssignment.create({ data: { channelId: facilityStation.channel.id, zoneId: facilityZone.id } });
+    const facilityAssignment = await db.channelAssignment.create({ data: {
+      channelId: facilityStation.channel.id, zoneId: facilityZone.id,
+      activeFrom: new Date(Date.now() - 120_000)
+    } });
     await expectPublicMetadata(facilityStation);
     await db.correctionsFacility.create({ data: { locationId: location.id } });
     await expectDenied(facilityStation);
     await db.channel.update({ where: { id: facilityStation.channel.id }, data: { status: "DRAFT" } });
     // An inactive facility child must not make the station's pages public.
+    await expectDenied(facilityStation);
+    await db.channel.update({ where: { id: facilityStation.channel.id }, data: { status: "ACTIVE" } });
+    await db.channelAssignment.update({ where: { id: facilityAssignment.id }, data: { activeTo: new Date(Date.now() - 60_000) } });
+    await db.location.update({ where: { id: location.id }, data: { status: "CLOSED" } });
+    // Retiring the facility and ending its assignment must not expose the
+    // historical station through an old listener token, slug or domain.
     await expectDenied(facilityStation);
   } finally {
     try {

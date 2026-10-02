@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { encryptSecret } from "../lib/crypto.js";
-import { refreshStudioBroadcastMetadata, scanStudioBroadcastConnections } from "../lib/studio-broadcast-service.js";
+import { countUnconfirmedStudioExternalShutdowns, refreshStudioBroadcastMetadata, scanStudioBroadcastConnections } from "../lib/studio-broadcast-service.js";
 import {
   assertGeneralStudioBroadcastSession, assertGeneralStudioChannel, assertGeneralStudioDestination,
   generalStudioChannelIds, generalStudioStationIds,
@@ -65,6 +65,9 @@ test("generic Studio routes guard reads, writes, existing sessions and idempoten
   assert.match(broadcast, /assertGeneralStudioDestination\(prisma, access\.organisation\.id, destination\)/);
   assert.match(broadcast, /assertGeneralStudioBroadcastSession\(prisma, access\.organisation\.id, prior\.sessionId\)/);
   assert.match(broadcast, /input\.action !== "STOP_BROADCAST"/);
+  assert.match(broadcast, /externalShutdownUnconfirmed/);
+  assert.match(broadcast, /externalShutdownConfirmed: !externalShutdownUnconfirmed \? null : false/);
+  assert.doesNotMatch(broadcast, /Operator ended Studio Broadcast safely/);
   assert.match(library, /GENERAL_STUDIO_CHANNEL_WHERE/);
   assert.match(library, /planProductFamily === "CORRECTIONS"/);
 });
@@ -75,17 +78,31 @@ test("general subscriber programming hides channels also assigned to a private f
   assert.match(programming, /visibleChannelIds\.has\(id\)/);
 });
 
-function fixture({ productFamily = "ONLINE", channelAllowed = true, stationAllowed = true, assetAllowed = true, destinationType = "ICECAST", stationId = null, credentialEncrypted = null } = {}) {
-  const state = { active: true, linkState: "CONNECTED", changes: [], providerCalls: [] };
+function fixture({ productFamily = "ONLINE", channelAllowed = true, stationAllowed = true, assetAllowed = true, destinationType = "ICECAST", stationId = null, credentialEncrypted = null, linkState = "CONNECTED", lastConnectedAt = null } = {}) {
+  const state = { active: true, linkState, changes: [], providerCalls: [] };
   const destination = { id: "destination", organisationId, stationId, type: destinationType, enabled: true, credentialEncrypted, connectionState: "CONNECTED", reconnectAttempt: 0 };
   const session = { id: "broadcast", organisationId, playoutSessionId: "playout", status: "ACTIVE", revision: 0, automaticMetadata: null, metadataOverride: null, destinations: [] };
-  const link = { sessionId: session.id, destinationId: destination.id, state: "CONNECTED", destination, session };
+  const link = { sessionId: session.id, destinationId: destination.id, state: linkState, lastConnectedAt, destination, session };
   session.destinations = [link];
   const playout = { id: "playout", organisationId, channelId: "channel", productFamily, currentItemId: "item", items: [{ id: "item", title: "Fictional ordinary audio", artistOrProgramme: "Test" }] };
   const database = {
     studioBroadcastSessionDestination: {
       findMany: async () => state.active ? [link] : [],
-      updateMany: async ({ data }) => { state.linkState = data.state; link.state = data.state; state.changes.push("links stopped"); return { count: 1 }; },
+      updateMany: async ({ where, data }) => {
+        const unconfirmedExternal = ["ICECAST", "SHOUTCAST"].includes(destination.type);
+        if (data.state === "STANDBY" && unconfirmedExternal) return { count: 0 };
+        if (data.state !== "STANDBY" && !unconfirmedExternal) return { count: 0 };
+        Object.assign(link, data);
+        state.linkState = link.state;
+        state.changes.push(data.state === "STANDBY" ? "links stopped" : "provider shutdown unconfirmed");
+        return { count: 1 };
+      },
+      count: async ({ where }) => {
+        assert.equal(where.session.status, "ENDED");
+        assert.deepEqual(where.destination.type.in, ["ICECAST", "SHOUTCAST"]);
+        assert.equal(where.OR, undefined);
+        return state.active || !["ICECAST", "SHOUTCAST"].includes(destination.type) ? 0 : 1;
+      },
       update: async ({ data }) => { state.linkState = data.state; link.state = data.state; state.changes.push("link connected"); return link; }
     },
     studioBroadcastSession: {
@@ -137,7 +154,8 @@ test("worker never calls external provider for forbidden legacy broadcast links 
       assert.equal(outbound.length, beforeScan, `${label}: scan called provider`);
       assert.equal(result.blocked, 1, label);
       assert.equal(scan.state.active, false, label);
-      assert.equal(scan.state.linkState, "STANDBY", label);
+      assert.equal(scan.state.linkState, options.destinationType === "RUVANAS_MANAGED" ? "STANDBY" : "CONNECTED", label);
+      assert.equal(await countUnconfirmedStudioExternalShutdowns(scan.database), options.destinationType === "RUVANAS_MANAGED" ? 0 : 1, label);
 
       const metadata = fixture(options);
       const beforeMetadata = outbound.length;
@@ -145,7 +163,14 @@ test("worker never calls external provider for forbidden legacy broadcast links 
       assert.equal(outbound.length, beforeMetadata, `${label}: metadata called provider`);
       assert.equal(metadataResult.blocked, 1, label);
       assert.equal(metadata.state.active, false, label);
+      assert.equal(await countUnconfirmedStudioExternalShutdowns(metadata.database), options.destinationType === "RUVANAS_MANAGED" ? 0 : 1, label);
     }
+
+    const staleState = fixture({ channelAllowed: false, linkState: "RECONNECTING", lastConnectedAt: null });
+    const staleResult = await scanStudioBroadcastConnections(staleState.database);
+    assert.equal(staleResult.blocked, 1);
+    assert.equal(staleState.state.linkState, "RECONNECTING", "a stale local state is not provider shutdown proof");
+    assert.equal(await countUnconfirmedStudioExternalShutdowns(staleState.database), 1);
 
     const ordinaryProducts = ["RETAIL", "SCHOOL", "ONLINE", "HEALTH", "FAITH", "ORGANISATIONS"];
     for (const productFamily of ordinaryProducts) {
@@ -170,4 +195,17 @@ test("worker never calls external provider for forbidden legacy broadcast links 
       else process.env[name] = value;
     }
   }
+});
+
+test("worker treats unconfirmed external shutdown as an operational error, not as disconnected", async () => {
+  const [worker, downgrade] = await Promise.all([
+    readFile(new URL("../scripts/operations-worker.mjs", import.meta.url), "utf8"),
+    readFile(new URL("../lib/studio-entitlement-service.js", import.meta.url), "utf8")
+  ]);
+  assert.match(worker, /countUnconfirmedStudioExternalShutdowns\(prisma\)/);
+  assert.match(worker, /writeLog\("error", "studio_external_shutdown_unconfirmed"/);
+  assert.match(downgrade, /destination: \{ type: "RUVANAS_MANAGED" \}/);
+  assert.match(downgrade, /destination: \{ type: \{ in: \["ICECAST", "SHOUTCAST"\] \} \}/);
+  assert.match(downgrade, /externalDistributionShutdownUnconfirmed: true/);
+  assert.doesNotMatch(downgrade, /externalDistributionStopped: true/);
 });

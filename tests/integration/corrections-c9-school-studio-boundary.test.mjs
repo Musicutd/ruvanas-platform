@@ -4,6 +4,8 @@ import test from "node:test";
 import { PrismaClient } from "@prisma/client";
 import { GENERAL_STUDIO_AUDIO_PROJECT_WHERE, GENERAL_STUDIO_MEDIA_ASSET_WHERE } from "../../lib/studio-general-asset-boundary.mjs";
 import { permanentlyDeleteAudioTake, restoreAudioTake, trashAudioTake } from "../../lib/audio-take-trash-service.js";
+import { lockCorrectionsStaffRenderSources } from "../../lib/corrections-staff-render-source-lock.mjs";
+import { runSerializableTransaction } from "../../lib/transaction-retry.mjs";
 
 const ciDatabase = process.env.GITHUB_ACTIONS === "true" &&
   process.env.DATABASE_URL === "postgresql://postgres:postgres@localhost:5432/ruvanas";
@@ -49,8 +51,15 @@ test("general School Studio cannot access or purge supervised Corrections takes"
     const privateProject = await project("Private supervised project");
     const normalMedia = await media("ordinary-take");
     const privateMedia = await media("private-take");
+    const standaloneMedia = await media("ordinary-media-without-a-take");
     const normalTake = await take(normalProject.id, normalMedia.id);
     const privateTake = await take(privateProject.id, privateMedia.id);
+    const ordinaryRender = { organisationId, projectId: normalProject.id,
+      version: { state: { editor: { clips: [{ kind: "SOURCE", mediaAssetId: normalMedia.id }] } } } };
+    const missingSourceRender = { ...ordinaryRender,
+      version: { state: { editor: { clips: [{ kind: "SOURCE", mediaAssetId: `missing-${suffix}` }] } } } };
+    const standaloneSourceRender = { ...ordinaryRender,
+      version: { state: { editor: { clips: [{ kind: "SOURCE", mediaAssetId: standaloneMedia.id }] } } } };
     await db.correctionsStudioSession.create({ data: {
       organisationId, facilityId: facility.id, contributorId: contributor.id,
       programmeId: programme.id, projectId: privateProject.id,
@@ -65,14 +74,28 @@ test("general School Studio cannot access or purge supervised Corrections takes"
     assert.ok(visibleMedia.some(({ id }) => id === normalMedia.id));
     assert.ok(!visibleMedia.some(({ id }) => id === privateMedia.id));
 
+    await runSerializableTransaction(db, (tx) => lockCorrectionsStaffRenderSources(tx, { organisationId, render: ordinaryRender }));
+    // Existing staff Studio may use READY organisation media that is not an
+    // AudioTake. The C9 guard must not change that established behaviour.
+    await runSerializableTransaction(db, (tx) => lockCorrectionsStaffRenderSources(tx, { organisationId, render: standaloneSourceRender }));
+    await assert.rejects(
+      runSerializableTransaction(db, (tx) => lockCorrectionsStaffRenderSources(tx, { organisationId, render: missingSourceRender })),
+      /source.*no longer available/i
+    );
+
     await assert.rejects(
       trashAudioTake({ database: db, takeId: privateTake.id, organisationId, userId }),
       (error) => error?.status === 403 && error?.code === "CORRECTIONS_STUDIO_OUTPUT_BLOCKED"
     );
     const normalTrashed = await trashAudioTake({ database: db, takeId: normalTake.id, organisationId, userId });
     assert.ok(normalTrashed.trashedAt);
+    await assert.rejects(
+      runSerializableTransaction(db, (tx) => lockCorrectionsStaffRenderSources(tx, { organisationId, render: ordinaryRender })),
+      /source recording.*no longer available/i
+    );
     const normalRestored = await restoreAudioTake({ database: db, takeId: normalTake.id, organisationId, userId });
     assert.equal(normalRestored.trashedAt, null);
+    await runSerializableTransaction(db, (tx) => lockCorrectionsStaffRenderSources(tx, { organisationId, render: ordinaryRender }));
 
     await db.audioTake.update({ where: { id: privateTake.id }, data: { trashedAt: new Date("2026-01-01T00:00:00Z"), purgeAfter: new Date("2026-02-01T00:00:00Z") } });
     const deletedKeys = [];
@@ -86,7 +109,32 @@ test("general School Studio cannot access or purge supervised Corrections takes"
     assert.equal((await db.mediaAsset.findUnique({ where: { id: privateMedia.id } })).status, "READY");
 
     await trashAudioTake({ database: db, takeId: normalTake.id, organisationId, userId });
-    const deleted = await permanentlyDeleteAudioTake({ database: db, takeId: normalTake.id, organisationId, userId, storage });
+    let cleanupEntered;
+    let releaseCleanup;
+    const cleanupStarted = new Promise((resolve) => { cleanupEntered = resolve; });
+    const cleanupRelease = new Promise((resolve) => { releaseCleanup = resolve; });
+    const gatedStorage = { bucketName: storage.bucketName, client: { send: async (command) => {
+      deletedKeys.push(command.input.Key);
+      cleanupEntered();
+      await cleanupRelease;
+      return {};
+    } } };
+    const deletion = permanentlyDeleteAudioTake({ database: db, takeId: normalTake.id, organisationId, userId, storage: gatedStorage });
+    await cleanupStarted;
+    let guardSettled = false;
+    const concurrentSubmissionGuard = runSerializableTransaction(db, (tx) => lockCorrectionsStaffRenderSources(tx, { organisationId, render: ordinaryRender }))
+      .then(() => ({ ok: true }), (error) => ({ ok: false, error }))
+      .finally(() => { guardSettled = true; });
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      assert.equal(guardSettled, false, "a render-only submission must wait for AudioLab object cleanup");
+    } finally {
+      releaseCleanup();
+    }
+    const deleted = await deletion;
+    const guarded = await concurrentSubmissionGuard;
+    assert.equal(guarded.ok, false);
+    assert.match(guarded.error.message, /source recording.*no longer available/i);
     assert.equal(deleted.status, "ARCHIVED");
     assert.deepEqual(deletedKeys, [normalMedia.storageKey]);
     assert.equal((await db.mediaAsset.findUnique({ where: { id: normalMedia.id } })).status, "DELETED");

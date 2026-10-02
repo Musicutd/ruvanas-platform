@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import test from "node:test";
 import bcrypt from "bcryptjs";
 import { PrismaClient } from "@prisma/client";
+import { countUnconfirmedStudioExternalShutdowns } from "../../lib/studio-broadcast-service.js";
 import { generalStudioChannelIds, generalStudioStationIds } from "../../lib/studio-general-output-boundary.mjs";
 
 const baseUrl = process.env.INTEGRATION_BASE_URL || "http://127.0.0.1:3100";
@@ -296,11 +297,24 @@ test("generic Studio live output excludes private Inside channels, stations and 
       action: "SET_METADATA", sessionId: privateDestinationBroadcast.id, expectedRevision: 0, metadata: "Unsafe"
     });
     assert.equal(privateMetadata.status, 403, await privateMetadata.clone().text());
+    await db.studioBroadcastSessionDestination.update({
+      where: { sessionId_destinationId: { sessionId: insideBroadcast.id, destinationId: externalDestination.id } },
+      // A provider connect may have succeeded before its DB success write.
+      data: { state: "RECONNECTING", lastConnectedAt: null }
+    });
     const stop = await post("/api/studio/broadcast", {
       action: "STOP_BROADCAST", sessionId: insideBroadcast.id, expectedRevision: 0
     });
     assert.equal(stop.status, 200, await stop.clone().text());
-    assert.deepEqual(Object.keys(await stop.json()).sort(), ["revision", "sessionId", "stopped"]);
+    const stopBody = await stop.json();
+    assert.equal(stopBody.stopped, true);
+    assert.equal(stopBody.externalShutdownConfirmed, false);
+    assert.match(stopBody.notice, /external source shutdown is unconfirmed/i);
+    assert.equal((await db.studioBroadcastSession.findUnique({ where: { id: insideBroadcast.id } })).status, "ENDED");
+    assert.equal((await db.studioBroadcastSessionDestination.findUnique({
+      where: { sessionId_destinationId: { sessionId: insideBroadcast.id, destinationId: externalDestination.id } }
+    })).state, "RECONNECTING", "a database stop cannot falsely report provider disconnection");
+    assert.ok(await countUnconfirmedStudioExternalShutdowns(db) >= 1, "the worker must flag uncertain external shutdown even without a recorded successful connect");
 
     await db.studioPlayoutCommand.create({ data: {
       sessionId: insidePlayout.id, organisationId, idempotencyKey: `unsafe-playout-${suffix}`,
