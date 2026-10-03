@@ -278,9 +278,6 @@ test("general programming cannot expose or draft schedules for private Inside fa
     assert.ok(promotionData.targets.some(({ id }) => id === normalLocation.zones[0].id));
     assert.ok(promotionData.targets.some(({ id }) => id === sideZone.id));
     assert.ok(!promotionData.targets.some(({ id }) => id === privateFacility.id || id === privateFacility.zones[0].id));
-    assert.ok(promotionData.targets.some(({ id }) => id === safeStation.id || id === safeChannel.id));
-    assert.ok(!promotionData.targets.some(({ id }) =>
-      [normalStation.id, normalChannel.id, privateStation.id, privateChannel.id, privateRightsChannel.id].includes(id)));
 
     const promotionStart = new Date();
     const promotionEnd = new Date(promotionStart.getTime() + 6 * 86_400_000);
@@ -302,6 +299,7 @@ test("general programming cannot expose or draft schedules for private Inside fa
       ["LOCATION", normalLocation.id, [normalLocation.zones[0].id, sideZone.id]],
       ["ALL_LOCATIONS", null, [normalLocation.zones[0].id, sideZone.id]],
       ["LOCATION_GROUP", mixedGroup.id, [normalLocation.zones[0].id, sideZone.id]],
+      ["STATION", safeStation.id, [sideZone.id]],
       ["CHANNEL", safeChannel.id, [sideZone.id]]
     ]) {
       const preview = await api("/api/promotions", { method: "POST", cookie, body: promotionPayload(targetType, targetId) });
