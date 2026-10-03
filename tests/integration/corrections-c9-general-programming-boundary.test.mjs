@@ -120,9 +120,6 @@ test("general programming cannot expose or draft schedules for private Inside fa
       organisationId, stationId: safeStation.id, name: "Fictional public retail channel",
       slug: `c9-safe-retail-channel-${suffix}`, status: "ACTIVE"
     } });
-    await db.channelAssignment.create({ data: {
-      channelId: privateChannel.id, zoneId: sideZone.id
-    } });
     await db.channelAssignment.createMany({ data: [
       { channelId: normalChannel.id, zoneId: normalLocation.zones[0].id },
       { channelId: normalChannel.id, zoneId: privateFacility.zones[0].id },
