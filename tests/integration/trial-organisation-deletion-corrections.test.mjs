@@ -291,3 +291,101 @@ test("trial cleanup serializes private Studio pack creation in both transaction 
     }
   }
 });
+
+test("trial cleanup preserves an existing Studio pack classified as Corrections after its evidence check", {
+  skip: ciDatabase ? false : "Requires the exact disposable CI PostgreSQL database."
+}, async () => {
+  const db = new PrismaClient();
+  const writer = new PrismaClient();
+  const suffix = randomUUID();
+  const packWasChecked = signal();
+  const resumeDeletion = signal();
+  let actor;
+  let organisation;
+  let pack;
+  let deletionTask;
+  let paused = false;
+  let attempts = 0;
+  try {
+    actor = await db.user.create({ data: {
+      email: `c9-trial-update-race-${suffix}@example.invalid`,
+      passwordHash: "CI-only-no-login",
+      role: "SUPER_ADMIN"
+    } });
+    organisation = await db.organisation.create({ data: {
+      name: "Fictional existing Studio pack race",
+      slug: `c9-update-race-${suffix}`
+    } });
+    pack = await db.studioProgrammePack.create({ data: {
+      organisationId: organisation.id,
+      name: `Fictional ordinary Pack ${suffix}`,
+      productFamily: "RETAIL",
+      createdByUserId: actor.id
+    } });
+
+    const deletionDatabase = {
+      $transaction: (callback, options) => db.$transaction(async (tx) => {
+        attempts += 1;
+        const packs = new Proxy(tx.studioProgrammePack, {
+          get(target, property) {
+            if (property === "findFirst") return async (...args) => {
+              const result = await target.findFirst(...args);
+              if (!paused) {
+                paused = true;
+                packWasChecked.resolve(result);
+                await resumeDeletion.promise;
+              }
+              return result;
+            };
+            return target[property];
+          }
+        });
+        return callback(new Proxy(tx, {
+          get(target, property) {
+            if (property === "studioProgrammePack") return packs;
+            const value = target[property];
+            return typeof value === "function" ? value.bind(target) : value;
+          }
+        }));
+      }, options)
+    };
+
+    deletionTask = deleteTrialOrganisation(deletionDatabase, {
+      actor,
+      organisationId: organisation.id,
+      confirmation: `DELETE ${organisation.slug}`
+    });
+    deletionTask.catch(() => {});
+    assert.equal(await within(packWasChecked.promise, "ordinary Pack evidence check"), null);
+
+    // An UPDATE to an existing row does not need the parent's FK lock. It can
+    // commit while deletion still holds the Organisation lock and its old view.
+    await within(writer.studioProgrammePack.update({
+      where: { id: pack.id },
+      data: { productFamily: "CORRECTIONS" }
+    }), "concurrent existing Pack classification");
+    resumeDeletion.resolve();
+
+    await assert.rejects(within(deletionTask, "protected trial deletion", 15000),
+      (error) => error.code === "CORRECTIONS_EVIDENCE_PRESENT");
+    assert.ok(attempts >= 2, "deletion must retry after the serialization conflict");
+    assert.ok(await db.organisation.findUnique({ where: { id: organisation.id } }));
+    assert.equal((await db.studioProgrammePack.findUnique({ where: { id: pack.id } }))?.productFamily, "CORRECTIONS");
+    assert.equal(await db.auditLog.count({ where: {
+      actorUserId: actor.id,
+      action: "TRIAL_ORGANISATION_DELETED",
+      entityId: organisation.id
+    } }), 0);
+  } finally {
+    resumeDeletion.resolve();
+    await Promise.allSettled([deletionTask].filter(Boolean));
+    try {
+      if (pack) await db.studioProgrammePack.deleteMany({ where: { id: pack.id } });
+      if (organisation) await db.organisation.deleteMany({ where: { id: organisation.id } });
+      if (actor) await db.auditLog.deleteMany({ where: { actorUserId: actor.id, action: "TRIAL_ORGANISATION_DELETED" } });
+      if (actor) await db.user.deleteMany({ where: { id: actor.id } });
+    } finally {
+      await Promise.all([db.$disconnect(), writer.$disconnect()]);
+    }
+  }
+});

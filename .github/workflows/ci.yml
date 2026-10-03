@@ -164,6 +164,9 @@ jobs:
           R2_ENDPOINT: http://127.0.0.1:9107
         run: node --test tests/integration/corrections-c9-contributor-revocation.test.mjs
 
+      - name: Validate trial deletion and private Studio evidence races on disposable PostgreSQL
+        run: node --test tests/integration/trial-organisation-deletion-corrections.test.mjs
+
       - name: Validate C9 generic School Studio cannot use or delete supervised Corrections evidence
         env:
           INTEGRATION_BASE_URL: http://127.0.0.1:3100

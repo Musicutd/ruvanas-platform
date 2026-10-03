@@ -51,7 +51,8 @@ test("single trial deletion preserves users and records an audit tombstone", asy
     "load", "check Corrections", "check Studio playout", "check Studio pack",
     "TRIAL_ORGANISATION_DELETED", "organisation"
   ]);
-  assert.equal(transactionOptions.isolationLevel, "ReadCommitted");
+  assert.equal(transactionOptions.isolationLevel, "Serializable");
+  assert.equal(transactionOptions.timeout, 30000);
   assert.equal(result.userAccountsDeleted, 0);
   assert.equal(result.memberLinksRemoved, 2);
 });
