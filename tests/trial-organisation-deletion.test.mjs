@@ -158,7 +158,7 @@ test("trial deletion checks every Corrections marker, playback proof and audit e
   }
 });
 
-test("trial deletion blocks Corrections Studio records without an Organisation relation", async () => {
+test("trial deletion blocks Corrections Studio records before cascade", async () => {
   for (const model of ["studioPlayoutSession", "studioProgrammePack"]) {
     const calls = [];
     const tx = {
