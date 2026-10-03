@@ -3,11 +3,12 @@ import { prisma } from "@/lib/prisma";
 import { requireOrganisationProductAccess, ORGANISATION_MANAGER_ROLES } from "@/lib/access-control";
 import { normalizePublicPlayerSettings } from "@/lib/public-player.mjs";
 import { subscriberProductForStationFamily } from "@/lib/product-access.mjs";
+import { GENERAL_STATION_MANAGEMENT_WHERE } from "@/lib/general-station-boundary.mjs";
 
 export async function PATCH(request, { params }) {
   try {
     const { stationId } = await params;
-    const station = await prisma.station.findUnique({ where: { id: String(stationId || "") }, select: { id: true, organisationId: true, status: true, slug: true, productFamily: true, streamConfig: { select: { streamUrl: true } } } });
+    const station = await prisma.station.findFirst({ where: { id: String(stationId || ""), ...GENERAL_STATION_MANAGEMENT_WHERE }, select: { id: true, organisationId: true, status: true, slug: true, productFamily: true, streamConfig: { select: { streamUrl: true } } } });
     if (!station) return NextResponse.json({ error: "Station not found." }, { status: 404 });
     if (station.productFamily === "CORRECTIONS") return NextResponse.json({ error: "Public listening is not available for Ruvanas Inside." }, { status: 403 });
     const product = subscriberProductForStationFamily(station.productFamily);

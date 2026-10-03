@@ -45,3 +45,15 @@ test("Super Admin station setup owns both streaming profile creation paths", asy
   assert.match(route, /encryptSecret\(input\.credential\)/);
   assert.match(route, /createExternalLiveSource\(/);
 });
+
+test("disabling an external destination does not claim provider disconnection", async () => {
+  const [form, route] = await Promise.all([
+    source("../app/admin/stations/[stationId]/setup/AdminStreamingProfiles.js"),
+    source("../app/api/admin/stations/[stationId]/streaming-profiles/route.js")
+  ]);
+  assert.match(route, /const external = \["ICECAST", "SHOUTCAST"\]/);
+  assert.match(route, /External source shutdown is unconfirmed/);
+  assert.match(route, /externalShutdownConfirmed: false/);
+  assert.match(route, /external \? \(externalNotice \? \{ lastSafeError: externalNotice \}/);
+  assert.match(form, /setMessage\(result\.notice \|\|/);
+});

@@ -164,6 +164,50 @@ test("C5 staff requests, rehabilitation and development enforce review and facil
     assert.equal(profile.status, 200);
     assert.equal(profile.body.evidence.modulesCompleted, 1);
     assert.equal(profile.body.pathway[0].record.status, "COMPLETED");
+
+    // A stale elevated grant must not turn a downgraded viewer into a writer,
+    // even before the team role workflow has reconciled older grants.
+    const requestInput = { facilityId: location.id, type: "MESSAGE", message: "Synthetic staff request" };
+    const rehabInput = { facilityId: location.id, categoryCode: "EDUCATION", mediaAssetId: media.id,
+      title: "Synthetic second item", providerName: "Test provider" };
+    assert.equal((await api("/api/corrections/requests", { method: "POST", cookie: managerCookie, body: requestInput })).status, 201);
+    assert.equal((await api("/api/corrections/rehabilitation", { method: "POST", cookie: managerCookie, body: rehabInput })).status, 201);
+    const policyWrite = await api(`/api/corrections/facilities/${location.id}`, { method: "PATCH", cookie: managerCookie,
+      body: { action: "SAVE_POLICY", allowedGenres: [], restrictedGenres: [], blockedTrackIds: [], blockedArtists: [] } });
+    assert.equal(policyWrite.status, 200, JSON.stringify(policyWrite.body));
+    assert.ok(policyWrite.body.policy.policyVersion > 1);
+    const reaffirmManagerGrant = await api(`/api/corrections/facilities/${location.id}/staff`, { method: "POST", cookie: ownerCookie,
+      body: { memberId: managerMember.id, permission: "MANAGER" } });
+    assert.equal(reaffirmManagerGrant.status, 200, JSON.stringify(reaffirmManagerGrant.body));
+    const requestCount = await db.correctionsRequest.count({ where: { organisationId: first.id } });
+    const rehabCount = await db.correctionsRehabContent.count({ where: { organisationId: first.id } });
+    await db.organisationMember.update({ where: { id: managerMember.id }, data: { role: "VIEWER" } });
+    assert.equal((await db.correctionsFacilityGrant.findUnique({ where: { organisationMemberId_facilityId: {
+      organisationMemberId: managerMember.id, facilityId: location.id } } })).permission, "MANAGER");
+    assert.equal((await api("/api/corrections/requests", { method: "POST", cookie: managerCookie, body: requestInput })).status, 403);
+    assert.equal((await api("/api/corrections/rehabilitation", { method: "POST", cookie: managerCookie, body: rehabInput })).status, 403);
+    assert.equal(await db.correctionsRequest.count({ where: { organisationId: first.id } }), requestCount);
+    assert.equal(await db.correctionsRehabContent.count({ where: { organisationId: first.id } }), rehabCount);
+
+    await db.organisationMember.update({ where: { id: managerMember.id }, data: { role: "MANAGER" } });
+    await db.correctionsFacilityGrant.update({ where: { organisationMemberId_facilityId: {
+      organisationMemberId: managerMember.id, facilityId: location.id } }, data: { canPriorityActivate: true } });
+    const downgrade = await api("/api/organisation/team", { method: "PATCH", cookie: ownerCookie,
+      body: { action: "UPDATE_ROLE", memberId: managerMember.id, role: "VIEWER" } });
+    assert.equal(downgrade.status, 200, JSON.stringify(downgrade.body));
+    const downgradedGrant = await db.correctionsFacilityGrant.findUnique({ where: { organisationMemberId_facilityId: {
+      organisationMemberId: managerMember.id, facilityId: location.id } } });
+    assert.equal(downgradedGrant.permission, "VIEWER");
+    assert.equal(downgradedGrant.canPriorityActivate, false);
+    const restoreManagerGrant = await api(`/api/corrections/facilities/${location.id}/staff`, { method: "POST", cookie: ownerCookie,
+      body: { memberId: managerMember.id, permission: "MANAGER", canPriorityActivate: true } });
+    assert.equal(restoreManagerGrant.status, 400, JSON.stringify(restoreManagerGrant.body));
+    assert.equal((await db.correctionsFacilityGrant.findUnique({ where: { organisationMemberId_facilityId: {
+      organisationMemberId: managerMember.id, facilityId: location.id } } })).permission, "VIEWER");
+    assert.equal((await api("/api/corrections/requests", { method: "POST", cookie: managerCookie, body: requestInput })).status, 403);
+    assert.equal((await api("/api/corrections/rehabilitation", { method: "POST", cookie: managerCookie, body: rehabInput })).status, 403);
+    assert.equal(await db.correctionsRequest.count({ where: { organisationId: first.id } }), requestCount);
+    assert.equal(await db.correctionsRehabContent.count({ where: { organisationId: first.id } }), rehabCount);
   } finally {
     for (const org of organisations) {
       await db.correctionsRequestDecision.deleteMany({ where: { organisationId: org.id } });

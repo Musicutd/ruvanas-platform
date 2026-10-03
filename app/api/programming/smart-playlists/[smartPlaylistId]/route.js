@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { resolveEntitlements } from "@/lib/entitlements.mjs";
 import { canAuthorSmartPlaylist, parseSmartPlaylistInput, smartPlaylistSlug } from "@/lib/smart-playlists.mjs";
 import { safeSmartPlaylist } from "@/lib/smart-playlist-service";
+import { GENERAL_SIMPLE_PLAYLIST_WHERE } from "@/lib/subscriber-simple-private-boundary.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +23,7 @@ export async function PUT(request, { params }) {
     if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 });
     const organisationId = context.membership.organisationId;
     const existing = await prisma.smartPlaylist.findFirst({
-      where: { id: params.smartPlaylistId, organisationId, simpleBuildMode: null },
+      where: { id: params.smartPlaylistId, organisationId, simpleBuildMode: null, ...GENERAL_SIMPLE_PLAYLIST_WHERE },
       select: { id: true, status: true, musicModeId: true, version: true }
     });
     if (!existing) return NextResponse.json({ error: "Smart Playlist not found." }, { status: 404 });

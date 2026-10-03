@@ -9,7 +9,8 @@ import { musicModeIsPlayable } from "@/lib/music-mode-playback.mjs";
 import { normalizeAutoDjPolicyInput } from "@/lib/autodj-policy.mjs";
 import { assertGenreSelection } from "@/lib/autodj-genre-entitlements.mjs";
 import { resolveAutoDjTarget } from "@/lib/autodj-targets";
-import { assertCorrectionsSchedulingAllowed } from "@/lib/corrections-scheduling-lock.mjs";
+import { assertCorrectionsSchedulingAllowed, CORRECTIONS_SCHEDULING_LOCK_MESSAGE } from "@/lib/corrections-scheduling-lock.mjs";
+import { GENERAL_STUDIO_CHANNEL_WHERE } from "@/lib/studio-general-output-boundary.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -77,7 +78,7 @@ export async function PUT(request) {
     expansion.entitlementLevel = entitlements.licensedMusicCatalogueLevel;
     expansion.blockedReason = null;
     const channel = await prisma.channel.findFirst({
-      where: { id: parsed.data.channelId, organisationId, status: "ACTIVE", ...(resolvedTarget?.channelId ? { id: resolvedTarget.channelId } : {}) },
+      where: { id: parsed.data.channelId, organisationId, status: "ACTIVE", ...(resolvedTarget?.channelId ? { id: resolvedTarget.channelId } : {}), ...GENERAL_STUDIO_CHANNEL_WHERE },
       select: { id: true, name: true, station: { select: { productFamily: true } } }
     });
     if (!channel) return NextResponse.json({ error: "The selected channel is not available to your organisation." }, { status: 404 });
@@ -107,11 +108,31 @@ export async function PUT(request) {
     }
 
     const saved = await prisma.$transaction(async (tx) => {
-      if (input.enabled) await assertCorrectionsSchedulingAllowed(tx, { organisationId, channelId: channel.id, ...(resolvedTarget?.type === "LOCATION" ? { locationId: resolvedTarget.id } : resolvedTarget?.type === "ZONE" ? { zoneId: resolvedTarget.id } : {}) });
       const policyKey = { channelId: channel.id, organisationId };
       const previous = await tx.autoDjPolicy.findUnique({
         where: { channelId_organisationId: policyKey }
       });
+      // Even a disable request must not edit a historical private policy via
+      // this general subscriber endpoint. Inside policy changes use Inside's
+      // authorised path, irrespective of the currently selected target.
+      if (previous?.rightsUse === "CORRECTIONS_RADIO") {
+        const error = new Error(CORRECTIONS_SCHEDULING_LOCK_MESSAGE);
+        error.code = "CORRECTIONS_SCHEDULING_LOCKED";
+        throw error;
+      }
+      await assertCorrectionsSchedulingAllowed(tx, {
+        organisationId,
+        channelId: channel.id,
+        ...(resolvedTarget?.type === "LOCATION" ? { locationId: resolvedTarget.id } : resolvedTarget?.type === "ZONE" ? { zoneId: resolvedTarget.id } : {})
+      });
+      if (previous?.targetType === "LOCATION" || previous?.targetType === "ZONE") {
+        await assertCorrectionsSchedulingAllowed(tx, {
+          organisationId,
+          ...(previous.targetType === "LOCATION" ? { locationId: previous.targetId } : { zoneId: previous.targetId })
+        });
+      } else if (previous?.targetType === "SCHOOL" || previous?.targetType?.endsWith("CHANNEL")) {
+        await assertCorrectionsSchedulingAllowed(tx, { organisationId, channelId: previous.targetId });
+      }
       const policy = await tx.autoDjPolicy.upsert({
         where: { channelId_organisationId: policyKey },
         create: { organisationId, channelId: channel.id, ...input, ...expansion },

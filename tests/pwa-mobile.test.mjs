@@ -23,9 +23,9 @@ test("station manifests are installable, branded and bounded to public routes", 
   assert.doesNotMatch(JSON.stringify(manifest), /organisationId|listenerToken|streamUrl|providerAccount/);
 });
 
-test("offline caching is restricted to anonymous station and podcast pages", () => {
-  assert.equal(publicOfflineCachePath("/radio/malta-live?source=pwa"), "/radio/malta-live");
-  assert.equal(publicOfflineCachePath("/podcasts/org/daily"), "/podcasts/org/daily");
+test("offline caching excludes reclassifiable station and podcast pages", () => {
+  assert.equal(publicOfflineCachePath("/radio/malta-live?source=pwa"), null);
+  assert.equal(publicOfflineCachePath("/podcasts/org/daily"), null);
   assert.equal(publicOfflineCachePath("/dashboard"), null);
   assert.equal(publicOfflineCachePath("/api/public/player/station/manifest"), null);
   assert.equal(publicOfflineCachePath("/listen/station"), null);
@@ -45,6 +45,9 @@ test("Stage 19.18 never caches credentials, APIs or protected audio", async () =
   assert.match(worker, /request\.headers\.has\("authorization"\)/);
   assert.match(worker, /request\.headers\.has\("range"\)/);
   assert.match(worker, /url\.pathname\.startsWith\("\/api\/"\)/);
+  assert.match(worker, /stage-19-18-v3/);
+  assert.doesNotMatch(worker, /ruvanas-pwa-pages|pageCacheKey|cache\.put\(pageCacheKey/);
+  assert.doesNotMatch(worker, /\(radio\|podcasts\)/);
   assert.match(worker, /\["audio", "video"\]/);
   assert.doesNotMatch(worker, /\/dashboard|\/admin|localStorage|sessionStorage/);
   assert.match(lifecycle, /beforeinstallprompt/);
@@ -59,6 +62,6 @@ test("Stage 19.18 never caches credentials, APIs or protected audio", async () =
 
 test("public offline cache classification remains fast at mobile-navigation scale", () => {
   const started = performance.now();
-  for (let index = 0; index < 25_000; index += 1) assert.equal(publicOfflineCachePath(`/radio/station-${index}?v=1`), `/radio/station-${index}`);
+  for (let index = 0; index < 25_000; index += 1) assert.equal(publicOfflineCachePath(`/radio/station-${index}?v=1`), null);
   assert.ok(performance.now() - started < 1_500);
 });

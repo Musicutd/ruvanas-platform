@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
-import { createServer } from "node:http";
+import { createServer, request as httpRequest } from "node:http";
 import test from "node:test";
 import bcrypt from "bcryptjs";
 import { PrismaClient } from "@prisma/client";
@@ -70,7 +70,7 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
   const suffix = randomUUID().slice(0, 8);
   const password = `C7-test-${randomUUID()}!`;
   const users = [];
-  let authority, outsider, plan;
+  let authority, outsider, plan, facilityBRelay;
   try {
     await new Promise((resolve, reject) => mediaStore.once("error", reject).listen(9107, "127.0.0.1", resolve));
     plan = await db.plan.create({ data: { name: `C7 ${suffix}`, code: `C7_${suffix}`, productFamily: "CORRECTIONS", tierNumber: 4,
@@ -288,6 +288,123 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
       ["CORRECTIONS_LOCAL", "CORRECTIONS_CENTRAL", "CORRECTIONS_LOCAL"]);
     assert.deepEqual(during.map((response) => response.body.insertions[0]?.title),
       [localA.title, central.title, localC.title]);
+    // Cut only B's test-client route to the cloud. A and C continue to use
+    // the app directly; this is a loopback transport test, not C8 Edge/LAN.
+    let facilityBRelayPort;
+    async function connectFacilityBRelay() {
+      const relay = createServer((request, response) => {
+        const target = new URL(request.url, baseUrl);
+        const upstream = httpRequest(target, { method: request.method,
+          headers: { ...request.headers, host: target.host } }, (source) => {
+          response.writeHead(source.statusCode, source.headers);
+          source.pipe(response);
+        });
+        upstream.on("error", () => {
+          if (!response.headersSent) response.writeHead(502);
+          response.end();
+        });
+        request.on("aborted", () => upstream.destroy());
+        request.pipe(upstream);
+      });
+      await new Promise((resolve, reject) => relay.once("error", reject)
+        .listen(facilityBRelayPort || 0, "127.0.0.1", resolve));
+      facilityBRelayPort = relay.address().port;
+      facilityBRelay = relay;
+    }
+    async function disconnectFacilityBRelay() {
+      const relay = facilityBRelay;
+      facilityBRelay = null;
+      relay.closeAllConnections();
+      await new Promise((resolve, reject) => relay.close((error) => error ? reject(error) : resolve()));
+    }
+    function facilityBUrl(url) {
+      const target = new URL(url, baseUrl);
+      return `http://127.0.0.1:${facilityBRelayPort}${target.pathname}${target.search}`;
+    }
+    async function facilityBManifest() {
+      const response = await fetch(facilityBUrl("/api/player/manifest"), { headers: {
+        origin: baseUrl, cookie: players[1].cookie,
+        "x-ruvanas-player-instance": players[1].instanceId
+      } });
+      return { status: response.status, body: await response.json() };
+    }
+    async function facilityBMedia(insertion) {
+      const response = await fetch(facilityBUrl(insertion.mediaUrl), { headers: {
+        cookie: players[1].cookie, range: "bytes=0-16043"
+      } });
+      assert.equal(response.status, 206);
+      return observedTone(Buffer.from(await response.arrayBuffer()));
+    }
+    await connectFacilityBRelay();
+    const beforeBOutage = await facilityBManifest();
+    assert.equal(beforeBOutage.status, 200);
+    assert.equal(beforeBOutage.body.insertions[0]?.programmingSource, "CORRECTIONS_CENTRAL");
+    assert.ok(Math.abs(await facilityBMedia(beforeBOutage.body.insertions[0]) - 440) < 5);
+    await disconnectFacilityBRelay();
+    await assert.rejects(() => fetch(facilityBUrl("/api/player/manifest"), {
+      headers: { cookie: players[1].cookie }, signal: AbortSignal.timeout(1000)
+    }), "B's test-client cloud transport must be disconnected");
+    for (const [index, expectedFrequency] of [[0, 880], [2, 220]]) {
+      const stillConnected = await manifest(index);
+      assert.equal(stillConnected.status, 200);
+      assert.equal(stillConnected.body.insertions[0]?.programmingSource, "CORRECTIONS_LOCAL");
+      const mediaResponse = await fetch(new URL(stillConnected.body.insertions[0].mediaUrl, baseUrl), {
+        headers: { cookie: players[index].cookie, range: "bytes=0-16043" }
+      });
+      assert.equal(mediaResponse.status, 206, `facility ${index} must remain reachable during B's outage`);
+      assert.ok(Math.abs(observedTone(Buffer.from(await mediaResponse.arrayBuffer())) - expectedFrequency) < 5);
+    }
+    const bLocalId = (await distribute(facilityBPrivate.id, [facilities[1].id]))[facilities[1].id];
+    const bLocalWindow = await createWindow(1, "LOCAL", bLocalId);
+    assert.equal(await db.proofOfPlayEvent.count({ where: { organisationId: authority.id,
+      playerId: players[1].player.id, eventType: "COMPLETED" } }), 0,
+    "a disconnected B cannot gain a delivery claim from a changed schedule");
+    await connectFacilityBRelay();
+    const recoveredB = await facilityBManifest();
+    assert.equal(recoveredB.status, 200);
+    const recoveredBItem = recoveredB.body.insertions[0];
+    assert.equal(recoveredBItem?.programmingSource, "CORRECTIONS_LOCAL");
+    assert.equal(recoveredBItem?.title, facilityBPrivate.title,
+      "B must re-resolve the current approved private source, not replay stale Central audio");
+    assert.ok(Math.abs(await facilityBMedia(recoveredBItem) - 175) < 5);
+    const bStartEventId = randomUUID();
+    const bStartProof = { events: [{ eventId: bStartEventId,
+      manifestVersion: recoveredB.body.version, proofToken: recoveredBItem.proofToken,
+      programmingSourceProofToken: recoveredBItem.programmingSourceProofToken,
+      scheduleItemId: recoveredBItem.scheduleItemId, itemType: "CORRECTIONS_AUDIO",
+      programmingSource: "CORRECTIONS_LOCAL", eventType: "STARTED",
+      occurredAt: new Date().toISOString(), positionSeconds: 0 }] };
+    async function sendBStartProof() {
+      const response = await fetch(facilityBUrl("/api/player/proof-of-play"), { method: "POST",
+        headers: { origin: baseUrl, cookie: players[1].cookie,
+          "x-ruvanas-player-instance": players[1].instanceId, "content-type": "application/json" },
+        body: JSON.stringify(bStartProof) });
+      return { status: response.status, body: await response.json() };
+    }
+    const firstBStart = await sendBStartProof();
+    assert.equal(firstBStart.status, 200, JSON.stringify(firstBStart.body));
+    assert.equal(firstBStart.body.accepted, 1);
+    const repeatedBStart = await sendBStartProof();
+    assert.equal(repeatedBStart.status, 200, JSON.stringify(repeatedBStart.body));
+    assert.equal(repeatedBStart.body.accepted, 0);
+    assert.equal(repeatedBStart.body.duplicates, 1);
+    const recordedBStart = await db.proofOfPlayEvent.findFirst({ where: {
+      organisationId: authority.id, playerId: players[1].player.id,
+      clientEventId: bStartEventId, eventType: "STARTED"
+    }, select: { id: true } });
+    assert.ok(recordedBStart);
+    const bStartedReport = await fetch(`${baseUrl}/api/corrections/network/report/export?facilityId=${facilities[1].id}&source=CORRECTIONS_LOCAL&status=STARTED`,
+      { headers: { cookie: owner.cookie } });
+    assert.equal(bStartedReport.status, 200);
+    assert.equal((await bStartedReport.text()).split(recordedBStart.id).length - 1, 1,
+      "the recovered B start appears once in historical proof export");
+    assert.equal(await db.proofOfPlayEvent.count({ where: { organisationId: authority.id,
+      playerId: players[1].player.id, eventType: "COMPLETED" } }), 0,
+    "a STARTED proof must not count B as delivered");
+    assert.equal((await api(`/api/corrections/network/windows/${bLocalWindow}`,
+      { method: "DELETE", cookie: owner.cookie })).status, 200);
+    assert.equal((await facilityBManifest()).body.insertions[0]?.programmingSource, "CORRECTIONS_CENTRAL");
+    await disconnectFacilityBRelay();
     const localASubmission = await db.correctionsSubmission.findFirst({ where: { programmeId: localA.id } });
     const localARender = await db.audioRender.findUnique({ where: { id: localASubmission.renderId } });
     await db.correctionsFacility.update({ where: { locationId: facilities[0].id },
@@ -675,6 +792,10 @@ test("C7 network routes require current Tier 4 and explicit cross-facility autho
     assert.equal((await fetch(`${baseUrl}/api/corrections/network/report/export`, { headers: { cookie: owner.cookie } })).status, 403);
     assert.equal((await api("/api/corrections/network", { cookie: manager.cookie })).status, 403);
   } finally {
+    if (facilityBRelay) {
+      facilityBRelay.closeAllConnections();
+      await new Promise((resolve) => facilityBRelay.close(resolve));
+    }
     if (mediaStore.listening) await new Promise((resolve) => mediaStore.close(resolve));
     if (authority) {
       await db.rightsUsageLedgerEvent.deleteMany({ where: { organisationId: authority.id } });

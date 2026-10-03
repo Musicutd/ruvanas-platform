@@ -87,3 +87,26 @@ test("RSS generation remains bounded for a full public feed", () => {
   assert.match(rss, /Episode 199/);
   assert.ok(performance.now() - started < 500);
 });
+
+test("public podcast page, RSS, metadata and audio share current Corrections station and media guards", async () => {
+  const [loader, rss, metadata, audio, page, worker] = await Promise.all([
+    readFile(new URL("../lib/public-podcast.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/public/podcasts/[organisationSlug]/[feedSlug]/rss/route.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/public/podcasts/[organisationSlug]/[feedSlug]/route.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/public/podcasts/[organisationSlug]/[feedSlug]/episodes/[podcastEpisodeId]/audio/route.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/podcasts/[organisationSlug]/[feedSlug]/page.js", import.meta.url), "utf8"),
+    readFile(new URL("../public/service-worker.js", import.meta.url), "utf8")
+  ]);
+  assert.match(loader, /station:\s*\{\s*is:\s*GENERAL_STATION_MANAGEMENT_WHERE\s*\}/);
+  assert.match(loader, /channel:\s*\{\s*is:\s*GENERAL_STUDIO_CHANNEL_WHERE\s*\}/);
+  assert.match(loader, /mediaAsset:\s*\{\s*is:\s*\{\s*organisationId:\s*organisation\.id,\s*\.\.\.GENERAL_STUDIO_MEDIA_ASSET_WHERE/);
+  assert.match(loader, /loadPublicPodcastAudio[\s\S]*loadPublicPodcastSeries\(organisationSlug, feedSlug\)/);
+  assert.match(rss, /loadPublicPodcastSeries/);
+  assert.match(rss, /"Cache-Control": "private, no-store"/);
+  assert.match(metadata, /loadPublicPodcastSeries/);
+  assert.match(metadata, /"Cache-Control": "private, no-store"/);
+  assert.match(audio, /loadPublicPodcastAudio/);
+  assert.match(audio, /cacheControl: "private, no-store"/);
+  assert.match(page, /loadPublicPodcastSeries/);
+  assert.doesNotMatch(worker, /ruvanas-pwa-pages|pageCacheKey/);
+});

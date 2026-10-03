@@ -40,7 +40,7 @@ export default function AdminStreamingProfiles({ stationId, channels, destinatio
       const response = await fetch(endpoint, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ destinationId: destination.id, enabled: !destination.enabled }) });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Unable to update this destination.");
-      setMessage(result.destination.enabled ? "Destination enabled." : "Destination disabled.");
+      setMessage(result.notice || (result.destination.enabled ? "Destination enabled." : "Destination disabled."));
       router.refresh();
     } catch (error) { setMessage(error.message); }
     finally { setBusy(false); }

@@ -7,7 +7,8 @@ import { loadEligibleSubscriberMusic, rightsUseForChannel } from "@/lib/subscrib
 import { resolveAutoDjTarget } from "@/lib/autodj-targets";
 import { canManageSubscriberProgramming } from "@/lib/subscriber-programming.mjs";
 import { subscriberProductAccess } from "@/lib/product-access.mjs";
-import { assertCorrectionsSchedulingAllowed } from "@/lib/corrections-scheduling-lock.mjs";
+import { assertCorrectionsSchedulingAllowed, CORRECTIONS_SCHEDULING_LOCK_MESSAGE } from "@/lib/corrections-scheduling-lock.mjs";
+import { GENERAL_STUDIO_CHANNEL_WHERE } from "@/lib/studio-general-output-boundary.mjs";
 
 const schema = z.object({
   channelId: z.string().cuid(), enabled: z.boolean(),
@@ -28,7 +29,7 @@ export async function PUT(request) {
       return NextResponse.json({ error: "Only an organisation owner or manager can change automatic music for a listening area." }, { status: 403 });
     }
     const organisationId = access.context.membership.organisationId;
-    const channel = await prisma.channel.findFirst({ where: { id: parsed.data.channelId, organisationId, status: { in: ["ACTIVE", "DRAFT"] } }, include: {
+    const channel = await prisma.channel.findFirst({ where: { id: parsed.data.channelId, organisationId, status: { in: ["ACTIVE", "DRAFT"] }, ...GENERAL_STUDIO_CHANNEL_WHERE }, include: {
       station: { select: { productFamily: true } }, autoDjPolicy: { select: { territory: true } },
       zoneAssignments: { where: { activeFrom: { lte: new Date() }, OR: [{ activeTo: null }, { activeTo: { gt: new Date() } }] }, include: { zone: { include: { location: { select: { countryCode: true } } } } } }
     } });
@@ -67,7 +68,23 @@ export async function PUT(request) {
     const selected = genreCodes.length ? entries.filter((entry) => entry.genreCodes.some((code) => genreCodes.includes(code))) : entries;
     if (parsed.data.enabled && !selected.length) return NextResponse.json({ error: "No rights-approved songs match this channel and genre selection yet." }, { status: 400 });
     const saved = await prisma.$transaction(async (tx) => {
-      if (parsed.data.enabled) await assertCorrectionsSchedulingAllowed(tx, { organisationId, channelId: channel.id, ...(target?.type === "ZONE" ? { zoneId: target.id } : {}) });
+      const previous = await tx.autoDjPolicy.findUnique({ where: { channelId_organisationId: { channelId: channel.id, organisationId } } });
+      if (previous?.rightsUse === "CORRECTIONS_RADIO") {
+        const error = new Error(CORRECTIONS_SCHEDULING_LOCK_MESSAGE);
+        error.code = "CORRECTIONS_SCHEDULING_LOCKED";
+        throw error;
+      }
+      // Disabling is a policy mutation too. Reject historical private targets
+      // even if the current channel now appears ordinary.
+      await assertCorrectionsSchedulingAllowed(tx, { organisationId, channelId: channel.id, ...(target?.type === "ZONE" ? { zoneId: target.id } : {}) });
+      if (previous?.targetType === "LOCATION" || previous?.targetType === "ZONE") {
+        await assertCorrectionsSchedulingAllowed(tx, {
+          organisationId,
+          ...(previous.targetType === "LOCATION" ? { locationId: previous.targetId } : { zoneId: previous.targetId })
+        });
+      } else if (previous?.targetType === "SCHOOL" || previous?.targetType?.endsWith("CHANNEL")) {
+        await assertCorrectionsSchedulingAllowed(tx, { organisationId, channelId: previous.targetId });
+      }
       const slug = `nonstop-${channel.id}`;
       let mode = await tx.musicMode.findUnique({ where: { organisationId_slug: { organisationId, slug } } });
       if (!mode) mode = await tx.musicMode.create({ data: { organisationId, name: `AutoDJ Non-Stop · ${channel.name}`, slug, status: "ACTIVE" } });

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { publicRequestOrigin } from "@/lib/origin-policy.mjs";
+import { requestBodyLimitBytes } from "@/lib/request-size-policy.mjs";
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
@@ -42,10 +43,12 @@ export async function middleware(request) {
 
   const contentLength = Number(request.headers.get("content-length") || 0);
   const singleCatalogueUpload = request.nextUrl.pathname === "/api/admin/catalogue/upload";
-  const maxRequestBytes = singleCatalogueUpload ? 55 * 1024 * 1024 : 10 * 1024 * 1024;
+  const contributorRecordingUpload = request.nextUrl.pathname === "/api/corrections/contributor/recordings";
+  const maxRequestBytes = requestBodyLimitBytes(request.nextUrl.pathname);
   if (Number.isFinite(contentLength) && contentLength > maxRequestBytes) {
     return NextResponse.json(
-      { error: singleCatalogueUpload ? "The single-track upload exceeds the 50 MB audio limit." : "This request exceeds the 10 MB request limit." },
+      { error: singleCatalogueUpload ? "The single-track upload exceeds the 50 MB audio limit." :
+        contributorRecordingUpload ? "The recording exceeds the 50 MB audio limit." : "This request exceeds the 10 MB request limit." },
       { status: 413, headers: { "x-request-id": requestId } }
     );
   }

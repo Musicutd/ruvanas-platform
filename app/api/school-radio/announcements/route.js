@@ -28,6 +28,7 @@ function announcementInclude() {
     createdBy: { select: { id: true, name: true, email: true } },
     reviewedBy: { select: { id: true, name: true, email: true } },
     broadcastSlots: {
+      where: { OR: [{ location: { correctionsFacility: { is: null } } }, { zone: { location: { correctionsFacility: { is: null } } } }] },
       orderBy: { startsAt: "asc" },
       include: {
         location: { select: { id: true, name: true } },
@@ -64,7 +65,7 @@ export async function GET() {
       }
     }),
     prisma.location.findMany({
-      where: { organisationId, status: { not: "CLOSED" } },
+      where: { organisationId, status: { not: "CLOSED" }, correctionsFacility: { is: null } },
       orderBy: { name: "asc" },
       select: {
         id: true,

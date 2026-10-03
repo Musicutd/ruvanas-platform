@@ -5,6 +5,8 @@ import { ORGANISATION_CONTENT_ROLES, ORGANISATION_MANAGER_ROLES, isOrganisationR
 import { requireActiveSchoolRadio } from "@/lib/school-radio-access";
 import { invalidatedRundownData, orderedPositions, transitionSchoolRundown, validateShowItem } from "@/lib/show-builder.mjs";
 import { validateSchoolBroadcastSlot } from "@/lib/school-radio.mjs";
+import { GENERAL_STUDIO_AUDIO_PROJECT_WHERE, GENERAL_STUDIO_MEDIA_ASSET_WHERE } from "@/lib/studio-general-asset-boundary.mjs";
+import { generalSchoolRundownWhere } from "@/lib/school-general-content-boundary.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -56,19 +58,19 @@ async function loadData(access) {
   const organisationId = access.organisation.id;
   const rightsDate = new Date(); rightsDate.setUTCHours(0, 0, 0, 0);
   const [episodes, tracks, jingles, announcements, takes, interviews, locations] = await Promise.all([
-    prisma.schoolEpisode.findMany({ where: { organisationId, status: { not: "ARCHIVED" } }, orderBy: { createdAt: "desc" }, select: { id: true, title: true, status: true, programmeId: true, programme: { select: { title: true } }, rundown: { include: rundownInclude } } }),
-    prisma.track.findMany({ where: { status: "READY", OR: [{ licenceExpiresAt: null }, { licenceExpiresAt: { gte: rightsDate } }], mediaAsset: { organisationId: null, libraryType: "RUVANAS_CATALOGUE", status: "READY" } }, orderBy: [{ artist: "asc" }, { title: "asc" }], take: 250, select: { id: true, title: true, artist: true, mediaAsset: { select: mediaSelect } } }),
-    prisma.promoVersion.findMany({ where: { status: "APPROVED", promoAsset: { organisationId, status: "ACTIVE", mediaType: "JINGLE" }, mediaAsset: { organisationId, status: "READY" } }, orderBy: { createdAt: "desc" }, take: 100, select: { id: true, version: true, durationSeconds: true, promoAsset: { select: { name: true, mediaType: true } }, mediaAsset: { select: mediaSelect } } }),
-    prisma.schoolAnnouncement.findMany({ where: { organisationId, status: "APPROVED" }, orderBy: { title: "asc" }, select: { id: true, title: true, promoVersion: { select: { id: true, durationSeconds: true, mediaAsset: { select: mediaSelect } } } } }),
-    prisma.audioTake.findMany({ where: { organisationId, status: "READY", project: { episodeId: { not: null }, status: { not: "ARCHIVED" } } }, orderBy: { createdAt: "desc" }, take: 100, select: { id: true, durationMs: true, promoVersionId: true, project: { select: { id: true, title: true, episodeId: true } }, mediaAsset: { select: mediaSelect } } }),
-    prisma.mediaAsset.findMany({ where: { organisationId, status: "READY", mediaType: { in: ["ANNOUNCEMENT", "VOICEOVER"] }, audioTakes: { none: {} }, promoVersions: { none: {} } }, orderBy: { createdAt: "desc" }, take: 100, select: mediaSelect }),
-    prisma.location.findMany({ where: { organisationId, status: { not: "CLOSED" } }, orderBy: { name: "asc" }, select: { id: true, name: true, timezone: true, zones: { where: { status: { not: "OFFLINE" } }, orderBy: { name: "asc" }, select: { id: true, name: true } } } })
+    prisma.schoolEpisode.findMany({ where: { organisationId, status: { not: "ARCHIVED" }, OR: [{ rundown: { is: null } }, { rundown: { is: generalSchoolRundownWhere(organisationId) } }] }, orderBy: { createdAt: "desc" }, select: { id: true, title: true, status: true, programmeId: true, programme: { select: { title: true } }, rundown: { include: rundownInclude } } }),
+    prisma.track.findMany({ where: { status: "READY", isExplicit: false, permittedUses: { has: "SCHOOL_RADIO" }, OR: [{ licenceExpiresAt: null }, { licenceExpiresAt: { gte: rightsDate } }], mediaAsset: { organisationId: null, libraryType: "RUVANAS_CATALOGUE", status: "READY" } }, orderBy: [{ artist: "asc" }, { title: "asc" }], take: 250, select: { id: true, title: true, artist: true, mediaAsset: { select: mediaSelect } } }),
+    prisma.promoVersion.findMany({ where: { status: "APPROVED", promoAsset: { organisationId, status: "ACTIVE", mediaType: "JINGLE" }, mediaAsset: { organisationId, status: "READY", ...GENERAL_STUDIO_MEDIA_ASSET_WHERE } }, orderBy: { createdAt: "desc" }, take: 100, select: { id: true, version: true, durationSeconds: true, promoAsset: { select: { name: true, mediaType: true } }, mediaAsset: { select: mediaSelect } } }),
+    prisma.schoolAnnouncement.findMany({ where: { organisationId, status: "APPROVED", promoVersion: { mediaAsset: { organisationId, status: "READY", ...GENERAL_STUDIO_MEDIA_ASSET_WHERE } } }, orderBy: { title: "asc" }, select: { id: true, title: true, promoVersion: { select: { id: true, durationSeconds: true, mediaAsset: { select: mediaSelect } } } } }),
+    prisma.audioTake.findMany({ where: { organisationId, status: "READY", trashedAt: null, project: { episodeId: { not: null }, status: { not: "ARCHIVED" }, ...GENERAL_STUDIO_AUDIO_PROJECT_WHERE }, mediaAsset: { is: { organisationId, status: "READY", ...GENERAL_STUDIO_MEDIA_ASSET_WHERE } } }, orderBy: { createdAt: "desc" }, take: 100, select: { id: true, durationMs: true, promoVersionId: true, project: { select: { id: true, title: true, episodeId: true } }, mediaAsset: { select: mediaSelect } } }),
+    prisma.mediaAsset.findMany({ where: { organisationId, status: "READY", mediaType: { in: ["ANNOUNCEMENT", "VOICEOVER"] }, audioTakes: { none: {} }, promoVersions: { none: {} }, ...GENERAL_STUDIO_MEDIA_ASSET_WHERE }, orderBy: { createdAt: "desc" }, take: 100, select: mediaSelect }),
+    prisma.location.findMany({ where: { organisationId, status: { not: "CLOSED" }, correctionsFacility: { is: null } }, orderBy: { name: "asc" }, select: { id: true, name: true, timezone: true, zones: { where: { status: { not: "OFFLINE" } }, orderBy: { name: "asc" }, select: { id: true, name: true } } } })
   ]);
   return { episodes, catalogue: { tracks, jingles, announcements, takes, interviews }, locations, role: access.membership.role, canManage: isOrganisationRoleAllowed(access.membership.role, ORGANISATION_MANAGER_ROLES) };
 }
 
 async function findRundown(id, organisationId, tx = prisma) {
-  return tx.schoolRundown.findFirst({ where: { id, organisationId, status: { not: "ARCHIVED" } }, include: rundownInclude });
+  return tx.schoolRundown.findFirst({ where: { id, organisationId, status: { not: "ARCHIVED" }, ...generalSchoolRundownWhere(organisationId) }, include: rundownInclude });
 }
 
 async function validatedItemData(values, rundown, organisationId, tx) {
@@ -81,23 +83,23 @@ async function validatedItemData(values, rundown, organisationId, tx) {
   };
   if (values.type === "MUSIC_TRACK") {
     const rightsDate = new Date(); rightsDate.setUTCHours(0, 0, 0, 0);
-    const source = await tx.track.findFirst({ where: { id: values.sourceTrackId, status: "READY", OR: [{ licenceExpiresAt: null }, { licenceExpiresAt: { gte: rightsDate } }], mediaAsset: { organisationId: null, libraryType: "RUVANAS_CATALOGUE", status: "READY" } }, select: { id: true, mediaAssetId: true, mediaAsset: { select: { durationSeconds: true } } } });
+    const source = await tx.track.findFirst({ where: { id: values.sourceTrackId, status: "READY", isExplicit: false, permittedUses: { has: "SCHOOL_RADIO" }, OR: [{ licenceExpiresAt: null }, { licenceExpiresAt: { gte: rightsDate } }], mediaAsset: { organisationId: null, libraryType: "RUVANAS_CATALOGUE", status: "READY" } }, select: { id: true, mediaAssetId: true, mediaAsset: { select: { durationSeconds: true } } } });
     if (!source) throw new Error("Choose an approved Ruvanas catalogue track.");
     Object.assign(data, { sourceTrackId: source.id, estimatedDurationMs: data.estimatedDurationMs || (source.mediaAsset.durationSeconds ? source.mediaAsset.durationSeconds * 1000 : null) });
   } else if (values.type === "JINGLE") {
-    const source = await tx.promoVersion.findFirst({ where: { id: values.sourcePromoVersionId, status: "APPROVED", promoAsset: { organisationId, status: "ACTIVE" }, mediaAsset: { organisationId, status: "READY" } }, select: { id: true, durationSeconds: true, mediaAsset: { select: { durationSeconds: true } } } });
+    const source = await tx.promoVersion.findFirst({ where: { id: values.sourcePromoVersionId, status: "APPROVED", promoAsset: { organisationId, status: "ACTIVE" }, mediaAsset: { organisationId, status: "READY", ...GENERAL_STUDIO_MEDIA_ASSET_WHERE } }, select: { id: true, durationSeconds: true, mediaAsset: { select: { durationSeconds: true } } } });
     if (!source) throw new Error("Choose an approved school jingle or ID.");
     Object.assign(data, { sourcePromoVersionId: source.id, estimatedDurationMs: data.estimatedDurationMs || ((source.durationSeconds || source.mediaAsset.durationSeconds) ? (source.durationSeconds || source.mediaAsset.durationSeconds) * 1000 : null) });
   } else if (values.type === "VOICE_TRACK") {
-    const source = await tx.audioTake.findFirst({ where: { id: values.sourceTakeId, organisationId, status: "READY", project: { episodeId: rundown.episodeId } }, select: { id: true, durationMs: true } });
+    const source = await tx.audioTake.findFirst({ where: { id: values.sourceTakeId, organisationId, status: "READY", trashedAt: null, project: { episodeId: rundown.episodeId, ...GENERAL_STUDIO_AUDIO_PROJECT_WHERE }, mediaAsset: { is: { organisationId, status: "READY", ...GENERAL_STUDIO_MEDIA_ASSET_WHERE } } }, select: { id: true, durationMs: true } });
     if (!source) throw new Error("Choose a ready voice take recorded for this episode.");
     Object.assign(data, { sourceTakeId: source.id, estimatedDurationMs: data.estimatedDurationMs || source.durationMs });
   } else if (values.type === "INTERVIEW") {
-    const source = await tx.mediaAsset.findFirst({ where: { id: values.sourceMediaAssetId, organisationId, status: "READY" }, select: { id: true, durationSeconds: true } });
+    const source = await tx.mediaAsset.findFirst({ where: { id: values.sourceMediaAssetId, organisationId, status: "READY", mimeType: { startsWith: "audio/" }, ...GENERAL_STUDIO_MEDIA_ASSET_WHERE }, select: { id: true, durationSeconds: true } });
     if (!source) throw new Error("Choose an available interview or feature recording.");
     Object.assign(data, { sourceMediaAssetId: source.id, estimatedDurationMs: data.estimatedDurationMs || (source.durationSeconds ? source.durationSeconds * 1000 : null) });
   } else if (values.type === "ANNOUNCEMENT") {
-    const source = await tx.schoolAnnouncement.findFirst({ where: { id: values.sourceAnnouncementId, organisationId, status: "APPROVED" }, select: { id: true, promoVersion: { select: { durationSeconds: true, mediaAsset: { select: { durationSeconds: true } } } } } });
+    const source = await tx.schoolAnnouncement.findFirst({ where: { id: values.sourceAnnouncementId, organisationId, status: "APPROVED", promoVersion: { mediaAsset: { organisationId, status: "READY", ...GENERAL_STUDIO_MEDIA_ASSET_WHERE } } }, select: { id: true, promoVersion: { select: { durationSeconds: true, mediaAsset: { select: { durationSeconds: true } } } } } });
     if (!source) throw new Error("Choose an approved school announcement.");
     Object.assign(data, { sourceAnnouncementId: source.id, estimatedDurationMs: data.estimatedDurationMs || ((source.promoVersion.durationSeconds || source.promoVersion.mediaAsset.durationSeconds) ? (source.promoVersion.durationSeconds || source.promoVersion.mediaAsset.durationSeconds) * 1000 : null) });
   }
@@ -201,8 +203,8 @@ export async function POST(request) {
       const slotInput = validateSchoolBroadcastSlot(input);
       if (slotInput.startsAt < new Date(Date.now() - 5 * 60 * 1000)) throw new Error("Schedule the episode for the present or future.");
       const [location, zone, overlap] = await Promise.all([
-        slotInput.locationId ? prisma.location.findFirst({ where: { id: slotInput.locationId, organisationId, status: { not: "CLOSED" } }, select: { id: true } }) : null,
-        slotInput.zoneId ? prisma.zone.findFirst({ where: { id: slotInput.zoneId, location: { organisationId }, status: { not: "OFFLINE" } }, select: { id: true } }) : null,
+        slotInput.locationId ? prisma.location.findFirst({ where: { id: slotInput.locationId, organisationId, status: { not: "CLOSED" }, correctionsFacility: { is: null } }, select: { id: true } }) : null,
+        slotInput.zoneId ? prisma.zone.findFirst({ where: { id: slotInput.zoneId, location: { organisationId, correctionsFacility: { is: null } }, status: { not: "OFFLINE" } }, select: { id: true } }) : null,
         prisma.schoolBroadcastSlot.findFirst({ where: { organisationId, status: "APPROVED", ...(slotInput.locationId ? { locationId: slotInput.locationId } : { zoneId: slotInput.zoneId }), startsAt: { lt: slotInput.endsAt }, endsAt: { gt: slotInput.startsAt } }, select: { id: true } })
       ]);
       if ((slotInput.locationId && !location) || (slotInput.zoneId && !zone)) throw new Error("The selected school location or zone is unavailable.");

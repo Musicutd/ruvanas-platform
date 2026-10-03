@@ -18,7 +18,7 @@ export async function GET() {
   const access = await requireActiveSchoolRadio(ORGANISATION_CONTENT_ROLES);
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const posts = await prisma.schoolNoticeboardPost.findMany({
-    where: { organisationId: access.organisation.id },
+    where: { organisationId: access.organisation.id, OR: [{ location: { correctionsFacility: { is: null } } }, { zone: { location: { correctionsFacility: { is: null } } } }] },
     include: includePost,
     orderBy: [{ startsAt: "desc" }, { createdAt: "desc" }],
     take: 200
@@ -42,8 +42,8 @@ export async function POST(request) {
       select: { id: true, title: true }
     }),
     input.zoneId
-      ? prisma.zone.findFirst({ where: { id: input.zoneId, location: { organisationId }, status: { not: "OFFLINE" } }, select: { id: true } })
-      : prisma.location.findFirst({ where: { id: input.locationId, organisationId, status: { not: "CLOSED" } }, select: { id: true } }),
+      ? prisma.zone.findFirst({ where: { id: input.zoneId, location: { organisationId, correctionsFacility: { is: null } }, status: { not: "OFFLINE" } }, select: { id: true } })
+      : prisma.location.findFirst({ where: { id: input.locationId, organisationId, status: { not: "CLOSED" }, correctionsFacility: { is: null } }, select: { id: true } }),
     prisma.schoolNoticeboardPost.findFirst({
       where: {
         organisationId,

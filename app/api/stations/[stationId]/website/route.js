@@ -3,10 +3,11 @@ import { prisma } from "@/lib/prisma";
 import { requireOrganisationProductAccess, ORGANISATION_MANAGER_ROLES } from "@/lib/access-control";
 import { normalizeStationWebsiteSettings } from "@/lib/station-website.mjs";
 import { subscriberProductForStationFamily } from "@/lib/product-access.mjs";
+import { GENERAL_STATION_MANAGEMENT_WHERE } from "@/lib/general-station-boundary.mjs";
 
 export async function PATCH(request, { params }) {
   try {
-    const station = await prisma.station.findUnique({ where: { id: String(params.stationId || "") }, select: { id: true, organisationId: true, status: true, publicPlayerEnabled: true, slug: true, productFamily: true } });
+    const station = await prisma.station.findFirst({ where: { id: String(params.stationId || ""), ...GENERAL_STATION_MANAGEMENT_WHERE }, select: { id: true, organisationId: true, status: true, publicPlayerEnabled: true, slug: true, productFamily: true } });
     if (!station) return NextResponse.json({ error: "Station not found." }, { status: 404 });
     if (station.productFamily === "CORRECTIONS") return NextResponse.json({ error: "Public websites are not available for Ruvanas Inside." }, { status: 403 });
     const access = await requireOrganisationProductAccess(station.organisationId, subscriberProductForStationFamily(station.productFamily), ORGANISATION_MANAGER_ROLES);

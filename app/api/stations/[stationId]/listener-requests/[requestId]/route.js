@@ -4,13 +4,14 @@ import { requireOrganisationProductAccess, ORGANISATION_CONTENT_ROLES, ORGANISAT
 import { listenerRequestTransition, LISTENER_REQUEST_ACTIONS, safeListenerRequest } from "@/lib/listener-interaction.mjs";
 import { getRequestId } from "@/lib/security-log";
 import { subscriberProductForStationFamily } from "@/lib/product-access.mjs";
+import { GENERAL_STATION_MANAGEMENT_WHERE } from "@/lib/general-station-boundary.mjs";
 
 export async function PATCH(request, { params }) {
   try {
     const body = await request.json().catch(() => null);
     const action = String(body?.action || "").toUpperCase();
     if (!LISTENER_REQUEST_ACTIONS.includes(action)) return NextResponse.json({ error: "Choose a supported moderation action." }, { status: 400 });
-    const requestRecord = await prisma.listenerRequest.findFirst({ where: { id: String(params.requestId || ""), stationId: String(params.stationId || "") }, include: { station: { select: { productFamily: true } } } });
+    const requestRecord = await prisma.listenerRequest.findFirst({ where: { id: String(params.requestId || ""), stationId: String(params.stationId || ""), station: GENERAL_STATION_MANAGEMENT_WHERE }, include: { station: { select: { productFamily: true } } } });
     if (!requestRecord) return NextResponse.json({ error: "Listener request not found." }, { status: 404 });
     const access = await requireOrganisationProductAccess(requestRecord.organisationId, subscriberProductForStationFamily(requestRecord.station.productFamily), ["UNBLOCK"].includes(action) || body?.blockSession === true ? ORGANISATION_MANAGER_ROLES : ORGANISATION_CONTENT_ROLES);
     if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });

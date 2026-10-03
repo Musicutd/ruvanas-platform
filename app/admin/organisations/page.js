@@ -11,6 +11,7 @@ import PageHeader from "@/app/components/PageHeader";
 import EmptyState from "@/app/components/EmptyState";
 import { interfaceMessages } from "@/lib/interface-guidance.mjs";
 import { resolveEntitlements } from "@/lib/entitlements.mjs";
+import { subscriberTestResetAvailable } from "@/lib/subscriber-test-reset-availability.mjs";
 import {
   buildCorrectionsProductOnboarding,
   buildFaithProductOnboarding,
@@ -221,7 +222,7 @@ export default async function AdminOrganisationsPage() {
         description="Customer accounts contain their brands, locations, stations, channels and team members."
       >
         <div style={styles.headerActions}>
-          {canManageEntitlements ? <Link href="/admin/test-data-reset" style={styles.resetButton}>Reset all test data</Link> : null}
+          {canManageEntitlements && subscriberTestResetAvailable() ? <Link href="/admin/test-data-reset" style={styles.resetButton}>Reset all test data</Link> : null}
           <Link href="/admin/organisations/new" style={styles.addButton}>Add organisation</Link>
         </div>
       </PageHeader>

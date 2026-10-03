@@ -1975,6 +1975,8 @@ model Organisation {
   schoolAudioUploads                 SchoolAudioUploadSession[]
   audioRenders                       AudioRender[]
   studioProductHandoffs              StudioProductHandoff[]
+  studioPlayoutSessions              StudioPlayoutSession[]
+  studioProgrammePacks               StudioProgrammePack[]
   broadcastProcessingProfiles        BroadcastProcessingProfile[]
   schoolRundowns                     SchoolRundown[]
   schoolPodcastSeries                SchoolPodcastSeries[]
@@ -8298,8 +8300,9 @@ model StudioPlayoutSession {
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt
 
-  items    StudioPlayoutItem[]
-  commands StudioPlayoutCommand[]
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  items        StudioPlayoutItem[]
+  commands     StudioPlayoutCommand[]
 
   @@index([organisationId, status, updatedAt])
   @@index([channelId, status])
@@ -8366,7 +8369,8 @@ model StudioProgrammePack {
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
 
-  items StudioProgrammePackItem[]
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  items        StudioProgrammePackItem[]
 
   @@unique([organisationId, name])
   @@index([organisationId, updatedAt])

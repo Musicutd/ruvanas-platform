@@ -71,9 +71,11 @@ export async function POST(request) {
     }
 
     const locationIds = [...new Set(metrics.map((item) => item.locationId))];
-    const locationCount = await prisma.location.count({ where: { id: { in: locationIds }, organisationId: access.organisation.id } });
+    const locationCount = await prisma.location.count({
+      where: { id: { in: locationIds }, organisationId: access.organisation.id, correctionsFacility: { is: null } }
+    });
     if (locationCount !== locationIds.length) {
-      return NextResponse.json({ error: "Every metric location must belong to the authenticated organisation." }, { status: 403, headers: rateHeaders(rate) });
+      return NextResponse.json({ error: "One or more metric locations are unavailable for this integration." }, { status: 403, headers: rateHeaders(rate) });
     }
 
     const latestSourceTimestamp = new Date(Math.max(...metrics.map((item) => item.sourceTimestamp.getTime())));

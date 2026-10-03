@@ -5,6 +5,8 @@ import { simplePlaylistAccess } from "@/lib/simple-playlist-access";
 import { normaliseGenreCode } from "@/lib/autodj-genre-entitlements.mjs";
 import { parseSimplePlaylist } from "@/lib/subscriber-playlists.mjs";
 import { safeSimplePlaylist, rightsUseForChannel } from "@/lib/subscriber-playlist-service.mjs";
+import { GENERAL_STUDIO_CHANNEL_WHERE } from "@/lib/studio-general-output-boundary.mjs";
+import { GENERAL_SIMPLE_PLAYLIST_WHERE } from "@/lib/subscriber-simple-private-boundary.mjs";
 import { smartPlaylistSlug } from "@/lib/smart-playlists.mjs";
 
 export const dynamic = "force-dynamic";
@@ -15,13 +17,13 @@ export async function GET() {
     if (access.response) return access.response;
     const organisationId = access.context.membership.organisationId;
     const [channels, playlists, events, genres] = await Promise.all([
-      prisma.channel.findMany({ where: { organisationId, status: { in: ["ACTIVE", "DRAFT"] } }, include: {
+      prisma.channel.findMany({ where: { organisationId, status: { in: ["ACTIVE", "DRAFT"] }, ...GENERAL_STUDIO_CHANNEL_WHERE }, include: {
         station: { select: { id: true, name: true, productFamily: true, status: true, streamConfig: { select: { streamUrl: true } } } },
         autoDjPolicy: { select: { enabled: true, selectedGenreCodes: true, playbackPolicy: true } },
         zoneAssignments: { include: { zone: { include: { location: { select: { timezone: true } } } } }, take: 1 }
       }, orderBy: { name: "asc" } }),
-      prisma.smartPlaylist.findMany({ where: { organisationId, simpleBuildMode: { not: null }, status: { not: "ARCHIVED" } }, include: { musicMode: { select: { name: true } } }, orderBy: { updatedAt: "desc" }, take: 200 }),
-      prisma.subscriberPlaylistEvent.findMany({ where: { organisationId, cancelledAt: null, endsAt: { gt: new Date() } }, include: { smartPlaylist: { include: { musicMode: { select: { name: true } } } }, channel: { select: { name: true } } }, orderBy: { startsAt: "asc" }, take: 200 }),
+      prisma.smartPlaylist.findMany({ where: { organisationId, simpleBuildMode: { not: null }, status: { not: "ARCHIVED" }, ...GENERAL_SIMPLE_PLAYLIST_WHERE }, include: { musicMode: { select: { name: true } } }, orderBy: { updatedAt: "desc" }, take: 200 }),
+      prisma.subscriberPlaylistEvent.findMany({ where: { organisationId, cancelledAt: null, endsAt: { gt: new Date() }, channel: { is: GENERAL_STUDIO_CHANNEL_WHERE }, smartPlaylist: { is: GENERAL_SIMPLE_PLAYLIST_WHERE } }, include: { smartPlaylist: { include: { musicMode: { select: { name: true } } } }, channel: { select: { name: true } } }, orderBy: { startsAt: "asc" }, take: 200 }),
       prisma.mediaGenre.findMany({ where: { active: true }, select: { id: true, name: true, slug: true }, orderBy: { name: "asc" } })
     ]);
     return NextResponse.json({
@@ -51,7 +53,7 @@ export async function POST(request) {
     if (access.response) return access.response;
     const body = await request.json().catch(() => null);
     const organisationId = access.context.membership.organisationId;
-    const channel = await prisma.channel.findFirst({ where: { id: body?.channelId, organisationId, status: { in: ["ACTIVE", "DRAFT"] } }, include: { station: { select: { productFamily: true } } } });
+    const channel = await prisma.channel.findFirst({ where: { id: body?.channelId, organisationId, status: { in: ["ACTIVE", "DRAFT"] }, ...GENERAL_STUDIO_CHANNEL_WHERE }, include: { station: { select: { productFamily: true } } } });
     if (!channel) return NextResponse.json({ error: "Choose a channel owned by your organisation." }, { status: 404 });
     if (!rightsUseForChannel(channel)) return NextResponse.json({ error: "This channel needs a music-rights profile before playlists can be created." }, { status: 409 });
     const genres = await prisma.mediaGenre.findMany({ where: { active: true }, select: { slug: true, name: true } });

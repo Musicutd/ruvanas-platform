@@ -21,7 +21,8 @@ export async function GET(request) {
     const take = Math.min(Math.max(Number.parseInt(url.searchParams.get("limit") || "50", 10) || 50, 1), MAX_PAGE_SIZE);
     const cursor = url.searchParams.get("cursor");
     const locations = await prisma.location.findMany({
-      where: { organisationId: access.organisation.id },
+      // Generic integration scopes never grant access to private Corrections facilities.
+      where: { organisationId: access.organisation.id, correctionsFacility: { is: null } },
       select: { id: true, name: true, slug: true, timezone: true, status: true, createdAt: true, updatedAt: true },
       orderBy: { id: "asc" },
       take: take + 1,

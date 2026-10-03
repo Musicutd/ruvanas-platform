@@ -33,8 +33,8 @@ export async function POST(request) {
   const organisationId = access.organisation.id;
   const [announcement, location, zone] = await Promise.all([
     prisma.schoolAnnouncement.findFirst({ where: { id: parsed.data.announcementId, organisationId, status: "APPROVED" } }),
-    slotInput.locationId ? prisma.location.findFirst({ where: { id: slotInput.locationId, organisationId, status: { not: "CLOSED" } } }) : null,
-    slotInput.zoneId ? prisma.zone.findFirst({ where: { id: slotInput.zoneId, location: { organisationId }, status: { not: "OFFLINE" } } }) : null
+    slotInput.locationId ? prisma.location.findFirst({ where: { id: slotInput.locationId, organisationId, status: { not: "CLOSED" }, correctionsFacility: { is: null } } }) : null,
+    slotInput.zoneId ? prisma.zone.findFirst({ where: { id: slotInput.zoneId, location: { organisationId, correctionsFacility: { is: null } }, status: { not: "OFFLINE" } } }) : null
   ]);
   if (!announcement) return NextResponse.json({ error: "Only an approved announcement can be scheduled." }, { status: 409 });
   if (slotInput.locationId && !location) return NextResponse.json({ error: "The selected location is unavailable." }, { status: 400 });

@@ -2,10 +2,11 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireOrganisationProductAccess, ORGANISATION_MANAGER_ROLES } from "@/lib/access-control";
 import { createStationDomainVerificationToken, normalizeStationDomain, stationDomainDnsName, stationDomainDnsValue } from "@/lib/station-website.mjs";
+import { GENERAL_STATION_MANAGEMENT_WHERE } from "@/lib/general-station-boundary.mjs";
 
 export async function POST(request, { params }) {
   try {
-    const station = await prisma.station.findUnique({ where: { id: String(params.stationId || "") }, select: { id: true, organisationId: true } });
+    const station = await prisma.station.findFirst({ where: { id: String(params.stationId || ""), ...GENERAL_STATION_MANAGEMENT_WHERE }, select: { id: true, organisationId: true } });
     if (!station) return NextResponse.json({ error: "Station not found." }, { status: 404 });
     const access = await requireOrganisationProductAccess(station.organisationId, "ONLINE", ORGANISATION_MANAGER_ROLES);
     if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });

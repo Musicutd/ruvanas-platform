@@ -5,6 +5,7 @@ import { ORGANISATION_CONTENT_ROLES, ORGANISATION_MANAGER_ROLES, isOrganisationR
 import { requireActiveSchoolRadio } from "@/lib/school-radio-access";
 import { SCHOOL_RADIO_POLICY_VERSION, transitionSchoolEpisode } from "@/lib/school-radio.mjs";
 import { SCHOOL_PUBLICATION_POLICY_VERSION } from "@/lib/school-publication.mjs";
+import { GENERAL_STUDIO_AUDIO_PROJECT_WHERE, GENERAL_STUDIO_MEDIA_ASSET_WHERE } from "@/lib/studio-general-asset-boundary.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,7 @@ const episodeInclude = {
   createdBy: { select: { id: true, name: true, email: true } },
   contributors: { include: { contributor: { select: { id: true, displayName: true, referenceCode: true, status: true } } } },
   submissions: {
+    where: { promoVersion: { is: { mediaAsset: { is: GENERAL_STUDIO_MEDIA_ASSET_WHERE } } } },
     orderBy: { revision: "desc" },
     include: {
       submittedBy: { select: { id: true, name: true, email: true } },
@@ -65,7 +67,7 @@ export async function GET() {
     }),
     prisma.schoolEpisode.findMany({ where: { organisationId, status: { not: "ARCHIVED" } }, orderBy: { createdAt: "desc" }, include: episodeInclude }),
     prisma.promoVersion.findMany({
-      where: { status: { in: ["IN_REVIEW", "APPROVED"] }, mediaAsset: { organisationId, status: "READY" }, promoAsset: { organisationId, status: "ACTIVE" } },
+      where: { status: { in: ["IN_REVIEW", "APPROVED"] }, mediaAsset: { organisationId, status: "READY", ...GENERAL_STUDIO_MEDIA_ASSET_WHERE }, promoAsset: { organisationId, status: "ACTIVE" } },
       orderBy: [{ promoAsset: { name: "asc" } }, { version: "desc" }],
       select: { id: true, version: true, status: true, durationSeconds: true, promoAsset: { select: { id: true, name: true } }, mediaAsset: { select: { originalName: true, mimeType: true } } }
     }),
@@ -137,7 +139,7 @@ export async function POST(request) {
       } else if (data.action === "SUBMIT_EPISODE") {
         const [episode, version] = await Promise.all([
           tx.schoolEpisode.findFirst({ where: { id: data.episodeId, organisationId }, include: { submissions: { orderBy: { revision: "desc" }, take: 1 } } }),
-          tx.promoVersion.findFirst({ where: { id: data.promoVersionId, status: { in: ["IN_REVIEW", "APPROVED"] }, mediaAsset: { organisationId, status: "READY" }, promoAsset: { organisationId, status: "ACTIVE" } }, select: { id: true } })
+          tx.promoVersion.findFirst({ where: { id: data.promoVersionId, status: { in: ["IN_REVIEW", "APPROVED"] }, mediaAsset: { organisationId, status: "READY", ...GENERAL_STUDIO_MEDIA_ASSET_WHERE }, promoAsset: { organisationId, status: "ACTIVE" } }, select: { id: true } })
         ]);
         if (!episode) throw notFound("The episode was not found.");
         if (!version) throw new Error("Choose school audio that is ready or approved for this organisation.");
@@ -145,7 +147,7 @@ export async function POST(request) {
         await tx.schoolSubmission.updateMany({ where: { episodeId: episode.id, status: "SUBMITTED" }, data: { status: "SUPERSEDED" } });
         entity = await tx.schoolSubmission.create({ data: { organisationId, episodeId: episode.id, promoVersionId: version.id, revision: (episode.submissions[0]?.revision || 0) + 1, notes: data.notes || null, submittedByUserId: access.user.id } });
         await tx.schoolEpisode.update({ where: { id: episode.id }, data: transition });
-        await tx.audioProject.updateMany({ where: { organisationId, episodeId: episode.id, takes: { some: { promoVersionId: version.id } } }, data: { status: "SUBMITTED" } });
+        await tx.audioProject.updateMany({ where: { organisationId, episodeId: episode.id, takes: { some: { promoVersionId: version.id } }, ...GENERAL_STUDIO_AUDIO_PROJECT_WHERE }, data: { status: "SUBMITTED" } });
       } else {
         const contributor = await tx.studentContributor.findFirst({ where: { id: data.contributorId, organisationId }, select: { id: true } });
         if (!contributor) throw notFound("The contributor was not found.");

@@ -96,6 +96,32 @@ test("database reads are tenant-scoped and avoid querying disabled signage", asy
   assert.ok(queries.filter((query) => "take" in query).every((query) => query.take <= 600));
 });
 
+test("Retail overview excludes Corrections facilities and their private playback evidence", async () => {
+  const queries = {};
+  const database = {
+    location: { findMany: async (args) => { queries.locations = args; return [location()]; } },
+    player: { findMany: async (args) => { queries.players = args; return [player()]; } },
+    musicSchedule: { findMany: async (args) => { queries.schedules = args; return []; } },
+    campaign: { findMany: async () => [] },
+    musicMode: { count: async () => 0 },
+    digitalSignageDevice: { findMany: async (args) => { queries.signage = args; return []; } }
+  };
+  const result = await loadRetailControlCentre(database, {
+    organisationId: "mixed-product-tenant", role: "OWNER", entitlements: { digitalSignageEnabled: true }, now
+  });
+  assert.deepEqual(queries.locations.where.correctionsFacility, { is: null });
+  assert.deepEqual(queries.players.where.zone.location.correctionsFacility, { is: null });
+  assert.deepEqual(queries.signage.where.zone.location.correctionsFacility, { is: null });
+  assert.deepEqual(queries.schedules.where.AND, [
+    { OR: [{ locationId: null }, { location: { correctionsFacility: { is: null } } }] },
+    { OR: [{ zoneId: null }, { zone: { location: { correctionsFacility: { is: null } } } }] },
+    { OR: [{ locationId: { not: null } }, { zoneId: { not: null } }] }
+  ]);
+  assert.deepEqual(result.stores.map((store) => store.name), ["Main Street"]);
+  const retailPage = await readFile(new URL("../app/dashboard/retail/page.js", import.meta.url), "utf8");
+  assert.match(retailPage, /playerListenerLease\.count\(\{ where: \{[^\n]*correctionsFacility: \{ is: null \}/);
+});
+
 test("Retail home keeps everyday actions visible and technical evidence optional", async () => {
   const client = await readFile(new URL("../app/dashboard/retail/RetailControlCentre.js", import.meta.url), "utf8");
   assert.match(client, /What would you like to do\?/);

@@ -13,7 +13,7 @@ export default async function RetailRadioDashboard() {
   const now = new Date();
   const [summary, liveStreams] = await Promise.all([
     loadRetailControlCentre(prisma, { organisationId, role: context.membership.role, entitlements, now }),
-    prisma.playerListenerLease.count({ where: { organisationId, revokedAt: null, expiresAt: { gt: now } } })
+    prisma.playerListenerLease.count({ where: { organisationId, revokedAt: null, expiresAt: { gt: now }, player: { zone: { location: { correctionsFacility: { is: null } } } } } })
   ]);
   const onboarding = buildRetailProductOnboarding({
     serviceEnabled: entitlements.serviceEnabled,

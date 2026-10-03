@@ -13,8 +13,9 @@ export async function PATCH(request, { params }) {
     const context = await getActiveOrganisationContext({ subscription: { include: { plan: true, billingContract: true } } });
     if (!context) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
     if (!context.membership) return NextResponse.json({ error: "No active organisation is available." }, { status: 403 });
-    if (!resolveEntitlements(context.membership.organisation.subscription).serviceEnabled) {
-      return NextResponse.json({ error: "Promotions are unavailable while this radio service is inactive." }, { status: 403 });
+    const entitlements = resolveEntitlements(context.membership.organisation.subscription);
+    if (!entitlements.serviceEnabled || entitlements.planProductFamily === "CORRECTIONS") {
+      return NextResponse.json({ error: "Promotions are unavailable for this service." }, { status: 403 });
     }
     if (!canPublishSubscriberPromotions(context.membership.role)) {
       return NextResponse.json({ error: "Only organisation owners and managers can publish or stop promotions." }, { status: 403 });

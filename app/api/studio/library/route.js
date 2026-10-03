@@ -4,6 +4,7 @@ import { requireActiveStudio } from "@/lib/studio-access";
 import { ORGANISATION_MEMBER_ROLES } from "@/lib/permissions.mjs";
 import { loadEligibleSubscriberMusic, rightsUseForChannel } from "@/lib/subscriber-playlist-service.mjs";
 import { filterStudioLibraryCards, studioLibraryCard, STUDIO_LIBRARY_PAGE_SIZE } from "@/lib/studio-library-browser.mjs";
+import { GENERAL_STUDIO_CHANNEL_WHERE } from "@/lib/studio-general-output-boundary.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +13,7 @@ const useByProduct = Object.freeze({ RETAIL: "RETAIL_RADIO", SCHOOL: "SCHOOL_RAD
 export async function GET(request) {
   const access = await requireActiveStudio(ORGANISATION_MEMBER_ROLES);
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
+  if (access.entitlements.planProductFamily === "CORRECTIONS") return NextResponse.json({ error: "Use supervised Ruvanas Inside Studio for Corrections work." }, { status: 403 });
   try {
     const params = new URL(request.url).searchParams;
     const requestedChannelId = params.get("channelId") || "";
@@ -19,7 +21,7 @@ export async function GET(request) {
     const genre = (params.get("genre") || "").slice(0, 60);
     const page = Math.min(100, Math.max(1, Number.parseInt(params.get("page") || "1", 10) || 1));
     const channels = await prisma.channel.findMany({
-      where: { organisationId: access.organisation.id, status: "ACTIVE" },
+      where: { organisationId: access.organisation.id, status: "ACTIVE", ...GENERAL_STUDIO_CHANNEL_WHERE },
       select: { id: true, name: true, musicRightsUse: true, station: { select: { productFamily: true } }, autoDjPolicy: { select: { territory: true } } },
       orderBy: { name: "asc" }
     });

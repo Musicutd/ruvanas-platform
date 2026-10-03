@@ -104,10 +104,16 @@ export async function PATCH(request, { params }) {
     stationId: access.station.id
   } });
   if (!destination) return NextResponse.json({ error: "Destination not found for this station." }, { status: 404 });
+  const external = ["ICECAST", "SHOUTCAST"].includes(destination.type);
+  const externalNotice = !body.enabled && external
+    ? "Destination disabled for new Ruvanas connections. External source shutdown is unconfirmed; verify and disconnect any active source at the provider."
+    : null;
   const updated = await prisma.$transaction(async (tx) => {
     const saved = await tx.studioBroadcastDestination.update({ where: { id: destination.id }, data: {
       enabled: body.enabled,
-      connectionState: body.enabled ? "STANDBY" : "DISABLED"
+      // Enable/disable controls future Ruvanas attempts, not an established
+      // external provider connection. Preserve its last observed state.
+      ...(external ? (externalNotice ? { lastSafeError: externalNotice } : {}) : { connectionState: body.enabled ? "STANDBY" : "DISABLED" })
     } });
     await tx.auditLog.create({ data: {
       organisationId: access.station.organisationId,
@@ -115,9 +121,9 @@ export async function PATCH(request, { params }) {
       action: body.enabled ? "STUDIO_BROADCAST_DESTINATION_ENABLED" : "STUDIO_BROADCAST_DESTINATION_DISABLED",
       entityType: "StudioBroadcastDestination",
       entityId: saved.id,
-      details: { stationId: access.station.id }
+      details: { stationId: access.station.id, ...(externalNotice ? { externalShutdownUnconfirmed: true } : {}) }
     } });
     return saved;
   });
-  return NextResponse.json({ destination: safeStudioDestination(updated) });
+  return NextResponse.json({ destination: safeStudioDestination(updated), ...(externalNotice ? { notice: externalNotice, externalShutdownConfirmed: false } : {}) });
 }

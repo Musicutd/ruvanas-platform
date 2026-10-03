@@ -18,6 +18,7 @@ import { buildPromoProcessingJobs } from "@/lib/promo-versioning.mjs";
 import { securityLog } from "@/lib/security-log";
 import { recordedClipData } from "@/lib/studio-recording.mjs";
 import { invalidateApprovedAudioOutputs } from "@/lib/audio-project-governance";
+import { GENERAL_STUDIO_AUDIO_PROJECT_WHERE, assertGeneralStudioAudioProject } from "@/lib/studio-general-asset-boundary.mjs";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -84,7 +85,7 @@ export async function POST(request, { params }) {
   if (!parsed.success) return NextResponse.json({ error: "The recording details are invalid." }, { status: 400 });
 
   const session = await prisma.schoolAudioUploadSession.findFirst({
-    where: { id: String(params.uploadId || ""), organisationId: access.organisation.id, createdByUserId: access.user.id, status: { in: ["INITIATED", "UPLOADING"] }, expiresAt: { gt: new Date() } },
+    where: { id: String((await params).uploadId || ""), organisationId: access.organisation.id, createdByUserId: access.user.id, status: { in: ["INITIATED", "UPLOADING"] }, expiresAt: { gt: new Date() }, project: { is: GENERAL_STUDIO_AUDIO_PROJECT_WHERE } },
     include: {
       parts: { orderBy: { partNumber: "asc" } },
       project: {
@@ -123,6 +124,7 @@ export async function POST(request, { params }) {
   const editDecision = normalizeEditDecision(parsed.data.editDecision);
 
   try {
+    await assertGeneralStudioAudioProject(prisma, access.organisation.id, session.projectId);
     await prisma.schoolAudioUploadSession.update({ where: { id: session.id }, data: { status: "COMPLETING" } });
     await r2.client.send(new CompleteMultipartUploadCommand({
       Bucket: r2.bucketName,
@@ -150,6 +152,7 @@ export async function POST(request, { params }) {
     await r2.client.send(new DeleteObjectCommand({ Bucket: r2.bucketName, Key: session.quarantineKey }));
 
     const result = await prisma.$transaction(async (tx) => {
+      await assertGeneralStudioAudioProject(tx, access.organisation.id, session.projectId);
       const mediaAsset = await tx.mediaAsset.create({ data: { organisationId: access.organisation.id, libraryType: "ORGANISATION_PROMO", name: session.project.title, originalName: session.originalName, storageKey: finalKey, mimeType: validation.contentType, sizeBytes: session.expectedSizeBytes, durationSeconds: parsed.data.durationMs ? Math.max(1, Math.round(parsed.data.durationMs / 1000)) : null, mediaType: "ANNOUNCEMENT", status: "READY" } });
       const promoAsset = await tx.promoAsset.create({ data: { organisationId: access.organisation.id, name: session.project.title, mediaType: "ANNOUNCEMENT", languageCode: "und" } });
       const promoVersion = await tx.promoVersion.create({ data: { promoAssetId: promoAsset.id, mediaAssetId: mediaAsset.id, version: 1, status: "IN_REVIEW", qcStatus: "PENDING", sourceType: "STUDIO", sourceReference: `audio-project:${session.projectId}`, languageCode: "und", checksumSha256: parsed.data.checksumSha256 || null, durationSeconds: mediaAsset.durationSeconds, submittedById: access.user.id, submittedAt: new Date(), processingJobs: { create: buildPromoProcessingJobs() } } });
@@ -184,12 +187,12 @@ export async function POST(request, { params }) {
   } catch (error) {
     await prisma.$transaction([
       prisma.schoolAudioUploadSession.update({ where: { id: session.id }, data: { status: "FAILED" } }),
-      prisma.audioProject.update({ where: { id: session.projectId }, data: { status: session.project.type === "MULTITRACK" ? "READY" : "DRAFT" } })
+      prisma.audioProject.updateMany({ where: { id: session.projectId, organisationId: access.organisation.id, ...GENERAL_STUDIO_AUDIO_PROJECT_WHERE }, data: { status: session.project.type === "MULTITRACK" ? "READY" : "DRAFT" } })
     ]).catch(() => {});
     try { await r2.client.send(new DeleteObjectCommand({ Bucket: r2.bucketName, Key: session.quarantineKey })); } catch {}
     try { await r2.client.send(new DeleteObjectCommand({ Bucket: r2.bucketName, Key: finalKey })); } catch {}
     securityLog("error", "AUDIO_LAB_UPLOAD_FAILED", request, { uploadId: session.id, projectId: session.projectId, error: error instanceof Error ? error.message : "unknown" });
-    return NextResponse.json({ error: error instanceof Error ? error.message : "The recording could not be finalised." }, { status: 500 });
+    return NextResponse.json({ error: error instanceof Error ? error.message : "The recording could not be finalised." }, { status: error?.status || 500 });
   }
 }
 

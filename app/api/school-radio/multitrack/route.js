@@ -4,6 +4,7 @@ import { ORGANISATION_CONTENT_ROLES, ORGANISATION_MANAGER_ROLES, isOrganisationR
 import { requireActiveStudio } from "@/lib/studio-access";
 import { createMultitrackProjectSchema } from "@/lib/multitrack-create-schema.mjs";
 import { defaultMultitrackState, studioMultitrackTrackLimit } from "@/lib/multitrack-studio.mjs";
+import { GENERAL_STUDIO_AUDIO_PROJECT_WHERE, GENERAL_STUDIO_MEDIA_ASSET_WHERE } from "@/lib/studio-general-asset-boundary.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -27,15 +28,15 @@ export async function GET() {
   const organisationId = access.organisation.id;
   const rightsDate = new Date();
   const [projects, programmes, episodes, groups, takes, catalogue, organisationAudio] = await Promise.all([
-    prisma.audioProject.findMany({ where: { organisationId, type: "MULTITRACK", status: { not: "ARCHIVED" } }, orderBy: { updatedAt: "desc" }, take: 50, select: { id: true, title: true, status: true, currentVersion: true, programmeId: true, episodeId: true, studentGroupId: true, updatedAt: true } }),
+    prisma.audioProject.findMany({ where: { organisationId, type: "MULTITRACK", status: { not: "ARCHIVED" }, ...GENERAL_STUDIO_AUDIO_PROJECT_WHERE }, orderBy: { updatedAt: "desc" }, take: 50, select: { id: true, title: true, status: true, currentVersion: true, programmeId: true, episodeId: true, studentGroupId: true, updatedAt: true } }),
     prisma.schoolProgramme.findMany({ where: { organisationId, status: "ACTIVE" }, orderBy: { title: "asc" }, select: { id: true, title: true } }),
     prisma.schoolEpisode.findMany({ where: { organisationId, status: { in: ["DRAFT", "CHANGES_REQUESTED"] } }, orderBy: { createdAt: "desc" }, select: { id: true, title: true, programmeId: true } }),
     prisma.studentGroup.findMany({ where: { organisationId }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
-    prisma.audioTake.findMany({ where: { organisationId, status: "READY", trashedAt: null, mediaAsset: { status: "READY" } }, orderBy: { createdAt: "desc" }, take: 100, select: { id: true, durationMs: true, waveformPeaks: true, mediaAsset: { select: mediaSelect } } }),
+    prisma.audioTake.findMany({ where: { organisationId, status: "READY", trashedAt: null, project: { is: GENERAL_STUDIO_AUDIO_PROJECT_WHERE }, mediaAsset: { is: { status: "READY", ...GENERAL_STUDIO_MEDIA_ASSET_WHERE } } }, orderBy: { createdAt: "desc" }, take: 100, select: { id: true, durationMs: true, waveformPeaks: true, mediaAsset: { select: mediaSelect } } }),
     access.entitlements.licensedMusicCatalogueEnabled
       ? prisma.track.findMany({ where: { status: "READY", OR: [{ licenceExpiresAt: null }, { licenceExpiresAt: { gte: rightsDate } }], mediaAsset: { organisationId: null, libraryType: "RUVANAS_CATALOGUE", status: "READY" } }, orderBy: [{ artist: "asc" }, { title: "asc" }], take: 250, select: { id: true, title: true, artist: true, mediaAsset: { select: mediaSelect } } })
       : Promise.resolve([]),
-    prisma.mediaAsset.findMany({ where: { organisationId, status: "READY", mimeType: { startsWith: "audio/" }, audioTakes: { none: { trashedAt: { not: null } } } }, orderBy: { createdAt: "desc" }, take: 150, select: mediaSelect })
+    prisma.mediaAsset.findMany({ where: { organisationId, status: "READY", mimeType: { startsWith: "audio/" }, audioTakes: { none: { trashedAt: { not: null } } }, ...GENERAL_STUDIO_MEDIA_ASSET_WHERE }, orderBy: { createdAt: "desc" }, take: 150, select: mediaSelect })
   ]);
   const sources = new Map();
   for (const item of takes) sources.set(item.mediaAsset.id, { ...item.mediaAsset, label: item.mediaAsset.name, sourceType: "TAKE", durationMs: item.durationMs || (item.mediaAsset.durationSeconds || 0) * 1000, waveformPeaks: item.waveformPeaks });
