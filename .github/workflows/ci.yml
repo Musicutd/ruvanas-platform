@@ -104,6 +104,8 @@ jobs:
       - name: Run final Retail, School and Online Radio platform acceptance
         env:
           INTEGRATION_BASE_URL: http://127.0.0.1:3100
+          # The integration glob also runs the isolated C9 revocation fixture.
+          R2_ENDPOINT: http://127.0.0.1:9107
         run: npm run test:acceptance
 
       - name: Validate C7 network tenancy and entitlement routes on isolated CI database
