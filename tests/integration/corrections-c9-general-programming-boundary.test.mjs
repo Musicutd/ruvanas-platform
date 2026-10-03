@@ -452,6 +452,43 @@ test("general programming cannot expose or draft schedules for private Inside fa
         programmingSource: "CORRECTIONS_PROGRAMME", playerName: normalPlayer.name,
         locationName: "Fictional private snapshot", zoneName: normalLocation.zones[0].name }
     ] });
+    const unconfirmedIntent = await db.playoutIntent.create({ data: {
+      ...intentBase, scheduleItemId: randomUUID(), playerId: normalPlayer.id,
+      zoneId: normalLocation.zones[0].id, campaignId: normalCampaign.id,
+      locationId: normalLocation.id, locationName: normalLocation.name,
+      plannedStart: new Date(intentBase.plannedStart.getTime() + 1_000)
+    } });
+    await db.playoutIntent.create({ data: {
+      ...intentBase, scheduleItemId: randomUUID(), playerId: normalPlayer.id,
+      zoneId: normalLocation.zones[0].id, channelId: normalChannel.id, campaignId: normalCampaign.id,
+      locationId: normalLocation.id, locationName: normalLocation.name,
+      plannedStart: new Date(intentBase.plannedStart.getTime() + 2_000)
+    } });
+    await db.proofOfPlayEvent.createMany({ data: [
+      { ...proofBase, clientEventId: randomUUID(), scheduleItemId: unconfirmedIntent.scheduleItemId,
+        playoutIntentId: unconfirmedIntent.id, playerId: normalPlayer.id, zoneId: normalLocation.zones[0].id,
+        campaignId: normalCampaign.id, programmingSource: "CORRECTIONS_PROGRAMME",
+        playerName: normalPlayer.name, locationName: normalLocation.name, zoneName: normalLocation.zones[0].name },
+      { ...proofBase, clientEventId: randomUUID(), scheduleItemId: unconfirmedIntent.scheduleItemId,
+        playoutIntentId: unconfirmedIntent.id, playerId: privatePlayer.id, zoneId: privateFacility.zones[0].id,
+        campaignId: normalCampaign.id, playerName: privatePlayer.name,
+        locationName: privateFacility.name, zoneName: privateFacility.zones[0].name },
+      { ...proofBase, clientEventId: randomUUID(), scheduleItemId: unconfirmedIntent.scheduleItemId,
+        playoutIntentId: unconfirmedIntent.id, playerId: privatePlayer.id, zoneId: normalLocation.zones[0].id,
+        campaignId: normalCampaign.id, playerName: privatePlayer.name,
+        locationName: normalLocation.name, zoneName: normalLocation.zones[0].name },
+      { ...proofBase, clientEventId: randomUUID(), scheduleItemId: randomUUID(),
+        playoutIntentId: unconfirmedIntent.id, playerId: normalPlayer.id, zoneId: normalLocation.zones[0].id,
+        campaignId: normalCampaign.id, playerName: normalPlayer.name,
+        locationName: normalLocation.name, zoneName: normalLocation.zones[0].name }
+    ] });
+    const verifiedReport = await api(`/api/reports/campaign-proof?${reportQuery}`, { cookie });
+    assert.equal(verifiedReport.status, 200, await verifiedReport.clone().text());
+    const verifiedSummary = (await verifiedReport.json()).report.summary;
+    assert.equal(verifiedSummary.planned, 2,
+      "a historically private-assigned channel cannot contribute a general campaign intent");
+    assert.equal(verifiedSummary.completed, 1,
+      "private-source, private-facility, wrong-player, or wrong-item proof cannot confirm an ordinary campaign intent");
     const visualAsset = await db.digitalSignageAsset.create({ data: {
       organisationId, uploadedByUserId: userId, name: "Fictional visual advert",
       originalName: "advert.png", storageKey: `c9-integration/${suffix}.png`, mimeType: "image/png",
