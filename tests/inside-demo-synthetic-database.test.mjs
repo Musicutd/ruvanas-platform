@@ -6,7 +6,7 @@ import { assertInsideDemoSyntheticDatabase } from "../scripts/assert-inside-demo
 
 const tenantTables = [
   "AuditLog", "CorrectionsProfile", "CorrectionsProgramme", "Location", "MediaAsset",
-  "OrganisationMember", "Player", "ProofOfPlayEvent", "Subscription"
+  "OrganisationMember", "OrganisationMediaProfile", "Player", "ProofOfPlayEvent", "Subscription"
 ];
 const allowedGlobalTables = [
   "_prisma_migrations", "Plan", "Organisation", "User", "Zone",
@@ -15,6 +15,30 @@ const allowedGlobalTables = [
 const orgId = "synthetic-organisation-id";
 const ownerId = "synthetic-owner-id";
 const draftDescription = "Fictional draft for exploring the review workflow. It contains no audio and cannot be broadcast.";
+const qaOrganisations = [
+  { id: "qa-health-organisation", slug: "ruvanas-health-qa", name: "Ruvanas Health QA",
+    subscriptionId: "qa-health-subscription", planCode: "HEALTH_PRO" },
+  { id: "qa-faith-organisation", slug: "ruvanas-faith-qa", name: "Ruvanas Faith QA",
+    subscriptionId: "qa-faith-subscription", planCode: "FAITH_PRO" },
+  { id: "qa-organisations-organisation", slug: "ruvanas-organisations-qa", name: "Ruvanas Organisations QA",
+    subscriptionId: "qa-organisations-subscription", planCode: "ORGANISATIONS_PRO" }
+];
+const qaSubscriptionNullFields = [
+  "retailRadioEnabled", "schoolRadioEnabled", "onlineRadioEnabled", "healthRadioEnabled",
+  "faithRadioEnabled", "organisationsEnabled", "correctionsRadioEnabled",
+  "schoolPublicPublishingEnabled", "retailMediaEnabled", "digitalSignageEnabled",
+  "complimentaryAccessCodeId", "complimentaryAccessActivatedAt",
+  "complimentaryPlanName", "complimentaryPlanCode", "complimentaryPlanTierNumber",
+  "complimentaryPlanProductFamily", "complimentaryStudioExternalDestinationLimit",
+  "complimentaryStationLimit", "complimentaryStorageLimitGb", "complimentaryListenerLimit",
+  "complimentaryMaxBitrateKbps", "complimentaryIncludesCatalogue",
+  "complimentaryLicensedMusicCatalogueLevel", "complimentaryPromoUploadEnabled",
+  "complimentaryRetailRadioEnabled", "complimentarySchoolRadioEnabled",
+  "complimentaryOnlineRadioEnabled", "complimentaryHealthRadioEnabled",
+  "complimentaryFaithRadioEnabled", "complimentaryOrganisationsEnabled",
+  "complimentaryCorrectionsRadioEnabled", "complimentarySchoolPublicPublishingEnabled",
+  "complimentaryRetailMediaEnabled", "complimentaryDigitalSignageEnabled"
+];
 
 function matches(row, where) {
   if (!where) return true;
@@ -52,7 +76,8 @@ function syntheticData() {
     addressLine1: null, addressLine2: null, city: null, region: null, postalCode: null
   }));
   return {
-    organisations: [{ id: orgId, slug: "inside-synthetic-demo", name: "Synthetic Inside Demo Authority" }],
+    organisations: [{ id: orgId, slug: "inside-synthetic-demo", name: "Synthetic Inside Demo Authority" },
+      ...qaOrganisations.map(({ id, slug, name }) => ({ id, slug, name }))],
     users: [{ id: ownerId, email: "inside-demo-owner@example.invalid", name: "Inside Demo Owner", role: "OWNER" }],
     locations,
     zones: insideDemoFacilities.map((facility) => ({
@@ -60,10 +85,23 @@ function syntheticData() {
     })),
     programmes: [{ organisationId: orgId, facilityId: "location-demo-alpha",
       title: "Synthetic orientation programme", description: draftDescription, status: "DRAFT" }],
-    plans: [{ id: "inside-plan", studioExternalDestinationLimit: null,
-      ...publicPlanDatabaseData(findPublicPlan("CORRECTIONS_NETWORK", "CORRECTIONS")) }],
+    plans: ["CORRECTIONS_NETWORK", ...qaOrganisations.map((row) => row.planCode)].map((code) => ({
+      id: `plan-${code}`, studioExternalDestinationLimit: null,
+      ...publicPlanDatabaseData(findPublicPlan(code))
+    })),
     memberships: [{ userId: ownerId, organisationId: orgId, role: "OWNER" }],
-    subscriptions: [{ organisationId: orgId, planId: "inside-plan", status: "ACTIVE" }],
+    subscriptions: [{ id: "inside-subscription", organisationId: orgId,
+      planId: "plan-CORRECTIONS_NETWORK", status: "ACTIVE" },
+      ...qaOrganisations.map((row) => ({ id: row.subscriptionId, organisationId: row.id,
+        planId: `plan-${row.planCode}`, status: "TRIAL",
+        createdAt: new Date("2026-10-03T09:00:00.000Z"),
+        currentPeriodEnd: new Date("2036-10-03T09:00:00.000Z"),
+        complimentaryAccessActive: false,
+        ...Object.fromEntries(qaSubscriptionNullFields.map((field) => [field, null])) }))],
+    organisationMediaProfiles: [{ id: "qa-organisations-media-profile",
+      organisationId: "qa-organisations-organisation", template: "GENERAL", locale: "en-MT",
+      timezone: "Europe/Malta", regionalPriceBookCurrency: "EUR",
+      terminology: null, disclosureText: null }],
     correctionsProfiles: [{ organisationId: orgId, cleanOnly: true, policyVersion: 1, allowedGenres: [],
       restrictedGenres: [], blockedTrackIds: [], blockedArtists: [] }],
     correctionsFacilities: insideDemoFacilities.map((facility) => ({
@@ -83,7 +121,8 @@ function syntheticData() {
     tables: [...tenantTables.map((tableName) => ({ tableName, hasOrganisationId: true })),
       ...allowedGlobalTables.map((tableName) => ({ tableName, hasOrganisationId: false })),
       { tableName: "UnusedGlobal", hasOrganisationId: false }],
-    tableRows: { Subscription: [orgId], OrganisationMember: [orgId],
+    tableRows: { Subscription: [orgId, ...qaOrganisations.map((row) => row.id)],
+      OrganisationMediaProfile: ["qa-organisations-organisation"], OrganisationMember: [orgId],
       CorrectionsProfile: [orgId], CorrectionsProgramme: [orgId], Location: [orgId] }
   };
 }
@@ -94,6 +133,7 @@ function database(data) {
     organisation: delegate(data.organisations), user: delegate(data.users),
     location: delegate(data.locations), zone: delegate(data.zones),
     plan: delegate(data.plans), organisationMember: delegate(data.memberships),
+    organisationMediaProfile: delegate(data.organisationMediaProfiles),
     subscription: delegate(data.subscriptions), correctionsProfile: delegate(data.correctionsProfiles),
     correctionsProgramme: delegate(data.programmes), correctionsFacility: delegate(data.correctionsFacilities),
     session: delegate(data.sessions),
@@ -103,16 +143,16 @@ function database(data) {
       assert.match(parts.join(""), /information_schema\.tables/);
       return data.tables;
     },
-    $queryRawUnsafe: async (sql, expectedOrganisationId) => {
+    $queryRawUnsafe: async (sql, ...expectedOrganisationIds) => {
       const tableName = /FROM "public"\."([A-Za-z_][A-Za-z0-9_]*)"/.exec(sql)?.[1];
       assert.ok(tableName);
       queriedTables.push(tableName);
       if (sql.includes("WHERE")) {
-        assert.match(sql, /"organisationId" IS NOT NULL AND "organisationId" <> \$1/);
+        assert.match(sql, /"organisationId" IS NOT NULL AND "organisationId" NOT IN \(\$1(?:, \$\d+)*\)/);
         return [{ hasUnexpected: (data.tableRows[tableName] || [])
-          .some((value) => value !== null && value !== expectedOrganisationId) }];
+          .some((value) => value !== null && !expectedOrganisationIds.includes(value)) }];
       }
-      assert.equal(expectedOrganisationId, undefined);
+      assert.equal(expectedOrganisationIds.length, 0);
       return [{ hasUnexpected: (data.tableRows[tableName] || []).length > 0 }];
     },
     queriedTables
@@ -122,21 +162,36 @@ function database(data) {
 test("empty named demo database passes without writing or revealing records", async () => {
   const data = syntheticData();
   for (const key of ["organisations", "users", "locations", "zones", "programmes", "plans",
-    "memberships", "subscriptions", "correctionsProfiles", "correctionsFacilities", "sessions", "auditLogs"]) data[key] = [];
+    "memberships", "subscriptions", "organisationMediaProfiles", "correctionsProfiles",
+    "correctionsFacilities", "sessions", "auditLogs"]) data[key] = [];
   data.tableRows = {};
   const db = database(data);
   await assertInsideDemoSyntheticDatabase(db);
   assert.deepEqual(db.queriedTables.sort(), [...tenantTables, "UnusedGlobal"].sort());
 });
 
-test("existing fictional seed plus owner session and audit event passes", async () => {
+test("migration QA rows, fictional seed, owner session and audit event pass", async () => {
   const db = database(syntheticData());
   await assertInsideDemoSyntheticDatabase(db);
   assert.equal(db.queriedTables.length, tenantTables.length + 1);
 });
 
+test("migration QA rows pass before the fictional seed is created", async () => {
+  const data = syntheticData();
+  data.organisations.shift();
+  data.subscriptions.shift();
+  for (const key of ["users", "locations", "zones", "programmes", "memberships",
+    "correctionsProfiles", "correctionsFacilities", "sessions", "auditLogs"]) data[key] = [];
+  data.tableRows = { Subscription: qaOrganisations.map((row) => row.id),
+    OrganisationMediaProfile: ["qa-organisations-organisation"] };
+  await assertInsideDemoSyntheticDatabase(database(data));
+});
+
 for (const [label, change] of [
   ["another organisation", (data) => data.organisations.push({ id: "other", slug: "customer", name: "Customer" })],
+  ["QA organisation with different ID", (data) => { data.organisations[1].id = "other"; }],
+  ["QA organisation with different slug", (data) => { data.organisations[1].slug = "customer"; }],
+  ["QA organisation with different name", (data) => { data.organisations[1].name = "Customer"; }],
   ["another user", (data) => data.users.push({ id: "other", email: "customer@example.invalid", name: "Customer", role: "OWNER" })],
   ["changed demo owner identity", (data) => { data.users[0].name = "Unknown"; }],
   ["another facility", (data) => data.locations.push({ id: "other", organisationId: orgId, slug: "real", name: "Other" })],
@@ -160,7 +215,26 @@ for (const [label, change] of [
   ["altered plan entitlement", (data) => { data.plans[0].correctionsRadioEnabled = false; }],
   ["altered plan tier", (data) => { data.plans[0].tierNumber = 5; }],
   ["foreign membership", (data) => data.memberships.push({ userId: "other", organisationId: orgId, role: "OWNER" })],
-  ["other subscription", (data) => data.subscriptions.push({ organisationId: "other", planId: "inside-plan", status: "ACTIVE" })],
+  ["other subscription", (data) => data.subscriptions.push({ organisationId: "other", planId: "plan-CORRECTIONS_NETWORK", status: "ACTIVE" })],
+  ["QA subscription with different ID", (data) => { data.subscriptions[1].id = "other"; }],
+  ["QA subscription with wrong plan", (data) => { data.subscriptions[1].planId = "plan-FAITH_PRO"; }],
+  ["QA subscription with wrong status", (data) => { data.subscriptions[1].status = "ACTIVE"; }],
+  ["QA subscription for other organisation", (data) => { data.subscriptions[1].organisationId = "other"; }],
+  ["QA subscription with complimentary access active", (data) => { data.subscriptions[1].complimentaryAccessActive = true; }],
+  ["QA subscription with shortened trial", (data) => { data.subscriptions[1].currentPeriodEnd = new Date("2027-10-03T09:00:00.000Z"); }],
+  ["QA subscription with invalid creation time", (data) => { data.subscriptions[1].createdAt = "2026-10-03"; }],
+  ...qaSubscriptionNullFields.map((field) =>
+    [`QA subscription with ${field} override`, (data) => { data.subscriptions[1][field] = "Customer"; }]),
+  ["QA media profile with different ID", (data) => { data.organisationMediaProfiles[0].id = "other"; }],
+  ["QA media profile with different organisation", (data) => { data.organisationMediaProfiles[0].organisationId = "qa-health-organisation"; }],
+  ["QA media profile with different template", (data) => { data.organisationMediaProfiles[0].template = "MULTI_SITE"; }],
+  ["QA media profile with different locale", (data) => { data.organisationMediaProfiles[0].locale = "en-GB"; }],
+  ["QA media profile with different currency", (data) => { data.organisationMediaProfiles[0].regionalPriceBookCurrency = "GBP"; }],
+  ["QA media profile with private terminology", (data) => { data.organisationMediaProfiles[0].terminology = { company: "Customer" }; }],
+  ["QA media profile with disclosure", (data) => { data.organisationMediaProfiles[0].disclosureText = "Customer"; }],
+  ["extra QA media profile", (data) => data.organisationMediaProfiles.push({
+    ...data.organisationMediaProfiles[0], id: "other", organisationId: "qa-health-organisation"
+  })],
   ["changed Corrections profile", (data) => { data.correctionsProfiles[0].blockedArtists.push("Other"); }],
   ["changed Corrections profile version", (data) => { data.correctionsProfiles[0].policyVersion = 2; }],
   ["foreign owner session", (data) => data.sessions.push({ userId: "other", activeOrganisationId: orgId })],
@@ -171,6 +245,7 @@ for (const [label, change] of [
   ["foreign tenant-scoped row", (data) => {
     data.tableRows.CorrectionsProfile.push("another-organisation-id");
   }],
+  ["QA tenant operational row", (data) => { data.tableRows.AuditLog = ["qa-health-organisation"]; }],
   ["unapproved record under synthetic tenant", (data) => {
     data.tables.push({ tableName: "FutureTenantRecord", hasOrganisationId: true });
     data.tableRows.FutureTenantRecord = [orgId];

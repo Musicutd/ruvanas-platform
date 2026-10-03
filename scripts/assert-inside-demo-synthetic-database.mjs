@@ -2,22 +2,50 @@ import { insideDemoFacilities } from "../lib/inside-demo-scenario.mjs";
 import { PUBLIC_PLAN_CATALOGUE, publicPlanDatabaseData } from "../lib/product-plan-catalogue.mjs";
 
 const DEMO_ORGANISATION = { slug: "inside-synthetic-demo", name: "Synthetic Inside Demo Authority" };
+// These fixed rows are inserted by the Health/Faith and Organisations migrations.
+// A matching slug alone is insufficient: those migrations use ON CONFLICT DO NOTHING.
+const MIGRATION_QA_ORGANISATIONS = [
+  { id: "qa-health-organisation", slug: "ruvanas-health-qa", name: "Ruvanas Health QA",
+    subscriptionId: "qa-health-subscription", planCode: "HEALTH_PRO" },
+  { id: "qa-faith-organisation", slug: "ruvanas-faith-qa", name: "Ruvanas Faith QA",
+    subscriptionId: "qa-faith-subscription", planCode: "FAITH_PRO" },
+  { id: "qa-organisations-organisation", slug: "ruvanas-organisations-qa", name: "Ruvanas Organisations QA",
+    subscriptionId: "qa-organisations-subscription", planCode: "ORGANISATIONS_PRO" }
+];
+const QA_ORGANISATION_BY_SLUG = new Map(MIGRATION_QA_ORGANISATIONS.map((row) => [row.slug, row]));
+const QA_ORGANISATION_BY_ID = new Map(MIGRATION_QA_ORGANISATIONS.map((row) => [row.id, row]));
+const QA_SUBSCRIPTION_NULL_FIELDS = [
+  "retailRadioEnabled", "schoolRadioEnabled", "onlineRadioEnabled", "healthRadioEnabled",
+  "faithRadioEnabled", "organisationsEnabled", "correctionsRadioEnabled",
+  "schoolPublicPublishingEnabled", "retailMediaEnabled", "digitalSignageEnabled",
+  "complimentaryAccessCodeId", "complimentaryAccessActivatedAt",
+  "complimentaryPlanName", "complimentaryPlanCode", "complimentaryPlanTierNumber",
+  "complimentaryPlanProductFamily", "complimentaryStudioExternalDestinationLimit",
+  "complimentaryStationLimit", "complimentaryStorageLimitGb", "complimentaryListenerLimit",
+  "complimentaryMaxBitrateKbps", "complimentaryIncludesCatalogue",
+  "complimentaryLicensedMusicCatalogueLevel", "complimentaryPromoUploadEnabled",
+  "complimentaryRetailRadioEnabled", "complimentarySchoolRadioEnabled",
+  "complimentaryOnlineRadioEnabled", "complimentaryHealthRadioEnabled",
+  "complimentaryFaithRadioEnabled", "complimentaryOrganisationsEnabled",
+  "complimentaryCorrectionsRadioEnabled", "complimentarySchoolPublicPublishingEnabled",
+  "complimentaryRetailMediaEnabled", "complimentaryDigitalSignageEnabled"
+];
 const DEMO_OWNER = { email: "inside-demo-owner@example.invalid", name: "Inside Demo Owner" };
 const DEMO_DRAFT = "Synthetic orientation programme";
 const DEMO_DRAFT_DESCRIPTION = "Fictional draft for exploring the review workflow. It contains no audio and cannot be broadcast.";
 const DEMO_ZONE_SLUG = "wing-one";
 const ALLOWED_POPULATED_TABLES = new Set([
   "_prisma_migrations", "Plan", "Organisation", "User", "OrganisationMember",
-  "Subscription", "Location", "Zone", "CorrectionsProfile",
+  "Subscription", "OrganisationMediaProfile", "Location", "Zone", "CorrectionsProfile",
   "CorrectionsFacility", "CorrectionsProgramme", "Session", "AuditLog"
 ]);
 const ALLOWED_TENANT_TABLES = new Set([
   "AuditLog", "CorrectionsProfile", "CorrectionsProgramme", "Location",
-  "OrganisationMember", "Subscription"
+  "OrganisationMember", "OrganisationMediaProfile", "Subscription"
 ]);
 const REQUIRED_TENANT_TABLES = new Set([
   "AuditLog", "CorrectionsProfile", "CorrectionsProgramme", "Location",
-  "MediaAsset", "OrganisationMember", "Player", "ProofOfPlayEvent", "Subscription"
+  "MediaAsset", "OrganisationMember", "OrganisationMediaProfile", "Player", "ProofOfPlayEvent", "Subscription"
 ]);
 const TABLE_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
@@ -31,14 +59,34 @@ function assertCount(value, category) {
   return value;
 }
 
+function hasMigrationTrialWindow(subscription) {
+  if (!(subscription.createdAt instanceof Date) || !(subscription.currentPeriodEnd instanceof Date) ||
+    !Number.isFinite(subscription.createdAt.getTime()) ||
+    !Number.isFinite(subscription.currentPeriodEnd.getTime())) return false;
+  const expectedEnd = new Date(subscription.createdAt);
+  expectedEnd.setUTCFullYear(expectedEnd.getUTCFullYear() + 10);
+  // PostgreSQL's year interval can differ by one day for a leap-day start.
+  return Math.abs(subscription.currentPeriodEnd.getTime() - expectedEnd.getTime()) <= 86_400_000;
+}
+
 async function assertOnlyExpectedIdentity(database) {
-  if (assertCount(await database.organisation.count({ where: { slug: { not: DEMO_ORGANISATION.slug } } }), "organisation") !== 0) {
-    refuse("organisation identity");
-  }
-  const organisation = await database.organisation.findUnique({
-    where: { slug: DEMO_ORGANISATION.slug }, select: { id: true, name: true }
+  const organisationCount = assertCount(await database.organisation.count(), "organisation");
+  if (organisationCount > MIGRATION_QA_ORGANISATIONS.length + 1) refuse("organisation identity");
+  const organisations = await database.organisation.findMany({
+    select: { id: true, slug: true, name: true }, take: MIGRATION_QA_ORGANISATIONS.length + 2
   });
-  if (organisation && organisation.name !== DEMO_ORGANISATION.name) refuse("organisation identity");
+  if (organisations.length !== organisationCount) refuse("organisation identity");
+  const seenSlugs = new Set();
+  for (const row of organisations) {
+    const expected = QA_ORGANISATION_BY_SLUG.get(row.slug);
+    if (seenSlugs.has(row.slug) || (row.slug === DEMO_ORGANISATION.slug
+      ? row.name !== DEMO_ORGANISATION.name
+      : !expected || row.id !== expected.id || row.name !== expected.name)) {
+      refuse("organisation identity");
+    }
+    seenSlugs.add(row.slug);
+  }
+  const organisation = organisations.find((row) => row.slug === DEMO_ORGANISATION.slug);
 
   if (assertCount(await database.user.count({ where: { email: { not: DEMO_OWNER.email } } }), "user") !== 0) {
     refuse("user identity");
@@ -163,14 +211,45 @@ async function assertSeedRelationships(database, { organisationId, ownerId }) {
     membership.userId !== ownerId || membership.role !== "OWNER")) refuse("membership scope");
 
   const subscriptionCount = assertCount(await database.subscription.count(), "subscription");
-  if (subscriptionCount > 1) refuse("subscription scope");
+  if (subscriptionCount > MIGRATION_QA_ORGANISATIONS.length + 1) refuse("subscription scope");
   const subscriptions = await database.subscription.findMany({
-    select: { organisationId: true, planId: true, status: true }, take: 2
+    select: { id: true, organisationId: true, planId: true, status: true,
+      createdAt: true, currentPeriodEnd: true, complimentaryAccessActive: true,
+      ...Object.fromEntries(QA_SUBSCRIPTION_NULL_FIELDS.map((field) => [field, true])) },
+    take: MIGRATION_QA_ORGANISATIONS.length + 2
   });
-  if (subscriptions.length !== subscriptionCount || subscriptions.some((subscription) =>
-    !organisationId || subscription.organisationId !== organisationId ||
-    planCodeById.get(subscription.planId) !== "CORRECTIONS_NETWORK" ||
-    subscription.status !== "ACTIVE")) refuse("subscription scope");
+  if (subscriptions.length !== subscriptionCount) refuse("subscription scope");
+  const seenSubscriptionOrganisations = new Set();
+  for (const subscription of subscriptions) {
+    const expected = QA_ORGANISATION_BY_ID.get(subscription.organisationId);
+    if (seenSubscriptionOrganisations.has(subscription.organisationId) ||
+      (subscription.organisationId === organisationId && organisationId
+        ? planCodeById.get(subscription.planId) !== "CORRECTIONS_NETWORK" || subscription.status !== "ACTIVE"
+        : !expected || subscription.id !== expected.subscriptionId ||
+          planCodeById.get(subscription.planId) !== expected.planCode || subscription.status !== "TRIAL" ||
+          subscription.complimentaryAccessActive !== false ||
+          QA_SUBSCRIPTION_NULL_FIELDS.some((field) => subscription[field] !== null) ||
+          !hasMigrationTrialWindow(subscription))) {
+      refuse("subscription scope");
+    }
+    seenSubscriptionOrganisations.add(subscription.organisationId);
+  }
+
+  const mediaProfileCount = assertCount(await database.organisationMediaProfile.count(), "organisations media profile");
+  if (mediaProfileCount > 1) refuse("organisations media profile scope");
+  const mediaProfiles = await database.organisationMediaProfile.findMany({
+    select: { id: true, organisationId: true, template: true, locale: true,
+      timezone: true, regionalPriceBookCurrency: true, terminology: true, disclosureText: true },
+    take: 2
+  });
+  if (mediaProfiles.length !== mediaProfileCount || mediaProfiles.some((profile) =>
+    profile.id !== "qa-organisations-media-profile" ||
+    profile.organisationId !== "qa-organisations-organisation" ||
+    profile.template !== "GENERAL" || profile.locale !== "en-MT" ||
+    profile.timezone !== "Europe/Malta" || profile.regionalPriceBookCurrency !== "EUR" ||
+    profile.terminology !== null || profile.disclosureText !== null)) {
+    refuse("organisations media profile scope");
+  }
 
   const profileCount = assertCount(await database.correctionsProfile.count(), "Corrections profile");
   if (profileCount > 1) refuse("Corrections profile scope");
@@ -239,13 +318,18 @@ async function assertNoOtherDatabaseRows(database, organisationId) {
 
   for (const { tableName, hasOrganisationId } of tables) {
     // Identifiers come only from the verified database catalog, not request input.
-    // Every unlisted public table must be empty. Listed tenant tables may
-    // contain only the synthetic organisation; their identities are checked above.
+    // Every unlisted public table must be empty. Tenant rows are restricted
+    // to the demo organisation, except the migration QA rows checked above.
     const allowedTenantTable = ALLOWED_TENANT_TABLES.has(tableName) && hasOrganisationId;
+    // Only the two migration-owned tables may contain the three QA tenants.
+    // All other operational tenant tables remain scoped to the demo authority.
+    const allowedOrganisationIds = [organisationId ?? "__no_demo_organisation__",
+      ...(tableName === "Subscription" || tableName === "OrganisationMediaProfile"
+        ? MIGRATION_QA_ORGANISATIONS.map((row) => row.id) : [])];
     const rows = allowedTenantTable
       ? await database.$queryRawUnsafe(
-        `SELECT EXISTS (SELECT 1 FROM "public"."${tableName}" WHERE "organisationId" IS NOT NULL AND "organisationId" <> $1) AS "hasUnexpected"`,
-        organisationId ?? "__no_demo_organisation__"
+        `SELECT EXISTS (SELECT 1 FROM "public"."${tableName}" WHERE "organisationId" IS NOT NULL AND "organisationId" NOT IN (${allowedOrganisationIds.map((_, index) => `$${index + 1}`).join(", ")})) AS "hasUnexpected"`,
+        ...allowedOrganisationIds
       )
       : ALLOWED_POPULATED_TABLES.has(tableName) ? [{ hasUnexpected: false }] : await database.$queryRawUnsafe(
         `SELECT EXISTS (SELECT 1 FROM "public"."${tableName}") AS "hasUnexpected"`
