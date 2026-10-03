@@ -278,6 +278,9 @@ test("general programming cannot expose or draft schedules for private Inside fa
     assert.ok(promotionData.targets.some(({ id }) => id === normalLocation.zones[0].id));
     assert.ok(promotionData.targets.some(({ id }) => id === sideZone.id));
     assert.ok(!promotionData.targets.some(({ id }) => id === privateFacility.id || id === privateFacility.zones[0].id));
+    assert.ok(promotionData.targets.some(({ id }) => id === safeStation.id || id === safeChannel.id));
+    assert.ok(!promotionData.targets.some(({ id }) =>
+      [normalStation.id, normalChannel.id, privateStation.id, privateChannel.id, privateRightsChannel.id].includes(id)));
 
     const promotionStart = new Date();
     const promotionEnd = new Date(promotionStart.getTime() + 6 * 86_400_000);
@@ -289,7 +292,8 @@ test("general programming cannot expose or draft schedules for private Inside fa
       schedules: [{ weekday: 1, startsAt: "09:00", endsAt: "10:00" }]
     });
     for (const [targetType, targetId] of [
-      ["LOCATION", privateFacility.id], ["ZONE", privateFacility.zones[0].id], ["CHANNEL", privateChannel.id]
+      ["LOCATION", privateFacility.id], ["ZONE", privateFacility.zones[0].id],
+      ["STATION", normalStation.id], ["CHANNEL", normalChannel.id], ["CHANNEL", privateChannel.id]
     ]) {
       const blocked = await api("/api/promotions", { method: "POST", cookie, body: promotionPayload(targetType, targetId) });
       assert.equal(blocked.status, 400, await blocked.clone().text());
@@ -298,7 +302,7 @@ test("general programming cannot expose or draft schedules for private Inside fa
       ["LOCATION", normalLocation.id, [normalLocation.zones[0].id, sideZone.id]],
       ["ALL_LOCATIONS", null, [normalLocation.zones[0].id, sideZone.id]],
       ["LOCATION_GROUP", mixedGroup.id, [normalLocation.zones[0].id, sideZone.id]],
-      ["CHANNEL", normalChannel.id, [normalLocation.zones[0].id]]
+      ["CHANNEL", safeChannel.id, [sideZone.id]]
     ]) {
       const preview = await api("/api/promotions", { method: "POST", cookie, body: promotionPayload(targetType, targetId) });
       assert.equal(preview.status, 200, await preview.clone().text());
@@ -328,10 +332,29 @@ test("general programming cannot expose or draft schedules for private Inside fa
       ...campaignBase, name: "Fictional normal campaign", status: "PUBLISHED",
       targets: { create: { targetType: "LOCATION", locationId: normalLocation.id } }
     } });
+    const historicalStationCampaign = await db.campaign.create({ data: {
+      ...campaignBase, name: "Fictional historically private station campaign", status: "DRAFT",
+      targets: { create: { targetType: "STATION", stationId: normalStation.id } }
+    } });
+    const historicalChannelCampaign = await db.campaign.create({ data: {
+      ...campaignBase, name: "Fictional historically private channel campaign", status: "DRAFT",
+      targets: { create: { targetType: "CHANNEL", channelId: normalChannel.id } }
+    } });
+    const safeStationCampaign = await db.campaign.create({ data: {
+      ...campaignBase, name: "Fictional safe station campaign", status: "DRAFT",
+      targets: { create: { targetType: "STATION", stationId: safeStation.id } }
+    } });
+    const safeChannelCampaign = await db.campaign.create({ data: {
+      ...campaignBase, name: "Fictional safe channel campaign", status: "DRAFT",
+      targets: { create: { targetType: "CHANNEL", channelId: safeChannel.id } }
+    } });
     const historicalList = await api("/api/promotions", { cookie });
     assert.equal(historicalList.status, 200, await historicalList.clone().text());
     const listedCampaigns = (await historicalList.json()).campaigns;
     assert.ok(!listedCampaigns.some(({ id }) => id === privateCampaign.id));
+    assert.ok(!listedCampaigns.some(({ id }) => id === historicalStationCampaign.id || id === historicalChannelCampaign.id));
+    assert.ok(listedCampaigns.some(({ id }) => id === safeStationCampaign.id));
+    assert.ok(listedCampaigns.some(({ id }) => id === safeChannelCampaign.id));
     assert.deepEqual(listedCampaigns.find(({ id }) => id === mixedCampaign.id)?.targets.map(({ label }) => label), [normalLocation.name]);
     const historicalPreview = await api("/api/promotions", { method: "POST", cookie, body: promotionPayload("LOCATION", normalLocation.id) });
     assert.equal(historicalPreview.status, 200, await historicalPreview.clone().text());
@@ -375,6 +398,10 @@ test("general programming cannot expose or draft schedules for private Inside fa
     assert.ok(reportBody.dimensions.campaigns.some(({ id }) => id === normalCampaign.id));
     assert.ok(reportBody.dimensions.campaigns.some(({ id }) => id === mixedCampaign.id));
     assert.ok(!reportBody.dimensions.campaigns.some(({ id }) => id === privateCampaign.id));
+    assert.ok(!reportBody.dimensions.campaigns.some(({ id }) =>
+      id === historicalStationCampaign.id || id === historicalChannelCampaign.id));
+    assert.ok(reportBody.dimensions.campaigns.some(({ id }) => id === safeStationCampaign.id));
+    assert.ok(reportBody.dimensions.campaigns.some(({ id }) => id === safeChannelCampaign.id));
     const privateReport = await api(`/api/reports/campaign-proof?${reportQuery}&locationId=${privateFacility.id}`, { cookie });
     assert.equal(privateReport.status, 200, await privateReport.clone().text());
     assert.equal((await privateReport.json()).report.summary.planned, 0);
@@ -391,11 +418,21 @@ test("general programming cannot expose or draft schedules for private Inside fa
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
     assert.equal(exportStatus.status, "READY", exportStatus.error || "Export did not complete");
+    const currentExport = await db.reportExportJob.findUnique({ where: { id: exportUrl.split("/").at(-1) } });
+    assert.equal(currentExport.filters.visibilityScope, "GENERAL_NON_CORRECTIONS_CAMPAIGN_PROOF_V1");
     const csvResponse = await api(exportStatus.downloadUrl, { cookie });
     assert.equal(csvResponse.status, 200, await csvResponse.clone().text());
     const csv = await csvResponse.text();
     assert.match(csv, /Fictional normal shop/);
     assert.doesNotMatch(csv, /Fictional private facility/);
+    const unmarkedLegacyExport = await db.reportExportJob.create({ data: {
+      organisationId, requestedByUserId: userId, status: "READY", filters: reportDates,
+      csvContent: "Fictional private facility", completedAt: new Date(),
+      expiresAt: new Date(Date.now() + 60_000)
+    } });
+    const legacyExportUrl = `/api/reports/campaign-proof/exports/${unmarkedLegacyExport.id}`;
+    assert.equal((await api(legacyExportUrl, { cookie })).status, 404);
+    assert.equal((await api(`${legacyExportUrl}/download`, { cookie })).status, 404);
 
     const proofBase = {
       organisationId, itemType: "PROMO", promoVersionId: promoVersion.id, mediaAssetId: media.id,

@@ -81,9 +81,25 @@ async function findSession(tx, access, input) {
   if (!input.sessionId || input.expectedRevision == null) throw new Error("Refresh the playout workspace and try again.");
   const session = await tx.studioPlayoutSession.findFirst({ where: { id: input.sessionId, organisationId: access.organisation.id, status: { in: ["ACTIVE", "FALLBACK"] } }, include: sessionInclude });
   if (!session) throw Object.assign(new Error("The active Manual Playout session was not found."), { status: 404 });
-  await assertGeneralStudioPlayoutSession(tx, access.organisation.id, session.id);
+  const protectedStop = input.action === "END_SESSION"
+    ? await generalStudioProtectedStop(tx, access.organisation.id, session)
+    : (await assertGeneralStudioPlayoutSession(tx, access.organisation.id, session.id), false);
   if (session.revision !== input.expectedRevision) throw Object.assign(new Error("The live playlist changed in another console. Refresh before continuing."), { status: 409 });
-  return session;
+  return { session, protectedStop };
+}
+
+async function generalStudioProtectedStop(database, organisationId, session) {
+  try {
+    await assertGeneralStudioPlayoutSession(database, organisationId, session.id);
+    return false;
+  } catch (error) {
+    if (error?.code !== "CORRECTIONS_STUDIO_OUTPUT_BLOCKED" || session.productFamily === "CORRECTIONS") throw error;
+    // Only a formerly ordinary session with newly protected media may use
+    // this stop path. A private channel or Corrections session remains outside
+    // general Studio authority.
+    await assertGeneralStudioChannel(database, organisationId, session.channelId);
+    return true;
+  }
 }
 
 async function recordCommand(tx, access, session, input, idempotencyKey, result) {
@@ -105,13 +121,25 @@ export async function POST(request) {
       if (ownedAsset) await assertGeneralStudioMediaAsset(prisma, access.organisation.id, ownedAsset.id);
     }
     if (input.action === "CREATE_SESSION" && input.channelId) await assertGeneralStudioChannel(prisma, access.organisation.id, input.channelId);
-    if (!new Set(["CREATE_SESSION", "CREATE_PACK", "ADD_PACK_ITEM"]).has(input.action) && input.sessionId) {
+    if (!new Set(["CREATE_SESSION", "CREATE_PACK", "ADD_PACK_ITEM", "END_SESSION"]).has(input.action) && input.sessionId) {
       await assertGeneralStudioPlayoutSession(prisma, access.organisation.id, input.sessionId);
     }
     const prior = await prisma.studioPlayoutCommand.findUnique({ where: { organisationId_idempotencyKey: { organisationId: access.organisation.id, idempotencyKey } } });
     if (prior) {
       if (prior.action !== input.action) throw Object.assign(new Error("This Idempotency-Key was used for another Studio command."), { status: 409 });
-      await assertGeneralStudioPlayoutSession(prisma, access.organisation.id, prior.sessionId);
+      if (input.action === "END_SESSION") {
+        if (prior.sessionId !== input.sessionId) throw Object.assign(new Error("This Idempotency-Key was used for another Studio session."), { status: 409 });
+        const session = await prisma.studioPlayoutSession.findFirst({
+          where: { id: prior.sessionId, organisationId: access.organisation.id },
+          select: { id: true, channelId: true, productFamily: true }
+        });
+        if (!session) throw Object.assign(new Error("The Manual Playout session was not found."), { status: 404 });
+        if (await generalStudioProtectedStop(prisma, access.organisation.id, session)) {
+          return NextResponse.json({ stopped: true, sessionId: session.id, revision: prior.result?.revision, repeated: true });
+        }
+      } else {
+        await assertGeneralStudioPlayoutSession(prisma, access.organisation.id, prior.sessionId);
+      }
       return NextResponse.json({ ...prior.result, repeated: true });
     }
     if (input.action === "CREATE_SESSION") {
@@ -141,7 +169,7 @@ export async function POST(request) {
     }
 
     const result = await prisma.$transaction(async (tx) => {
-      const session = await findSession(tx, access, input);
+      const { session, protectedStop } = await findSession(tx, access, input);
       let payload = {};
       if (["ADD_PREPARE", "ADD_LIVE"].includes(input.action)) {
         const asset = await tx.mediaAsset.findFirst({ where: { id: input.mediaAssetId, OR: [{ organisationId: access.organisation.id }, { organisationId: null, libraryType: "RUVANAS_CATALOGUE" }], ...GENERAL_STUDIO_MEDIA_ASSET_WHERE }, include: assetInclude });
@@ -199,8 +227,10 @@ export async function POST(request) {
       payload.session = updated;
       await recordCommand(tx, access, session, input, idempotencyKey, { sessionId: updated.id, revision: updated.revision });
       await tx.auditLog.create({ data: { organisationId: access.organisation.id, actorUserId: access.user.id, action: `STUDIO_PLAYOUT_${input.action}`, entityType: "StudioPlayoutSession", entityId: session.id, details: { revision: updated.revision, itemId: input.itemId || payload.item?.id || null } } });
-      return payload;
+      return { ...payload, protectedStop };
     });
+    if (result.protectedStop) return NextResponse.json({ stopped: true, sessionId: result.session.id, revision: result.session.revision });
+    delete result.protectedStop;
     return NextResponse.json(result);
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "The Manual Playout command failed safely." }, { status: error?.status || 409 });
