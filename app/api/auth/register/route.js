@@ -9,6 +9,7 @@ import {
   ProductRegistrationError
 } from "@/lib/product-registration.mjs";
 import { securityLog } from "@/lib/security-log";
+import { isInsideDemoEnvironment } from "@/lib/inside-demo-environment.mjs";
 import {
   SELF_SERVICE_REGISTRATION_ENABLED,
   SELF_SERVICE_REGISTRATION_MESSAGE,
@@ -19,6 +20,13 @@ const REGISTRATION_LIMIT = 5;
 const REGISTRATION_WINDOW_MS = 60 * 60 * 1000;
 
 export async function POST(request) {
+  if (isInsideDemoEnvironment()) {
+    return NextResponse.json(
+      { error: "Account creation is unavailable in this fictional demo." },
+      { status: 403 }
+    );
+  }
+
   if (!SELF_SERVICE_REGISTRATION_ENABLED && !isInternalRegistrationTestRequest(request)) {
     return NextResponse.json(
       {
