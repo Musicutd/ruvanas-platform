@@ -75,7 +75,7 @@ jobs:
         run: npx prisma migrate status
 
       - name: Verify demo safety guard against actual migrated QA fixtures
-        run: node --test tests/integration/inside-demo-migrated-guard.test.mjs
+        run: node --test tests/ci/inside-demo-migrated-guard.test.mjs
 
       - name: Run unit tests
         run: npm test
