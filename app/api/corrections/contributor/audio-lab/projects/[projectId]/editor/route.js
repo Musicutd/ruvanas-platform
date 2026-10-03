@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { currentCorrectionsContributorSession, sameOrigin } from "@/lib/corrections-contributor-auth";
+import { assertCurrentCorrectionsContributorWrite } from "@/lib/corrections-studio-service";
+import { runSerializableTransaction } from "@/lib/transaction-retry.mjs";
 import { findStudioWaveformProject, saveStudioWaveformSnapshot, serializeStudioWaveformProject } from "@/lib/studio-waveform-persistence";
 import { assertStudioWaveformWriteAllowed, normalizeEditorState } from "@/lib/waveform-editor.mjs";
 import { applyStudioMasteringPreset, normalizeStudioEffects } from "@/lib/studio-effects-mastering.mjs";
@@ -41,9 +43,9 @@ export async function POST(request, { params }) {
   if (!parsed.success) return NextResponse.json({ error: "The Studio edit request is invalid." }, { status: 400 });
   if (["QUEUE_RENDER", "QUEUE_CLEANUP_PREVIEW", "QUEUE_MASTER_PREVIEW"].includes(parsed.data.action) && !access.session.capabilityScope.includes("RENDER")) return NextResponse.json({ error: "Rendering is not available in this session." }, { status: 403 });
   try {
-    await prisma.$transaction(async (tx) => {
-      const session = await tx.correctionsStudioSession.findFirst({ where: { id: access.session.id, status: "ACTIVE", accessTokenHash: access.session.accessTokenHash, expiresAt: { gt: new Date() }, contributor: { status: "ACTIVE" }, programme: { status: { in: ["DRAFT", "CHANGES_REQUESTED", "REJECTED"] } } } });
-      if (!session) throw new Error("Your supervised Studio session has ended.");
+    const currentEntitlements = await runSerializableTransaction(prisma, async (tx) => {
+      const renderAction = ["QUEUE_RENDER", "QUEUE_CLEANUP_PREVIEW", "QUEUE_MASTER_PREVIEW"].includes(parsed.data.action);
+      const { session, entitlements } = await assertCurrentCorrectionsContributorWrite(tx, access, renderAction ? ["EDIT", "RENDER"] : "EDIT");
       const project = await tx.audioProject.findFirst({ where: { id: projectId, organisationId: session.organisationId, status: { not: "ARCHIVED" } } });
       if (!project || project.type !== "QUICK_RECORD") throw new Error("The assigned Studio project is unavailable.");
       const takes = await tx.audioTake.findMany({ where: { projectId, organisationId: session.organisationId, status: { in: ["READY", "PROCESSING"] }, trashedAt: null }, select: { id: true, mediaAssetId: true, durationMs: true, mediaAsset: { select: { durationSeconds: true } } } });
@@ -56,7 +58,7 @@ export async function POST(request, { params }) {
         if (!durationMs) throw new Error("The recording is still being analysed.");
         state = { clips: [{ clientId: `take-${take.id}`, kind: "SOURCE", mediaAssetId: take.mediaAssetId, sourceStartMs: 0, sourceEndMs: durationMs, timelineStartMs: 0, gainDb: 0, fadeInMs: 0, fadeOutMs: 0, fadeInCurve: "linear", fadeOutCurve: "linear", locked: false }], markers: [], normalize: true, targetLufs: -16, noiseCleanup: false, voiceCleanup: normalizeVoiceCleanup(), effects: normalizeStudioEffects(), mastering: applyStudioMasteringPreset("PODCAST") };
       } else state = normalizeEditorState(parsed.data.state);
-      assertStudioWaveformWriteAllowed(state, access.entitlements);
+      assertStudioWaveformWriteAllowed(state, entitlements);
       if (!state.clips.length && parsed.data.action !== "SAVE") throw new Error("Record or select audio before rendering.");
       const renderRequested = parsed.data.action === "QUEUE_RENDER";
       const previewRequested = ["QUEUE_CLEANUP_PREVIEW", "QUEUE_MASTER_PREVIEW"].includes(parsed.data.action);
@@ -66,8 +68,9 @@ export async function POST(request, { params }) {
         await tx.audioRender.create({ data: { organisationId: session.organisationId, projectId, versionId: saved.version.id, requestedByUserId: session.supervisorUserId, preset: renderRequested ? parsed.data.preset : "SPEECH_MP3", ...(preview ? { resultJson: preview } : {}) } });
       }
       await tx.auditLog.create({ data: { organisationId: session.organisationId, action: renderRequested ? "CORRECTIONS_STUDIO_RENDER_QUEUED" : "CORRECTIONS_STUDIO_EDIT_SAVED", entityType: "CorrectionsStudioSession", entityId: session.id, details: { facilityId: session.facilityId, contributorId: session.contributorId, projectId, versionId: saved.version.id } } });
+      return entitlements;
     });
     const updated = await findStudioWaveformProject(projectId, access.session.organisationId);
-    return response(updated, access.entitlements);
-  } catch (error) { return NextResponse.json({ error: error.message || "The supervised edit could not be saved." }, { status: 409 }); }
+    return response(updated, currentEntitlements);
+  } catch (error) { return NextResponse.json({ error: error.message || "The supervised edit could not be saved." }, { status: error.status || 409 }); }
 }

@@ -14,6 +14,14 @@ On 3 October, the Render production dashboard still showed deployed commit `bff0
 
 ## Evidence available in this checkout
 
+### 3 October facility-boundary and recovery follow-up — CI pending
+
+The next Draft-only change closes two facility-scope paths: C3 approved render choices and direct render-ID submission, and the C4 supervisor's approved-source list and attachment. A private render/source associated with Facility B is not offered to, or attachable by, Facility A staff; unassigned viewers/managers receive no submission/source picker. The predicates allow a new approved version and an approved source to be reused within the same authorised facility, while a supervised C4 render cannot enter the ordinary C3 handoff path. The test fixture also exercises a C3 revision after changes were requested. Contributor recording, waveform and multitrack writes now recheck current session, supervisor grant, facility, capability and entitlement inside serializable write transactions; the recording race fixture revokes a facility grant during upload and checks that no take or media row is committed. These are code and fictional-test claims, not a completed independent security audit.
+
+A separate CI-only C7 scenario cuts Facility B's loopback test-client route to the cloud while A and C still fetch their approved private media, then checks B reconnects to the latest valid private source. It checks one accepted `STARTED` proof, deduplication and no false `COMPLETED` delivery claim. It does not drive a real player or Edge device, expire the old source, prove audible continuity, or close the C8 LAN/TLS/offline acceptance gate.
+
+At the uncommitted local follow-up, 1,023 unit tests passed, 8 database-dependent cases skipped, and none failed; all 37 product-registration/catalogue cases passed; static integrity checked 1,490 files; Prisma schema validation passed using a dummy local URL without contacting a database; and `npm run build` exited 0 with the existing Studio CSS warning and expected missing local `DATABASE_URL` messages during static generation. The new database-backed route and recovery cases have **not** run locally because there is no disposable local PostgreSQL environment; they require successful exact-head GitHub CI before counting as evidence. Production, its database, and the isolated demo were not touched by this follow-up.
+
 | Gate | Current evidence | Result |
 | --- | --- | --- |
 | Product-family integrity | `tests/corrections-foundation.test.mjs` asserts seven families, 35 public plans, five Corrections tiers, and fail-closed access. At local C9 head `400f36d` on 2 October 2026, the full unit suite reported 983 passed, 8 skipped and 0 failed. | Local code evidence only |

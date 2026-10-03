@@ -6,6 +6,8 @@ import { getR2Storage } from "@/lib/r2";
 import { validateAudioUpload } from "@/lib/audio-validation.mjs";
 import { createDefaultEditDecision } from "@/lib/audio-lab.mjs";
 import { currentCorrectionsContributorSession, sameOrigin } from "@/lib/corrections-contributor-auth";
+import { assertCurrentCorrectionsContributorWrite } from "@/lib/corrections-studio-service";
+import { runSerializableTransaction } from "@/lib/transaction-retry.mjs";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -31,9 +33,10 @@ export async function POST(request) {
   const checksum = createHash("sha256").update(buffer).digest("hex");
   try {
     await r2.client.send(new PutObjectCommand({ Bucket: r2.bucketName, Key: key, Body: buffer, ContentLength: buffer.length, ContentType: validation.contentType, Metadata: { source: "corrections-supervised-studio", project: access.session.projectId, checksum } }));
-    const take = await prisma.$transaction(async (tx) => {
-      const session = await tx.correctionsStudioSession.findFirst({ where: { id: access.session.id, status: "ACTIVE", accessTokenHash: access.session.accessTokenHash, expiresAt: { gt: new Date() }, contributor: { status: "ACTIVE" }, programme: { status: { in: ["DRAFT", "CHANGES_REQUESTED", "REJECTED"] } } } });
-      if (!session) throw new Error("Your supervised Studio session has ended.");
+    const take = await runSerializableTransaction(prisma, async (tx) => {
+      const { session, entitlements } = await assertCurrentCorrectionsContributorWrite(tx, access, "RECORD");
+      const currentUsed = await tx.mediaAsset.aggregate({ where: { organisationId: session.organisationId, status: { in: ["UPLOADING", "PROCESSING", "READY"] } }, _sum: { sizeBytes: true } });
+      if ((currentUsed._sum.sizeBytes || 0n) + BigInt(buffer.length) > BigInt(entitlements.storageLimitGb) * 1024n ** 3n) throw new Error("The organisation storage limit has been reached.");
       const media = await tx.mediaAsset.create({ data: { organisationId: session.organisationId, libraryType: "ORGANISATION_PROMO", name: file.name.slice(0, 160), originalName: file.name.slice(0, 240), storageKey: key, mimeType: validation.contentType, sizeBytes: BigInt(buffer.length), durationSeconds: Math.max(1, Math.round(durationMs / 1000)), mediaType: "ANNOUNCEMENT", status: "READY" } });
       const created = await tx.audioTake.create({ data: { organisationId: session.organisationId, projectId: session.projectId, mediaAssetId: media.id, recordedByUserId: session.supervisorUserId, durationMs, status: "READY", sourceEditDecision: createDefaultEditDecision() } });
       await tx.audioProject.update({ where: { id: session.projectId }, data: { status: "READY" } });
@@ -43,6 +46,6 @@ export async function POST(request) {
     return NextResponse.json({ ok: true, takeId: take.id }, { status: 201 });
   } catch (error) {
     await r2.client.send(new DeleteObjectCommand({ Bucket: r2.bucketName, Key: key })).catch(() => {});
-    return NextResponse.json({ error: error.message || "The recording could not be stored." }, { status: 409 });
+    return NextResponse.json({ error: error.message || "The recording could not be stored." }, { status: error.status || 409 });
   }
 }
