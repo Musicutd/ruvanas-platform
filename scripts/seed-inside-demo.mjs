@@ -1,8 +1,9 @@
 import bcrypt from "bcryptjs";
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import { findPublicPlan, publicPlanDatabaseData } from "../lib/product-plan-catalogue.mjs";
 import { insideDemoFacilities } from "../lib/inside-demo-scenario.mjs";
 import { validateInsideInventoryDemo } from "./validate-inside-inventory-demo.mjs";
+import { assertInsideDemoSyntheticDatabase } from "./assert-inside-demo-synthetic-database.mjs";
 
 // This script belongs only to the disposable demo branch. An exact database
 // identity check prevents an accidental invocation against another environment.
@@ -28,6 +29,7 @@ try {
   const planData = publicPlanDatabaseData(findPublicPlan("CORRECTIONS_NETWORK", "CORRECTIONS"));
   const passwordHash = await bcrypt.hash(password, 12);
   const seeded = await db.$transaction(async (tx) => {
+    await assertInsideDemoSyntheticDatabase(tx);
     const plan = await tx.plan.upsert({
       where: { code: planData.code },
       create: planData,
@@ -97,7 +99,7 @@ try {
       }
     }
     return { organisationId: organisation.id, ownerId: owner.id };
-  });
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 20_000, timeout: 90_000 });
   await validateInsideInventoryDemo(db, seeded);
   console.log("Inside demo seed ready: one fictional authority and three fictional facilities; no audio or players provisioned.");
 } finally {

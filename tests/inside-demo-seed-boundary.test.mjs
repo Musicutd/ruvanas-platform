@@ -15,6 +15,9 @@ test("demo seed retains exact destination guards and rollback-only inventory val
   assert.match(source, /password\.length < 20/);
   assert.ok(source.indexOf("throw new Error(\"Inside demo seed is restricted") < source.indexOf("new PrismaClient()"));
   assert.match(source, /validateInsideInventoryDemo\(db,/);
+  assert.match(source, /assertInsideDemoSyntheticDatabase\(tx\)/);
+  assert.ok(source.indexOf("assertInsideDemoSyntheticDatabase(tx)") < source.indexOf("tx.plan.upsert("));
+  assert.match(source, /Prisma\.TransactionIsolationLevel\.Serializable/);
   assert.match(source, /update: \{ passwordHash \}/);
 });
 
