@@ -8,6 +8,7 @@ import { findStudioWaveformProject, saveStudioWaveformSnapshot, serializeStudioW
 import { assertStudioWaveformWriteAllowed, normalizeEditorState } from "@/lib/waveform-editor.mjs";
 import { applyStudioMasteringPreset, normalizeStudioEffects } from "@/lib/studio-effects-mastering.mjs";
 import { normalizeVoiceCleanup } from "@/lib/voice-cleanup.mjs";
+import { correctionsStudioCurrentTakes, correctionsStudioSourceTakeSelect } from "@/lib/corrections-studio-sources.mjs";
 
 export const dynamic = "force-dynamic";
 const schema = z.discriminatedUnion("action", [
@@ -18,8 +19,15 @@ const schema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("QUEUE_MASTER_PREVIEW"), state: z.record(z.unknown()) })
 ]);
 
-function response(project, entitlements) {
-  const serialized = serializeStudioWaveformProject(project, entitlements, { restrictedMediaPath: "/api/corrections/contributor/media" });
+async function response(project, entitlements) {
+  const sourceTakes = correctionsStudioCurrentTakes(await prisma.audioTake.findMany({
+    where: { projectId: project.id, organisationId: project.organisationId,
+      id: { in: project.takes.map((take) => take.id) } }, select: correctionsStudioSourceTakeSelect
+  }));
+  const currentTakeIds = new Set(sourceTakes.map((take) => take.id));
+  const visibleProject = { ...project, takes: project.takes.filter((take) => currentTakeIds.has(take.id)) };
+  const serialized = serializeStudioWaveformProject(visibleProject, entitlements,
+    { restrictedMediaPath: "/api/corrections/contributor/media" });
   const versionIds = new Map(project.renders.map((render) => [render.id, render.outputPromoVersionId]));
   return NextResponse.json({ ...serialized, renders: serialized.renders.map((render) => ({ ...render, reviewVersionId: versionIds.get(render.id) || null })) }, { headers: { "Cache-Control": "private, no-store" } });
 }
@@ -48,7 +56,9 @@ export async function POST(request, { params }) {
       const { session, entitlements } = await assertCurrentCorrectionsContributorWrite(tx, access, renderAction ? ["EDIT", "RENDER"] : "EDIT");
       const project = await tx.audioProject.findFirst({ where: { id: projectId, organisationId: session.organisationId, status: { not: "ARCHIVED" } } });
       if (!project || project.type !== "QUICK_RECORD") throw new Error("The assigned Studio project is unavailable.");
-      const takes = await tx.audioTake.findMany({ where: { projectId, organisationId: session.organisationId, status: { in: ["READY", "PROCESSING"] }, trashedAt: null }, select: { id: true, mediaAssetId: true, durationMs: true, mediaAsset: { select: { durationSeconds: true } } } });
+      const takes = correctionsStudioCurrentTakes(await tx.audioTake.findMany({
+        where: { projectId, organisationId: session.organisationId }, select: correctionsStudioSourceTakeSelect
+      }));
       const allowedSourceIds = new Set(takes.map((take) => take.mediaAssetId));
       let state;
       if (parsed.data.action === "INITIALIZE") {

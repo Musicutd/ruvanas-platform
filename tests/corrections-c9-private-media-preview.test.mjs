@@ -53,3 +53,14 @@ test("generic stream denies unsubmitted sources before storage; DELETE commits p
   assert.ok(deletion.indexOf("await tx.mediaAsset.delete") < deletion.indexOf("new DeleteObjectCommand"));
   assert.ok(deletion.indexOf("await tx.mediaAsset.delete") < deletion.indexOf("await r2.client.send"));
 });
+
+test("a recent generic player intent cannot revive cancelled or private Inside audio", async () => {
+  const playerMedia = await readFile(new URL("../app/api/player/media/[mediaAssetId]/route.js", import.meta.url), "utf8");
+  const fallback = playerMedia.match(/const recentInsertionIntent = [\s\S]*?select: \{ id: true \s*\}/)?.[0];
+  assert.ok(fallback, "the generic recent-intent fallback must remain identifiable");
+  for (const field of ["cancelledAt", "correctionsRequestId", "correctionsRehabContentId",
+    "correctionsProgrammeId", "correctionsSubmissionId", "correctionsTrackId",
+    "correctionsAnnouncementId", "correctionsOverrideId"]) {
+    assert.match(fallback, new RegExp(`${field}: null`), field);
+  }
+});

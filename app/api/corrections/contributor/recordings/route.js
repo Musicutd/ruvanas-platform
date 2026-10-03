@@ -8,10 +8,10 @@ import { createDefaultEditDecision } from "@/lib/audio-lab.mjs";
 import { currentCorrectionsContributorSession, sameOrigin } from "@/lib/corrections-contributor-auth";
 import { assertCurrentCorrectionsContributorWrite } from "@/lib/corrections-studio-service";
 import { runSerializableTransaction } from "@/lib/transaction-retry.mjs";
+import { MAX_CORRECTIONS_RECORDING_BYTES } from "@/lib/request-size-policy.mjs";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-const MAX_RECORDING_BYTES = 50 * 1024 * 1024;
 
 export async function POST(request) {
   if (!sameOrigin(request)) return NextResponse.json({ error: "Invalid request origin." }, { status: 403 });
@@ -20,7 +20,7 @@ export async function POST(request) {
   const form = await request.formData().catch(() => null);
   const file = form?.get("recording");
   const durationMs = Number(form?.get("durationMs"));
-  if (!(file instanceof File) || file.size < 12 || file.size > MAX_RECORDING_BYTES || !Number.isInteger(durationMs) || durationMs < 1 || durationMs > 12 * 60 * 60 * 1000) {
+  if (!(file instanceof File) || file.size < 12 || file.size > MAX_CORRECTIONS_RECORDING_BYTES || !Number.isInteger(durationMs) || durationMs < 1 || durationMs > 12 * 60 * 60 * 1000) {
     return NextResponse.json({ error: "Choose a recording under 50 MB with a valid duration." }, { status: 400 });
   }
   const buffer = Buffer.from(await file.arrayBuffer());
