@@ -38,6 +38,18 @@ test("readiness distinguishes missing evidence, overdue drills, and achieved tar
   const ready = recoveryReadiness({ controls, evidence: completeEvidence, now });
   assert.equal(ready.status, "READY");
   assert.deepEqual(ready.findings, []);
+  const captureTimeMissing = recoveryReadiness({ controls, evidence: completeEvidence.map((item) =>
+    item.evidenceKind === "BACKUP_VERIFICATION" ? { ...item, backupCapturedAt: null } : item), now });
+  assert.equal(captureTimeMissing.status, "ATTENTION");
+  assert.deepEqual(captureTimeMissing.findings.map((item) => [item.code, item.assetKind]), [
+    ["RPO_TARGET_UNVERIFIED", "DATABASE"],
+    ["RPO_TARGET_UNVERIFIED", "OBJECT_STORAGE"]
+  ]);
+  const rpoMissed = recoveryReadiness({ controls, evidence: completeEvidence.map((item) =>
+    item.assetKind === "DATABASE" && item.evidenceKind === "BACKUP_VERIFICATION"
+      ? { ...item, backupCapturedAt: "2026-08-30T10:30:00.000Z" } : item), now });
+  assert.equal(rpoMissed.status, "ATTENTION");
+  assert.deepEqual(rpoMissed.findings.map((item) => item.code), ["RPO_TARGET_MISSED"]);
   const missing = recoveryReadiness({ controls: [], evidence: [], now });
   assert.equal(missing.status, "NOT_READY");
   assert.ok(missing.findings.some((item) => item.code === "RECOVERY_STRATEGY_UNCONFIRMED"));
