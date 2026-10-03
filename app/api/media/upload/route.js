@@ -18,6 +18,10 @@ import {
   normalizePromoLanguageCode
 } from "@/lib/promo-versioning.mjs";
 import { securityLog } from "@/lib/security-log";
+import {
+  GENERAL_STUDIO_MEDIA_ASSET_WHERE,
+  generalStudioMediaAssetIds
+} from "@/lib/studio-general-asset-boundary.mjs";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -232,9 +236,21 @@ export async function POST(request) {
       );
     }
 
+    if (existingAsset && !(await generalStudioMediaAssetIds(prisma, organisation.id, [existingAsset.id])).has(existingAsset.id)) {
+      return NextResponse.json(
+        { error: "This media file is not available for promotional uploads." },
+        { status: 403 }
+      );
+    }
+
     const requestedPromoAsset = parsed.data.promoAssetId
-      ? await prisma.promoAsset.findUnique({
-          where: { id: parsed.data.promoAssetId },
+      ? await prisma.promoAsset.findFirst({
+          where: {
+            id: parsed.data.promoAssetId,
+            organisationId: organisation.id,
+            status: "ACTIVE",
+            versions: { every: { mediaAsset: { is: GENERAL_STUDIO_MEDIA_ASSET_WHERE } } }
+          },
           include: {
             versions: {
               select: { version: true }
@@ -247,17 +263,6 @@ export async function POST(request) {
       return NextResponse.json(
         { error: "The promotional asset was not found." },
         { status: 404 }
-      );
-    }
-
-    if (
-      requestedPromoAsset &&
-      (requestedPromoAsset.organisationId !== organisation.id ||
-        requestedPromoAsset.status !== "ACTIVE")
-    ) {
-      return NextResponse.json(
-        { error: "This promotional asset is not available to this organisation." },
-        { status: 403 }
       );
     }
 
@@ -285,38 +290,20 @@ export async function POST(request) {
       );
     }
 
-    const mediaAsset = existingAsset?.status === "READY"
-      ? existingAsset
-      : existingAsset
-        ? await prisma.mediaAsset.update({
-          where: {
-            id: existingAsset.id
-          },
-          data: {
-            libraryType: "ORGANISATION_PROMO",
-            name: parsed.data.name,
-            originalName: file.name,
-            mimeType: contentType,
-            sizeBytes: requestedBytes,
-            durationSeconds: parsed.data.durationSeconds,
-            mediaType: parsed.data.mediaType,
-            status: "PROCESSING"
-          }
-          })
-        : await prisma.mediaAsset.create({
-          data: {
-            organisationId: organisation.id,
-            libraryType: "ORGANISATION_PROMO",
-            name: parsed.data.name,
-            originalName: file.name,
-            storageKey,
-            mimeType: contentType,
-            sizeBytes: requestedBytes,
-            durationSeconds: parsed.data.durationSeconds,
-            mediaType: parsed.data.mediaType,
-            status: "PROCESSING"
-          }
-          });
+    const mediaAsset = existingAsset || await prisma.mediaAsset.create({
+      data: {
+        organisationId: organisation.id,
+        libraryType: "ORGANISATION_PROMO",
+        name: parsed.data.name,
+        originalName: file.name,
+        storageKey,
+        mimeType: contentType,
+        sizeBytes: requestedBytes,
+        durationSeconds: parsed.data.durationSeconds,
+        mediaType: parsed.data.mediaType,
+        status: "PROCESSING"
+      }
+    });
 
     const needsStorageWrite = !existingAsset || existingAsset.status !== "READY";
 
@@ -354,15 +341,16 @@ export async function POST(request) {
       }
 
       const result = await prisma.$transaction(async (tx) => {
-        const storedAsset = needsStorageWrite
-          ? await tx.mediaAsset.update({
-              where: { id: mediaAsset.id },
-              data: { status: "READY" }
-            })
-          : mediaAsset;
-
         const promoAsset = requestedPromoAsset
-          ? requestedPromoAsset
+          ? await tx.promoAsset.findFirst({
+              where: {
+                id: requestedPromoAsset.id,
+                organisationId: organisation.id,
+                status: "ACTIVE",
+                versions: { every: { mediaAsset: { is: GENERAL_STUDIO_MEDIA_ASSET_WHERE } } }
+              },
+              include: { versions: { select: { version: true } } }
+            })
           : await tx.promoAsset.create({
               data: {
                 organisationId: organisation.id,
@@ -371,9 +359,34 @@ export async function POST(request) {
                 languageCode
               }
             });
+        if (!promoAsset) throw new Error("PROMO_ASSET_UNAVAILABLE");
+        if (existingAsset && !(await generalStudioMediaAssetIds(tx, organisation.id, [existingAsset.id])).has(existingAsset.id)) {
+          throw new Error("PROMO_MEDIA_UNAVAILABLE");
+        }
+
+        let storedAsset = mediaAsset;
+        if (needsStorageWrite) {
+          // The predicate belongs to the UPDATE: protection can change after
+          // the earlier lookup while object storage is being written.
+          const changed = await tx.mediaAsset.updateMany({
+            where: { id: mediaAsset.id, organisationId: organisation.id, ...GENERAL_STUDIO_MEDIA_ASSET_WHERE },
+            data: {
+              libraryType: "ORGANISATION_PROMO",
+              name: parsed.data.name,
+              originalName: file.name,
+              mimeType: contentType,
+              sizeBytes: requestedBytes,
+              durationSeconds: parsed.data.durationSeconds,
+              mediaType: parsed.data.mediaType,
+              status: "READY"
+            }
+          });
+          if (changed.count !== 1) throw new Error("PROMO_MEDIA_UNAVAILABLE");
+          storedAsset = await tx.mediaAsset.findUnique({ where: { id: mediaAsset.id } });
+        }
 
         const versionNumber = requestedPromoAsset
-          ? nextPromoVersionNumber(requestedPromoAsset.versions)
+          ? nextPromoVersionNumber(promoAsset.versions)
           : 1;
 
         const promoVersion = await tx.promoVersion.create({
@@ -442,11 +455,20 @@ export async function POST(request) {
         }
       }
 
+      const unavailable = storageError instanceof Error &&
+        ["PROMO_ASSET_UNAVAILABLE", "PROMO_MEDIA_UNAVAILABLE"].includes(storageError.message);
       if (needsStorageWrite) {
-        await prisma.mediaAsset.update({
-          where: { id: mediaAsset.id },
+        await prisma.mediaAsset.updateMany({
+          where: { id: mediaAsset.id, organisationId: organisation.id, ...GENERAL_STUDIO_MEDIA_ASSET_WHERE },
           data: { status: "REJECTED" }
         });
+      }
+
+      if (unavailable) {
+        return NextResponse.json(
+          { error: "This promotional asset is no longer available." },
+          { status: 409 }
+        );
       }
 
       securityLog("error", "MEDIA_STORAGE_ERROR", request, {

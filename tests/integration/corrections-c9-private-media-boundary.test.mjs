@@ -15,7 +15,7 @@ async function api(path, { method = "GET", cookie, body } = {}) {
   });
 }
 
-test("same-org generic media routes cannot read or delete an unsubmitted supervised Inside take", async () => {
+test("same-org generic media routes hide supervised and submitted Inside media, including library metadata", async () => {
   if (!ciDatabase || !process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 32) {
     throw new Error("C9 private media integration runs only against the exact disposable CI database.");
   }
@@ -71,6 +71,63 @@ test("same-org generic media routes cannot read or delete an unsubmitted supervi
       recordedByUserId: userId, sourceEditDecision: {}, status: "READY"
     } });
 
+    async function libraryMedia(name) {
+      return db.mediaAsset.create({ data: {
+        organisationId, libraryType: "ORGANISATION_PROMO", name,
+        originalName: `${name}.mp3`, storageKey: `c9-private-media/${suffix}/${name}.mp3`,
+        mimeType: "audio/mpeg", sizeBytes: 1024n, durationSeconds: 20,
+        mediaType: "ANNOUNCEMENT", status: "READY"
+      } });
+    }
+    const ordinaryMedia = await libraryMedia("fictional-ordinary-audio");
+    const supervisedOutput = await libraryMedia("fictional-supervised-output");
+    const submittedOutput = await libraryMedia("fictional-submitted-output");
+    const ordinaryPromo = await db.promoAsset.create({ data: {
+      organisationId, name: "Fictional ordinary promo", mediaType: "ANNOUNCEMENT",
+      versions: { create: { mediaAssetId: ordinaryMedia.id, version: 1, status: "APPROVED", qcStatus: "PASSED", qcNotes: "Ordinary QC note" } }
+    } });
+    const mixedPromo = await db.promoAsset.create({ data: {
+      organisationId, name: "Fictional private mixed-version promo", mediaType: "ANNOUNCEMENT",
+      versions: { create: [
+        { mediaAssetId: ordinaryMedia.id, version: 1, status: "APPROVED", qcStatus: "PASSED" },
+        { mediaAssetId: supervisedOutput.id, version: 2, status: "IN_REVIEW", qcNotes: "Private supervised QC note" }
+      ] }
+    }, include: { versions: true } });
+    await db.promoAsset.update({ where: { id: mixedPromo.id }, data: {
+      currentApprovedVersionId: mixedPromo.versions.find((version) => version.version === 1).id
+    } });
+    const submittedPromo = await db.promoAsset.create({ data: {
+      organisationId, name: "Fictional historical submitted promo", mediaType: "ANNOUNCEMENT",
+      versions: { create: { mediaAssetId: submittedOutput.id, version: 1, status: "IN_REVIEW", qcNotes: "Private submitted QC note" } }
+    }, include: { versions: true } });
+    const supervisedVersion = await db.audioProjectVersion.create({ data: {
+      projectId: project.id, version: 1, state: {}, createdByUserId: userId
+    } });
+    await db.audioRender.create({ data: {
+      organisationId, projectId: project.id, versionId: supervisedVersion.id,
+      outputMediaAssetId: supervisedOutput.id,
+      outputPromoVersionId: mixedPromo.versions.find((version) => version.version === 2).id,
+      requestedByUserId: userId, preset: "SPEECH_MP3", status: "SUCCEEDED"
+    } });
+    const historicalProject = await db.audioProject.create({ data: {
+      organisationId, title: "Fictional ordinary project with submitted history", editDecision: {}, createdByUserId: userId
+    } });
+    const historicalVersion = await db.audioProjectVersion.create({ data: {
+      projectId: historicalProject.id, version: 1, state: {}, createdByUserId: userId
+    } });
+    const submittedRender = await db.audioRender.create({ data: {
+      organisationId, projectId: historicalProject.id, versionId: historicalVersion.id,
+      outputMediaAssetId: submittedOutput.id,
+      outputPromoVersionId: submittedPromo.versions[0].id,
+      requestedByUserId: userId, preset: "SPEECH_MP3", status: "SUCCEEDED"
+    } });
+    await db.correctionsSubmission.create({ data: {
+      programmeId: programme.id, organisationId, facilityId: facility.id,
+      revision: 1, renderId: submittedRender.id, sourceFingerprint: "fictional-ci-source",
+      organisationPolicyVersion: 1, facilityPolicyVersion: 1,
+      titleSnapshot: "Fictional private submitted work", evidenceSnapshot: {}, submittedByUserId: userId
+    } });
+
     const login = await api("/api/auth/login", { method: "POST", body: { email: user.email, password } });
     assert.equal(login.status, 200, await login.clone().text());
     const cookie = login.headers.get("set-cookie")?.split(";")[0];
@@ -80,11 +137,23 @@ test("same-org generic media routes cannot read or delete an unsubmitted supervi
     const remove = await api(`/api/media/${protectedMedia.id}`, { method: "DELETE", cookie });
     assert.equal(remove.status, 403, await remove.clone().text());
     assert.ok(await db.mediaAsset.findUnique({ where: { id: protectedMedia.id } }));
+    const library = await api("/api/media/library", { cookie });
+    assert.equal(library.status, 200, await library.clone().text());
+    const libraryJson = await library.json();
+    assert.deepEqual(libraryJson.assets.map(({ id }) => id), [ordinaryPromo.id]);
+    assert.equal(libraryJson.assets[0].versions[0].file.name, ordinaryMedia.originalName);
+    for (const secret of [mixedPromo.name, submittedPromo.name, supervisedOutput.originalName, submittedOutput.originalName,
+      "Private supervised QC note", "Private submitted QC note", mixedPromo.versions[0].id]) {
+      assert.ok(!JSON.stringify(libraryJson).includes(secret), `Library leaked ${secret}`);
+    }
   } finally {
     try {
       if (organisationId) {
+        await db.correctionsSubmission.deleteMany({ where: { organisationId } });
         await db.correctionsStudioSession.deleteMany({ where: { organisationId } });
         await db.audioTake.deleteMany({ where: { organisationId } });
+        await db.audioRender.deleteMany({ where: { organisationId } });
+        await db.promoAsset.deleteMany({ where: { organisationId } });
         await db.audioProject.deleteMany({ where: { organisationId } });
         await db.correctionsContributor.deleteMany({ where: { organisationId } });
         await db.correctionsProgramme.deleteMany({ where: { organisationId } });
