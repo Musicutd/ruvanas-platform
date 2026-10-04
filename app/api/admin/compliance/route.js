@@ -94,7 +94,7 @@ export async function POST(request) {
     if (input.action === "PREVIEW_RETENTION") {
       const policy = await prisma.retentionPolicy.findUnique({ where: { organisationId: input.organisationId } });
       const job = await createRetentionPreview({ organisationId: input.organisationId, requestedByUserId: access.user.id, policy: policy || {}, requestId: operationRequestId });
-      return NextResponse.json({ ok: true, job, notice: "Preview complete. No records were deleted." }, { status: 201 });
+      return NextResponse.json({ ok: true, job, notice: "Age-based counts only. No records were deleted and these counts do not authorise deletion." }, { status: 201 });
     }
 
     if (input.action === "RECORD_POLICY_ACCEPTANCE") {
@@ -151,6 +151,8 @@ export async function POST(request) {
     const job = await createAuditExport({ organisationId: input.organisationId, requestedByUserId: access.user.id, window: input, requestId: operationRequestId });
     return NextResponse.json({ ok: true, job, downloadUrl: job?.status === "READY" ? auditExportDownloadUrl(job) : null }, { status: 201 });
   } catch (error) {
+    if (error?.code === "CORRECTIONS_RETENTION_PREVIEW_BLOCKED") return NextResponse.json({ error: error.message }, { status: 409 });
+    if (error?.code === "RETENTION_PREVIEW_ORGANISATION_NOT_FOUND") return NextResponse.json({ error: "Organisation not found." }, { status: 404 });
     if (error?.message === "POLICY_HASH_MISMATCH") return NextResponse.json({ error: "This policy version already exists with different content evidence. Create a new version instead." }, { status: 409 });
     if (error instanceof Error && /must|Select|Provide|limited|earlier/.test(error.message)) return NextResponse.json({ error: error.message }, { status: 400 });
     console.error("Compliance operation error:", error);

@@ -118,6 +118,11 @@ jobs:
           INTEGRATION_BASE_URL: http://127.0.0.1:3100
         run: node --test tests/integration/corrections-c9-inventory.test.mjs
 
+      - name: Validate generic retention preview rejects Inside evidence and lock races
+        env:
+          INTEGRATION_BASE_URL: http://127.0.0.1:3100
+        run: node --test tests/integration/corrections-c9-retention-preview-boundary.test.mjs
+
       - name: Validate C9 generic integration isolation from private Corrections facilities
         env:
           INTEGRATION_BASE_URL: http://127.0.0.1:3100
