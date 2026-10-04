@@ -208,10 +208,15 @@ test("C8B signed C7 manifest/media is exact, protected, facility-scoped and with
     const distribution = await db.correctionsProgrammeDistribution.create({ data: { organisationId: organisation.id,
       sourceFacilityId: facilities[0].id, targetFacilityId: facilities[0].id, programmeId: programme.id,
       submissionId: submission.id, effectiveFrom: new Date(Date.now() - 60_000), createdByUserId: owner.user.id } });
-    const window = await db.correctionsNetworkWindow.create({ data: { organisationId: organisation.id,
-      facilityId: facilities[0].id, kind: "CENTRAL", distributionId: distribution.id,
-      weekday: localDateTimeParts(new Date(), "Europe/Malta").weekday, startMinute: 0, endMinute: 1440,
-      allowedContentTypes: ["PROGRAMME"], createdByUserId: owner.user.id } });
+    // Keep the synthetic Central programme valid if this test crosses Malta midnight.
+    // A real weekly schedule likewise needs an explicit window for each day.
+    const centralWindows = [];
+    for (let weekday = 0; weekday < 7; weekday += 1) {
+      centralWindows.push(await db.correctionsNetworkWindow.create({ data: {
+        organisationId: organisation.id, facilityId: facilities[0].id, kind: "CENTRAL",
+        distributionId: distribution.id, weekday, startMinute: 0, endMinute: 1440,
+        allowedContentTypes: ["PROGRAMME"], createdByUserId: owner.user.id } }));
+    }
     async function edgeFor(facility) {
       const created = await api("/api/admin/corrections/edge", { method: "POST", cookie: admin.cookie,
         body: { organisationId: organisation.id, facilityId: facility.id, name: `Synthetic Edge ${facility.name}` } });
@@ -232,8 +237,6 @@ test("C8B signed C7 manifest/media is exact, protected, facility-scoped and with
     assert.equal(verifyEdgeManifest(manifestA.body, testPublicPem,
       { nodeId: edgeA.id, organisationId: organisation.id, facilityId: facilities[0].id }), true);
     assert.equal(manifestA.body.payload.content.length, 1);
-    assert.equal(manifestA.body.payload.windows[0].sourceRevision,
-      `c7:${window.id}:${distribution.id}:${submission.id}:${submission.sourceFingerprint}`);
     const manifestB = await api("/api/corrections/edge/manifest", { machine: edgeB.credential });
     assert.equal(manifestB.status, 200);
     assert.equal(manifestB.body.payload.content.length, 0);
@@ -259,10 +262,15 @@ test("C8B signed C7 manifest/media is exact, protected, facility-scoped and with
     assert.equal(protectedResponse.status, 200);
     assert.deepEqual(Buffer.from(await protectedResponse.arrayBuffer()), mediaBytes);
     const content = manifestA.body.payload.content[0];
-    const signedWindow = manifestA.body.payload.windows[0];
     const scope = { nodeId: edgeA.id, organisationId: organisation.id, facilityId: facilities[0].id };
     const sessionId = randomUUID();
     const startTime = new Date(Math.max(Date.now(), Date.parse(manifestA.body.payload.issuedAt) + 100));
+    const signedWindow = manifestA.body.payload.windows.find((item) =>
+      item.weekday === localDateTimeParts(startTime, "Europe/Malta").weekday);
+    assert.ok(signedWindow, "the signed manifest covers the proof's Malta weekday");
+    assert.ok(centralWindows.some((item) => item.id === signedWindow.id));
+    assert.equal(signedWindow.sourceRevision,
+      `c7:${signedWindow.id}:${distribution.id}:${submission.id}:${submission.sourceFingerprint}`);
     const baseProof = { schema: 1, ...scope, zoneId: facilities[0].zones[0].id,
       playerId: players[0].player.id, sessionId, manifestVersion: manifestA.body.version,
       contentKey: `${content.mediaAssetId}:${content.promoVersionId}:${content.sha256}`,
@@ -316,7 +324,8 @@ test("C8B signed C7 manifest/media is exact, protected, facility-scoped and with
       locationName: facilities[0].name, locationTimezone: "Europe/Malta", locationGroups: [],
       mediaAssetId: licensedMedia.id, publicationRevision: 1,
       sourceRevision: `${submission.id}:${submission.sourceFingerprint}`,
-      plannedStart: new Date(Date.now() - 5000), expiresAt: new Date(Date.now() + 60_000),
+      // The policy/takedown resyncs below must decide eligibility, not a CI timing race.
+      plannedStart: new Date(Date.now() - 5000), expiresAt: new Date(Date.now() + 30 * 60_000),
       correctionsRequestId: licensedRequest.id, correctionsProgrammeId: programme.id,
       correctionsSubmissionId: submission.id, correctionsTrackId: licensedTrack.id } });
     const licensedManifest = await api("/api/corrections/edge/manifest", { machine: edgeA.credential });
@@ -539,7 +548,9 @@ test("C8B signed C7 manifest/media is exact, protected, facility-scoped and with
           if (request.method === "POST" && path === "/withdraw") {
             await db.correctionsProgrammeDistribution.update({ where: { id: distribution.id },
               data: { status: "WITHDRAWN", withdrawnAt: new Date() } });
-            await db.correctionsNetworkWindow.update({ where: { id: window.id }, data: { active: false } });
+            await db.correctionsNetworkWindow.updateMany({ where: {
+              organisationId: organisation.id, distributionId: distribution.id },
+              data: { active: false } });
             return send(200, { cloudConnected, withdrawnInCloud: true });
           }
           if (request.method === "POST" && path === "/reconnect") {
@@ -616,7 +627,9 @@ test("C8B signed C7 manifest/media is exact, protected, facility-scoped and with
     assert.equal(localCompletion.status, 200, await localCompletion.text());
     assert.equal(runtime.proofQueue.pendingCount, 2);
     await db.correctionsProgrammeDistribution.update({ where: { id: distribution.id }, data: { status: "WITHDRAWN", withdrawnAt: new Date() } });
-    await db.correctionsNetworkWindow.update({ where: { id: window.id }, data: { active: false } });
+    await db.correctionsNetworkWindow.updateMany({ where: {
+      organisationId: organisation.id, distributionId: distribution.id },
+      data: { active: false } });
     // The disconnected node cannot learn the withdrawal, but its *previously*
     // signed authority is bounded; reconnect must remove the item.
     assert.equal((await (await fetch(`${localUrl}/v1/playback`, { headers })).json()).state, "READY");
