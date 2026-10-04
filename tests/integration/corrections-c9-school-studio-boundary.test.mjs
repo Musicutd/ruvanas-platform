@@ -32,10 +32,10 @@ async function waitForRouteProjectLock(db, holderPid, settled) {
         AND ${holderPid}::integer = ANY(pg_blocking_pids(pid))
         AND pid <> pg_backend_pid()`;
     if (waiters.length) return;
-    if (settled()) throw new Error("The AudioLab route finished before waiting for the C3 project lock.");
+    if (settled()) throw new Error("The general Studio route finished before waiting for the C3 project lock.");
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
-  throw new Error("The AudioLab route did not reach the C3 project lock.");
+  throw new Error("The general Studio route did not reach the C3 project lock.");
 }
 
 test("AudioLab autosave waits for a C3 submission and leaves its private project unchanged", async () => {
@@ -137,6 +137,181 @@ test("AudioLab autosave waits for a C3 submission and leaves its private project
         await db.audioProjectVersion.deleteMany({ where: { project: { organisationId } } });
         await db.audioProject.deleteMany({ where: { organisationId } });
         await db.correctionsProgramme.deleteMany({ where: { organisationId } });
+        await db.organisation.delete({ where: { id: organisationId } });
+      }
+      if (userId) await db.user.delete({ where: { id: userId } });
+      if (planId) await db.plan.delete({ where: { id: planId } });
+    } finally {
+      await db.$disconnect();
+    }
+  }
+});
+
+test("Studio handoff listing, reuse and creation wait for C3 privacy transition", async () => {
+  if (!ciDatabase || !process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 32) {
+    throw new Error("C9 Studio handoff race runs only against the exact disposable CI database.");
+  }
+  const db = new PrismaClient();
+  const suffix = randomUUID();
+  let organisationId;
+  let userId;
+  let planId;
+  let heldSubmission;
+  try {
+    const plan = await db.plan.create({ data: {
+      name: `Fictional C9 handoff ${suffix}`, code: `C9_HANDOFF_${suffix}`,
+      productFamily: "ONLINE", tierNumber: 3, monthlyPriceCents: 0,
+      storageLimitGb: 1, listenerLimit: 10, maxBitrateKbps: 128,
+      onlineRadioEnabled: true
+    } });
+    planId = plan.id;
+    const organisation = await db.organisation.create({ data: {
+      name: `Fictional C9 handoff ${suffix}`, slug: `c9-handoff-${suffix}`
+    } });
+    organisationId = organisation.id;
+    const password = `CI-only-${randomUUID()}!`;
+    const user = await db.user.create({ data: {
+      email: `c9-handoff-${suffix}@example.invalid`, passwordHash: await bcrypt.hash(password, 4), role: "OWNER"
+    } });
+    userId = user.id;
+    await db.organisationMember.create({ data: { organisationId, userId, role: "OWNER" } });
+    await db.subscription.create({ data: { organisationId, planId, status: "ACTIVE" } });
+    const facility = await db.location.create({ data: {
+      organisationId, name: "Fictional C3 facility", slug: `c9-handoff-facility-${suffix}`,
+      correctionsFacility: { create: {} }
+    } });
+
+    async function approvedRender(label) {
+      const media = await db.mediaAsset.create({ data: {
+        organisationId, libraryType: "ORGANISATION_PROMO", name: label,
+        originalName: `${label}.mp3`, storageKey: `c9-handoff/${suffix}/${label}.mp3`,
+        mimeType: "audio/mpeg", sizeBytes: 1024n, durationSeconds: 20,
+        mediaType: "ANNOUNCEMENT", status: "READY"
+      } });
+      const promo = await db.promoAsset.create({ data: {
+        organisationId, name: label, mediaType: "ANNOUNCEMENT"
+      } });
+      const promoVersion = await db.promoVersion.create({ data: {
+        promoAssetId: promo.id, mediaAssetId: media.id, version: 1,
+        status: "APPROVED", qcStatus: "PASSED"
+      } });
+      const project = await db.audioProject.create({ data: {
+        organisationId, title: label, type: "MULTITRACK", editDecision: {}, createdByUserId: userId
+      } });
+      const version = await db.audioProjectVersion.create({ data: {
+        projectId: project.id, version: 1, state: {}, createdByUserId: userId
+      } });
+      const render = await db.audioRender.create({ data: {
+        organisationId, projectId: project.id, versionId: version.id,
+        outputMediaAssetId: media.id, outputPromoVersionId: promoVersion.id,
+        requestedByUserId: userId, preset: "SPEECH_MP3", status: "SUCCEEDED"
+      } });
+      const programme = await db.correctionsProgramme.create({ data: {
+        organisationId, facilityId: facility.id, title: `${label} private programme`, createdByUserId: userId
+      } });
+      return { project, render, programme };
+    }
+
+    async function holdC3Submission({ project, render, programme }) {
+      let entered;
+      let release;
+      const started = new Promise((resolve) => { entered = resolve; });
+      const gate = new Promise((resolve) => { release = resolve; });
+      const work = db.$transaction(async (tx) => {
+        const [{ pid }] = await tx.$queryRaw`SELECT pg_backend_pid() AS pid`;
+        await tx.$queryRaw`SELECT id FROM "AudioProject" WHERE id = ${project.id} FOR UPDATE`;
+        await tx.correctionsSubmission.create({ data: {
+          programmeId: programme.id, organisationId, facilityId: facility.id,
+          revision: 1, renderId: render.id, sourceFingerprint: "CI-only-handoff-race",
+          organisationPolicyVersion: 1, facilityPolicyVersion: 1,
+          titleSnapshot: programme.title, evidenceSnapshot: {}, submittedByUserId: userId
+        } });
+        entered(pid);
+        await gate;
+      }, { timeout: 25_000 });
+      return { work, pid: await Promise.race([
+        started,
+        work.then(() => { throw new Error("The C3 fixture finished before holding the project lock."); })
+      ]), release };
+    }
+
+    const historical = await approvedRender("historical-handoff");
+    const newOutput = await approvedRender("new-handoff");
+    const login = await api("/api/auth/login", { method: "POST", body: { email: user.email, password } });
+    assert.equal(login.status, 200, await login.clone().text());
+    const cookie = login.headers.get("set-cookie")?.split(";")[0];
+    assert.ok(cookie);
+    const handoffPath = "/api/school-radio/studio-destinations";
+    const handoffBody = (render) => ({ renderId: render.id, destination: "ONLINE_PODCAST" });
+    await db.promoVersion.update({ where: { id: historical.render.outputPromoVersionId }, data: { status: "IN_REVIEW" } });
+    const unapproved = await api(handoffPath, { method: "POST", cookie, body: handoffBody(historical.render) });
+    assert.equal(unapproved.status, 409, await unapproved.clone().text());
+    assert.equal(await db.studioProductHandoff.count({ where: { renderId: historical.render.id } }), 0);
+    await db.promoVersion.update({ where: { id: historical.render.outputPromoVersionId }, data: { status: "APPROVED" } });
+    const initial = await api(handoffPath, { method: "POST", cookie, body: handoffBody(historical.render) });
+    assert.equal(initial.status, 201, await initial.clone().text());
+    const reused = await api(handoffPath, { method: "POST", cookie, body: handoffBody(historical.render) });
+    assert.equal(reused.status, 200, await reused.clone().text());
+    assert.equal((await reused.json()).reused, true);
+    const listed = await api(`${handoffPath}?renderId=${historical.render.id}`, { cookie });
+    assert.equal(listed.status, 200, await listed.clone().text());
+    assert.equal((await listed.json()).handoffs.length, 1);
+
+    heldSubmission = await holdC3Submission(historical);
+    let listSettled = false;
+    const duringTransition = api(`${handoffPath}?renderId=${historical.render.id}`, { cookie })
+      .finally(() => { listSettled = true; });
+    let lockWaitError;
+    try {
+      await waitForRouteProjectLock(db, heldSubmission.pid, () => listSettled);
+    } catch (error) {
+      lockWaitError = error;
+    } finally {
+      heldSubmission.release();
+    }
+    await heldSubmission.work;
+    heldSubmission = null;
+    const afterTransition = await duringTransition;
+    if (lockWaitError) throw new Error(`${lockWaitError.message} Route status: ${afterTransition.status}.`);
+    assert.equal(afterTransition.status, 404, await afterTransition.clone().text());
+    const oldHandoff = await api(handoffPath, { method: "POST", cookie, body: handoffBody(historical.render) });
+    assert.equal(oldHandoff.status, 403, await oldHandoff.clone().text());
+    assert.equal(await db.studioProductHandoff.count({ where: { renderId: historical.render.id } }), 1);
+
+    heldSubmission = await holdC3Submission(newOutput);
+    let createSettled = false;
+    const newHandoff = api(handoffPath, { method: "POST", cookie, body: handoffBody(newOutput.render) })
+      .finally(() => { createSettled = true; });
+    lockWaitError = null;
+    try {
+      await waitForRouteProjectLock(db, heldSubmission.pid, () => createSettled);
+    } catch (error) {
+      lockWaitError = error;
+    } finally {
+      heldSubmission.release();
+    }
+    await heldSubmission.work;
+    heldSubmission = null;
+    const denied = await newHandoff;
+    if (lockWaitError) throw new Error(`${lockWaitError.message} Route status: ${denied.status}.`);
+    assert.equal(denied.status, 403, await denied.clone().text());
+    assert.equal(await db.studioProductHandoff.count({ where: { renderId: newOutput.render.id } }), 0);
+  } finally {
+    if (heldSubmission) {
+      heldSubmission.release();
+      await heldSubmission.work.catch(() => {});
+    }
+    try {
+      if (organisationId) {
+        await db.studioProductHandoff.deleteMany({ where: { organisationId } });
+        await db.correctionsSubmission.deleteMany({ where: { organisationId } });
+        await db.audioRender.deleteMany({ where: { organisationId } });
+        await db.audioProjectVersion.deleteMany({ where: { project: { organisationId } } });
+        await db.audioProject.deleteMany({ where: { organisationId } });
+        await db.correctionsProgramme.deleteMany({ where: { organisationId } });
+        await db.promoVersion.deleteMany({ where: { promoAsset: { organisationId } } });
+        await db.promoAsset.deleteMany({ where: { organisationId } });
+        await db.mediaAsset.deleteMany({ where: { organisationId } });
         await db.organisation.delete({ where: { id: organisationId } });
       }
       if (userId) await db.user.delete({ where: { id: userId } });

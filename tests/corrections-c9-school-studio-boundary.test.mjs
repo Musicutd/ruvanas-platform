@@ -58,6 +58,24 @@ test("general Studio source IDs are constrained to allowed organisation media or
   assert.deepEqual(query.where.AND, GENERAL_STUDIO_MEDIA_ASSET_WHERE.AND);
 });
 
+test("Studio product handoffs lock and recheck an exact render before listing or reusing it", async () => {
+  const route = await readFile(new URL("../app/api/school-radio/studio-destinations/route.js", import.meta.url), "utf8");
+  const lockedRender = route.slice(route.indexOf("async function lockedGeneralRender"), route.indexOf("async function assertGeneralHandoffOutput"));
+  const get = route.slice(route.indexOf("export async function GET"), route.indexOf("export async function POST"));
+  const post = route.slice(route.indexOf("export async function POST"));
+  assert.match(lockedRender, /await lockGeneralStudioAudioProject\(tx, organisationId, locator\.projectId\)/);
+  assert.ok(lockedRender.indexOf("await lockGeneralStudioAudioProject") < lockedRender.indexOf("return findRender(tx"));
+  assert.match(get, /prisma\.\$transaction\([\s\S]*isolationLevel: "ReadCommitted"/);
+  assert.ok(get.indexOf("lockedGeneralRender(tx") < get.indexOf("tx.studioProductHandoff.findMany"));
+  assert.match(route, /async function runLockedHandoffTransaction[\s\S]*isolationLevel: "ReadCommitted"/);
+  assert.match(route, /error\?\.code !== "P2002" \|\| attempt === 3/);
+  assert.match(post, /runLockedHandoffTransaction\(async \(tx\)/);
+  assert.match(post, /assertStudioRenderReady\(await lockedGeneralRender\(tx, renderId, access\.organisation\.id\)\)/);
+  assert.ok(post.indexOf("assertStudioRenderReady") < post.indexOf("tx.studioProductHandoff.findUnique"));
+  assert.ok(post.indexOf("tx.studioProductHandoff.findUnique") < post.indexOf("tx.studioProductHandoff.create"));
+  assert.doesNotMatch(get + post, /prisma\.studioProductHandoff\.find/);
+});
+
 test("legacy School Studio routes use the shared boundary for lists, writes, upload stages and handoff", async () => {
   const files = [
     "../app/api/school-radio/audio-lab/route.js",
