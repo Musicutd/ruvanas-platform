@@ -19,12 +19,20 @@ async function waitForNewsroomProjectLocks(db, holderPid, settled) {
   const deadline = Date.now() + 8_000;
   while (Date.now() < deadline) {
     const waiters = await db.$queryRaw`
-      SELECT pid FROM pg_stat_activity
+      SELECT pid, pg_blocking_pids(pid) AS blockers FROM pg_stat_activity
       WHERE datname = current_database() AND wait_event_type = 'Lock'
         AND query LIKE '%"AudioProject"%FOR UPDATE%'
-        AND ${holderPid}::integer = ANY(pg_blocking_pids(pid))
         AND pid <> pg_backend_pid()`;
-    if (waiters.length >= 2) return;
+    // PostgreSQL can queue the second FOR UPDATE behind the first waiter,
+    // rather than reporting both as directly blocked by the holder.
+    const blockersByPid = new Map(waiters.map(({ pid, blockers }) => [pid, blockers]));
+    const waitsForHolder = (pid, visited = new Set()) => {
+      if (visited.has(pid)) return false;
+      const next = new Set([...visited, pid]);
+      return (blockersByPid.get(pid) || []).some((blocker) =>
+        blocker === holderPid || (blockersByPid.has(blocker) && waitsForHolder(blocker, next)));
+    };
+    if (waiters.filter(({ pid }) => waitsForHolder(pid)).length >= 2) return;
     if (settled()) throw new Error("A newsroom publication finished before the private source was committed.");
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
