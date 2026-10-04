@@ -12,6 +12,7 @@ import {
   transitionRadioSyndicationAgreement,
   transitionRadioSyndicationOffer
 } from "../lib/radio-syndication.mjs";
+import { generalRadioSyndicationSourceMatchesOffer } from "../lib/radio-syndication-general-boundary.mjs";
 
 const from = "2026-10-01T00:00:00.000Z";
 const until = "2026-10-31T00:00:00.000Z";
@@ -84,6 +85,28 @@ test("cross-tenant summaries redact transport, storage and account internals", (
   assert.doesNotMatch(serialized, /secret-contract|streamUrl|providerAccountId|subscription|privateKey|storageKey|credential/i);
 });
 
+test("historical syndication sources cannot silently switch organisation, station or kind", () => {
+  const recorded = {
+    kind: "RECORDED_PROGRAMME", stationNetworkId: "network-1", sourceOrganisationId: "source-org", sourceStationId: "source-station",
+    sourceNetworkAgreement: { stationNetworkId: "network-1", stationId: "source-station", stationOrganisationId: "source-org" },
+    sourcePodcastEpisodeId: "episode-1", sourceChannelId: null,
+    sourcePodcastEpisode: {
+      id: "episode-1", organisationId: "source-org", series: { stationId: "source-station" },
+      mediaAsset: { organisationId: "source-org" }
+    }
+  };
+  assert.equal(generalRadioSyndicationSourceMatchesOffer(recorded), true);
+  assert.equal(generalRadioSyndicationSourceMatchesOffer({ ...recorded, sourcePodcastEpisode: { ...recorded.sourcePodcastEpisode, organisationId: "another-org" } }), false);
+  assert.equal(generalRadioSyndicationSourceMatchesOffer({ ...recorded, sourcePodcastEpisode: { ...recorded.sourcePodcastEpisode, series: { stationId: "another-station" } } }), false);
+  assert.equal(generalRadioSyndicationSourceMatchesOffer({ ...recorded, sourcePodcastEpisode: { ...recorded.sourcePodcastEpisode, mediaAsset: { organisationId: "another-org" } } }), false);
+  assert.equal(generalRadioSyndicationSourceMatchesOffer({ ...recorded, sourceNetworkAgreement: { ...recorded.sourceNetworkAgreement, stationId: "another-station" } }), false);
+  assert.equal(generalRadioSyndicationSourceMatchesOffer({ ...recorded, sourceNetworkAgreement: { ...recorded.sourceNetworkAgreement, stationNetworkId: "another-network" } }), false);
+  const live = { ...recorded, kind: "LIVE_RELAY", sourcePodcastEpisodeId: null, sourcePodcastEpisode: null,
+    sourceChannelId: "channel-1", sourceChannel: { id: "channel-1", stationId: "source-station" } };
+  assert.equal(generalRadioSyndicationSourceMatchesOffer(live), true);
+  assert.equal(generalRadioSyndicationSourceMatchesOffer({ ...live, sourceChannel: { id: "channel-1", stationId: "another-station" } }), false);
+});
+
 test("Stage 19.20 routes preserve tenant boundaries and protected delivery", async () => {
   const [route, service, delivery, media, live, audio, schema, migration, navigation] = await Promise.all([
     readFile(new URL("../app/api/radio-syndication/route.js", import.meta.url), "utf8"),
@@ -108,6 +131,7 @@ test("Stage 19.20 routes preserve tenant boundaries and protected delivery", asy
   assert.match(audio, /cacheControl/);
   assert.match(schema, /@@index\(\[offerId, targetStationId, status\]\)/);
   assert.match(route, /status: \{ in: \["PENDING", "APPROVED"\] \}/);
+  assert.match(service, /\.onlineRadioEnabled/);
   assert.match(migration, /source_kind_check/);
   assert.match(migration, /FOREIGN KEY \("targetStationId", "targetOrganisationId"\)/);
   assert.match(migration, /ON DELETE RESTRICT/);
