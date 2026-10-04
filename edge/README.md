@@ -31,13 +31,26 @@ authoritative. Do not connect a real facility or production catalogue.
    non-HTTPS cloud origins except isolated loopback testing.
 5. Mount a dedicated writable cache/proof volume owned by the non-root Edge
    user. Do not expose it as a shared music folder. The `edge/Dockerfile` is
-   a packaging starting point; it has **not** been container-built or approved
-   for a real facility.
+   a packaging starting point and is **not** approved for a real facility.
 
 The machine syncs every 30 seconds. It activates only a signed, fully staged
 manifest and continues offline only until that manifest expires. A local
 player must present a bounded cloud-signed grant for the exact node,
 facility, zone and player. Opaque media URLs are not reusable downloads.
+
+## Container packaging check
+
+CI runs `docker build --file edge/Dockerfile --tag ruvanas-c8-edge:ci .` from the
+repository root. It only builds a local image: there is no image push or
+deployment. The Dockerfile also parses the Edge entry point and loads its
+service and sync module graphs during the build. A passing job establishes
+that the Node 22 Alpine image can be assembled from the checked-out sources
+and that those modules and their relative imports are present and loadable.
+
+The check does not start the Edge, provision credentials or a writable cache
+volume, connect to cloud or player services, validate browser-to-Edge TLS or
+facility networking, or prove playback, offline recovery, security hardening
+or production readiness. Those still require the separate C8 release gates.
 
 ## Recovery and decommissioning
 

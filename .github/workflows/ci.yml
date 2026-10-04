@@ -144,3 +144,13 @@ jobs:
 
       - name: Build and validate Online Radio encoder image
         run: docker build --file Dockerfile.online-radio-worker --tag ruvanas-online-radio-encoder:ci .
+
+  edge-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build C8 Edge image and validate module loading
+        run: docker build --file edge/Dockerfile --tag ruvanas-c8-edge:ci .

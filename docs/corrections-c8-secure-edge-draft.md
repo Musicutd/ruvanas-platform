@@ -129,6 +129,14 @@ until every required C8 gate is demonstrated with isolated synthetic media.
 
 ## Open C8 release gates — do not merge
 
+The CI `edge-image` job is a build-only packaging check. It assembles the
+Node 22 Alpine image and checks that the Edge entry point parses and its
+service and sync module graphs load with the files copied into the image.
+It does not push or deploy the image, start a provisioned Edge, validate
+facility TLS/networking or writable storage, or demonstrate audible playback,
+offline recovery or appliance security. A passing image build is not a C8
+release PASS.
+
 ### C8.1 implementation in progress (isolated validation, not release evidence)
 
 - Super Admin may bind exactly one active Edge endpoint to an existing
