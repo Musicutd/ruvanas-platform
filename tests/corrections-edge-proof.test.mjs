@@ -19,6 +19,7 @@ test("C8D proof queue signs an append-only chain, replays safely and detects tam
     windowId: "window-one", overrideId: null, eventType: "STARTED", occurredAt: new Date().toISOString(), positionSeconds: 0 };
   const queue = new CorrectionsEdgeProofQueue({ root, privateKeyPem, scope });
   await queue.initialise();
+  await assert.rejects(queue.acknowledge(0, null));
   const first = await queue.append(payload);
   const second = await queue.append({ ...payload, eventId: randomUUID(), eventType: "COMPLETED", positionSeconds: 10 });
   assert.equal(verifyCorrectionsEdgeProof(first, publicKeyPem, { sequence: 1, previousHash: null }), true);
@@ -27,11 +28,27 @@ test("C8D proof queue signs an append-only chain, replays safely and detects tam
     publicKeyPem, { sequence: 2, previousHash: first.eventHash }), false);
   assert.equal(queue.pendingCount, 2);
   await queue.acknowledge(1, first.eventHash);
+  const receiptPath = path.join(root, "proof-ack.json");
+  const intactReceipt = JSON.parse(await readFile(receiptPath, "utf8"));
+  assert.deepEqual([intactReceipt.nodeId, intactReceipt.organisationId, intactReceipt.facilityId],
+    [scope.nodeId, scope.organisationId, scope.facilityId]);
   const resumed = new CorrectionsEdgeProofQueue({ root, privateKeyPem, scope });
   await resumed.initialise();
   assert.equal(resumed.pendingCount, 1);
   assert.equal(resumed.pending()[0].sequence, 2);
   await assert.rejects(queue.acknowledge(2, "0".repeat(64)));
+  // A valid journal hash is not a cloud acknowledgement. Local disk edits
+  // must not make unuploaded proof disappear from the pending queue.
+  await writeFile(receiptPath, JSON.stringify({ ...intactReceipt, sequence: 2, eventHash: second.eventHash }));
+  await assert.rejects(new CorrectionsEdgeProofQueue({ root, privateKeyPem, scope }).initialise(), /integrity/);
+  await writeFile(receiptPath, JSON.stringify({ ...intactReceipt, facilityId: "other-facility" }));
+  await assert.rejects(new CorrectionsEdgeProofQueue({ root, privateKeyPem, scope }).initialise(), /integrity/);
+  await writeFile(receiptPath, JSON.stringify({ sequence: 2, eventHash: second.eventHash }));
+  await assert.rejects(new CorrectionsEdgeProofQueue({ root, privateKeyPem, scope }).initialise(), /integrity/);
+  await writeFile(receiptPath, JSON.stringify(intactReceipt));
+  const restored = new CorrectionsEdgeProofQueue({ root, privateKeyPem, scope });
+  await restored.initialise();
+  assert.equal(restored.pendingCount, 1);
   const forged = signCorrectionsEdgeProof(2, first.eventHash,
     { ...payload, eventId: randomUUID(), facilityId: "other" }, privateKeyPem);
   assert.equal(verifyCorrectionsEdgeProof(forged, publicKeyPem, { sequence: 2, previousHash: first.eventHash }), true);

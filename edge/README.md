@@ -57,12 +57,20 @@ or production readiness. Those still require the separate C8 release gates.
 - A 401/403 from an authenticated cloud call persists a local playback
   suspension. Updating a rotated machine credential and completing a fresh
   valid cloud sync is required before playback resumes.
-- A corrupt proof journal or trusted-clock record fails startup. Preserve it
-  for incident review; do not delete it to make a machine appear healthy.
+- A corrupt proof journal, proof acknowledgement or trusted-clock record
+  fails startup. Preserve it for incident review; do not delete it to make a
+  machine appear healthy. The acknowledgement is signed with the node's
+  separate proof key and bound to its exact facility, journal sequence and
+  event hash. An older unsigned `proof-ack.json` also fails closed; preserve
+  the journal and acknowledgement for a supervised reconciliation before
+  migrating an existing test Edge cache.
 - Edge proof remains in a signed append-only journal until cloud confirms
   the exact sequence and hash. Cloud preserves offline occurrence time and
   separate ingestion time. A browser/player's claimed completion is not
-  evidence that a human heard the audio.
+  evidence that a human heard the audio. The signed acknowledgement prevents
+  an unauthorised edit to the local marker from silently hiding pending
+  records. It cannot protect a fully compromised host holding the proof key
+  or a full-disk rollback; those remain appliance-hardening gates.
 - Revocation stops cloud sync, media and proof ingestion immediately. If the
   node is offline, a previously signed manifest can remain effective only
   until its expiry. Super Admin decommission records the action but **cannot
