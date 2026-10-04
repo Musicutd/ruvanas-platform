@@ -200,7 +200,7 @@ test("School Learning hides historical private episodes, submissions and portfol
       action: "ADD_PORTFOLIO_ENTRY", submissionId: privateSubmission.id,
       contributorId: contributor.id, title: "Must remain private"
     });
-    assert.equal(blockedPortfolio.status, 409, await blockedPortfolio.clone().text());
+    assert.equal(blockedPortfolio.status, 404, await blockedPortfolio.clone().text());
     assert.equal(await db.portfolioEntry.count({ where: { organisationId, submissionId: privateSubmission.id } }), 1);
 
     const ordinarySubmission = await action({
