@@ -17,6 +17,22 @@ async function api(path, { method = "GET", cookie, body } = {}) {
   });
 }
 
+async function waitForLearningProjectLock(db, holderPid, settled) {
+  const deadline = Date.now() + 8_000;
+  while (Date.now() < deadline) {
+    const waiters = await db.$queryRaw`
+      SELECT pid FROM pg_stat_activity
+      WHERE datname = current_database() AND wait_event_type = 'Lock'
+        AND query LIKE '%"AudioProject"%FOR UPDATE%'
+        AND ${holderPid}::integer = ANY(pg_blocking_pids(pid))
+        AND pid <> pg_backend_pid()`;
+    if (waiters.length) return;
+    if (settled()) throw new Error("School Learning finished before waiting for the private-project lock.");
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error("School Learning did not reach the private-project lock.");
+}
+
 test("School Learning hides historical private episodes, submissions and portfolios", async () => {
   if (!ciDatabase || !process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 32) {
     throw new Error("C9 School Learning integration runs only against the exact disposable CI database.");
@@ -26,6 +42,7 @@ test("School Learning hides historical private episodes, submissions and portfol
   let organisationId;
   let userId;
   let planId;
+  let heldTransition;
   try {
     const plan = await db.plan.create({ data: {
       name: `Fictional C9 School Learning ${suffix}`, code: `C9_SCHOOL_LEARNING_${suffix}`,
@@ -206,7 +223,54 @@ test("School Learning hides historical private episodes, submissions and portfol
       contributorId: contributor.id, title: "Ordinary School evidence"
     });
     assert.equal(ordinaryPortfolio.status, 201, await ordinaryPortfolio.clone().text());
+
+    // Hold the same project row that an Inside attachment references. The
+    // Learning POST must wait, then evaluate the committed private state.
+    const beforeRace = await db.assignmentSubmission.count({ where: { organisationId, audioProjectId: normalProject.id } });
+    let entered;
+    let release;
+    const started = new Promise((resolve) => { entered = resolve; });
+    const gate = new Promise((resolve) => { release = resolve; });
+    const work = db.$transaction(async (tx) => {
+      const [{ pid }] = await tx.$queryRaw`SELECT pg_backend_pid() AS pid`;
+      await tx.$queryRaw`SELECT "id" FROM "AudioProject" WHERE "id" = ${normalProject.id} FOR UPDATE`;
+      await tx.correctionsStudioSession.create({ data: {
+        organisationId, facilityId: facility.id, contributorId: correctionsContributor.id,
+        programmeId: correctionsProgramme.id, projectId: normalProject.id,
+        supervisorUserId: userId, createdByUserId: userId,
+        capabilityScope: { purpose: "isolated CI-only Learning write race" }
+      } });
+      entered(pid);
+      await gate;
+    }, { timeout: 25_000 });
+    heldTransition = { work, release, pid: await Promise.race([
+      started,
+      work.then(() => { throw new Error("The Inside fixture finished before holding the project lock."); })
+    ]) };
+    let learningSettled = false;
+    const racedSubmission = action({
+      action: "SUBMIT_ASSIGNMENT", assignmentId: assignment.id,
+      contributorIds: [contributor.id], audioProjectId: normalProject.id
+    }).finally(() => { learningSettled = true; });
+    let waitError;
+    try {
+      await waitForLearningProjectLock(db, heldTransition.pid, () => learningSettled);
+    } catch (error) {
+      waitError = error;
+    } finally {
+      heldTransition.release();
+    }
+    await heldTransition.work;
+    heldTransition = null;
+    const racedResponse = await racedSubmission;
+    if (waitError) throw new Error(`${waitError.message} Route status: ${racedResponse.status}.`);
+    assert.equal(racedResponse.status, 404, await racedResponse.clone().text());
+    assert.equal(await db.assignmentSubmission.count({ where: { organisationId, audioProjectId: normalProject.id } }), beforeRace);
   } finally {
+    if (heldTransition) {
+      heldTransition.release();
+      await heldTransition.work.catch(() => {});
+    }
     try {
       if (organisationId) {
         await db.portfolioEntry.deleteMany({ where: { organisationId } });

@@ -32,7 +32,7 @@ test("ordinary campaign media withdraws from both players and stale URLs when it
       name: `Fictional C9 campaign plan ${suffix}`, code: `C9_CAMPAIGN_${suffix}`,
       productFamily: "RETAIL", tierNumber: 1, monthlyPriceCents: 0,
       storageLimitGb: 1, listenerLimit: 10, maxBitrateKbps: 128,
-      retailRadioEnabled: true, stationLimit: 1
+      retailRadioEnabled: true, onlineRadioEnabled: true, stationLimit: 1
     } });
     planId = plan.id;
     const organisation = await db.organisation.create({ data: {

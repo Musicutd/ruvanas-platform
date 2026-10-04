@@ -138,6 +138,11 @@ jobs:
           INTEGRATION_BASE_URL: http://127.0.0.1:3100
         run: node --test tests/integration/corrections-c9-school-organisations-boundary.test.mjs
 
+      - name: Validate C9 enrolled School media URLs after episode and rundown withdrawal
+        env:
+          INTEGRATION_BASE_URL: http://127.0.0.1:3100
+        run: node --test tests/integration/corrections-c9-school-player-media.test.mjs
+
       - name: Validate C9 generic rights reports exclude private Corrections evidence
         env:
           INTEGRATION_BASE_URL: http://127.0.0.1:3100

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { ORGANISATION_CONTENT_ROLES } from "@/lib/permissions.mjs";
 import { requireActiveSchoolRadio } from "@/lib/school-radio-access";
-import { GENERAL_STUDIO_AUDIO_PROJECT_WHERE } from "@/lib/studio-general-asset-boundary.mjs";
+import { GENERAL_STUDIO_AUDIO_PROJECT_WHERE, lockGeneralStudioAudioProject } from "@/lib/studio-general-asset-boundary.mjs";
 import { generalSchoolRundownWhere } from "@/lib/school-general-content-boundary.mjs";
 import {
   ASSIGNMENT_TEMPLATE_CODES,
@@ -80,6 +80,66 @@ function generalSchoolSubmissionWhere(organisationId) {
   ] };
 }
 
+// Corrections Guard makes a project or media source private by adding a linked
+// row. Lock the exact Learning sources before the final privacy query so a
+// concurrent attachment either finishes first or waits for this write.
+async function lockLearningSources(tx, organisationId, { audioProjectId, episodeId }) {
+  const projectIds = new Set(audioProjectId ? [audioProjectId] : []);
+  const mediaIds = new Set();
+  const project = audioProjectId ? await tx.audioProject.findFirst({
+    where: { id: audioProjectId, organisationId }, select: { episodeId: true }
+  }) : null;
+  const episodeIds = [...new Set([episodeId, project?.episodeId].filter(Boolean))].sort();
+  for (const linkedEpisodeId of episodeIds) {
+    await tx.$queryRaw`SELECT "id" FROM "SchoolEpisode" WHERE "id" = ${linkedEpisodeId} AND "organisationId" = ${organisationId} FOR UPDATE`;
+    const rundowns = await tx.$queryRaw`SELECT "id" FROM "SchoolRundown" WHERE "episodeId" = ${linkedEpisodeId} AND "organisationId" = ${organisationId} FOR UPDATE`;
+    if (rundowns.length) {
+      const rundownId = rundowns[0].id;
+      await tx.$queryRaw`SELECT "id" FROM "SchoolRundownItem" WHERE "rundownId" = ${rundownId} ORDER BY "id" FOR UPDATE`;
+      const items = await tx.schoolRundownItem.findMany({
+        where: { rundownId },
+        select: {
+          sourceMediaAssetId: true,
+          sourceTrack: { select: { mediaAssetId: true } },
+          sourcePromoVersion: { select: { mediaAssetId: true } },
+          sourceAnnouncement: { select: { promoVersion: { select: { mediaAssetId: true } } } },
+          sourceTake: { select: { projectId: true, mediaAssetId: true } }
+        }
+      });
+      for (const item of items) {
+        if (item.sourceTake?.projectId) projectIds.add(item.sourceTake.projectId);
+        for (const id of [item.sourceMediaAssetId, item.sourceTrack?.mediaAssetId,
+          item.sourcePromoVersion?.mediaAssetId, item.sourceAnnouncement?.promoVersion?.mediaAssetId,
+          item.sourceTake?.mediaAssetId]) if (id) mediaIds.add(id);
+      }
+    }
+  }
+  for (const projectId of [...projectIds].sort()) {
+    try {
+      await lockGeneralStudioAudioProject(tx, organisationId, projectId);
+    } catch (error) {
+      if (error?.code !== "CORRECTIONS_STUDIO_OUTPUT_BLOCKED") throw error;
+      throw notFound("The linked School audio is no longer available to Learning.");
+    }
+  }
+  if (audioProjectId) {
+    const currentProject = await tx.audioProject.findFirst({
+      where: { id: audioProjectId, organisationId }, select: { episodeId: true }
+    });
+    if (currentProject?.episodeId !== project?.episodeId) {
+      throw notFound("The linked School audio changed. Reload Learning and try again.");
+    }
+  }
+  // Global catalogue tracks are deliberately exempt from the Inside media
+  // predicate and are shared across organisations; never take their row lock.
+  const ownedMedia = mediaIds.size ? await tx.mediaAsset.findMany({
+    where: { id: { in: [...mediaIds] }, organisationId }, select: { id: true }
+  }) : [];
+  for (const mediaAssetId of ownedMedia.map(({ id }) => id).sort()) {
+    await tx.$queryRaw`SELECT "id" FROM "MediaAsset" WHERE "id" = ${mediaAssetId} FOR UPDATE`;
+  }
+}
+
 function notFound(message) {
   return Object.assign(new Error(message), { status: 404 });
 }
@@ -121,6 +181,8 @@ export async function POST(request) {
   const data = parsed.data;
   const organisationId = access.organisation.id;
   try {
+    // Keep READ COMMITTED: each eligibility query after a row-lock wait must
+    // see the newly committed Inside attachment, not an earlier snapshot.
     const result = await prisma.$transaction(async (tx) => {
       let entity;
       if (data.action === "CREATE_ASSIGNMENT") {
@@ -157,6 +219,7 @@ export async function POST(request) {
         const contributorIds = validateAssignmentSubmission({ assignmentStatus: assignment.status, contributorIds: data.contributorIds, audioProjectId: data.audioProjectId, episodeId: data.episodeId });
         const contributorCount = await tx.studentContributor.count({ where: { id: { in: contributorIds }, organisationId, studentGroupId: assignment.studentGroupId, status: "ACTIVE" } });
         if (contributorCount !== contributorIds.length) throw new Error("Every contributor must be active in the assignment class.");
+        await lockLearningSources(tx, organisationId, data);
         if (data.audioProjectId) {
           const project = await tx.audioProject.findFirst({ where: { id: data.audioProjectId, organisationId, status: { in: ["READY", "SUBMITTED"] }, OR: [{ studentGroupId: assignment.studentGroupId }, { studentGroupId: null }], ...generalSchoolAudioProjectWhere(organisationId) }, select: { id: true } });
           if (!project) throw notFound("Choose a ready AudioLab project available to this class.");
@@ -167,6 +230,9 @@ export async function POST(request) {
         }
         entity = await tx.assignmentSubmission.create({ data: { organisationId, assignmentId: assignment.id, audioProjectId: data.audioProjectId || null, episodeId: data.episodeId || null, revision: assignment._count.submissions + 1, reflection: data.reflection || null, recordedByUserId: access.user.id, contributors: { create: contributorIds.map((contributorId) => ({ contributorId, projectRole: data.projectRoles[contributorId] || null })) } } });
       } else if (data.action === "ASSESS_SUBMISSION") {
+        const source = await tx.assignmentSubmission.findFirst({ where: { id: data.submissionId, organisationId }, select: { audioProjectId: true, episodeId: true } });
+        if (!source) throw notFound("The assignment submission was not found.");
+        await lockLearningSources(tx, organisationId, source);
         const submission = await tx.assignmentSubmission.findFirst({ where: { id: data.submissionId, organisationId, status: { not: "WITHDRAWN" }, ...generalSchoolSubmissionWhere(organisationId) }, include: { assignment: { include: { rubric: { include: { criteria: true } } } } } });
         if (!submission) throw notFound("The assignment submission was not found.");
         const assessment = normalizeAssessment({ criteria: submission.assignment.rubric?.criteria || [], scores: data.scores, annotations: data.annotations, narrativeNotes: data.narrativeNotes, revisionRequest: data.revisionRequest });
@@ -182,6 +248,9 @@ export async function POST(request) {
         await tx.assignmentSubmission.update({ where: { id: submission.id }, data: { status: assessment.revisionRequest ? "REVISION_REQUESTED" : "ASSESSED" } });
         entity = saved;
       } else {
+        const source = await tx.assignmentSubmission.findFirst({ where: { id: data.submissionId, organisationId }, select: { audioProjectId: true, episodeId: true } });
+        if (!source) throw new Error("Assess the submission before adding private portfolio evidence.");
+        await lockLearningSources(tx, organisationId, source);
         const submission = await tx.assignmentSubmission.findFirst({ where: { id: data.submissionId, organisationId, status: "ASSESSED", contributors: { some: { contributorId: data.contributorId } }, ...generalSchoolSubmissionWhere(organisationId) }, include: { assessment: true } });
         if (!submission?.assessment) throw new Error("Assess the submission before adding private portfolio evidence.");
         const evidence = normalizePortfolioEvidence(data);
@@ -189,7 +258,7 @@ export async function POST(request) {
       }
       await tx.auditLog.create({ data: { organisationId, actorUserId: access.user.id, action: `SCHOOL_LEARNING_${data.action}`, entityType: data.action.includes("ASSIGNMENT") && !data.action.includes("SUBMISSION") ? "Assignment" : data.action === "ASSESS_SUBMISSION" ? "Assessment" : data.action === "ADD_PORTFOLIO_ENTRY" ? "PortfolioEntry" : "AssignmentSubmission", entityId: entity.id, details: { staffManagedOnly: true, publicPublishingEnabled: false } } });
       return entity;
-    });
+    }, { isolationLevel: "ReadCommitted", timeout: 15_000 });
     return NextResponse.json({ result }, { status: new Set(["CREATE_ASSIGNMENT", "SUBMIT_ASSIGNMENT", "ADD_PORTFOLIO_ENTRY"]).has(data.action) ? 201 : 200 });
   } catch (error) {
     if (error?.code === "P2002") return NextResponse.json({ error: "That learning-workspace record already exists." }, { status: 409 });

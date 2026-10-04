@@ -6,6 +6,7 @@ import { protectedAudioResponse } from "@/lib/protected-audio-response";
 import { isCatalogueLicenceCurrent } from "@/lib/catalogue-upload.mjs";
 import { isPlayerListenerTokenActive } from "@/lib/player-listener-lease.mjs";
 import { GENERAL_STUDIO_MEDIA_ASSET_WHERE } from "@/lib/studio-general-asset-boundary.mjs";
+import { schoolMediaIntentIsCurrent } from "@/lib/school-player-media.mjs";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -35,7 +36,7 @@ export async function GET(request, { params }) {
     const isCurrentPromo = (campaignPlayout.insertions || []).some((item) => item.mediaAssetId === mediaAssetId);
     const isCurrentSchoolAnnouncement = (schoolPlayout.insertions || []).some((item) => item.mediaAssetId === mediaAssetId);
     const isCurrentInsideAudio = (correctionsPlayout?.insertions || []).some((item) => item.mediaAssetId === mediaAssetId);
-    const recentInsertionIntent = resolution.reason === "CORRECTIONS_PRIVATE" || isCurrentPromo || isCurrentSchoolAnnouncement || isCurrentInsideAudio ? null : await prisma.playoutIntent.findFirst({
+    const recentInsertionIntents = resolution.reason === "CORRECTIONS_PRIVATE" || isCurrentPromo || isCurrentSchoolAnnouncement || isCurrentInsideAudio ? [] : await prisma.playoutIntent.findMany({
       where: {
         playerId: player.id,
         organisationId: player.organisationId,
@@ -52,8 +53,23 @@ export async function GET(request, { params }) {
         plannedStart: { gte: new Date(instant.getTime() - 15 * 60 * 1000) },
         expiresAt: { gt: instant }
       },
-      select: { id: true }
+      select: {
+        scheduleItemId: true, schoolBroadcastSlotId: true, schoolRundownItemId: true,
+        mediaAssetId: true, promoVersionId: true, publicationRevision: true,
+        sourceRevision: true, plannedStart: true, expiresAt: true
+      }
     });
+    let recentInsertionIntent = false;
+    for (const intent of recentInsertionIntents) {
+      if (!intent.schoolBroadcastSlotId && !intent.schoolRundownItemId) {
+        recentInsertionIntent = true;
+        break;
+      }
+      if (await schoolMediaIntentIsCurrent(prisma, { player, intent, instant })) {
+        recentInsertionIntent = true;
+        break;
+      }
+    }
     if (!isEligibleMusic && !isCurrentPromo && !isCurrentSchoolAnnouncement && !isCurrentInsideAudio && !recentInsertionIntent) {
       return NextResponse.json({ error: "This audio is not in the player's current playback plan." }, { status: 404 });
     }

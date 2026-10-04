@@ -56,13 +56,16 @@ test("generic stream denies unsubmitted sources before storage; DELETE commits p
 
 test("a recent generic player intent cannot revive cancelled or private Inside audio", async () => {
   const playerMedia = await readFile(new URL("../app/api/player/media/[mediaAssetId]/route.js", import.meta.url), "utf8");
-  const fallback = playerMedia.match(/const recentInsertionIntent = [\s\S]*?select: \{ id: true \s*\}/)?.[0];
-  assert.ok(fallback, "the generic recent-intent fallback must remain identifiable");
+  const start = playerMedia.indexOf("const recentInsertionIntents =");
+  const end = playerMedia.indexOf("let recentInsertionIntent =", start);
+  assert.ok(start >= 0 && end > start, "the generic recent-intent fallback must remain identifiable");
+  const fallback = playerMedia.slice(start, end);
   for (const field of ["cancelledAt", "correctionsRequestId", "correctionsRehabContentId",
     "correctionsProgrammeId", "correctionsSubmissionId", "correctionsTrackId",
     "correctionsAnnouncementId", "correctionsOverrideId"]) {
     assert.match(fallback, new RegExp(`${field}: null`), field);
   }
+  assert.match(playerMedia, /schoolMediaIntentIsCurrent\(prisma, \{ player, intent, instant \}\)/);
 });
 
 test("ordinary campaign and direct player media routes recheck current Inside privacy before storage", async () => {
