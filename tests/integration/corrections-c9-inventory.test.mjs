@@ -95,7 +95,7 @@ test("C9 privacy inventory route is Super Admin-only, tenant-scoped, and content
       assert.match(response.headers.get("cache-control") || "", /no-store/);
       const body = await response.json();
       assert.equal(body.organisationId, organisation.id);
-      assert.equal(Object.keys(body.counts).length, 23);
+      assert.equal(Object.keys(body.counts).length, 26);
       assert.equal(body.counts.correctionsAuditEvents, expectedAuditCount);
       assert.ok(Object.entries(body.counts).every(([key, value]) =>
         key === "correctionsAuditEvents" ? value === expectedAuditCount : value === 0));
