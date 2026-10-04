@@ -164,3 +164,105 @@ test("authenticated local player sees only its current private media; C6 overrid
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("same-audio source transitions require a new Edge session and cannot complete the old source", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "ruvanas-c8-source-"));
+  const pair = generateKeyPairSync("ed25519");
+  const privatePem = pair.privateKey.export({ type: "pkcs8", format: "pem" });
+  const publicKeyPem = pair.publicKey.export({ type: "spki", format: "pem" });
+  const scope = { nodeId: "cm12345678901234567890123", organisationId: "orgA", facilityId: "facilityA" };
+  const media = Buffer.from("one synthetic private audio item");
+  const item = { mediaAssetId: "shared-audio", promoVersionId: "shared-version",
+    sha256: createHash("sha256").update(media).digest("hex"), sizeBytes: media.length,
+    durationSeconds: 6, mimeType: "audio/wav", rightsUse: "CORRECTIONS_RADIO",
+    sourceType: "LICENSED_MUSIC", trackId: "track-one" };
+  const contentKey = edgeContentKey(item);
+  let clock = new Date("2026-10-04T10:00:58.000Z");
+  const cache = new CorrectionsEdgeCache({ root, key: randomBytes(32), publicKeyPem, scope,
+    now: () => clock, fetchMedia: async () => media });
+  const window = (id, startMinute, endMinute) => ({ id, facilityId: scope.facilityId,
+    kind: "CENTRAL", mandatory: false, distributionId: `distribution-${id}`,
+    weekday: 0, startMinute, endMinute, contentKey });
+  const insertion = (id, start, end) => ({ id, facilityId: scope.facilityId, zoneId: "zoneA",
+    playerId: "playerA", trackId: item.trackId, contentKey, sourceRevision: `revision-${id}`,
+    programmingSource: "CORRECTIONS_REQUEST", plannedStart: `2026-10-04T10:01:${start}.000Z`,
+    expiresAt: `2026-10-04T10:01:${end}.000Z` });
+  const override = (id, start, end) => ({ id, facilityId: scope.facilityId, type: "PRIORITY",
+    targetZoneIds: ["zoneA"], targetPlayerIds: ["playerA"], contentKey,
+    startedAt: `2026-10-04T10:01:${start}.000Z`, expiresAt: `2026-10-04T10:01:${end}.000Z` });
+  const manifest = signEdgeManifest({ schema: 1, ...scope, sequence: 1,
+    issuedAt: "2026-10-04T10:00:00.000Z", validUntil: "2026-10-04T11:00:00.000Z", timezone: "UTC",
+    zones: [{ id: "zoneA", channelId: "channelA", playerIds: ["playerA"] }],
+    windows: [window("window-a", 0, 601), window("window-b", 601, 1440)],
+    insertions: [insertion("request-a", "10", "15"), insertion("request-b", "15", "20")],
+    overrides: [override("priority-a", "25", "30"), override("priority-b", "30", "35")],
+    content: [item] }, privatePem);
+  const proofQueue = new CorrectionsEdgeProofQueue({ root: path.join(root, "proof"), privateKeyPem: privatePem, scope });
+  const edge = createCorrectionsEdgeServer({ cache, proofQueue });
+  try {
+    await cache.initialise();
+    await proofQueue.initialise();
+    await cache.sync(manifest);
+    const address = await edge.listen();
+    const url = `http://127.0.0.1:${address.port}`;
+    const grant = issueCorrectionsEdgePlayerGrant({ ...scope, zoneId: "zoneA", playerId: "playerA",
+      manifestVersion: manifest.version }, privatePem,
+    { now: clock, validUntil: new Date(clock.getTime() + 10 * 60_000) });
+    const headers = { authorization: `Edge ${Buffer.from(JSON.stringify(grant)).toString("base64url")}` };
+    const sourceFields = ({ windowId, insertionId, overrideId }) => ({
+      windowId: windowId || null, insertionId: insertionId || null, overrideId: overrideId || null });
+    const playback = async () => {
+      const response = await fetch(`${url}/v1/playback`, { headers });
+      assert.equal(response.status, 200);
+      const result = await response.json();
+      assert.equal(result.state, "READY");
+      const range = await fetch(`${url}${result.mediaUrl}`, { headers: { range: "bytes=0-3" } });
+      assert.equal(range.status, 206, "uninterrupted media range requests remain valid");
+      assert.deepEqual(Buffer.from(await range.arrayBuffer()), media.subarray(0, 4));
+      const started = proofQueue.pending().at(-1)?.payload;
+      assert.equal(started?.eventType, "STARTED");
+      assert.equal(started?.sessionId, result.sessionId);
+      return { ...result, startedSource: sourceFields(started) };
+    };
+    const transition = async (before, instant, expectedSource) => {
+      clock = new Date(instant);
+      assert.equal((await fetch(`${url}${before.mediaUrl}`)).status, 403,
+        "a media ticket must not survive an exact-source change");
+      const completed = await fetch(`${url}/v1/proof`, { method: "POST", headers: {
+        ...headers, "content-type": "application/json" }, body: JSON.stringify({
+        sessionId: before.sessionId, eventType: "COMPLETED", positionSeconds: 6 }) });
+      assert.equal(completed.status, 409, "the old source must not be claimed as completed");
+      const interrupted = await fetch(`${url}/v1/proof`, { method: "POST", headers: {
+        ...headers, "content-type": "application/json" }, body: JSON.stringify({
+        sessionId: before.sessionId, eventType: "INTERRUPTED", positionSeconds: 2 }) });
+      assert.equal(interrupted.status, 200, "the old source retains honest interruption evidence");
+      const after = await playback();
+      assert.notEqual(after.sessionId, before.sessionId, "the new source needs separate playback evidence");
+      assert.equal(after.source, before.source, "this tests source identity, not changed media or source category");
+      assert.deepEqual(after.startedSource, expectedSource, "new STARTED proof must name the exact new source");
+      assert.notDeepEqual(after.startedSource, before.startedSource,
+        "old and new proof must attribute different signed sources");
+      return after;
+    };
+    const windowA = await playback();
+    assert.equal(windowA.source, "CORRECTIONS_CENTRAL");
+    assert.deepEqual(windowA.startedSource, { windowId: "window-a", insertionId: null, overrideId: null });
+    await transition(windowA, "2026-10-04T10:01:02.000Z",
+      { windowId: "window-b", insertionId: null, overrideId: null });
+    clock = new Date("2026-10-04T10:01:11.000Z");
+    const requestA = await playback();
+    assert.equal(requestA.source, "CORRECTIONS_REQUEST");
+    assert.deepEqual(requestA.startedSource, { windowId: null, insertionId: "request-a", overrideId: null });
+    await transition(requestA, "2026-10-04T10:01:16.000Z",
+      { windowId: null, insertionId: "request-b", overrideId: null });
+    clock = new Date("2026-10-04T10:01:26.000Z");
+    const priorityA = await playback();
+    assert.equal(priorityA.source, "CORRECTIONS_PRIORITY");
+    assert.deepEqual(priorityA.startedSource, { windowId: null, insertionId: null, overrideId: "priority-a" });
+    await transition(priorityA, "2026-10-04T10:01:31.000Z",
+      { windowId: null, insertionId: null, overrideId: "priority-b" });
+  } finally {
+    await new Promise((resolve) => edge.server.close(resolve));
+    await rm(root, { recursive: true, force: true });
+  }
+});

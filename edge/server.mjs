@@ -42,6 +42,15 @@ function mediaOpaque(cache, grant, contentKey) {
     .digest("hex");
 }
 
+function samePlaybackSource(left, right) {
+  return left?.state === "READY" && right?.state === "READY" &&
+    left.contentKey === right.contentKey && left.source === right.source &&
+    (left.windowId || null) === (right.windowId || null) &&
+    (left.overrideId || null) === (right.overrideId || null) &&
+    (left.insertionId || null) === (right.insertionId || null) &&
+    (left.sourceRevision || null) === (right.sourceRevision || null);
+}
+
 async function smallBody(request) {
   let text = "";
   for await (const chunk of request) {
@@ -135,7 +144,7 @@ export function createCorrectionsEdgeServer({ cache, proofQueue = null, host = "
         let sessionId = [...sessions].find(([, session]) => !session.ended &&
           session.playerId === grant.playerId && session.zoneId === grant.zoneId &&
           session.manifestVersion === cache.active.version &&
-          session.decision.contentKey === decision.contentKey && session.decision.source === decision.source)?.[0];
+          samePlaybackSource(session.decision, decision))?.[0];
         if (!sessionId) {
           sessionId = randomUUID();
           if (sessions.size >= 5000) for (const [id, session] of sessions) {
@@ -158,7 +167,8 @@ export function createCorrectionsEdgeServer({ cache, proofQueue = null, host = "
         if (!session || !/^[A-Za-z0-9_-]{43}$/.test(suppliedTicket) ||
             !timingSafeEqual(Buffer.from(suppliedTicket), Buffer.from(session.ticket)) ||
             session.playerId !== grant.playerId || session.zoneId !== grant.zoneId ||
-            session.manifestVersion !== cache.active?.version || session.decision.contentKey !== decision.contentKey || session.ended) {
+            session.manifestVersion !== cache.active?.version ||
+            !samePlaybackSource(session.decision, decision) || session.ended) {
           return respond(response, 403, { error: "This player session is not current." });
         }
         if (decision.state !== "READY" || pathname.slice(10) !== mediaOpaque(cache, grant, decision.contentKey)) {
@@ -200,8 +210,7 @@ export function createCorrectionsEdgeServer({ cache, proofQueue = null, host = "
         const position = Number(body.positionSeconds);
         const duration = session.decision.item.durationSeconds;
         if (body.eventType === "COMPLETED" && (cache.active?.version !== session.manifestVersion ||
-            decision.state !== "READY" || decision.contentKey !== session.decision.contentKey ||
-            decision.source !== session.decision.source)) {
+            !samePlaybackSource(session.decision, decision))) {
           return respond(response, 409, { error: "Current private programming changed; report interruption instead." });
         }
         if (!Number.isSafeInteger(position) || position < 0 || position > Math.ceil(duration) + 5 ||

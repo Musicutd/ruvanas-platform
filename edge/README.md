@@ -71,6 +71,11 @@ or production readiness. Those still require the separate C8 release gates.
   an unauthorised edit to the local marker from silently hiding pending
   records. It cannot protect a fully compromised host holding the proof key
   or a full-disk rollback; those remain appliance-hardening gates.
+- A player session is bound to the exact signed window, insertion or override,
+  not just an audio item or broad programming category. Moving to another
+  source that happens to use the same audio invalidates the old media ticket
+  and completion claim and starts distinct proof. This protects source
+  attribution; it does not prove audible delivery or replace live C8 testing.
 - Revocation stops cloud sync, media and proof ingestion immediately. If the
   node is offline, a previously signed manifest can remain effective only
   until its expiry. Super Admin decommission records the action but **cannot
