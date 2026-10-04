@@ -17,6 +17,13 @@ import { CorrectionsEdgeSyncClient } from "../../edge/sync-client.mjs";
 import { createCorrectionsEdgeServer } from "../../edge/server.mjs";
 
 const baseUrl = process.env.INTEGRATION_BASE_URL || "http://127.0.0.1:3108";
+const ciDatabase = process.env.GITHUB_ACTIONS === "true" &&
+  process.env.DATABASE_URL === "postgresql://postgres:postgres@localhost:5432/ruvanas";
+const disposableLocalDatabase = process.env.C8_LOCAL_INTEGRATION === "true" &&
+  process.env.DATABASE_URL === "postgresql://c8lab@127.0.0.1:5548/ruvanas_c8_migration_clean";
+const isolatedIntegration = ciDatabase || disposableLocalDatabase;
+const objectStoreBucket = ciDatabase ? "c7-test" : "c8-test";
+const objectStorePort = ciDatabase ? 9107 : 9108;
 const audibleLab = process.env.C8_AUDIBLE_LAB === "true";
 const playerInstanceId = randomUUID();
 const testPrivateKey = createPrivateKey({ key: Buffer.concat([
@@ -53,12 +60,10 @@ async function api(path, { method = "GET", body, cookie, machine, enrolCredentia
 }
 
 test("C8B signed C7 manifest/media is exact, protected, facility-scoped and withdrawn on resync", {
-  skip: process.env.C8_LOCAL_INTEGRATION !== "true" ? "Requires the explicitly selected isolated C8 lab." : false
+  skip: !isolatedIntegration ? "Requires the exact disposable C8 lab or CI database." : false
 }, async () => {
-  if (process.env.C8_LOCAL_INTEGRATION !== "true" ||
-      process.env.DATABASE_URL !== "postgresql://c8lab@127.0.0.1:5548/ruvanas_c8_migration_clean" ||
-      !process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 32) {
-    throw new Error("C8 manifest integration is restricted to the exact isolated local test database.");
+  if (!isolatedIntegration || !process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 32) {
+    throw new Error("C8 manifest integration is restricted to the exact disposable CI or local test database.");
   }
   const db = new PrismaClient();
   const suffix = randomUUID().slice(0, 8);
@@ -77,11 +82,11 @@ test("C8B signed C7 manifest/media is exact, protected, facility-scoped and with
   const licensedStorageKey = `catalogue/music/${licensedChecksum}.wav`;
   const mockR2 = createServer((request, response) => {
     const objectPath = new URL(request.url, "http://localhost").pathname;
-    const bytes = objectPath === `/c8-test/${storageKey}` ? mediaBytes :
-      objectPath === `/c8-test/${localStorageKey}` ? localBytes :
-      objectPath === `/c8-test/${priorityStorageKey}` ? priorityBytes :
-      objectPath === `/c8-test/${emergencyStorageKey}` ? emergencyBytes :
-      objectPath === `/c8-test/${licensedStorageKey}` ? licensedBytes : null;
+    const bytes = objectPath === `/${objectStoreBucket}/${storageKey}` ? mediaBytes :
+      objectPath === `/${objectStoreBucket}/${localStorageKey}` ? localBytes :
+      objectPath === `/${objectStoreBucket}/${priorityStorageKey}` ? priorityBytes :
+      objectPath === `/${objectStoreBucket}/${emergencyStorageKey}` ? emergencyBytes :
+      objectPath === `/${objectStoreBucket}/${licensedStorageKey}` ? licensedBytes : null;
     if (request.method !== "GET" || !bytes) {
       response.writeHead(404); response.end(); return;
     }
@@ -123,7 +128,7 @@ test("C8B signed C7 manifest/media is exact, protected, facility-scoped and with
     cloudConnected = false;
   }
   try {
-    await new Promise((resolve, reject) => mockR2.once("error", reject).listen(9108, "127.0.0.1", resolve));
+    await new Promise((resolve, reject) => mockR2.once("error", reject).listen(objectStorePort, "127.0.0.1", resolve));
     plan = await db.plan.create({ data: { name: `C8 manifest ${suffix}`, code: `C8_MANIFEST_${suffix}`,
       productFamily: "CORRECTIONS", tierNumber: 4, monthlyPriceCents: 49900, storageLimitGb: 10,
       listenerLimit: 100, maxBitrateKbps: 128, correctionsRadioEnabled: true,

@@ -6,6 +6,11 @@ import { PrismaClient } from "@prisma/client";
 import { verifyEdgeManifest } from "../../lib/corrections-edge-manifest.mjs";
 
 const baseUrl = process.env.INTEGRATION_BASE_URL || "http://127.0.0.1:3108";
+const ciDatabase = process.env.GITHUB_ACTIONS === "true" &&
+  process.env.DATABASE_URL === "postgresql://postgres:postgres@localhost:5432/ruvanas";
+const disposableLocalDatabase = process.env.C8_LOCAL_INTEGRATION === "true" &&
+  process.env.DATABASE_URL === "postgresql://c8lab@127.0.0.1:5548/ruvanas_c8_migration_clean";
+const isolatedIntegration = ciDatabase || disposableLocalDatabase;
 const testPrivateKey = createPrivateKey({ key: Buffer.concat([
   Buffer.from("302e020100300506032b657004220420", "hex"), Buffer.alloc(32, 7)
 ]), format: "der", type: "pkcs8" });
@@ -20,12 +25,10 @@ async function api(path, { method = "GET", body, cookie, machine, enrolCredentia
 }
 
 test("C8A facility-bound one-use enrolment, Tier 4 gate, rotation and revocation", {
-  skip: process.env.C8_LOCAL_INTEGRATION !== "true" ? "Requires the explicitly selected isolated C8 lab." : false
+  skip: !isolatedIntegration ? "Requires the exact disposable C8 lab or CI database." : false
 }, async () => {
-  if (process.env.C8_LOCAL_INTEGRATION !== "true" ||
-      process.env.DATABASE_URL !== "postgresql://c8lab@127.0.0.1:5548/ruvanas_c8_migration_clean" ||
-      !process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 32) {
-    throw new Error("C8 identity integration is restricted to the exact isolated local test database.");
+  if (!isolatedIntegration || !process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 32) {
+    throw new Error("C8 identity integration is restricted to the exact disposable CI or local test database.");
   }
   const db = new PrismaClient();
   const suffix = randomUUID().slice(0, 8);
