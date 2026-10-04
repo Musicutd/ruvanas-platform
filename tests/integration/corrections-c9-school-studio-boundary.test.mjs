@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
 import { PrismaClient } from "@prisma/client";
-import { GENERAL_STUDIO_AUDIO_PROJECT_WHERE, GENERAL_STUDIO_MEDIA_ASSET_WHERE } from "../../lib/studio-general-asset-boundary.mjs";
+import { GENERAL_STUDIO_AUDIO_PROJECT_WHERE, GENERAL_STUDIO_MEDIA_ASSET_WHERE, lockGeneralStudioAudioProject } from "../../lib/studio-general-asset-boundary.mjs";
 import { permanentlyDeleteAudioTake, restoreAudioTake, trashAudioTake } from "../../lib/audio-take-trash-service.js";
 import { lockCorrectionsStaffRenderSources } from "../../lib/corrections-staff-render-source-lock.mjs";
 import { runSerializableTransaction } from "../../lib/transaction-retry.mjs";
@@ -49,6 +49,7 @@ test("general School Studio cannot access or purge supervised Corrections takes"
     }
     const normalProject = await project("Ordinary School project");
     const privateProject = await project("Private supervised project");
+    const staffProject = await project("Staff render project awaiting submission");
     const normalMedia = await media("ordinary-take");
     const privateMedia = await media("private-take");
     const standaloneMedia = await media("ordinary-media-without-a-take");
@@ -66,6 +67,53 @@ test("general School Studio cannot access or purge supervised Corrections takes"
       supervisorUserId: userId, createdByUserId: userId,
       capabilityScope: { purpose: "isolated CI-only test" }
     } });
+
+    const staffVersion = await db.audioProjectVersion.create({ data: {
+      projectId: staffProject.id, version: 1, state: { editor: { clips: [] } },
+      reason: "CI-only race source", createdByUserId: userId
+    } });
+    const staffRender = await db.audioRender.create({ data: {
+      organisationId, projectId: staffProject.id, versionId: staffVersion.id,
+      requestedByUserId: userId, preset: "SCHOOL_RADIO_MP3"
+    } });
+
+    let submissionEntered;
+    let releaseSubmission;
+    const submissionStarted = new Promise((resolve) => { submissionEntered = resolve; });
+    const submissionRelease = new Promise((resolve) => { releaseSubmission = resolve; });
+    const submission = db.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "AudioProject" WHERE id = ${staffProject.id} FOR UPDATE`;
+      await tx.correctionsSubmission.create({ data: {
+        programmeId: programme.id, organisationId, facilityId: facility.id,
+        revision: 1, renderId: staffRender.id, sourceFingerprint: "CI-only-race",
+        organisationPolicyVersion: 1, facilityPolicyVersion: 1,
+        titleSnapshot: "CI-only race", evidenceSnapshot: {}, submittedByUserId: userId
+      } });
+      submissionEntered();
+      await submissionRelease;
+    }, { timeout: 10_000 });
+    await Promise.race([
+      submissionStarted,
+      submission.then(() => { throw new Error("C3 fixture finished before acquiring the project lock."); })
+    ]);
+    let generalSettled = false;
+    const generalWrite = db.$transaction(async (tx) => {
+      await lockGeneralStudioAudioProject(tx, organisationId, staffProject.id);
+      return tx.audioProject.update({ where: { id: staffProject.id }, data: { title: "Incorrectly changed by general Studio" } });
+    })
+      .then(() => ({ ok: true }), (error) => ({ ok: false, error }))
+      .finally(() => { generalSettled = true; });
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      assert.equal(generalSettled, false, "general Studio must wait for the C3 submission project lock");
+    } finally {
+      releaseSubmission();
+    }
+    await submission;
+    const guardedWrite = await generalWrite;
+    assert.equal(guardedWrite.ok, false);
+    assert.equal(guardedWrite.error?.code, "CORRECTIONS_STUDIO_OUTPUT_BLOCKED");
+    assert.equal((await db.audioProject.findUnique({ where: { id: staffProject.id } })).title, staffProject.title);
 
     const visibleProjects = await db.audioProject.findMany({ where: { organisationId, ...GENERAL_STUDIO_AUDIO_PROJECT_WHERE }, select: { id: true } });
     assert.ok(visibleProjects.some(({ id }) => id === normalProject.id));
@@ -143,8 +191,11 @@ test("general School Studio cannot access or purge supervised Corrections takes"
   } finally {
     try {
       if (organisationId) {
+        await db.correctionsSubmission.deleteMany({ where: { organisationId } });
         await db.correctionsStudioSession.deleteMany({ where: { organisationId } });
         await db.audioTake.deleteMany({ where: { organisationId } });
+        await db.audioRender.deleteMany({ where: { organisationId } });
+        await db.audioProjectVersion.deleteMany({ where: { project: { organisationId } } });
         await db.audioProject.deleteMany({ where: { organisationId } });
         await db.correctionsContributor.deleteMany({ where: { organisationId } });
         await db.correctionsProgramme.deleteMany({ where: { organisationId } });

@@ -9,7 +9,7 @@ const baseUrl = process.env.INTEGRATION_BASE_URL || "http://127.0.0.1:3100";
 const ciDatabase = process.env.GITHUB_ACTIONS === "true" &&
   process.env.DATABASE_URL === "postgresql://postgres:postgres@localhost:5432/ruvanas";
 
-test("known promo IDs cannot append or submit private Inside audio while ordinary promos remain writable", async () => {
+test("generic promo writes cannot append, submit or review private Inside audio while ordinary promos remain writable", async () => {
   if (!ciDatabase || !process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 32) {
     throw new Error("C9 media write integration runs only against the exact disposable CI database.");
   }
@@ -122,7 +122,8 @@ test("known promo IDs cannot append or submit private Inside audio while ordinar
 
     const ordinaryAppend = await upload(ordinaryPromo.id, ordinaryBytes);
     assert.equal(ordinaryAppend.status, 200, await ordinaryAppend.clone().text());
-    assert.equal((await ordinaryAppend.json()).version, 2);
+    const appended = await ordinaryAppend.json();
+    assert.equal(appended.version, 2);
     const ordinarySubmit = await fetch(`${baseUrl}/api/media/library/${ordinaryPromo.versions[0].id}/submit`, {
       method: "PATCH", headers: { origin: baseUrl, cookie }, redirect: "manual"
     });
@@ -157,6 +158,37 @@ test("known promo IDs cannot append or submit private Inside audio while ordinar
     const freshResult = await freshUpload.json();
     assert.equal((await db.mediaAsset.findUnique({ where: { id: freshResult.id } })).status, "READY");
     assert.ok(storageMethods.filter((method) => method === "PUT").length >= 2);
+
+    // A Corrections render intentionally remains IN_REVIEW for Guard review.
+    // Platform promo review must preserve that evidence and still review an
+    // ordinary version in the same organisation.
+    await db.promoVersion.update({ where: { id: privatePromo.versions[0].id }, data: { status: "IN_REVIEW" } });
+    await db.promoVersion.update({ where: { id: appended.promoVersionId }, data: { status: "IN_REVIEW" } });
+    await db.user.update({ where: { id: userId }, data: { role: "SUPER_ADMIN" } });
+    async function review(promoAssetId, promoVersionId, decision, notes = "") {
+      return fetch(`${baseUrl}/api/admin/promos/${promoAssetId}/versions/${promoVersionId}/review`, {
+        method: "PATCH", headers: { origin: baseUrl, cookie, "content-type": "application/json" },
+        body: JSON.stringify({ decision, notes }), redirect: "manual"
+      });
+    }
+    const privateApprove = await review(privatePromo.id, privatePromo.versions[0].id, "APPROVE");
+    assert.equal(privateApprove.status, 404, await privateApprove.clone().text());
+    const privateReject = await review(privatePromo.id, privatePromo.versions[0].id, "REJECT", "Use Corrections Guard review");
+    assert.equal(privateReject.status, 404, await privateReject.clone().text());
+    const untouched = await db.promoVersion.findUnique({ where: { id: privatePromo.versions[0].id } });
+    assert.equal(untouched.status, "IN_REVIEW");
+    assert.equal(untouched.qcStatus, "PENDING");
+    assert.equal(untouched.reviewedById, null);
+    assert.equal((await db.promoAsset.findUnique({ where: { id: privatePromo.id } })).currentApprovedVersionId, null);
+    assert.equal(await db.auditLog.count({ where: { entityType: "PromoVersion", entityId: untouched.id,
+      action: { in: ["PROMO_VERSION_APPROVED", "PROMO_VERSION_REJECTED"] } } }), 0);
+
+    const ordinaryReject = await review(ordinaryPromo.id, appended.promoVersionId, "REJECT", "Fictional QC rejection");
+    assert.equal(ordinaryReject.status, 200, await ordinaryReject.clone().text());
+    assert.equal((await db.promoVersion.findUnique({ where: { id: appended.promoVersionId } })).status, "REJECTED");
+    const ordinaryApprove = await review(ordinaryPromo.id, ordinaryPromo.versions[0].id, "APPROVE");
+    assert.equal(ordinaryApprove.status, 200, await ordinaryApprove.clone().text());
+    assert.equal((await db.promoAsset.findUnique({ where: { id: ordinaryPromo.id } })).currentApprovedVersionId, ordinaryPromo.versions[0].id);
   } finally {
     try {
       if (mediaStore) {

@@ -5,6 +5,7 @@ import {
   GENERAL_STUDIO_AUDIO_PROJECT_WHERE,
   GENERAL_STUDIO_MEDIA_ASSET_WHERE,
   assertGeneralStudioAudioProject,
+  lockGeneralStudioAudioProject,
   generalStudioUsableMediaAssetIds
 } from "../lib/studio-general-asset-boundary.mjs";
 
@@ -21,6 +22,27 @@ test("the shared School Studio boundary denies an absent or Corrections project"
   assert.deepEqual(query.where.NOT, GENERAL_STUDIO_AUDIO_PROJECT_WHERE.NOT);
   database.audioProject.findFirst = async () => ({ id: "project-1" });
   await assert.doesNotReject(assertGeneralStudioAudioProject(database, "org-1", "project-1"));
+});
+
+test("general Studio locks the project before rechecking its private predicate", async () => {
+  const calls = [];
+  const database = {
+    $queryRaw: async (parts, projectId, organisationId) => {
+      calls.push([String.raw(parts), projectId, organisationId]);
+      return [{ id: projectId }];
+    },
+    audioProject: { findFirst: async (args) => {
+      calls.push(args);
+      return null;
+    } }
+  };
+  await assert.rejects(lockGeneralStudioAudioProject(database, "org-1", "project-1"),
+    (error) => error?.status === 403 && error?.code === "CORRECTIONS_STUDIO_OUTPUT_BLOCKED");
+  assert.match(calls[0][0], /"AudioProject".*FOR UPDATE/);
+  assert.deepEqual(calls[0].slice(1), ["project-1", "org-1"]);
+  assert.deepEqual(calls[1].where.NOT, GENERAL_STUDIO_AUDIO_PROJECT_WHERE.NOT);
+  database.audioProject.findFirst = async (args) => ({ id: args.where.id, currentVersion: 3 });
+  assert.equal((await lockGeneralStudioAudioProject(database, "org-1", "project-1")).currentVersion, 3);
 });
 
 test("general Studio source IDs are constrained to allowed organisation media or the global catalogue", async () => {
@@ -52,6 +74,14 @@ test("legacy School Studio routes use the shared boundary for lists, writes, upl
     const source = await readFile(new URL(path, import.meta.url), "utf8");
     assert.match(source, /studio-general-asset-boundary\.mjs/, `${path} must enforce the private boundary`);
   }
+  for (const path of [
+    "../app/api/school-radio/audio-lab/projects/[projectId]/editor/route.js",
+    "../app/api/school-radio/multitrack/projects/[projectId]/route.js"
+  ]) {
+    const source = await readFile(new URL(path, import.meta.url), "utf8");
+    assert.match(source, /lockGeneralStudioAudioProject|lockWritableWaveformProject/,
+      `${path} must hold the project lock before writing`);
+  }
   const trash = await readFile(new URL("../lib/audio-take-trash-service.js", import.meta.url), "utf8");
   assert.match(trash, /withLockedGeneralTake/);
   assert.match(trash, /assertGeneralStudioMediaAsset/);
@@ -63,8 +93,11 @@ test("staff render-only submission shares the AudioLab deletion lock before Corr
   const lock = await readFile(new URL("../lib/corrections-staff-render-source-lock.mjs", import.meta.url), "utf8");
   const submit = service.slice(service.indexOf("export async function submitCorrectionsProgramme"), service.indexOf("export async function reviewCorrectionsProgramme"));
   assert.match(submit, /await lockCorrectionsStaffRenderSources\(tx,/);
+  assert.match(submit, /await lockCorrectionsStaffRenderEvidence\(tx, render\)/);
   assert.ok(submit.indexOf("await lockCorrectionsStaffRenderSources") < submit.indexOf("const evidence = correctionsRenderEvidence"));
+  assert.ok(submit.indexOf("await lockCorrectionsStaffRenderEvidence") < submit.indexOf("const evidence = correctionsRenderEvidence"));
   assert.match(lock, /"AudioProject".*FOR UPDATE/);
   assert.match(lock, /"AudioTake".*FOR UPDATE/);
+  assert.match(lock, /"PromoVersion".*FOR UPDATE/);
   assert.match(lock, /take\.trashedAt \|\| take\.permanentlyDeletedAt/);
 });
