@@ -79,6 +79,10 @@ The existing general-platform retention dry run counted old proof, Studio projec
 
 This is **not** a Corrections retention policy or deletion executor. Counts are time-sensitive and not executable; an unusual in-place reclassification of an existing evidence row after the last check could still race a preview, so no preview may authorise deletion. A real authority-approved retention and legal-hold design remains blocked. When C8 is integrated later, revisit this evidence inventory for Edge-node, manifest and proof records; C9 currently branches from C7 and cannot infer C8's schema or acceptance. Preserve both PRs' dedicated CI steps during integration.
 
+### 4 October School Show Builder scheduling race — Draft-only
+
+The School Show Builder `SCHEDULE` action now locks the referenced episode, rundown, source projects and tenant media, then reloads the approved rundown and every source-privacy predicate in a fresh Read Committed transaction before creating a slot. It retries the entire decision on a database deadlock because older School review writes and Learning use different episode/rundown lock orders. A disposable-database race fixture holds the same project row while a supervised Inside session attaches; the scheduling source check waits and rejects the newly private source. This closes that narrow stale-snapshot scheduling path without changing normal School approval or Corrections Guard. It does **not** claim every Show Builder edit, submit or review action is race-safe; those actions and Online Newsroom still require independent write-path review. It does not make a previously buffered player stream instantly revocable. CI evidence must be recorded against the exact resulting PR head.
+
 | Gate | What is still required | Status |
 | --- | --- | --- |
 | C8 Secure Edge | Complete independent appliance/LAN/TLS and offline acceptance; verify PR #217 status and integrate only through its own review. Do not infer acceptance from C7 or the C9 synthetic probe. | BLOCKED |

@@ -4,11 +4,28 @@ import test from "node:test";
 import { PrismaClient } from "@prisma/client";
 import {
   generalSchoolNewsStoryWhere,
-  generalSchoolRundownWhere
+  generalSchoolRundownWhere,
+  lockGeneralSchoolRundown
 } from "../../lib/school-general-content-boundary.mjs";
 
 const ciDatabase = process.env.GITHUB_ACTIONS === "true" &&
   process.env.DATABASE_URL === "postgresql://postgres:postgres@localhost:5432/ruvanas";
+
+async function waitForProjectLock(db, holderPid, settled) {
+  const deadline = Date.now() + 8_000;
+  while (Date.now() < deadline) {
+    const waiters = await db.$queryRaw`
+      SELECT pid FROM pg_stat_activity
+      WHERE datname = current_database() AND wait_event_type = 'Lock'
+        AND query LIKE '%"AudioProject"%FOR UPDATE%'
+        AND ${holderPid}::integer = ANY(pg_blocking_pids(pid))
+        AND pid <> pg_backend_pid()`;
+    if (waiters.length) return;
+    if (settled()) throw new Error("The School rundown check finished before waiting for the project lock.");
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error("The School rundown check did not reach the private-project lock.");
+}
 
 test("School content queries hide historical Corrections rundown and newsroom links", async () => {
   if (!ciDatabase) throw new Error("C9 School content integration runs only against the exact disposable CI database.");
@@ -16,6 +33,7 @@ test("School content queries hide historical Corrections rundown and newsroom li
   const suffix = randomUUID();
   let organisationId;
   let userId;
+  let heldTransition;
   try {
     const organisation = await db.organisation.create({ data: {
       name: `Fictional C9 School content ${suffix}`,
@@ -129,12 +147,49 @@ test("School content queries hide historical Corrections rundown and newsroom li
       organisationId, facilityId: facility.id, displayName: "Fictional contributor",
       createdByUserId: userId
     } });
-    await db.correctionsStudioSession.create({ data: {
-      organisationId, facilityId: facility.id, contributorId: contributor.id,
-      programmeId: correctionsProgramme.id, projectId: privateProject.id,
-      supervisorUserId: userId, createdByUserId: userId,
-      capabilityScope: { purpose: "isolated CI-only privacy test" }
-    } });
+    assert.equal(await db.$transaction((tx) => lockGeneralSchoolRundown(tx, organisationId, privateRundown.id), { isolationLevel: "ReadCommitted" }), true);
+    // Hold the source project while Corrections attaches the supervised
+    // session. A School scheduling decision must wait, then reject the newly
+    // private source instead of using its earlier approved snapshot.
+    let entered;
+    let release;
+    const started = new Promise((resolve) => { entered = resolve; });
+    const gate = new Promise((resolve) => { release = resolve; });
+    const work = db.$transaction(async (tx) => {
+      const [{ pid }] = await tx.$queryRaw`SELECT pg_backend_pid() AS pid`;
+      await tx.$queryRaw`SELECT "id" FROM "AudioProject" WHERE "id" = ${privateProject.id} FOR UPDATE`;
+      await tx.correctionsStudioSession.create({ data: {
+        organisationId, facilityId: facility.id, contributorId: contributor.id,
+        programmeId: correctionsProgramme.id, projectId: privateProject.id,
+        supervisorUserId: userId, createdByUserId: userId,
+        capabilityScope: { purpose: "isolated CI-only School scheduling race" }
+      } });
+      entered(pid);
+      await gate;
+    }, { timeout: 25_000 });
+    heldTransition = { work, release, pid: await Promise.race([
+      started,
+      work.then(() => { throw new Error("The Inside fixture finished before holding the source lock."); })
+    ]) };
+    let decisionSettled = false;
+    const pendingDecision = db.$transaction(
+      (tx) => lockGeneralSchoolRundown(tx, organisationId, privateRundown.id),
+      { isolationLevel: "ReadCommitted", timeout: 15_000 }
+    ).then((value) => ({ value }), (error) => ({ error })).finally(() => { decisionSettled = true; });
+    let waitError;
+    try {
+      await waitForProjectLock(db, heldTransition.pid, () => decisionSettled);
+    } catch (error) {
+      waitError = error;
+    } finally {
+      heldTransition.release();
+    }
+    await heldTransition.work;
+    heldTransition = null;
+    const decision = await pendingDecision;
+    if (waitError) throw waitError;
+    if (decision.error) throw decision.error;
+    assert.equal(decision.value, false);
 
     const after = await visible();
     assert.deepEqual(after.rundowns, new Set([normalRundown.id]));
@@ -144,6 +199,10 @@ test("School content queries hide historical Corrections rundown and newsroom li
     assert.equal(await db.schoolNewsStory.count({ where: { id: oldMediaStory.id, organisationId, ...generalSchoolNewsStoryWhere(organisationId) } }), 0);
     assert.equal(await db.schoolNewsStory.count({ where: { id: oldEpisodeStory.id, organisationId, ...generalSchoolNewsStoryWhere(organisationId) } }), 0);
   } finally {
+    if (heldTransition) {
+      heldTransition.release();
+      await heldTransition.work.catch(() => {});
+    }
     try {
       if (organisationId) {
         await db.newsStoryRevision.deleteMany({ where: { organisationId } });

@@ -27,6 +27,10 @@ test("School Show Builder rechecks private sources for selectors, mutations and 
   assert.match(route, /permittedUses: \{ has: "SCHOOL_RADIO" \}/);
   assert.match(route, /mediaAsset: \{ organisationId, status: "READY", \.\.\.GENERAL_STUDIO_MEDIA_ASSET_WHERE \}/);
   assert.match(route, /project: \{ episodeId: rundown\.episodeId, \.\.\.GENERAL_STUDIO_AUDIO_PROJECT_WHERE \}/);
+  assert.match(route, /if \(!await lockGeneralSchoolRundown\(tx, organisationId, rundown\.id\)\)/);
+  assert.match(route, /const current = await findRundown\(rundown\.id, organisationId, tx\)/);
+  assert.match(route, /const slot = await runScheduleTransaction\(async \(tx\) =>/);
+  assert.match(route, /error\?\.code === "P2034"/);
 });
 
 test("School Newsroom and player recheck private sources before story review or playback", async () => {

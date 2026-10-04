@@ -6,7 +6,7 @@ import { requireActiveSchoolRadio } from "@/lib/school-radio-access";
 import { invalidatedRundownData, orderedPositions, transitionSchoolRundown, validateShowItem } from "@/lib/show-builder.mjs";
 import { validateSchoolBroadcastSlot } from "@/lib/school-radio.mjs";
 import { GENERAL_STUDIO_AUDIO_PROJECT_WHERE, GENERAL_STUDIO_MEDIA_ASSET_WHERE } from "@/lib/studio-general-asset-boundary.mjs";
-import { generalSchoolRundownWhere } from "@/lib/school-general-content-boundary.mjs";
+import { generalSchoolRundownWhere, lockGeneralSchoolRundown } from "@/lib/school-general-content-boundary.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -71,6 +71,21 @@ async function loadData(access) {
 
 async function findRundown(id, organisationId, tx = prisma) {
   return tx.schoolRundown.findFirst({ where: { id, organisationId, status: { not: "ARCHIVED" }, ...generalSchoolRundownWhere(organisationId) }, include: rundownInclude });
+}
+
+async function runScheduleTransaction(operation) {
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      return await prisma.$transaction(operation, { isolationLevel: "ReadCommitted", timeout: 15_000 });
+    } catch (error) {
+      // Older School review writes the rundown before the episode, whereas
+      // Learning locks the episode first. Retry the entire current-source
+      // decision if PostgreSQL chooses this transaction as a deadlock victim.
+      const deadlock = error?.code === "P2034" || (error?.code === "P2010" && error?.meta?.code === "40P01");
+      if (!deadlock || attempt === 3) throw error;
+      await new Promise((resolve) => setTimeout(resolve, attempt * 20));
+    }
+  }
 }
 
 async function validatedItemData(values, rundown, organisationId, tx) {
@@ -199,19 +214,28 @@ export async function POST(request) {
       ]);
     } else if (input.action === "SCHEDULE") {
       if (!isOrganisationRoleAllowed(access.membership.role, ORGANISATION_MANAGER_ROLES)) return NextResponse.json({ error: "A school manager must schedule this episode." }, { status: 403 });
-      if (rundown.status !== "APPROVED" || rundown.approvedRevision !== rundown.revision || rundown.episode.status !== "APPROVED") throw new Error("Approve the current rundown revision before scheduling it.");
       const slotInput = validateSchoolBroadcastSlot(input);
       if (slotInput.startsAt < new Date(Date.now() - 5 * 60 * 1000)) throw new Error("Schedule the episode for the present or future.");
-      const [location, zone, overlap] = await Promise.all([
-        slotInput.locationId ? prisma.location.findFirst({ where: { id: slotInput.locationId, organisationId, status: { not: "CLOSED" }, correctionsFacility: { is: null } }, select: { id: true } }) : null,
-        slotInput.zoneId ? prisma.zone.findFirst({ where: { id: slotInput.zoneId, location: { organisationId, correctionsFacility: { is: null } }, status: { not: "OFFLINE" } }, select: { id: true } }) : null,
-        prisma.schoolBroadcastSlot.findFirst({ where: { organisationId, status: "APPROVED", ...(slotInput.locationId ? { locationId: slotInput.locationId } : { zoneId: slotInput.zoneId }), startsAt: { lt: slotInput.endsAt }, endsAt: { gt: slotInput.startsAt } }, select: { id: true } })
-      ]);
-      if ((slotInput.locationId && !location) || (slotInput.zoneId && !zone)) throw new Error("The selected school location or zone is unavailable.");
-      if (overlap) throw new Error("That target already has an approved School Radio slot during this time.");
-      const slot = await prisma.$transaction(async (tx) => {
-        const created = await tx.schoolBroadcastSlot.create({ data: { organisationId, episodeId: rundown.episodeId, ...slotInput, approvedByUserId: access.user.id } });
-        await tx.auditLog.create({ data: { organisationId, actorUserId: access.user.id, action: "SCHOOL_EPISODE_SLOT_APPROVED", entityType: "SchoolBroadcastSlot", entityId: created.id, details: { episodeId: rundown.episodeId, rundownId: rundown.id, revision: rundown.revision } } });
+      const slot = await runScheduleTransaction(async (tx) => {
+        // Corrections may have made a previously visible source private while
+        // this request was in flight. Check after the shared source locks.
+        if (!await lockGeneralSchoolRundown(tx, organisationId, rundown.id)) {
+          throw Object.assign(new Error("The episode rundown was not found."), { status: 404 });
+        }
+        const current = await findRundown(rundown.id, organisationId, tx);
+        if (!current) throw Object.assign(new Error("The episode rundown was not found."), { status: 404 });
+        if (current.status !== "APPROVED" || current.approvedRevision !== current.revision || current.episode.status !== "APPROVED") {
+          throw new Error("Approve the current rundown revision before scheduling it.");
+        }
+        const [location, zone, overlap] = await Promise.all([
+          slotInput.locationId ? tx.location.findFirst({ where: { id: slotInput.locationId, organisationId, status: { not: "CLOSED" }, correctionsFacility: { is: null } }, select: { id: true } }) : null,
+          slotInput.zoneId ? tx.zone.findFirst({ where: { id: slotInput.zoneId, location: { organisationId, correctionsFacility: { is: null } }, status: { not: "OFFLINE" } }, select: { id: true } }) : null,
+          tx.schoolBroadcastSlot.findFirst({ where: { organisationId, status: "APPROVED", ...(slotInput.locationId ? { locationId: slotInput.locationId } : { zoneId: slotInput.zoneId }), startsAt: { lt: slotInput.endsAt }, endsAt: { gt: slotInput.startsAt } }, select: { id: true } })
+        ]);
+        if ((slotInput.locationId && !location) || (slotInput.zoneId && !zone)) throw new Error("The selected school location or zone is unavailable.");
+        if (overlap) throw new Error("That target already has an approved School Radio slot during this time.");
+        const created = await tx.schoolBroadcastSlot.create({ data: { organisationId, episodeId: current.episodeId, ...slotInput, approvedByUserId: access.user.id } });
+        await tx.auditLog.create({ data: { organisationId, actorUserId: access.user.id, action: "SCHOOL_EPISODE_SLOT_APPROVED", entityType: "SchoolBroadcastSlot", entityId: created.id, details: { episodeId: current.episodeId, rundownId: current.id, revision: current.revision } } });
         return created;
       });
       return NextResponse.json({ slot }, { status: 201 });
@@ -219,7 +243,7 @@ export async function POST(request) {
     const updated = await findRundown(rundown.id, organisationId);
     return NextResponse.json({ rundown: updated });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "The Show Builder action could not be completed." }, { status: 409 });
+    return NextResponse.json({ error: error instanceof Error ? error.message : "The Show Builder action could not be completed." }, { status: error?.status || (error?.code === "CORRECTIONS_STUDIO_OUTPUT_BLOCKED" ? 404 : 409) });
   }
 }
 
