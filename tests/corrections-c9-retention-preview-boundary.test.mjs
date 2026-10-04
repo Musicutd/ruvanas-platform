@@ -11,9 +11,15 @@ test("generic retention refuses Inside evidence before writing any preview job",
   const preview = service.slice(service.indexOf("export async function createRetentionPreview"));
   assert.match(preview, /database\.\$transaction\(async \(tx\) =>/);
   assert.match(preview, /"Organisation"[^\n]+FOR UPDATE[\s\S]*"Subscription"[^\n]+FOR UPDATE/);
-  assert.match(preview, /hasCorrectionsEvidence\(tx, organisation\)/);
-  assert.equal((preview.match(/hasCorrectionsEvidence\(tx, organisation\)/g) || []).length, 2);
-  assert.ok(preview.indexOf("hasCorrectionsEvidence(tx, organisation)") < preview.indexOf("retentionJob.create"));
+  assert.match(preview, /hasCorrectionsEvidence\(database, initial\)/);
+  const countsAt = preview.indexOf("database.proofOfPlayEvent.count");
+  const transactionAt = preview.indexOf("return database.$transaction");
+  const lockAt = preview.indexOf("FOR UPDATE");
+  const finalCheckAt = preview.indexOf("hasCorrectionsEvidence(tx, organisation)");
+  const jobAt = preview.indexOf("retentionJob.create");
+  assert.ok(countsAt > 0 && countsAt < transactionAt, "age counts must not hold the parent lock");
+  assert.ok(transactionAt < lockAt && lockAt < finalCheckAt && finalCheckAt < jobAt,
+    "only the locked evidence recheck may permit a preview job");
   assert.match(preview, /isolationLevel: "ReadCommitted"/);
   assert.match(route, /CORRECTIONS_RETENTION_PREVIEW_BLOCKED[\s\S]*status: 409/);
 });
