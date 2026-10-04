@@ -101,6 +101,16 @@ export async function PATCH(request, { params }) {
       // the final predicate check and status write commit.
       const parentRows = await tx.$queryRaw`SELECT "id" FROM "PromoAsset" WHERE "id" = ${promoAssetId} AND "organisationId" = ${promoAsset.organisationId} FOR UPDATE`;
       if (parentRows.length !== 1) throw new Error("PROMO_ASSET_CHANGED");
+      // A version could have been appended while we waited for an earlier
+      // media row. We did not lock that new version's media; fail closed and
+      // let a fresh request enumerate the complete version history.
+      const currentVersions = await tx.promoVersion.findMany({
+        where: { promoAssetId }, select: { id: true, mediaAssetId: true }
+      });
+      const versionKeys = (items) => items.map(({ id, mediaAssetId }) => `${id}:${mediaAssetId}`).sort();
+      if (JSON.stringify(versionKeys(currentVersions)) !== JSON.stringify(versionKeys(versions))) {
+        throw new Error("PROMO_ASSET_CHANGED");
+      }
 
       const changed = await tx.promoAsset.updateMany({
         where: { id: promoAssetId, organisationId: promoAsset.organisationId, ...ordinaryPromoAsset },

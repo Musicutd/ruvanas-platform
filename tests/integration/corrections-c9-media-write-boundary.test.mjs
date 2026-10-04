@@ -9,7 +9,7 @@ const baseUrl = process.env.INTEGRATION_BASE_URL || "http://127.0.0.1:3100";
 const ciDatabase = process.env.GITHUB_ACTIONS === "true" &&
   process.env.DATABASE_URL === "postgresql://postgres:postgres@localhost:5432/ruvanas";
 
-async function waitForRouteMediaLock(db, holderPid, settled) {
+async function waitForRouteMediaLock(db, holderPid, settled, { minimumWaiters = 1, label = "promo status route" } = {}) {
   const deadline = Date.now() + 8_000;
   while (Date.now() < deadline) {
     const waiters = await db.$queryRaw`
@@ -18,11 +18,11 @@ async function waitForRouteMediaLock(db, holderPid, settled) {
         AND query LIKE '%"MediaAsset"%FOR UPDATE%'
         AND ${holderPid}::integer = ANY(pg_blocking_pids(pid))
         AND pid <> pg_backend_pid()`;
-    if (waiters.length) return;
-    if (settled()) throw new Error("The promo status route finished before waiting for the media row lock.");
+    if (waiters.length >= minimumWaiters) return;
+    if (settled()) throw new Error(`The ${label} finished before waiting for the media row lock.`);
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
-  throw new Error("The promo status route did not reach the media row lock.");
+  throw new Error(`The ${label} did not reach the media row lock.`);
 }
 
 test("generic promo writes cannot append, submit or review private Inside audio while ordinary promos remain writable", async () => {
@@ -37,6 +37,9 @@ test("generic promo writes cannot append, submit or review private Inside audio 
   let planId;
   let mediaStore;
   let releaseAttachment;
+  let releaseReuseMediaLock;
+  let releaseSiblingAttachment;
+  let releaseStatusSnapshotLock;
   try {
     const plan = await db.plan.create({ data: {
       name: `Fictional C9 media writes ${suffix}`, code: `C9_MEDIA_WRITES_${suffix}`,
@@ -275,11 +278,174 @@ test("generic promo writes cannot append, submit or review private Inside audio 
     assert.equal(ordinaryApprove.status, 200, await ordinaryApprove.clone().text());
     assert.equal((await db.promoAsset.findUnique({ where: { id: ordinaryPromo.id } })).currentApprovedVersionId, ordinaryPromo.versions[0].id);
 
+    // Queue archive first and READY-media checksum reuse second behind the
+    // same row. The upload must recheck ACTIVE after it gets the media lock;
+    // neither request may deadlock or append to the archived parent.
+    const reusePromo = await db.promoAsset.create({ data: {
+      organisationId, name: "Fictional checksum reuse race", mediaType: "ANNOUNCEMENT",
+      versions: { create: { mediaAssetId: ordinaryMedia.id, version: 1, status: "DRAFT" } }
+    } });
+    let reuseLockEntered;
+    const reuseLockStarted = new Promise((resolve) => { reuseLockEntered = resolve; });
+    const reuseLockRelease = new Promise((resolve) => { releaseReuseMediaLock = resolve; });
+    const reuseLockHolder = db.$transaction(async (tx) => {
+      const [{ pid: holderPid }] = await tx.$queryRaw`SELECT pg_backend_pid() AS pid`;
+      await tx.$queryRaw`SELECT "id" FROM "MediaAsset" WHERE "id" = ${ordinaryMedia.id} FOR UPDATE`;
+      reuseLockEntered(holderPid);
+      await reuseLockRelease;
+    }, { timeout: 20_000 });
+    const reuseHolderPid = await Promise.race([
+      reuseLockStarted,
+      reuseLockHolder.then(() => { throw new Error("The reuse fixture finished before holding the media lock."); })
+    ]);
+    let reuseArchiveSettled = false;
+    let reuseUploadSettled = false;
+    const reuseArchive = updateStatus(reusePromo.id, "ARCHIVED")
+      .finally(() => { reuseArchiveSettled = true; });
+    let reuseUpload;
+    let reuseLockWaitError = null;
+    try {
+      await waitForRouteMediaLock(db, reuseHolderPid, () => reuseArchiveSettled);
+      reuseUpload = upload(reusePromo.id, ordinaryBytes)
+        .finally(() => { reuseUploadSettled = true; });
+      await waitForRouteMediaLock(db, reuseHolderPid,
+        () => reuseArchiveSettled || reuseUploadSettled,
+        { minimumWaiters: 2, label: "archive and reuse upload" });
+    } catch (error) {
+      reuseLockWaitError = error;
+    } finally {
+      releaseReuseMediaLock();
+      releaseReuseMediaLock = null;
+    }
+    const [reuseHolderResult, reuseArchiveResult, reuseUploadResult] = await Promise.allSettled([
+      reuseLockHolder, reuseArchive, reuseUpload || Promise.resolve(null)
+    ]);
+    if (reuseHolderResult.status === "rejected") throw reuseHolderResult.reason;
+    if (reuseArchiveResult.status === "rejected") throw reuseArchiveResult.reason;
+    if (reuseUploadResult.status === "rejected") throw reuseUploadResult.reason;
+    if (reuseLockWaitError) throw reuseLockWaitError;
+    assert.equal(reuseArchiveResult.value.status, 200, await reuseArchiveResult.value.clone().text());
+    assert.equal(reuseUploadResult.value.status, 409, await reuseUploadResult.value.clone().text());
+    assert.equal((await db.promoAsset.findUnique({ where: { id: reusePromo.id } })).status, "ARCHIVED");
+    assert.equal(await db.promoVersion.count({ where: { promoAssetId: reusePromo.id } }), 1);
+    assert.equal(await db.auditLog.count({ where: {
+      entityType: "PromoAsset", entityId: reusePromo.id, action: "PROMO_ASSET_ARCHIVED"
+    } }), 1);
+    const reuseRestore = await updateStatus(reusePromo.id, "ACTIVE");
+    assert.equal(reuseRestore.status, 200, await reuseRestore.clone().text());
+    const validReuse = await upload(reusePromo.id, ordinaryBytes);
+    assert.equal(validReuse.status, 200, await validReuse.clone().text());
+    assert.equal(await db.promoVersion.count({ where: { promoAssetId: reusePromo.id } }), 2);
+
     // Hold the media FK's KEY SHARE lock while the generic archive waits for
     // FOR UPDATE. Commit a direct C5 attachment before the archive rechecks.
     const category = await db.correctionsRehabCategory.create({ data: {
       organisationId, code: `CI_MEDIA_${suffix}`, name: "Fictional education"
     } });
+
+    // The target upload reuses M1, but the parent's older M2 version can
+    // become private while the upload waits on that second media row.
+    const siblingMedia = await media("fictional-sibling", Buffer.from("ID3sibling-ordinary-audio"));
+    const siblingPromo = await db.promoAsset.create({ data: {
+      organisationId, name: "Fictional two-version promo", mediaType: "ANNOUNCEMENT",
+      versions: { create: [
+        { mediaAssetId: ordinaryMedia.id, version: 1, status: "DRAFT" },
+        { mediaAssetId: siblingMedia.id, version: 2, status: "DRAFT" }
+      ] }
+    } });
+    let siblingEntered;
+    const siblingStarted = new Promise((resolve) => { siblingEntered = resolve; });
+    const siblingRelease = new Promise((resolve) => { releaseSiblingAttachment = resolve; });
+    const siblingAttachment = db.$transaction(async (tx) => {
+      const [{ pid: holderPid }] = await tx.$queryRaw`SELECT pg_backend_pid() AS pid`;
+      await tx.$queryRaw`SELECT "id" FROM "MediaAsset" WHERE "id" = ${siblingMedia.id} FOR KEY SHARE`;
+      siblingEntered(holderPid);
+      await siblingRelease;
+      await tx.correctionsRehabContent.create({ data: {
+        organisationId, facilityId: facility.id, categoryId: category.id,
+        mediaAssetId: siblingMedia.id, title: "Fictional sibling rehabilitation audio",
+        providerName: "CI provider", createdByUserId: userId
+      } });
+    }, { timeout: 20_000 });
+    const siblingHolderPid = await Promise.race([
+      siblingStarted,
+      siblingAttachment.then(() => { throw new Error("The sibling fixture finished before holding its media lock."); })
+    ]);
+    let siblingUploadSettled = false;
+    const siblingUpload = upload(siblingPromo.id, ordinaryBytes)
+      .finally(() => { siblingUploadSettled = true; });
+    let siblingWaitError = null;
+    try {
+      await waitForRouteMediaLock(db, siblingHolderPid, () => siblingUploadSettled,
+        { label: "two-version promo upload" });
+    } catch (error) {
+      siblingWaitError = error;
+    } finally {
+      releaseSiblingAttachment();
+      releaseSiblingAttachment = null;
+    }
+    const [siblingAttachmentResult, siblingUploadResult] = await Promise.allSettled([
+      siblingAttachment, siblingUpload
+    ]);
+    if (siblingAttachmentResult.status === "rejected") throw siblingAttachmentResult.reason;
+    if (siblingUploadResult.status === "rejected") throw siblingUploadResult.reason;
+    if (siblingWaitError) throw siblingWaitError;
+    assert.equal(siblingUploadResult.value.status, 409, await siblingUploadResult.value.clone().text());
+    assert.equal(await db.promoVersion.count({ where: { promoAssetId: siblingPromo.id } }), 2);
+    assert.equal((await db.promoAsset.findUnique({ where: { id: siblingPromo.id } })).status, "ACTIVE");
+    assert.equal(await db.correctionsRehabContent.count({ where: {
+      organisationId, mediaAssetId: siblingMedia.id
+    } }), 1);
+
+    // The status route enumerates M1 before its lock wait. A new ordinary M2
+    // version committed during that wait must invalidate its version snapshot.
+    const lateMedia = await media("fictional-late-version", Buffer.from("ID3late-ordinary-audio"));
+    const snapshotPromo = await db.promoAsset.create({ data: {
+      organisationId, name: "Fictional status snapshot race", mediaType: "ANNOUNCEMENT",
+      versions: { create: { mediaAssetId: ordinaryMedia.id, version: 1, status: "DRAFT" } }
+    } });
+    let snapshotLockEntered;
+    const snapshotLockStarted = new Promise((resolve) => { snapshotLockEntered = resolve; });
+    const snapshotLockRelease = new Promise((resolve) => { releaseStatusSnapshotLock = resolve; });
+    const snapshotLockHolder = db.$transaction(async (tx) => {
+      const [{ pid: holderPid }] = await tx.$queryRaw`SELECT pg_backend_pid() AS pid`;
+      await tx.$queryRaw`SELECT "id" FROM "MediaAsset" WHERE "id" = ${ordinaryMedia.id} FOR KEY SHARE`;
+      snapshotLockEntered(holderPid);
+      await snapshotLockRelease;
+    }, { timeout: 20_000 });
+    const snapshotHolderPid = await Promise.race([
+      snapshotLockStarted,
+      snapshotLockHolder.then(() => { throw new Error("The snapshot fixture finished before holding its media lock."); })
+    ]);
+    let snapshotArchiveSettled = false;
+    const snapshotArchive = updateStatus(snapshotPromo.id, "ARCHIVED")
+      .finally(() => { snapshotArchiveSettled = true; });
+    let snapshotAppendError = null;
+    try {
+      await waitForRouteMediaLock(db, snapshotHolderPid, () => snapshotArchiveSettled);
+      await db.promoVersion.create({ data: {
+        promoAssetId: snapshotPromo.id, mediaAssetId: lateMedia.id,
+        version: 2, status: "DRAFT"
+      } });
+    } catch (error) {
+      snapshotAppendError = error;
+    } finally {
+      releaseStatusSnapshotLock();
+      releaseStatusSnapshotLock = null;
+    }
+    const [snapshotHolderResult, snapshotArchiveResult] = await Promise.allSettled([
+      snapshotLockHolder, snapshotArchive
+    ]);
+    if (snapshotHolderResult.status === "rejected") throw snapshotHolderResult.reason;
+    if (snapshotArchiveResult.status === "rejected") throw snapshotArchiveResult.reason;
+    if (snapshotAppendError) throw snapshotAppendError;
+    assert.equal(snapshotArchiveResult.value.status, 409, await snapshotArchiveResult.value.clone().text());
+    assert.equal((await db.promoAsset.findUnique({ where: { id: snapshotPromo.id } })).status, "ACTIVE");
+    assert.equal(await db.promoVersion.count({ where: { promoAssetId: snapshotPromo.id } }), 2);
+    assert.equal(await db.auditLog.count({ where: {
+      entityType: "PromoAsset", entityId: snapshotPromo.id, action: "PROMO_ASSET_ARCHIVED"
+    } }), 0);
+
     let attachmentEntered;
     const attachmentStarted = new Promise((resolve) => { attachmentEntered = resolve; });
     const attachmentRelease = new Promise((resolve) => { releaseAttachment = resolve; });
@@ -323,6 +489,9 @@ test("generic promo writes cannot append, submit or review private Inside audio 
     } }), 0);
   } finally {
     try {
+      releaseReuseMediaLock?.();
+      releaseSiblingAttachment?.();
+      releaseStatusSnapshotLock?.();
       releaseAttachment?.();
       if (mediaStore) {
         mediaStore.closeAllConnections?.();

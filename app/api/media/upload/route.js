@@ -341,27 +341,19 @@ export async function POST(request) {
       }
 
       const result = await prisma.$transaction(async (tx) => {
-        const promoAsset = requestedPromoAsset
-          ? await tx.promoAsset.findFirst({
-              where: {
-                id: requestedPromoAsset.id,
-                organisationId: organisation.id,
-                status: "ACTIVE",
-                versions: { every: { mediaAsset: { is: GENERAL_STUDIO_MEDIA_ASSET_WHERE } } }
-              },
-              include: { versions: { select: { version: true } } }
-            })
-          : await tx.promoAsset.create({
-              data: {
-                organisationId: organisation.id,
-                name: parsed.data.name,
-                mediaType: parsed.data.mediaType,
-                languageCode
-              }
-            });
-        if (!promoAsset) throw new Error("PROMO_ASSET_UNAVAILABLE");
-        if (existingAsset && !(await generalStudioMediaAssetIds(tx, organisation.id, [existingAsset.id])).has(existingAsset.id)) {
-          throw new Error("PROMO_MEDIA_UNAVAILABLE");
+        // Lock every existing version's organisation media, not just the
+        // file being uploaded. Any of them can acquire a private Corrections
+        // attachment while a new version is being appended to this parent.
+        const previousVersions = requestedPromoAsset ? await tx.promoVersion.findMany({
+          where: { promoAssetId: requestedPromoAsset.id },
+          select: { id: true, mediaAssetId: true, mediaAsset: { select: { organisationId: true } } }
+        }) : [];
+        const ownedMediaIds = previousVersions
+          .filter((version) => version.mediaAsset.organisationId === organisation.id)
+          .map((version) => version.mediaAssetId);
+        for (const mediaAssetId of [...new Set([...ownedMediaIds, mediaAsset.id])].sort()) {
+          const locked = await tx.$queryRaw`SELECT "id" FROM "MediaAsset" WHERE "id" = ${mediaAssetId} AND "organisationId" = ${organisation.id} FOR UPDATE`;
+          if (locked.length !== 1) throw new Error("PROMO_MEDIA_UNAVAILABLE");
         }
 
         let storedAsset = mediaAsset;
@@ -383,7 +375,51 @@ export async function POST(request) {
           });
           if (changed.count !== 1) throw new Error("PROMO_MEDIA_UNAVAILABLE");
           storedAsset = await tx.mediaAsset.findUnique({ where: { id: mediaAsset.id } });
+        } else {
+          // READY checksum reuse has no row update, so the explicit lock
+          // above is also its protection against a concurrent attachment.
+          storedAsset = await tx.mediaAsset.findFirst({
+            where: { id: mediaAsset.id, organisationId: organisation.id, status: "READY", ...GENERAL_STUDIO_MEDIA_ASSET_WHERE }
+          });
+          if (!storedAsset) throw new Error("PROMO_MEDIA_UNAVAILABLE");
         }
+        if (existingAsset && !(await generalStudioMediaAssetIds(tx, organisation.id, [existingAsset.id])).has(existingAsset.id)) {
+          throw new Error("PROMO_MEDIA_UNAVAILABLE");
+        }
+
+        // Freeze status and version additions before the final availability
+        // check. A previously read ACTIVE promo can have been archived while
+        // this transaction waited for its media row.
+        if (requestedPromoAsset) {
+          const locked = await tx.$queryRaw`SELECT "id" FROM "PromoAsset" WHERE "id" = ${requestedPromoAsset.id} AND "organisationId" = ${organisation.id} FOR UPDATE`;
+          if (locked.length !== 1) throw new Error("PROMO_ASSET_UNAVAILABLE");
+          const currentVersions = await tx.promoVersion.findMany({
+            where: { promoAssetId: requestedPromoAsset.id }, select: { id: true, mediaAssetId: true }
+          });
+          const versionKeys = (items) => items.map(({ id, mediaAssetId }) => `${id}:${mediaAssetId}`).sort();
+          if (JSON.stringify(versionKeys(currentVersions)) !== JSON.stringify(versionKeys(previousVersions))) {
+            throw new Error("PROMO_ASSET_UNAVAILABLE");
+          }
+        }
+        const promoAsset = requestedPromoAsset
+          ? await tx.promoAsset.findFirst({
+              where: {
+                id: requestedPromoAsset.id,
+                organisationId: organisation.id,
+                status: "ACTIVE",
+                versions: { every: { mediaAsset: { is: GENERAL_STUDIO_MEDIA_ASSET_WHERE } } }
+              },
+              include: { versions: { select: { version: true } } }
+            })
+          : await tx.promoAsset.create({
+              data: {
+                organisationId: organisation.id,
+                name: parsed.data.name,
+                mediaType: parsed.data.mediaType,
+                languageCode
+              }
+            });
+        if (!promoAsset) throw new Error("PROMO_ASSET_UNAVAILABLE");
 
         const versionNumber = requestedPromoAsset
           ? nextPromoVersionNumber(promoAsset.versions)
