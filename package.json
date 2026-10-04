@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "prisma generate && next build",
     "backup:protected-media": "node scripts/protected-media-recovery.mjs backup",
+    "audit:studio-audio-storage": "node scripts/studio-audio-storage-inventory.mjs",
     "ci:media-toolchain": "node scripts/check-media-toolchain.mjs",
     "ci:performance-indexes": "node scripts/check-performance-indexes.mjs",
     "ci:prepare-media-toolchain": "npm rebuild ffmpeg-static --foreground-scripts",
