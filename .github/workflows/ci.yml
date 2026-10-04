@@ -117,11 +117,13 @@ jobs:
       - name: Validate C8 Edge identity and one-use enrolment on isolated CI database
         env:
           INTEGRATION_BASE_URL: http://127.0.0.1:3100
+          C8_CI_INTEGRATION: "true"
         run: node --test tests/integration/corrections-c8-identity.test.mjs
 
       - name: Validate C8 signed manifest, protected media and offline reconciliation
         env:
           INTEGRATION_BASE_URL: http://127.0.0.1:3100
+          C8_CI_INTEGRATION: "true"
           C8_AUDIBLE_LAB: "false"
         run: node --test tests/integration/corrections-c8-manifest.test.mjs
 

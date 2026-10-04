@@ -17,7 +17,7 @@ import { CorrectionsEdgeSyncClient } from "../../edge/sync-client.mjs";
 import { createCorrectionsEdgeServer } from "../../edge/server.mjs";
 
 const baseUrl = process.env.INTEGRATION_BASE_URL || "http://127.0.0.1:3108";
-const ciDatabase = process.env.GITHUB_ACTIONS === "true" &&
+const ciDatabase = process.env.C8_CI_INTEGRATION === "true" && process.env.GITHUB_ACTIONS === "true" &&
   process.env.DATABASE_URL === "postgresql://postgres:postgres@localhost:5432/ruvanas";
 const disposableLocalDatabase = process.env.C8_LOCAL_INTEGRATION === "true" &&
   process.env.DATABASE_URL === "postgresql://c8lab@127.0.0.1:5548/ruvanas_c8_migration_clean";
