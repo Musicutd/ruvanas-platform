@@ -22,3 +22,18 @@ test("generic promo submission rechecks both draft media and its parent at the u
   assert.match(route, /prisma\.promoVersion\.findFirst\(\{[\s\S]*?promoAsset: \{ is: ordinaryPromoAsset \},\s*mediaAsset: \{ is: GENERAL_STUDIO_MEDIA_ASSET_WHERE \}/);
   assert.match(route, /tx\.promoVersion\.updateMany\(\{[\s\S]*?promoAsset: \{ is: ordinaryPromoAsset \},\s*mediaAsset: \{ is: GENERAL_STUDIO_MEDIA_ASSET_WHERE \}/);
 });
+
+test("generic admin promo surfaces and status changes exclude whole private version histories", async () => {
+  const list = await readFile(new URL("../app/api/admin/media/route.js", import.meta.url), "utf8");
+  const uploadChoices = await readFile(new URL("../app/admin/media/upload/page.js", import.meta.url), "utf8");
+  const status = await readFile(new URL("../app/api/admin/promos/[promoAssetId]/status/route.js", import.meta.url), "utf8");
+  const wholeAssetBoundary = /versions: \{ every: \{ mediaAsset: \{ is: GENERAL_STUDIO_MEDIA_ASSET_WHERE \} \} \}/;
+  assert.match(list, wholeAssetBoundary);
+  assert.match(uploadChoices, wholeAssetBoundary);
+  assert.match(status, /prisma\.promoAsset\.findFirst\(\{[\s\S]*?\.\.\.ordinaryPromoAsset/);
+  assert.match(status, /tx\.promoAsset\.updateMany\(\{[\s\S]*?\.\.\.ordinaryPromoAsset/);
+  assert.match(status, /"MediaAsset"[\s\S]*FOR UPDATE/);
+  assert.match(status, /isolationLevel: "ReadCommitted"/);
+  assert.ok(status.indexOf('FROM "MediaAsset"') < status.indexOf('FROM "PromoAsset"'),
+    "media must be locked before the promo parent to avoid an upload/review lock inversion");
+});

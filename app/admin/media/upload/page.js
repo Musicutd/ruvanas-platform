@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { GENERAL_STUDIO_MEDIA_ASSET_WHERE } from "@/lib/studio-general-asset-boundary.mjs";
 import PromoUploadForm from "./PromoUploadForm";
 
 export default async function PromoUploadPage({ searchParams }) {
@@ -16,7 +17,10 @@ export default async function PromoUploadPage({ searchParams }) {
       id: true,
       name: true,
       promoAssets: {
-        where: { status: "ACTIVE" },
+        where: {
+          status: "ACTIVE",
+          versions: { every: { mediaAsset: { is: GENERAL_STUDIO_MEDIA_ASSET_WHERE } } }
+        },
         select: { id: true, name: true, mediaType: true, languageCode: true },
         orderBy: { name: "asc" }
       }
