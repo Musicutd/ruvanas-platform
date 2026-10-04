@@ -2,12 +2,14 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
 import bcrypt from "bcryptjs";
+import { HeadObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { PrismaClient } from "@prisma/client";
 import { GENERAL_STUDIO_AUDIO_PROJECT_WHERE, GENERAL_STUDIO_MEDIA_ASSET_WHERE, lockGeneralStudioAudioProject } from "../../lib/studio-general-asset-boundary.mjs";
 import { permanentlyDeleteAudioTake, restoreAudioTake, trashAudioTake } from "../../lib/audio-take-trash-service.js";
 import { canDeleteUncommittedAudioUploadObject } from "../../lib/audio-lab-upload-cleanup.mjs";
 import { lockCorrectionsStaffRenderSources } from "../../lib/corrections-staff-render-source-lock.mjs";
 import { runSerializableTransaction } from "../../lib/transaction-retry.mjs";
+import { inventoryStudioAudioStorage } from "../../lib/studio-audio-storage-inventory.mjs";
 
 const ciDatabase = process.env.GITHUB_ACTIONS === "true" &&
   process.env.DATABASE_URL === "postgresql://postgres:postgres@localhost:5432/ruvanas";
@@ -576,6 +578,38 @@ test("general School Studio cannot access or purge supervised Corrections takes"
     });
     assert.ok(!ordinaryPurgeCandidates.some(({ id }) => id === retryTake.id),
       "the worker's candidate boundary must exclude a now-private tombstone");
+
+    // Exercise the read-only inventory's real Prisma relation filters against
+    // this disposable database; the object-store side stays synthetic.
+    const observedAt = new Date();
+    const oldObjectDate = new Date(observedAt.getTime() - 10 * 24 * 60 * 60 * 1000);
+    const directPrefix = `organisations/${organisationId}/school-audio/${normalProject.id}/`;
+    const legacyKey = `${directPrefix}${randomUUID()}.webm`;
+    const orphanKey = `${directPrefix}${randomUUID()}.webm`;
+    const legacyMedia = await db.mediaAsset.create({ data: {
+      organisationId, libraryType: "ORGANISATION_PROMO", name: "CI inventory legacy take",
+      originalName: "ci-inventory.webm", storageKey: legacyKey, mimeType: "audio/webm",
+      sizeBytes: 128n, mediaType: "ANNOUNCEMENT", status: "DELETED"
+    } });
+    await db.audioTake.create({ data: {
+      organisationId, projectId: normalProject.id, mediaAssetId: legacyMedia.id,
+      recordedByUserId: userId, sourceEditDecision: {}, status: "ARCHIVED",
+      trashedAt: oldObjectDate, permanentlyDeletedAt: oldObjectDate
+    } });
+    const listedObject = { Key: orphanKey, ETag: '"ci-inventory"', Size: 128, LastModified: oldObjectDate };
+    const readOnlyStorage = { bucketName: "CI-only-no-network", client: { send: async (command) => {
+      if (command instanceof ListObjectsV2Command) return { Contents: [listedObject], IsTruncated: false };
+      if (command instanceof HeadObjectCommand) return {
+        ETag: '"ci-inventory"', ContentLength: 128, LastModified: oldObjectDate,
+        Metadata: { source: "audiolab", project: normalProject.id }
+      };
+      throw new Error("Inventory sent a non-read storage command.");
+    } } };
+    const inventory = await inventoryStudioAudioStorage({
+      database: db, storage: readOnlyStorage, organisationId, now: observedAt
+    });
+    assert.equal(inventory.pages.final.items[0].classification, "UNREFERENCED_REVIEW");
+    assert.equal(inventory.pages.legacy.items[0].classification, "LEGACY_TOMBSTONE_OBJECT_REVIEW");
   } finally {
     if (releasePrivateSession) releasePrivateSession();
     if (heldPrivateSession) await heldPrivateSession.catch(() => {});
