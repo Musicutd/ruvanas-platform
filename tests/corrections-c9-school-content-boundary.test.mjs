@@ -29,8 +29,24 @@ test("School Show Builder rechecks private sources for selectors, mutations and 
   assert.match(route, /project: \{ episodeId: rundown\.episodeId, \.\.\.GENERAL_STUDIO_AUDIO_PROJECT_WHERE \}/);
   assert.match(route, /if \(!await lockGeneralSchoolRundown\(tx, organisationId, rundown\.id\)\)/);
   assert.match(route, /const current = await findRundown\(rundown\.id, organisationId, tx\)/);
-  assert.match(route, /const slot = await runScheduleTransaction\(async \(tx\) =>/);
+  assert.match(route, /const slot = await runRundownTransaction\(async \(tx\) =>/);
   assert.match(route, /error\?\.code === "P2034"/);
+});
+
+test("School rundown submission and review recheck the locked current sources before changing status", async () => {
+  const route = await readFile(new URL("../app/api/school-radio/show-builder/route.js", import.meta.url), "utf8");
+  const submit = route.split('if (input.action === "SUBMIT") {')[1]?.split('} else if (input.action === "REVIEW") {')[0];
+  const review = route.split('} else if (input.action === "REVIEW") {')[1]?.split('} else if (input.action === "SCHEDULE") {')[0];
+  for (const branch of [submit, review]) {
+    assert.ok(branch, "the status transition branch is present");
+    assert.match(branch, /runRundownTransaction\(async \(tx\) =>/);
+    assert.match(branch, /lockGeneralSchoolRundown\(tx, organisationId, rundown\.id\)/);
+    assert.match(branch, /const current = await findRundown\(rundown\.id, organisationId, tx\)/);
+    assert.ok(branch.indexOf("lockGeneralSchoolRundown") < branch.indexOf("findRundown"));
+    assert.ok(branch.indexOf("findRundown") < branch.indexOf("schoolRundown.update"));
+    assert.match(branch, /current\.status/);
+    assert.match(branch, /current\.revision/);
+  }
 });
 
 test("School Newsroom and player recheck private sources before story review or playback", async () => {

@@ -27,7 +27,7 @@ async function waitForProjectLock(db, holderPid, settled) {
   throw new Error("The School rundown check did not reach the private-project lock.");
 }
 
-test("School content queries hide historical Corrections rundown and newsroom links", async () => {
+test("School content queries and a locked review reject newly private Corrections sources", async () => {
   if (!ciDatabase) throw new Error("C9 School content integration runs only against the exact disposable CI database.");
   const db = new PrismaClient();
   const suffix = randomUUID();
@@ -148,9 +148,11 @@ test("School content queries hide historical Corrections rundown and newsroom li
       createdByUserId: userId
     } });
     assert.equal(await db.$transaction((tx) => lockGeneralSchoolRundown(tx, organisationId, privateRundown.id), { isolationLevel: "ReadCommitted" }), true);
+    await db.schoolRundown.update({ where: { id: privateRundown.id }, data: { status: "IN_REVIEW", approvedRevision: null } });
+    await db.schoolEpisode.update({ where: { id: privateEpisode.id }, data: { status: "IN_REVIEW", approvedAt: null } });
     // Hold the source project while Corrections attaches the supervised
-    // session. A School scheduling decision must wait, then reject the newly
-    // private source instead of using its earlier approved snapshot.
+    // session. A School review must wait, then reject the newly private
+    // source instead of approving its earlier visible snapshot.
     let entered;
     let release;
     const started = new Promise((resolve) => { entered = resolve; });
@@ -172,9 +174,19 @@ test("School content queries hide historical Corrections rundown and newsroom li
       work.then(() => { throw new Error("The Inside fixture finished before holding the source lock."); })
     ]) };
     let decisionSettled = false;
-    const pendingDecision = db.$transaction(
-      (tx) => lockGeneralSchoolRundown(tx, organisationId, privateRundown.id),
-      { isolationLevel: "ReadCommitted", timeout: 15_000 }
+    const pendingDecision = db.$transaction(async (tx) => {
+      if (!await lockGeneralSchoolRundown(tx, organisationId, privateRundown.id)) return false;
+      const current = await tx.schoolRundown.findFirst({
+        where: { id: privateRundown.id, organisationId, ...generalSchoolRundownWhere(organisationId) },
+        select: { id: true, episodeId: true, revision: true }
+      });
+      if (!current) return false;
+      await tx.schoolRundown.update({ where: { id: current.id }, data: {
+        status: "APPROVED", approvedRevision: current.revision, reviewedByUserId: userId
+      } });
+      await tx.schoolEpisode.update({ where: { id: current.episodeId }, data: { status: "APPROVED", approvedAt: new Date() } });
+      return true;
+    }, { isolationLevel: "ReadCommitted", timeout: 15_000 }
     ).then((value) => ({ value }), (error) => ({ error })).finally(() => { decisionSettled = true; });
     let waitError;
     try {
@@ -190,6 +202,8 @@ test("School content queries hide historical Corrections rundown and newsroom li
     if (waitError) throw waitError;
     if (decision.error) throw decision.error;
     assert.equal(decision.value, false);
+    assert.equal((await db.schoolRundown.findUnique({ where: { id: privateRundown.id } })).status, "IN_REVIEW");
+    assert.equal((await db.schoolEpisode.findUnique({ where: { id: privateEpisode.id } })).status, "IN_REVIEW");
 
     const after = await visible();
     assert.deepEqual(after.rundowns, new Set([normalRundown.id]));

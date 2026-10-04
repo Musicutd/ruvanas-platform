@@ -192,6 +192,11 @@ jobs:
           INTEGRATION_BASE_URL: http://127.0.0.1:3100
         run: node --test tests/integration/corrections-c9-school-content-boundary.test.mjs
 
+      - name: Validate C9 School and Online Newsroom writes reject newly private sources
+        env:
+          INTEGRATION_BASE_URL: http://127.0.0.1:3100
+        run: node --test tests/integration/corrections-c9-newsroom-write-boundary.test.mjs
+
       - name: Validate C9 School Learning excludes private Corrections media
         env:
           INTEGRATION_BASE_URL: http://127.0.0.1:3100

@@ -73,14 +73,13 @@ async function findRundown(id, organisationId, tx = prisma) {
   return tx.schoolRundown.findFirst({ where: { id, organisationId, status: { not: "ARCHIVED" }, ...generalSchoolRundownWhere(organisationId) }, include: rundownInclude });
 }
 
-async function runScheduleTransaction(operation) {
+async function runRundownTransaction(operation) {
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
       return await prisma.$transaction(operation, { isolationLevel: "ReadCommitted", timeout: 15_000 });
     } catch (error) {
-      // Older School review writes the rundown before the episode, whereas
-      // Learning locks the episode first. Retry the entire current-source
-      // decision if PostgreSQL chooses this transaction as a deadlock victim.
+      // Retry the entire current-source decision if concurrent School,
+      // Learning or Corrections writes make this a deadlock victim.
       const deadlock = error?.code === "P2034" || (error?.code === "P2010" && error?.meta?.code === "40P01");
       if (!deadlock || attempt === 3) throw error;
       await new Promise((resolve) => setTimeout(resolve, attempt * 20));
@@ -155,7 +154,7 @@ export async function POST(request) {
 
     const rundown = await findRundown(input.rundownId, organisationId);
     if (!rundown) return NextResponse.json({ error: "The episode rundown was not found." }, { status: 404 });
-    if (["SUBMIT", "ADD_ITEM", "UPDATE_ITEM", "REMOVE_ITEM", "MOVE_ITEM"].includes(input.action) && rundown.status === "IN_REVIEW") throw new Error("This rundown is awaiting staff review.");
+    if (["ADD_ITEM", "UPDATE_ITEM", "REMOVE_ITEM", "MOVE_ITEM"].includes(input.action) && rundown.status === "IN_REVIEW") throw new Error("This rundown is awaiting staff review.");
 
     if (input.action === "CREATE_VOICE_PROJECT") {
       const editDecision = { trimStartMs: 0, trimEndMs: null, fadeInMs: 0, fadeOutMs: 0, normalize: true, targetLufs: -16, noiseCleanup: false };
@@ -197,26 +196,37 @@ export async function POST(request) {
         for (const item of positions) await tx.schoolRundownItem.update({ where: { id: item.id }, data: { position: item.position } });
       });
     } else if (input.action === "SUBMIT") {
-      const transition = transitionSchoolRundown({ currentStatus: rundown.status, action: "SUBMIT", items: rundown.items });
-      await prisma.$transaction([
-        prisma.schoolRundown.update({ where: { id: rundown.id }, data: transition }),
-        prisma.schoolEpisode.update({ where: { id: rundown.episodeId }, data: { status: "IN_REVIEW", submittedAt: new Date(), approvedAt: null } }),
-        prisma.auditLog.create({ data: { organisationId, actorUserId: access.user.id, action: "SCHOOL_RUNDOWN_SUBMITTED", entityType: "SchoolRundown", entityId: rundown.id, details: { episodeId: rundown.episodeId, revision: rundown.revision, itemCount: rundown.items.length } } })
-      ]);
+      await runRundownTransaction(async (tx) => {
+        if (!await lockGeneralSchoolRundown(tx, organisationId, rundown.id)) {
+          throw Object.assign(new Error("The episode rundown was not found."), { status: 404 });
+        }
+        const current = await findRundown(rundown.id, organisationId, tx);
+        if (!current) throw Object.assign(new Error("The episode rundown was not found."), { status: 404 });
+        if (current.status === "IN_REVIEW") throw new Error("This rundown is awaiting staff review.");
+        const transition = transitionSchoolRundown({ currentStatus: current.status, action: "SUBMIT", items: current.items });
+        await tx.schoolRundown.update({ where: { id: current.id }, data: transition });
+        await tx.schoolEpisode.update({ where: { id: current.episodeId }, data: { status: "IN_REVIEW", submittedAt: new Date(), approvedAt: null } });
+        await tx.auditLog.create({ data: { organisationId, actorUserId: access.user.id, action: "SCHOOL_RUNDOWN_SUBMITTED", entityType: "SchoolRundown", entityId: current.id, details: { episodeId: current.episodeId, revision: current.revision, itemCount: current.items.length } } });
+      });
     } else if (input.action === "REVIEW") {
       if (!isOrganisationRoleAllowed(access.membership.role, ORGANISATION_MANAGER_ROLES)) return NextResponse.json({ error: "A school manager must review this rundown." }, { status: 403 });
-      const transition = transitionSchoolRundown({ currentStatus: rundown.status, action: input.decision, notes: input.notes, items: rundown.items });
-      const status = input.decision === "APPROVE" ? "APPROVED" : input.decision === "REQUEST_CHANGES" ? "CHANGES_REQUESTED" : "REJECTED";
-      await prisma.$transaction([
-        prisma.schoolRundown.update({ where: { id: rundown.id }, data: { ...transition, reviewedByUserId: access.user.id, ...(input.decision === "APPROVE" ? { approvedRevision: rundown.revision } : {}) } }),
-        prisma.schoolEpisode.update({ where: { id: rundown.episodeId }, data: { status, approvedAt: input.decision === "APPROVE" ? new Date() : null } }),
-        prisma.auditLog.create({ data: { organisationId, actorUserId: access.user.id, action: `SCHOOL_RUNDOWN_${input.decision}`, entityType: "SchoolRundown", entityId: rundown.id, details: { episodeId: rundown.episodeId, revision: rundown.revision, notes: input.notes || null } } })
-      ]);
+      await runRundownTransaction(async (tx) => {
+        if (!await lockGeneralSchoolRundown(tx, organisationId, rundown.id)) {
+          throw Object.assign(new Error("The episode rundown was not found."), { status: 404 });
+        }
+        const current = await findRundown(rundown.id, organisationId, tx);
+        if (!current) throw Object.assign(new Error("The episode rundown was not found."), { status: 404 });
+        const transition = transitionSchoolRundown({ currentStatus: current.status, action: input.decision, notes: input.notes, items: current.items });
+        const status = input.decision === "APPROVE" ? "APPROVED" : input.decision === "REQUEST_CHANGES" ? "CHANGES_REQUESTED" : "REJECTED";
+        await tx.schoolRundown.update({ where: { id: current.id }, data: { ...transition, reviewedByUserId: access.user.id, ...(input.decision === "APPROVE" ? { approvedRevision: current.revision } : {}) } });
+        await tx.schoolEpisode.update({ where: { id: current.episodeId }, data: { status, approvedAt: input.decision === "APPROVE" ? new Date() : null } });
+        await tx.auditLog.create({ data: { organisationId, actorUserId: access.user.id, action: `SCHOOL_RUNDOWN_${input.decision}`, entityType: "SchoolRundown", entityId: current.id, details: { episodeId: current.episodeId, revision: current.revision, notes: input.notes || null } } });
+      });
     } else if (input.action === "SCHEDULE") {
       if (!isOrganisationRoleAllowed(access.membership.role, ORGANISATION_MANAGER_ROLES)) return NextResponse.json({ error: "A school manager must schedule this episode." }, { status: 403 });
       const slotInput = validateSchoolBroadcastSlot(input);
       if (slotInput.startsAt < new Date(Date.now() - 5 * 60 * 1000)) throw new Error("Schedule the episode for the present or future.");
-      const slot = await runScheduleTransaction(async (tx) => {
+      const slot = await runRundownTransaction(async (tx) => {
         // Corrections may have made a previously visible source private while
         // this request was in flight. Check after the shared source locks.
         if (!await lockGeneralSchoolRundown(tx, organisationId, rundown.id)) {
