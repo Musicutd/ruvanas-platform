@@ -128,6 +128,11 @@ jobs:
           INTEGRATION_BASE_URL: http://127.0.0.1:3100
         run: node --test tests/integration/corrections-c9-general-programming-boundary.test.mjs
 
+      - name: Validate C9 campaign media withdraws after becoming Inside-private
+        env:
+          INTEGRATION_BASE_URL: http://127.0.0.1:3100
+        run: node --test tests/integration/corrections-c9-campaign-private-media.test.mjs
+
       - name: Validate C9 School and Organisations isolation from private Corrections facilities
         env:
           INTEGRATION_BASE_URL: http://127.0.0.1:3100
@@ -176,6 +181,11 @@ jobs:
         env:
           INTEGRATION_BASE_URL: http://127.0.0.1:3100
         run: node --test tests/integration/corrections-c9-school-content-boundary.test.mjs
+
+      - name: Validate C9 School Learning excludes private Corrections media
+        env:
+          INTEGRATION_BASE_URL: http://127.0.0.1:3100
+        run: node --test tests/integration/corrections-c9-school-learning-boundary.test.mjs
 
       - name: Validate public School podcast audio withdraws after a Corrections submission
         env:

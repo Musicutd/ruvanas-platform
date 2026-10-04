@@ -5,6 +5,7 @@ import { resolvePlayerProgramming } from "@/lib/player-programming";
 import { protectedAudioResponse } from "@/lib/protected-audio-response";
 import { isCatalogueLicenceCurrent } from "@/lib/catalogue-upload.mjs";
 import { isPlayerListenerTokenActive } from "@/lib/player-listener-lease.mjs";
+import { GENERAL_STUDIO_MEDIA_ASSET_WHERE } from "@/lib/studio-general-asset-boundary.mjs";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -57,10 +58,20 @@ export async function GET(request, { params }) {
       return NextResponse.json({ error: "This audio is not in the player's current playback plan." }, { status: 404 });
     }
 
-    const asset = await prisma.mediaAsset.findUnique({
-      where: { id: mediaAssetId },
-      select: { storageKey: true, mimeType: true, sizeBytes: true }
-    });
+    // Private facility delivery has its own approved insertion authority.
+    // Every ordinary player path, including a recently persisted intent, must
+    // recheck current source privacy before opening the storage object.
+    const asset = resolution.reason === "CORRECTIONS_PRIVATE" && isCurrentInsideAudio
+      ? await prisma.mediaAsset.findUnique({ where: { id: mediaAssetId }, select: { storageKey: true, mimeType: true, sizeBytes: true } })
+      : await prisma.mediaAsset.findFirst({
+        where: {
+          id: mediaAssetId,
+          status: "READY",
+          ...GENERAL_STUDIO_MEDIA_ASSET_WHERE
+        },
+        select: { storageKey: true, mimeType: true, sizeBytes: true }
+      });
+    if (!asset) return NextResponse.json({ error: "This audio is not in the player's current playback plan." }, { status: 404 });
     return protectedAudioResponse(request, asset);
   } catch (error) {
     console.error("Player media stream failed:", error);
