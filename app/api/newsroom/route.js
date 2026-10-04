@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireActiveNewsroom } from "@/lib/newsroom-access";
 import { GENERAL_STATION_MANAGEMENT_WHERE } from "@/lib/general-station-boundary.mjs";
 import { GENERAL_STUDIO_AUDIO_PROJECT_WHERE, GENERAL_STUDIO_MEDIA_ASSET_WHERE } from "@/lib/studio-general-asset-boundary.mjs";
-import { lockVisibleNewsroomStory } from "@/lib/newsroom-write-boundary.mjs";
+import { lockVisibleNewsroomStory, lockVisibleOnlineNewsroomCreateTargets } from "@/lib/newsroom-write-boundary.mjs";
 import { ORGANISATION_CONTENT_ROLES, ORGANISATION_MANAGER_ROLES, isOrganisationRoleAllowed } from "@/lib/permissions.mjs";
 import {
   NEWSROOM_POLICY_VERSION,
@@ -161,17 +161,16 @@ export async function POST(request) {
   try {
     let result;
     if (data.action === "CREATE") {
-      const [station, channel] = await Promise.all([
-        prisma.station.findFirst({ where: { id: data.stationId, organisationId, status: { not: "CANCELLED" }, ...onlineStationWhere }, select: { id: true } }),
-        data.channelId ? prisma.channel.findFirst({ where: { id: data.channelId, stationId: data.stationId, organisationId, status: { not: "ARCHIVED" }, ...onlineChannelWhere }, select: { id: true } }) : null
-      ]);
-      if (!station || (data.channelId && !channel)) return NextResponse.json({ error: "Choose a station and optional channel owned by this organisation." }, { status: 404 });
       result = await prisma.$transaction(async (tx) => {
-        const story = await tx.schoolNewsStory.create({ data: { organisationId, product: NEWSROOM_PRODUCTS.ONLINE_RADIO, stationId: station.id, channelId: channel?.id || null, title: data.title, type: data.type, pitch: data.pitch, deadline: data.deadline ? new Date(data.deadline) : null, createdByUserId: access.user.id } });
+        if (!await lockVisibleOnlineNewsroomCreateTargets(tx, {
+          organisationId, stationId: data.stationId, channelId: data.channelId,
+          stationWhere: onlineStationWhere, channelWhere: onlineChannelWhere
+        })) throw Object.assign(new Error("Choose a station and optional channel owned by this organisation."), { status: 404 });
+        const story = await tx.schoolNewsStory.create({ data: { organisationId, product: NEWSROOM_PRODUCTS.ONLINE_RADIO, stationId: data.stationId, channelId: data.channelId || null, title: data.title, type: data.type, pitch: data.pitch, deadline: data.deadline ? new Date(data.deadline) : null, createdByUserId: access.user.id } });
         await tx.newsStoryDecision.create({ data: { organisationId, storyId: story.id, action: "CREATE", fromStatus: story.status, toStatus: story.status, actorUserId: access.user.id } });
-        await tx.auditLog.create({ data: { organisationId, actorUserId: access.user.id, action: "ONLINE_NEWS_CREATE", entityType: "NewsStory", entityId: story.id, details: { stationId: station.id, channelId: channel?.id || null, type: story.type, product: NEWSROOM_PRODUCTS.ONLINE_RADIO, policyVersion: NEWSROOM_POLICY_VERSION, requestId } } });
+        await tx.auditLog.create({ data: { organisationId, actorUserId: access.user.id, action: "ONLINE_NEWS_CREATE", entityType: "NewsStory", entityId: story.id, details: { stationId: data.stationId, channelId: data.channelId || null, type: story.type, product: NEWSROOM_PRODUCTS.ONLINE_RADIO, policyVersion: NEWSROOM_POLICY_VERSION, requestId } } });
         return story;
-      });
+      }, { isolationLevel: "ReadCommitted", timeout: 15_000 });
     } else {
       const story = await onlineStory(organisationId, data.storyId);
       if (!story) return NextResponse.json({ error: "The newsroom story was not found." }, { status: 404 });
@@ -243,6 +242,6 @@ export async function POST(request) {
     return NextResponse.json({ result, notice: data.action === "PUBLISH" ? "Story released by the newsroom. Live programming and public web pages were not changed." : "Newsroom action completed." }, { status: data.action === "CREATE" ? 201 : 200 });
   } catch (error) {
     if (error?.code === "P2002") return NextResponse.json({ error: "This newsroom revision was updated elsewhere. Refresh and try again." }, { status: 409 });
-    return NextResponse.json({ error: error instanceof Error ? error.message : "The newsroom action could not be completed." }, { status: 409 });
+    return NextResponse.json({ error: error instanceof Error ? error.message : "The newsroom action could not be completed." }, { status: error?.status || 409 });
   }
 }

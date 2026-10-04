@@ -1,7 +1,31 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { lockVisibleNewsroomStory } from "../lib/newsroom-write-boundary.mjs";
+import { lockVisibleNewsroomStory, lockVisibleOnlineNewsroomCreateTargets, lockVisibleSchoolNewsroomCreateTargets } from "../lib/newsroom-write-boundary.mjs";
+
+test("Newsroom CREATE locks current targets before checking their privacy", async () => {
+  const calls = [];
+  const tx = {
+    async $queryRaw(parts) { calls.push(parts.join("?")); return [{ id: "locked" }]; },
+    station: { async findFirst() { calls.push("station-check"); return { id: "station" }; } },
+    channel: { async findFirst() { calls.push("channel-check"); return { id: "channel" }; } },
+    schoolProgramme: { async findFirst() { calls.push("programme-check"); return { id: "programme" }; } },
+    schoolEpisode: { async findFirst() { calls.push("episode-check"); return { id: "episode" }; } },
+    schoolRundown: { async findFirst() { return null; } }
+  };
+  assert.equal(await lockVisibleOnlineNewsroomCreateTargets(tx, {
+    organisationId: "org", stationId: "station", channelId: "channel",
+    stationWhere: { productFamily: { not: "CORRECTIONS" } }, channelWhere: { musicRightsUse: { not: "CORRECTIONS_RADIO" } }
+  }), true);
+  assert.deepEqual(calls.slice(0, 4).map((call) => call.match(/FROM "([^"]+)"/)?.[1] || call),
+    ["Station", "Channel", "station-check", "channel-check"]);
+  calls.length = 0;
+  assert.equal(await lockVisibleSchoolNewsroomCreateTargets(tx, {
+    organisationId: "org", programmeId: "programme", episodeId: "episode"
+  }), true);
+  assert.deepEqual(calls.map((call) => call.match(/FROM "([^"]+)"/)?.[1] || call),
+    ["SchoolProgramme", "programme-check", "SchoolEpisode", "episode-check"]);
+});
 
 test("School Newsroom locks current, historical, incoming and episode sources before its final privacy check", async () => {
   const calls = [];
@@ -78,4 +102,6 @@ test("both Newsroom routes recheck locked story state and proposed SAVE audio wi
   assert.match(online, /additionalProjectId: data\.audioProjectId, additionalMediaAssetId: data\.interviewMediaAssetId[\s\S]*currentProject, currentAsset/);
   assert.match(schoolUi, /readOnly=\{reviewed\}/);
   assert.match(schoolUi, /disabled=\{working \|\| reviewed\}/);
+  assert.match(school, /lockVisibleSchoolNewsroomCreateTargets\(tx,[\s\S]*tx\.schoolNewsStory\.create/);
+  assert.match(online, /lockVisibleOnlineNewsroomCreateTargets\(tx,[\s\S]*tx\.schoolNewsStory\.create/);
 });

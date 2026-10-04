@@ -68,7 +68,10 @@ test("Studio product handoffs lock and recheck an exact render before listing or
   assert.match(get, /prisma\.\$transaction\([\s\S]*isolationLevel: "ReadCommitted"/);
   assert.ok(get.indexOf("lockedGeneralRender(tx") < get.indexOf("tx.studioProductHandoff.findMany"));
   assert.match(route, /async function runLockedHandoffTransaction[\s\S]*isolationLevel: "ReadCommitted"/);
-  assert.match(route, /error\?\.code !== "P2002" \|\| attempt === 3/);
+  assert.match(route, /error\?\.code === "P2034"/);
+  assert.match(route, /error\?\.code === "P2010" && error\?\.meta\?\.code === "40P01"/);
+  assert.match(route, /error\?\.code !== "P2002" && !deadlock/);
+  assert.match(route, /attempt === 3/);
   assert.match(post, /runLockedHandoffTransaction\(async \(tx\)/);
   assert.match(post, /assertStudioRenderReady\(await lockedGeneralRender\(tx, renderId, access\.organisation\.id\)\)/);
   assert.ok(post.indexOf("assertStudioRenderReady") < post.indexOf("tx.studioProductHandoff.findUnique"));

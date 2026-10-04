@@ -63,9 +63,12 @@ async function runLockedHandoffTransaction(operation) {
     try {
       return await prisma.$transaction(operation, { isolationLevel: "ReadCommitted" });
     } catch (error) {
-      // A concurrent identical handoff can win the unique key. Retry the
-      // entire locked decision, never just the old-handoff lookup outside it.
-      if (error?.code !== "P2002" || attempt === 3) throw error;
+      // An identical handoff can win the unique key, or a concurrent School
+      // rundown edit can deadlock with the project-first handoff lock order.
+      // Both roll back atomically; replay the entire locked decision so every
+      // approval, visibility and destination check runs again.
+      const deadlock = error?.code === "P2034" || (error?.code === "P2010" && error?.meta?.code === "40P01");
+      if ((error?.code !== "P2002" && !deadlock) || attempt === 3) throw error;
     }
   }
 }

@@ -6,7 +6,7 @@ import { requireActiveSchoolRadio } from "@/lib/school-radio-access";
 import { invalidatedRundownData, orderedPositions, transitionSchoolRundown, validateShowItem } from "@/lib/show-builder.mjs";
 import { validateSchoolBroadcastSlot } from "@/lib/school-radio.mjs";
 import { GENERAL_STUDIO_AUDIO_PROJECT_WHERE, GENERAL_STUDIO_MEDIA_ASSET_WHERE } from "@/lib/studio-general-asset-boundary.mjs";
-import { generalSchoolRundownWhere, lockGeneralSchoolRundown } from "@/lib/school-general-content-boundary.mjs";
+import { generalSchoolRundownWhere, lockGeneralSchoolItemSource, lockGeneralSchoolRundown } from "@/lib/school-general-content-boundary.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -127,6 +127,21 @@ async function invalidateForEdit(tx, rundown) {
   await tx.schoolRundown.update({ where: { id: rundown.id }, data: invalidatedRundownData(rundown) });
 }
 
+async function lockedCurrentRundown(tx, organisationId, rundownId) {
+  if (!await lockGeneralSchoolRundown(tx, organisationId, rundownId)) {
+    throw Object.assign(new Error("The episode rundown was not found."), { status: 404 });
+  }
+  const current = await findRundown(rundownId, organisationId, tx);
+  if (!current) throw Object.assign(new Error("The episode rundown was not found."), { status: 404 });
+  return current;
+}
+
+async function lockedEditableRundown(tx, organisationId, rundownId) {
+  const current = await lockedCurrentRundown(tx, organisationId, rundownId);
+  if (current.status === "IN_REVIEW") throw new Error("This rundown is awaiting staff review.");
+  return current;
+}
+
 export async function GET() {
   const access = await requireActiveSchoolRadio(ORGANISATION_CONTENT_ROLES);
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
@@ -154,45 +169,49 @@ export async function POST(request) {
 
     const rundown = await findRundown(input.rundownId, organisationId);
     if (!rundown) return NextResponse.json({ error: "The episode rundown was not found." }, { status: 404 });
-    if (["ADD_ITEM", "UPDATE_ITEM", "REMOVE_ITEM", "MOVE_ITEM"].includes(input.action) && rundown.status === "IN_REVIEW") throw new Error("This rundown is awaiting staff review.");
-
     if (input.action === "CREATE_VOICE_PROJECT") {
       const editDecision = { trimStartMs: 0, trimEndMs: null, fadeInMs: 0, fadeOutMs: 0, normalize: true, targetLufs: -16, noiseCleanup: false };
-      const project = await prisma.$transaction(async (tx) => {
-        const created = await tx.audioProject.create({ data: { organisationId, programmeId: rundown.episode.programmeId, episodeId: rundown.episodeId, title: input.title, type: "VOICE_TRACK", editDecision, createdByUserId: access.user.id } });
+      const project = await runRundownTransaction(async (tx) => {
+        const current = await lockedCurrentRundown(tx, organisationId, rundown.id);
+        const created = await tx.audioProject.create({ data: { organisationId, programmeId: current.episode.programmeId, episodeId: current.episodeId, title: input.title, type: "VOICE_TRACK", editDecision, createdByUserId: access.user.id } });
         await tx.audioProjectVersion.create({ data: { projectId: created.id, version: 1, state: { title: created.title, type: "VOICE_TRACK", editDecision }, reason: "Voice-track project created", createdByUserId: access.user.id } });
-        await tx.auditLog.create({ data: { organisationId, actorUserId: access.user.id, action: "VOICE_TRACK_PROJECT_CREATED", entityType: "AudioProject", entityId: created.id, details: { episodeId: rundown.episodeId, rundownId: rundown.id } } });
+        await tx.auditLog.create({ data: { organisationId, actorUserId: access.user.id, action: "VOICE_TRACK_PROJECT_CREATED", entityType: "AudioProject", entityId: created.id, details: { episodeId: current.episodeId, rundownId: current.id } } });
         return created;
       });
       return NextResponse.json({ project }, { status: 201 });
     }
 
     if (input.action === "ADD_ITEM" || input.action === "UPDATE_ITEM") {
-      await prisma.$transaction(async (tx) => {
-        const data = await validatedItemData(input, rundown, organisationId, tx);
-        await invalidateForEdit(tx, rundown);
-        if (input.action === "ADD_ITEM") await tx.schoolRundownItem.create({ data: { rundownId: rundown.id, position: rundown.items.length, ...data } });
+      await runRundownTransaction(async (tx) => {
+        const current = await lockedEditableRundown(tx, organisationId, rundown.id);
+        const item = input.action === "UPDATE_ITEM" ? current.items.find((candidate) => candidate.id === input.itemId) : null;
+        if (input.action === "UPDATE_ITEM" && !item) throw new Error("The rundown item was not found.");
+        validateShowItem(input);
+        await lockGeneralSchoolItemSource(tx, organisationId, input);
+        const data = await validatedItemData(input, current, organisationId, tx);
+        await invalidateForEdit(tx, current);
+        if (input.action === "ADD_ITEM") await tx.schoolRundownItem.create({ data: { rundownId: current.id, position: current.items.length, ...data } });
         else {
-          const item = rundown.items.find((candidate) => candidate.id === input.itemId);
-          if (!item) throw new Error("The rundown item was not found.");
           await tx.schoolRundownItem.update({ where: { id: item.id }, data });
         }
       });
     } else if (input.action === "REMOVE_ITEM") {
-      await prisma.$transaction(async (tx) => {
-        const item = rundown.items.find((candidate) => candidate.id === input.itemId);
+      await runRundownTransaction(async (tx) => {
+        const current = await lockedEditableRundown(tx, organisationId, rundown.id);
+        const item = current.items.find((candidate) => candidate.id === input.itemId);
         if (!item) throw new Error("The rundown item was not found.");
-        await invalidateForEdit(tx, rundown);
+        await invalidateForEdit(tx, current);
         await tx.schoolRundownItem.delete({ where: { id: item.id } });
-        const remaining = rundown.items.filter((candidate) => candidate.id !== item.id).sort((left, right) => left.position - right.position);
-        await tx.schoolRundownItem.updateMany({ where: { rundownId: rundown.id }, data: { position: { increment: 10000 } } });
+        const remaining = current.items.filter((candidate) => candidate.id !== item.id).sort((left, right) => left.position - right.position);
+        await tx.schoolRundownItem.updateMany({ where: { rundownId: current.id }, data: { position: { increment: 10000 } } });
         for (const [position, candidate] of remaining.entries()) await tx.schoolRundownItem.update({ where: { id: candidate.id }, data: { position } });
       });
     } else if (input.action === "MOVE_ITEM") {
-      await prisma.$transaction(async (tx) => {
-        const positions = orderedPositions(rundown.items, input.itemId, input.direction);
-        await invalidateForEdit(tx, rundown);
-        await tx.schoolRundownItem.updateMany({ where: { rundownId: rundown.id }, data: { position: { increment: 10000 } } });
+      await runRundownTransaction(async (tx) => {
+        const current = await lockedEditableRundown(tx, organisationId, rundown.id);
+        const positions = orderedPositions(current.items, input.itemId, input.direction);
+        await invalidateForEdit(tx, current);
+        await tx.schoolRundownItem.updateMany({ where: { rundownId: current.id }, data: { position: { increment: 10000 } } });
         for (const item of positions) await tx.schoolRundownItem.update({ where: { id: item.id }, data: { position: item.position } });
       });
     } else if (input.action === "SUBMIT") {
