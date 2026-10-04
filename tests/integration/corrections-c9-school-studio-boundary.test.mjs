@@ -5,6 +5,7 @@ import bcrypt from "bcryptjs";
 import { PrismaClient } from "@prisma/client";
 import { GENERAL_STUDIO_AUDIO_PROJECT_WHERE, GENERAL_STUDIO_MEDIA_ASSET_WHERE, lockGeneralStudioAudioProject } from "../../lib/studio-general-asset-boundary.mjs";
 import { permanentlyDeleteAudioTake, restoreAudioTake, trashAudioTake } from "../../lib/audio-take-trash-service.js";
+import { canDeleteUncommittedAudioUploadObject } from "../../lib/audio-lab-upload-cleanup.mjs";
 import { lockCorrectionsStaffRenderSources } from "../../lib/corrections-staff-render-source-lock.mjs";
 import { runSerializableTransaction } from "../../lib/transaction-retry.mjs";
 
@@ -328,6 +329,9 @@ test("general School Studio cannot access or purge supervised Corrections takes"
   const suffix = randomUUID();
   let organisationId;
   let userId;
+  let heldPrivateSession;
+  let releasePrivateSession;
+  let pendingRetry;
   try {
     const organisation = await db.organisation.create({ data: { name: `Fictional C9 School ${suffix}`, slug: `c9-school-${suffix}` } });
     organisationId = organisation.id;
@@ -500,7 +504,82 @@ test("general School Studio cannot access or purge supervised Corrections takes"
     assert.equal(deleted.status, "ARCHIVED");
     assert.deepEqual(deletedKeys, [normalMedia.storageKey]);
     assert.equal((await db.mediaAsset.findUnique({ where: { id: normalMedia.id } })).status, "DELETED");
+
+    // Reverse the lock order: a private session commits while a worker retry
+    // waits. The retry's first candidate read must not freeze an older privacy
+    // snapshot and delete the newly private object's stored bytes.
+    const retryProject = await project("School project before private session");
+    const retryMedia = await media("retry-take-becomes-private");
+    const retryTake = await take(retryProject.id, retryMedia.id);
+    await trashAudioTake({ database: db, takeId: retryTake.id, organisationId, userId });
+    const failedStorage = { bucketName: storage.bucketName, client: { send: async () => {
+      throw new Error("Synthetic CI object-store failure");
+    } } };
+    const originalConsoleError = console.error;
+    console.error = () => {};
+    try {
+      await assert.rejects(
+        permanentlyDeleteAudioTake({ database: db, takeId: retryTake.id, organisationId, userId, storage: failedStorage }),
+        (error) => error?.code === "AUDIO_TAKE_STORAGE_CLEANUP_FAILED"
+      );
+    } finally {
+      console.error = originalConsoleError;
+    }
+    assert.ok((await db.audioTake.findUnique({ where: { id: retryTake.id } })).purgeAfter);
+
+    let privateSessionEntered;
+    const privateSessionStarted = new Promise((resolve) => { privateSessionEntered = resolve; });
+    const privateSessionRelease = new Promise((resolve) => { releasePrivateSession = resolve; });
+    heldPrivateSession = db.$transaction(async (tx) => {
+      const [{ pid }] = await tx.$queryRaw`SELECT pg_backend_pid() AS pid`;
+      await tx.$queryRaw`SELECT id FROM "AudioProject" WHERE id = ${retryProject.id} FOR UPDATE`;
+      await tx.correctionsStudioSession.create({ data: {
+        organisationId, facilityId: facility.id, contributorId: contributor.id,
+        programmeId: programme.id, projectId: retryProject.id,
+        supervisorUserId: userId, createdByUserId: userId,
+        capabilityScope: { purpose: "isolated retry privacy race" }
+      } });
+      privateSessionEntered(pid);
+      await privateSessionRelease;
+    }, { timeout: 20_000 });
+    const privateHolderPid = await Promise.race([
+      privateSessionStarted,
+      heldPrivateSession.then(() => { throw new Error("Private-session fixture finished before holding the project lock."); })
+    ]);
+    let retrySettled = false;
+    const retryStorage = { bucketName: storage.bucketName, client: { send: async (command) => {
+      deletedKeys.push(command.input.Key);
+      return {};
+    } } };
+    pendingRetry = permanentlyDeleteAudioTake({
+      database: db, takeId: retryTake.id, organisationId, userId, storage: retryStorage
+    }).then((value) => ({ ok: true, value }), (error) => ({ ok: false, error }))
+      .finally(() => { retrySettled = true; });
+    await waitForRouteProjectLock(db, privateHolderPid, () => retrySettled);
+    assert.equal(retrySettled, false);
+    releasePrivateSession();
+    releasePrivateSession = null;
+    await heldPrivateSession;
+    const retryResult = await pendingRetry;
+    assert.equal(retryResult.ok, false);
+    assert.equal(retryResult.error?.code, "CORRECTIONS_STUDIO_OUTPUT_BLOCKED");
+    assert.deepEqual(deletedKeys, [normalMedia.storageKey], "newly private bytes must not be deleted");
+    assert.equal((await db.mediaAsset.findUnique({ where: { id: retryMedia.id } })).status, "DELETED");
+    assert.ok((await db.audioTake.findUnique({ where: { id: retryTake.id } })).purgeAfter,
+      "private evidence remains marked for guarded reconciliation, not silently erased");
+    const ordinaryPurgeCandidates = await db.audioTake.findMany({
+      where: {
+        trashedAt: { not: null }, purgeAfter: { lte: new Date(Date.now() + 2 * 60 * 60 * 1000) },
+        project: { is: GENERAL_STUDIO_AUDIO_PROJECT_WHERE },
+        mediaAsset: { is: GENERAL_STUDIO_MEDIA_ASSET_WHERE }
+      }, select: { id: true }
+    });
+    assert.ok(!ordinaryPurgeCandidates.some(({ id }) => id === retryTake.id),
+      "the worker's candidate boundary must exclude a now-private tombstone");
   } finally {
+    if (releasePrivateSession) releasePrivateSession();
+    if (heldPrivateSession) await heldPrivateSession.catch(() => {});
+    if (pendingRetry) await pendingRetry.catch(() => {});
     try {
       if (organisationId) {
         await db.correctionsSubmission.deleteMany({ where: { organisationId } });
@@ -511,6 +590,94 @@ test("general School Studio cannot access or purge supervised Corrections takes"
         await db.audioProject.deleteMany({ where: { organisationId } });
         await db.correctionsContributor.deleteMany({ where: { organisationId } });
         await db.correctionsProgramme.deleteMany({ where: { organisationId } });
+        await db.organisation.delete({ where: { id: organisationId } });
+      }
+      if (userId) await db.user.delete({ where: { id: userId } });
+    } finally {
+      await db.$disconnect();
+    }
+  }
+});
+
+test("AudioLab cleanup waits for an in-flight completion and preserves its committed final object", async () => {
+  if (!ciDatabase) throw new Error("C9 AudioLab cleanup race runs only against the exact disposable CI database.");
+  const db = new PrismaClient();
+  const suffix = randomUUID();
+  let organisationId;
+  let userId;
+  let heldCompletion;
+  let cleanupDecision;
+  let releaseCompletion;
+  try {
+    const organisation = await db.organisation.create({ data: {
+      name: `Fictional C9 upload cleanup ${suffix}`, slug: `c9-upload-cleanup-${suffix}`
+    } });
+    organisationId = organisation.id;
+    const user = await db.user.create({ data: {
+      email: `c9-upload-cleanup-${suffix}@example.invalid`, passwordHash: "CI-only-no-login", role: "OWNER"
+    } });
+    userId = user.id;
+    const project = await db.audioProject.create({ data: {
+      organisationId, title: "Fictional AudioLab project", editDecision: {}, createdByUserId: userId
+    } });
+    const session = await db.schoolAudioUploadSession.create({ data: {
+      organisationId, projectId: project.id, status: "COMPLETING",
+      originalName: "fictional.webm", mimeType: "audio/webm", expectedSizeBytes: 128n,
+      partSizeBytes: 128, partCount: 1,
+      quarantineKey: `quarantine/${suffix}/fictional.webm`, multipartUploadId: `ci-only-${suffix}`,
+      createdByUserId: userId, expiresAt: new Date(Date.now() + 86_400_000)
+    } });
+    const finalKey = `organisations/${organisationId}/school-audio/${project.id}/${session.id}.webm`;
+    const input = { sessionId: session.id, organisationId, projectId: project.id, finalKey };
+    assert.equal(await canDeleteUncommittedAudioUploadObject(db, input), true);
+
+    let completionEntered;
+    const completionStarted = new Promise((resolve) => { completionEntered = resolve; });
+    const completionRelease = new Promise((resolve) => { releaseCompletion = resolve; });
+    heldCompletion = db.$transaction(async (tx) => {
+      const [{ pid: holderPid }] = await tx.$queryRaw`SELECT pg_backend_pid() AS pid`;
+      await tx.$queryRaw`SELECT "id" FROM "AudioProject" WHERE "id" = ${project.id} FOR UPDATE`;
+      await tx.mediaAsset.create({ data: {
+        organisationId, name: "Fictional completed take", originalName: "fictional.webm",
+        storageKey: finalKey, mimeType: "audio/webm", sizeBytes: 128n,
+        mediaType: "ANNOUNCEMENT", status: "READY"
+      } });
+      await tx.schoolAudioUploadSession.update({ where: { id: session.id }, data: {
+        status: "COMPLETED", completedAt: new Date()
+      } });
+      completionEntered(holderPid);
+      await completionRelease;
+    }, { timeout: 20_000 });
+    const holderPid = await Promise.race([
+      completionStarted,
+      heldCompletion.then(() => { throw new Error("The completion fixture finished before holding the project lock."); })
+    ]);
+    let decisionSettled = false;
+    cleanupDecision = canDeleteUncommittedAudioUploadObject(db, input)
+      .then((value) => ({ ok: true, value }), (error) => ({ ok: false, error }))
+      .finally(() => { decisionSettled = true; });
+    await waitForRouteProjectLock(db, holderPid, () => decisionSettled);
+    assert.equal(decisionSettled, false, "cleanup must wait for the completion transaction");
+    releaseCompletion();
+    releaseCompletion = null;
+    await heldCompletion;
+    const decision = await cleanupDecision;
+    if (!decision.ok) throw decision.error;
+    assert.equal(decision.value, false, "a COMPLETED upload cannot have its final object deleted");
+    assert.equal((await db.mediaAsset.findUnique({ where: { storageKey: finalKey } })).status, "READY");
+
+    // Even an inconsistent stale status must not override the committed media reference.
+    await db.schoolAudioUploadSession.update({ where: { id: session.id }, data: { status: "FAILED" } });
+    assert.equal(await canDeleteUncommittedAudioUploadObject(db, input), false);
+  } finally {
+    if (releaseCompletion) releaseCompletion();
+    if (heldCompletion) await heldCompletion.catch(() => {});
+    if (cleanupDecision) await cleanupDecision.catch(() => {});
+    try {
+      if (organisationId) {
+        await db.mediaAsset.deleteMany({ where: { organisationId } });
+        await db.schoolAudioUploadSession.deleteMany({ where: { organisationId } });
+        await db.audioProject.deleteMany({ where: { organisationId } });
         await db.organisation.delete({ where: { id: organisationId } });
       }
       if (userId) await db.user.delete({ where: { id: userId } });

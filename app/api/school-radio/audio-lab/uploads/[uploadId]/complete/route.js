@@ -20,6 +20,7 @@ import { securityLog } from "@/lib/security-log";
 import { recordedClipData } from "@/lib/studio-recording.mjs";
 import { invalidateApprovedAudioOutputs } from "@/lib/audio-project-governance";
 import { GENERAL_STUDIO_AUDIO_PROJECT_WHERE, lockGeneralStudioAudioProject } from "@/lib/studio-general-asset-boundary.mjs";
+import { canDeleteUncommittedAudioUploadObject } from "@/lib/audio-lab-upload-cleanup.mjs";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -229,7 +230,21 @@ export async function POST(request, { params }) {
     });
     try { await r2.client.send(new AbortMultipartUploadCommand({ Bucket: r2.bucketName, Key: session.quarantineKey, UploadId: session.multipartUploadId })); } catch {}
     try { await r2.client.send(new DeleteObjectCommand({ Bucket: r2.bucketName, Key: session.quarantineKey })); } catch {}
-    try { await r2.client.send(new DeleteObjectCommand({ Bucket: r2.bucketName, Key: finalKey })); } catch {}
+    try {
+      if (await canDeleteUncommittedAudioUploadObject(prisma, {
+        sessionId: session.id, organisationId: access.organisation.id,
+        projectId: session.projectId, finalKey
+      })) {
+        await r2.client.send(new DeleteObjectCommand({ Bucket: r2.bucketName, Key: finalKey }));
+      }
+    } catch (cleanupError) {
+      // An unavailable database or failed object deletion is not proof that
+      // the final key is unreferenced. Never guess and erase possible evidence.
+      securityLog("error", "AUDIO_LAB_FINAL_OBJECT_CLEANUP_UNVERIFIED", request, {
+        uploadId: session.id, projectId: session.projectId,
+        error: cleanupError instanceof Error ? cleanupError.message : "unknown"
+      });
+    }
     securityLog("error", "AUDIO_LAB_UPLOAD_FAILED", request, { uploadId: session.id, projectId: session.projectId, error: error instanceof Error ? error.message : "unknown" });
     return NextResponse.json({ error: error instanceof Error ? error.message : "The recording could not be finalised." }, { status: error?.status || 500 });
   }
