@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash, createPrivateKey, createPublicKey, randomBytes, randomUUID } from "node:crypto";
 import { createServer, request as httpRequest } from "node:http";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -15,6 +15,7 @@ import { verifyCorrectionsEdgePlayerGrant } from "../../lib/corrections-edge-pla
 import { signCorrectionsEdgeProof } from "../../lib/corrections-edge-proof.mjs";
 import { CorrectionsEdgeSyncClient } from "../../edge/sync-client.mjs";
 import { createCorrectionsEdgeServer } from "../../edge/server.mjs";
+import { isPrivateLanIpv4 } from "../../scripts/c8-lan-proxy.mjs";
 
 const baseUrl = process.env.INTEGRATION_BASE_URL || "http://127.0.0.1:3108";
 const ciDatabase = process.env.C8_CI_INTEGRATION === "true" && process.env.GITHUB_ACTIONS === "true" &&
@@ -25,6 +26,30 @@ const isolatedIntegration = ciDatabase || disposableLocalDatabase;
 const objectStoreBucket = ciDatabase ? "c7-test" : "c8-test";
 const objectStorePort = ciDatabase ? 9107 : 9108;
 const audibleLab = process.env.C8_AUDIBLE_LAB === "true";
+const twoHostLab = process.env.C8_TWO_HOST_LAB === "true";
+
+function twoHostOrigins() {
+  if (!twoHostLab) return null;
+  if (!audibleLab || !disposableLocalDatabase || process.env.C8_SYNTHETIC_ONLY !== "true" ||
+      process.env.NODE_ENV === "production") {
+    throw new Error("Two-host C8 lab needs audible synthetic mode and the exact disposable local database.");
+  }
+  const origin = (value) => {
+    const parsed = new URL(value);
+    if (parsed.protocol !== "https:" || !isPrivateLanIpv4(parsed.hostname) ||
+        parsed.origin !== value.replace(/\/$/, "") || parsed.pathname !== "/" ||
+        parsed.username || parsed.password || parsed.search || parsed.hash) {
+      throw new Error("C8 two-host origins must be exact HTTPS RFC1918 IP origins.");
+    }
+    return parsed.origin;
+  };
+  const cloud = origin(process.env.C8_LAN_CLOUD_ORIGIN);
+  const edge = origin(process.env.C8_LAN_EDGE_ORIGIN);
+  if (new URL(cloud).hostname === new URL(edge).hostname) {
+    throw new Error("The C8 cloud and Edge must run on different LAN PCs.");
+  }
+  return { cloud, edge };
+}
 const playerInstanceId = randomUUID();
 const testPrivateKey = createPrivateKey({ key: Buffer.concat([
   Buffer.from("302e020100300506032b657004220420", "hex"), Buffer.alloc(32, 7)
@@ -65,6 +90,7 @@ test("C8B signed C7 manifest/media is exact, protected, facility-scoped and with
   if (!isolatedIntegration || !process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 32) {
     throw new Error("C8 manifest integration is restricted to the exact disposable CI or local test database.");
   }
+  const lanOrigins = twoHostOrigins();
   const db = new PrismaClient();
   const suffix = randomUUID().slice(0, 8);
   const password = `C8-manifest-${randomUUID()}!`;
@@ -489,25 +515,46 @@ test("C8B signed C7 manifest/media is exact, protected, facility-scoped and with
       body: { action: "SET_PLAYER_ENDPOINT", origin: null } });
     assert.equal(unbindA.status, 200, JSON.stringify(unbindA.body));
     const bindC = await api(`/api/admin/corrections/edge/${edgeC.id}`, { method: "POST", cookie: admin.cookie,
-      body: { action: "SET_PLAYER_ENDPOINT", origin: "https://edge-c.example.invalid:8443" } });
+      body: { action: "SET_PLAYER_ENDPOINT", origin: lanOrigins?.edge || "https://edge-c.example.invalid:8443" } });
     assert.equal(bindC.status, 200, JSON.stringify(bindC.body));
     edgeRoot = await mkdtemp(path.join(os.tmpdir(), "ruvanas-c8-reconnect-"));
-    await connectCloudLink();
-    const runtime = new CorrectionsEdgeSyncClient({ cloudUrl: `http://127.0.0.1:${cloudLinkPort}`,
-      machineCredential: edgeC.credential, root: edgeRoot, cacheKey: randomBytes(32),
-      publicKeyPem: testPublicPem, proofPrivateKeyPem: testPrivateKey.export({ type: "pkcs8", format: "pem" }),
-      scope: { ...scope, nodeId: edgeC.id } });
-    await runtime.initialise();
-    const initialSync = await runtime.sync({ softwareVersion: "c8-isolated-runtime" });
-    assert.equal(initialSync.downloaded, 1);
-    localEdge = createCorrectionsEdgeServer({ cache: runtime.cache, proofQueue: runtime.proofQueue,
-      allowedPlayerOrigin: audibleLab ? baseUrl : null });
-    const address = await localEdge.listen();
-    const localUrl = `http://127.0.0.1:${address.port}`;
+    let runtime = null;
+    let localUrl = lanOrigins?.edge;
+    let bundlePath = null;
+    let publicKeyPath = null;
+    if (lanOrigins) {
+      // Only synthetic, short-lived lab credentials are exported. The file is
+      // never logged and is removed with the fixture at /stop. The operator
+      // must separately protect its filesystem ACL on Windows.
+      bundlePath = path.join(edgeRoot, "synthetic-edge-bootstrap.json");
+      publicKeyPath = path.join(edgeRoot, "synthetic-edge-public.pem");
+      await writeFile(bundlePath, JSON.stringify({
+        nodeId: edgeC.id, organisationId: organisation.id, facilityId: facilities[0].id,
+        machineCredential: edgeC.credential, cacheKey: randomBytes(32).toString("base64url"),
+        cloudPublicKeyPem: testPublicPem,
+        proofPrivateKeyPem: testPrivateKey.export({ type: "pkcs8", format: "pem" })
+      }), { mode: 0o600, flag: "wx" });
+      await writeFile(publicKeyPath, testPublicPem, { mode: 0o600, flag: "wx" });
+    } else {
+      await connectCloudLink();
+      runtime = new CorrectionsEdgeSyncClient({ cloudUrl: `http://127.0.0.1:${cloudLinkPort}`,
+        machineCredential: edgeC.credential, root: edgeRoot, cacheKey: randomBytes(32),
+        publicKeyPem: testPublicPem, proofPrivateKeyPem: testPrivateKey.export({ type: "pkcs8", format: "pem" }),
+        scope: { ...scope, nodeId: edgeC.id } });
+      await runtime.initialise();
+      const initialSync = await runtime.sync({ softwareVersion: "c8-isolated-runtime" });
+      assert.equal(initialSync.downloaded, 1);
+      localEdge = createCorrectionsEdgeServer({ cache: runtime.cache, proofQueue: runtime.proofQueue,
+        allowedPlayerOrigin: audibleLab ? baseUrl : null });
+      const address = await localEdge.listen();
+      localUrl = `http://127.0.0.1:${address.port}`;
+    }
     if (audibleLab) {
-      const localBinding = await api(`/api/admin/corrections/edge/${edgeC.id}`, { method: "POST",
-        cookie: admin.cookie, body: { action: "SET_PLAYER_ENDPOINT", origin: localUrl } });
-      assert.equal(localBinding.status, 200, JSON.stringify(localBinding.body));
+      if (!lanOrigins) {
+        const localBinding = await api(`/api/admin/corrections/edge/${edgeC.id}`, { method: "POST",
+          cookie: admin.cookie, body: { action: "SET_PLAYER_ENDPOINT", origin: localUrl } });
+        assert.equal(localBinding.status, 200, JSON.stringify(localBinding.body));
+      }
       let releaseLab;
       let activePriorityId;
       let activeEmergencyId;
@@ -517,14 +564,16 @@ test("C8B signed C7 manifest/media is exact, protected, facility-scoped and with
           "Cache-Control": "no-store" }); response.end(JSON.stringify(body)); };
         try {
           if (request.method === "GET" && path === "/status") return send(200, {
-            cloudConnected, manifestVersion: runtime.cache.active?.version,
-            pendingProof: runtime.proofQueue.pendingCount,
+            cloudConnected: lanOrigins ? null : cloudConnected, manifestVersion: runtime?.cache.active?.version || null,
+            pendingProof: runtime?.proofQueue.pendingCount ?? null,
+            remoteEdge: Boolean(lanOrigins),
             cloudProof: await db.correctionsEdgeProofEvent.count({ where: { nodeId: edgeC.id } }) });
           if (request.method === "POST" && path === "/disconnect") {
+            if (lanOrigins) return send(409, { error: "Stop only the loopback Edge cloud-link process on the Edge PC." });
             await disconnectCloudLink(); return send(200, { cloudConnected });
           }
           if (request.method === "POST" && path === "/schedule-local") {
-            if (!cloudConnected) return send(409, { error: "Local window must be signed before disconnection." });
+            if (!lanOrigins && !cloudConnected) return send(409, { error: "Local window must be signed before disconnection." });
             const start = localDateTimeParts(new Date(Date.now() + 60_000), "Europe/Malta");
             if (start.minute >= 1439) return send(409, { error: "Retry after local midnight." });
             const localWindow = await db.correctionsNetworkWindow.create({ data: {
@@ -532,7 +581,8 @@ test("C8B signed C7 manifest/media is exact, protected, facility-scoped and with
               distributionId: localDistribution.id, weekday: start.weekday,
               startMinute: start.minute, endMinute: start.minute + 1,
               allowedContentTypes: ["PROGRAMME"], createdByUserId: owner.user.id } });
-            const sync = await runtime.sync({ softwareVersion: "c8-audible-c7" });
+            const sync = lanOrigins ? { remoteEdgeSyncRequiredBeforeCut: true } :
+              await runtime.sync({ softwareVersion: "c8-audible-c7" });
             return send(200, { windowId: localWindow.id, startsAtLocalMinute: start.minute,
               durationMinutes: 1, sync });
           }
@@ -543,29 +593,32 @@ test("C8B signed C7 manifest/media is exact, protected, facility-scoped and with
             return send(200, { cloudConnected, withdrawnInCloud: true });
           }
           if (request.method === "POST" && path === "/reconnect") {
+            if (lanOrigins) return send(409, { error: "Restart the loopback Edge cloud-link process on the Edge PC." });
             await connectCloudLink();
             return send(200, { cloudConnected, sync: await runtime.sync({ softwareVersion: "c8-audible-lab" }) });
           }
           if (request.method === "POST" && path === "/priority") {
-            if (!cloudConnected) return send(409, { error: "Cloud cannot deliver a new override while disconnected." });
+            if (!lanOrigins && !cloudConnected) return send(409, { error: "Cloud cannot deliver a new override while disconnected." });
             const started = await api("/api/corrections/overrides", { method: "POST", cookie: manager.cookie,
               body: { facilityId: facilities[0].id, zoneIds: labPlayerCodes.map((item) => item.zoneId),
                 announcementId: labAnnouncementIds.priority, type: "PRIORITY",
                 category: "URGENT_FACILITY_NOTICE", idempotencyKey: randomUUID() } });
             if (started.status !== 200) return send(started.status, started.body);
             activePriorityId = started.body.override.id;
-            return send(200, { overrideId: activePriorityId, sync: await runtime.sync({ softwareVersion: "c8-audible-c6" }) });
+            return send(200, { overrideId: activePriorityId,
+              sync: lanOrigins ? { remoteEdgeSyncRequired: true } : await runtime.sync({ softwareVersion: "c8-audible-c6" }) });
           }
           if (request.method === "POST" && path === "/clear-priority") {
-            if (!cloudConnected || !activePriorityId) return send(409, { error: "No connected Priority override." });
+            if ((!lanOrigins && !cloudConnected) || !activePriorityId) return send(409, { error: "No connected Priority override." });
             const cleared = await api(`/api/corrections/overrides/${activePriorityId}/clear`,
               { method: "POST", cookie: manager.cookie });
             if (cleared.status !== 200) return send(cleared.status, cleared.body);
             activePriorityId = null;
-            return send(200, { cleared: true, sync: await runtime.sync({ softwareVersion: "c8-audible-c6" }) });
+            return send(200, { cleared: true,
+              sync: lanOrigins ? { remoteEdgeSyncRequired: true } : await runtime.sync({ softwareVersion: "c8-audible-c6" }) });
           }
           if (request.method === "POST" && path === "/emergency") {
-            if (!cloudConnected) return send(409, { error: "Cloud cannot deliver a new override while disconnected." });
+            if (!lanOrigins && !cloudConnected) return send(409, { error: "Cloud cannot deliver a new override while disconnected." });
             const started = await api("/api/corrections/overrides", { method: "POST", cookie: owner.cookie,
               body: { facilityId: facilities[0].id, zoneIds: labPlayerCodes.map((item) => item.zoneId),
                 announcementId: labAnnouncementIds.emergency, type: "EMERGENCY",
@@ -573,15 +626,17 @@ test("C8B signed C7 manifest/media is exact, protected, facility-scoped and with
                 idempotencyKey: randomUUID() } });
             if (started.status !== 200) return send(started.status, started.body);
             activeEmergencyId = started.body.override.id;
-            return send(200, { overrideId: activeEmergencyId, sync: await runtime.sync({ softwareVersion: "c8-audible-c6" }) });
+            return send(200, { overrideId: activeEmergencyId,
+              sync: lanOrigins ? { remoteEdgeSyncRequired: true } : await runtime.sync({ softwareVersion: "c8-audible-c6" }) });
           }
           if (request.method === "POST" && path === "/clear-emergency") {
-            if (!cloudConnected || !activeEmergencyId) return send(409, { error: "No connected Emergency override." });
+            if ((!lanOrigins && !cloudConnected) || !activeEmergencyId) return send(409, { error: "No connected Emergency override." });
             const cleared = await api(`/api/corrections/overrides/${activeEmergencyId}/clear`,
               { method: "POST", cookie: owner.cookie });
             if (cleared.status !== 200) return send(cleared.status, cleared.body);
             activeEmergencyId = null;
-            return send(200, { cleared: true, sync: await runtime.sync({ softwareVersion: "c8-audible-c6" }) });
+            return send(200, { cleared: true,
+              sync: lanOrigins ? { remoteEdgeSyncRequired: true } : await runtime.sync({ softwareVersion: "c8-audible-c6" }) });
           }
           if (request.method === "POST" && path === "/stop") {
             send(200, { stopping: true }); releaseLab(); return;
@@ -591,7 +646,10 @@ test("C8B signed C7 manifest/media is exact, protected, facility-scoped and with
       });
       await new Promise((resolve, reject) => labController.once("error", reject).listen(9110, "127.0.0.1", resolve));
       process.stdout.write(`C8_AUDIBLE_LAB_READY ${JSON.stringify({ playerUrl: `${baseUrl}/player`,
-        edgeUrl: localUrl, controlUrl: "http://127.0.0.1:9110", players: labPlayerCodes })}\n`);
+        edgeUrl: localUrl, controlUrl: "http://127.0.0.1:9110", players: labPlayerCodes,
+        ...(lanOrigins ? { syntheticBootstrapFile: bundlePath, twoHost: true,
+          cloudMachineGateway: lanOrigins.cloud, nodeId: edgeC.id,
+          facilityId: facilities[0].id, publicKeyFile: publicKeyPath } : {}) })}\n`);
       await new Promise((resolve) => { releaseLab = resolve; });
       return;
     }
