@@ -91,9 +91,9 @@ test("ordinary campaign media withdraws from both players and stale URLs when it
         effectiveTo: new Date("2030-01-01T00:00:00.000Z"),
         respectOpeningHours: false,
         targets: { create: { targetType: "LOCATION", locationId: shop.id } },
-        rule: { create: { intervalMinutes: 1 } },
+        rule: { create: { intervalMinutes: 5 } },
         schedules: { create: Array.from({ length: 7 }, (_, weekday) => ({
-          weekday, windowMode: "INTERVAL", startMinute: 0, endMinute: 1440, intervalMinutes: 1
+          weekday, windowMode: "INTERVAL", startMinute: 0, endMinute: 1440, intervalMinutes: 5
         })) }
       } });
       return { media, version };
