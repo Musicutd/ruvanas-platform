@@ -5,6 +5,7 @@ import { PrismaClient } from "@prisma/client";
 import {
   generalSchoolNewsStoryWhere,
   generalSchoolRundownWhere,
+  lockGeneralSchoolItemSource,
   lockGeneralSchoolRundown
 } from "../../lib/school-general-content-boundary.mjs";
 
@@ -212,6 +213,66 @@ test("School content queries and a locked review reject newly private Correction
     assert.equal(await db.schoolNewsStory.count({ where: { id: oldProjectStory.id, organisationId, ...generalSchoolNewsStoryWhere(organisationId) } }), 0);
     assert.equal(await db.schoolNewsStory.count({ where: { id: oldMediaStory.id, organisationId, ...generalSchoolNewsStoryWhere(organisationId) } }), 0);
     assert.equal(await db.schoolNewsStory.count({ where: { id: oldEpisodeStory.id, organisationId, ...generalSchoolNewsStoryWhere(organisationId) } }), 0);
+
+    // A new voice source is not among the rundown's existing locked items.
+    // Corrections may attach its project while an ADD_ITEM request is in
+    // flight; the proposed-source lock must wait and reject that new item.
+    const candidateProject = await db.audioProject.create({ data: {
+      organisationId, episodeId: normalEpisode.id, title: "Candidate School voice project",
+      editDecision: {}, createdByUserId: userId
+    } });
+    const candidateMedia = await media("candidate-school-audio");
+    const candidateTake = await db.audioTake.create({ data: {
+      organisationId, projectId: candidateProject.id, mediaAssetId: candidateMedia.id,
+      recordedByUserId: userId, sourceEditDecision: {}, status: "READY"
+    } });
+    const originalItemCount = await db.schoolRundownItem.count({ where: { rundownId: normalRundown.id } });
+    let enteredCandidate;
+    let releaseCandidate;
+    const candidateStarted = new Promise((resolve) => { enteredCandidate = resolve; });
+    const candidateGate = new Promise((resolve) => { releaseCandidate = resolve; });
+    const candidateTransition = db.$transaction(async (tx) => {
+      const [{ pid }] = await tx.$queryRaw`SELECT pg_backend_pid() AS pid`;
+      await tx.$queryRaw`SELECT "id" FROM "AudioProject" WHERE "id" = ${candidateProject.id} FOR UPDATE`;
+      await tx.correctionsStudioSession.create({ data: {
+        organisationId, facilityId: facility.id, contributorId: contributor.id,
+        programmeId: correctionsProgramme.id, projectId: candidateProject.id,
+        supervisorUserId: userId, createdByUserId: userId,
+        capabilityScope: { purpose: "isolated CI-only School item race" }
+      } });
+      enteredCandidate(pid);
+      await candidateGate;
+    }, { timeout: 25_000 });
+    heldTransition = { work: candidateTransition, release: releaseCandidate, pid: await Promise.race([
+      candidateStarted,
+      candidateTransition.then(() => { throw new Error("The proposed source became private before holding its project lock."); })
+    ]) };
+    let editSettled = false;
+    const pendingEdit = db.$transaction(async (tx) => {
+      if (!await lockGeneralSchoolRundown(tx, organisationId, normalRundown.id)) return false;
+      await lockGeneralSchoolItemSource(tx, organisationId, { type: "VOICE_TRACK", sourceTakeId: candidateTake.id });
+      await tx.schoolRundownItem.create({ data: {
+        rundownId: normalRundown.id, position: originalItemCount,
+        type: "VOICE_TRACK", label: "Must not add private voice", sourceTakeId: candidateTake.id
+      } });
+      return true;
+    }, { isolationLevel: "ReadCommitted", timeout: 15_000 }
+    ).then((value) => ({ value }), (error) => ({ error })).finally(() => { editSettled = true; });
+    let candidateWaitError;
+    try {
+      await waitForProjectLock(db, heldTransition.pid, () => editSettled);
+    } catch (error) {
+      candidateWaitError = error;
+    } finally {
+      heldTransition.release();
+    }
+    await heldTransition.work;
+    heldTransition = null;
+    const edit = await pendingEdit;
+    if (candidateWaitError) throw candidateWaitError;
+    assert.equal(edit.error?.code, "CORRECTIONS_STUDIO_OUTPUT_BLOCKED");
+    assert.equal(await db.schoolRundownItem.count({ where: { rundownId: normalRundown.id } }), originalItemCount);
+    assert.equal((await db.schoolRundown.findUnique({ where: { id: normalRundown.id } })).status, "APPROVED");
   } finally {
     if (heldTransition) {
       heldTransition.release();

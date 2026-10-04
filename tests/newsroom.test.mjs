@@ -55,7 +55,7 @@ test("Stage 19.25 isolates products and preserves immutable editorial evidence",
   ]);
   assert.match(route, /requireActiveNewsroom\(ORGANISATION_CONTENT_ROLES\)/);
   assert.match(route, /product: NEWSROOM_PRODUCTS\.ONLINE_RADIO/);
-  assert.match(route, /stationId: data\.stationId, organisationId/);
+  assert.match(route, /lockVisibleOnlineNewsroomCreateTargets\(tx, \{[\s\S]*organisationId, stationId: data\.stationId/);
   assert.match(route, /newsStoryRevision\.create/);
   assert.match(route, /newsStoryDecision\.create/);
   assert.match(route, /liveScheduleChanged: false/);

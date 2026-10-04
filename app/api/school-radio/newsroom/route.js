@@ -6,7 +6,7 @@ import { requireActiveSchoolRadio } from "@/lib/school-radio-access";
 import { NEWSROOM_PRODUCTS, canEditNewsStory, normalizeNewsSources, transitionNewsStory } from "@/lib/newsroom.mjs";
 import { GENERAL_STUDIO_MEDIA_ASSET_WHERE } from "@/lib/studio-general-asset-boundary.mjs";
 import { generalSchoolNewsStoryWhere, generalSchoolRundownWhere } from "@/lib/school-general-content-boundary.mjs";
-import { lockVisibleNewsroomStory } from "@/lib/newsroom-write-boundary.mjs";
+import { lockVisibleNewsroomStory, lockVisibleSchoolNewsroomCreateTargets } from "@/lib/newsroom-write-boundary.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -49,10 +49,15 @@ export async function POST(request) {
   try {
     let result;
     if (data.action === "CREATE") {
-      if (data.programmeId && !await prisma.schoolProgramme.findFirst({ where: { id: data.programmeId, organisationId, status: "ACTIVE" }, select: { id: true } })) throw new Error("Choose an active programme from this school.");
-      if (data.episodeId && !await prisma.schoolEpisode.findFirst({ where: { id: data.episodeId, organisationId, OR: [{ rundown: { is: null } }, { rundown: { is: generalSchoolRundownWhere(organisationId) } }] }, select: { id: true } })) throw new Error("Choose an episode from this school.");
-      result = await prisma.schoolNewsStory.create({ data: { organisationId, product: NEWSROOM_PRODUCTS.SCHOOL_RADIO, programmeId: data.programmeId || null, episodeId: data.episodeId || null, title: data.title, type: data.type, pitch: data.pitch || null, deadline: data.deadline ? new Date(data.deadline) : null, createdByUserId: access.user.id } });
-      await prisma.newsStoryDecision.create({ data: { organisationId, storyId: result.id, action: "CREATE", fromStatus: result.status, toStatus: result.status, actorUserId: access.user.id } });
+      result = await prisma.$transaction(async (tx) => {
+        if (!await lockVisibleSchoolNewsroomCreateTargets(tx, {
+          organisationId, programmeId: data.programmeId, episodeId: data.episodeId
+        })) throw new Error("Choose an active programme and available episode from this school.");
+        const story = await tx.schoolNewsStory.create({ data: { organisationId, product: NEWSROOM_PRODUCTS.SCHOOL_RADIO, programmeId: data.programmeId || null, episodeId: data.episodeId || null, title: data.title, type: data.type, pitch: data.pitch || null, deadline: data.deadline ? new Date(data.deadline) : null, createdByUserId: access.user.id } });
+        await tx.newsStoryDecision.create({ data: { organisationId, storyId: story.id, action: "CREATE", fromStatus: story.status, toStatus: story.status, actorUserId: access.user.id } });
+        await tx.auditLog.create({ data: { organisationId, actorUserId: access.user.id, action: "SCHOOL_NEWS_CREATE", entityType: "NewsStory", entityId: story.id, details: { status: story.status, product: NEWSROOM_PRODUCTS.SCHOOL_RADIO } } });
+        return story;
+      }, { isolationLevel: "ReadCommitted", timeout: 15_000 });
     } else {
       const story = await prisma.schoolNewsStory.findFirst({ where: { id: data.storyId, organisationId, product: NEWSROOM_PRODUCTS.SCHOOL_RADIO, ...generalSchoolNewsStoryWhere(organisationId) } });
       if (!story) return NextResponse.json({ error: "The newsroom story was not found." }, { status: 404 });
@@ -94,7 +99,7 @@ export async function POST(request) {
         }, { isolationLevel: "ReadCommitted", timeout: 15_000 });
       }
     }
-    await prisma.auditLog.create({ data: { organisationId, actorUserId: access.user.id, action: `SCHOOL_NEWS_${data.action}`, entityType: "NewsStory", entityId: result.id, details: { status: result.status, product: NEWSROOM_PRODUCTS.SCHOOL_RADIO } } });
+    if (data.action !== "CREATE") await prisma.auditLog.create({ data: { organisationId, actorUserId: access.user.id, action: `SCHOOL_NEWS_${data.action}`, entityType: "NewsStory", entityId: result.id, details: { status: result.status, product: NEWSROOM_PRODUCTS.SCHOOL_RADIO } } });
     return NextResponse.json({ result }, { status: data.action === "CREATE" ? 201 : 200 });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "The newsroom action could not be completed." }, { status: 409 });
