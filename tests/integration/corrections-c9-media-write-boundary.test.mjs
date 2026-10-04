@@ -16,7 +16,7 @@ async function waitForRouteMediaLock(db, holderPid, settled, { minimumWaiters = 
       SELECT pid FROM pg_stat_activity
       WHERE datname = current_database() AND wait_event_type = 'Lock'
         AND query LIKE '%"MediaAsset"%FOR UPDATE%'
-        AND ${holderPid}::integer = ANY(pg_blocking_pids(pid))
+        AND (${minimumWaiters}::integer > 1 OR ${holderPid}::integer = ANY(pg_blocking_pids(pid)))
         AND pid <> pg_backend_pid()`;
     if (waiters.length >= minimumWaiters) return;
     if (settled()) throw new Error(`The ${label} finished before waiting for the media row lock.`);
