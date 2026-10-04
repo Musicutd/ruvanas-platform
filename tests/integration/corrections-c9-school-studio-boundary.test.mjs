@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
+import bcrypt from "bcryptjs";
 import { PrismaClient } from "@prisma/client";
 import { GENERAL_STUDIO_AUDIO_PROJECT_WHERE, GENERAL_STUDIO_MEDIA_ASSET_WHERE, lockGeneralStudioAudioProject } from "../../lib/studio-general-asset-boundary.mjs";
 import { permanentlyDeleteAudioTake, restoreAudioTake, trashAudioTake } from "../../lib/audio-take-trash-service.js";
@@ -9,6 +10,142 @@ import { runSerializableTransaction } from "../../lib/transaction-retry.mjs";
 
 const ciDatabase = process.env.GITHUB_ACTIONS === "true" &&
   process.env.DATABASE_URL === "postgresql://postgres:postgres@localhost:5432/ruvanas";
+const baseUrl = process.env.INTEGRATION_BASE_URL || "http://127.0.0.1:3100";
+
+async function api(path, { method = "GET", cookie, body } = {}) {
+  return fetch(`${baseUrl}${path}`, {
+    method,
+    headers: { origin: baseUrl, ...(cookie ? { cookie } : {}),
+      ...(body === undefined ? {} : { "content-type": "application/json" }) },
+    body: body === undefined ? undefined : JSON.stringify(body),
+    redirect: "manual"
+  });
+}
+
+async function waitForRouteProjectLock(db, holderPid, settled) {
+  const deadline = Date.now() + 8_000;
+  while (Date.now() < deadline) {
+    const waiters = await db.$queryRaw`
+      SELECT pid FROM pg_stat_activity
+      WHERE datname = current_database() AND wait_event_type = 'Lock'
+        AND query LIKE '%"AudioProject"%FOR UPDATE%'
+        AND ${holderPid}::integer = ANY(pg_blocking_pids(pid))
+        AND pid <> pg_backend_pid()`;
+    if (waiters.length) return;
+    if (settled()) throw new Error("The AudioLab route finished before waiting for the C3 project lock.");
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error("The AudioLab route did not reach the C3 project lock.");
+}
+
+test("AudioLab autosave waits for a C3 submission and leaves its private project unchanged", async () => {
+  if (!ciDatabase || !process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 32) {
+    throw new Error("C9 School Studio route race runs only against the exact disposable CI database.");
+  }
+  const db = new PrismaClient();
+  const suffix = randomUUID();
+  let organisationId;
+  let userId;
+  let planId;
+  let releaseSubmission;
+  try {
+    const plan = await db.plan.create({ data: {
+      name: `Fictional C9 AudioLab ${suffix}`, code: `C9_AUDIO_${suffix}`,
+      productFamily: "SCHOOL", tierNumber: 3, monthlyPriceCents: 0,
+      storageLimitGb: 1, listenerLimit: 10, maxBitrateKbps: 128,
+      schoolRadioEnabled: true
+    } });
+    planId = plan.id;
+    const organisation = await db.organisation.create({ data: { name: `Fictional C9 AudioLab ${suffix}`, slug: `c9-audio-${suffix}` } });
+    organisationId = organisation.id;
+    const password = `CI-only-${randomUUID()}!`;
+    const user = await db.user.create({ data: {
+      email: `c9-audio-${suffix}@example.invalid`, passwordHash: await bcrypt.hash(password, 4), role: "OWNER"
+    } });
+    userId = user.id;
+    await db.organisationMember.create({ data: { organisationId, userId, role: "OWNER" } });
+    await db.subscription.create({ data: { organisationId, planId, status: "ACTIVE" } });
+    const facility = await db.location.create({ data: {
+      organisationId, name: "Fictional C3 facility", slug: `c9-audio-facility-${suffix}`,
+      correctionsFacility: { create: {} }
+    } });
+    const programme = await db.correctionsProgramme.create({ data: {
+      organisationId, facilityId: facility.id, title: "Fictional C3 programme", createdByUserId: userId
+    } });
+    const project = await db.audioProject.create({ data: {
+      organisationId, title: "Fictional ordinary project", editDecision: {}, createdByUserId: userId
+    } });
+    const version = await db.audioProjectVersion.create({ data: {
+      projectId: project.id, version: 1, state: {}, createdByUserId: userId
+    } });
+    const render = await db.audioRender.create({ data: {
+      organisationId, projectId: project.id, versionId: version.id,
+      requestedByUserId: userId, preset: "SCHOOL_RADIO_MP3"
+    } });
+    const login = await api("/api/auth/login", { method: "POST", body: { email: user.email, password } });
+    assert.equal(login.status, 200, await login.clone().text());
+    const cookie = login.headers.get("set-cookie")?.split(";")[0];
+    assert.ok(cookie);
+
+    let submissionEntered;
+    const submissionStarted = new Promise((resolve) => { submissionEntered = resolve; });
+    const submissionRelease = new Promise((resolve) => { releaseSubmission = resolve; });
+    const submission = db.$transaction(async (tx) => {
+      const [{ pid: holderPid }] = await tx.$queryRaw`SELECT pg_backend_pid() AS pid`;
+      await tx.$queryRaw`SELECT id FROM "AudioProject" WHERE id = ${project.id} FOR UPDATE`;
+      await tx.correctionsSubmission.create({ data: {
+        programmeId: programme.id, organisationId, facilityId: facility.id,
+        revision: 1, renderId: render.id, sourceFingerprint: "CI-only-autosave-race",
+        organisationPolicyVersion: 1, facilityPolicyVersion: 1,
+        titleSnapshot: "Fictional C3 programme", evidenceSnapshot: {}, submittedByUserId: userId
+      } });
+      submissionEntered(holderPid);
+      await submissionRelease;
+    }, { timeout: 20_000 });
+    const holderPid = await Promise.race([
+      submissionStarted,
+      submission.then(() => { throw new Error("The C3 fixture finished before holding the project lock."); })
+    ]);
+    let requestSettled = false;
+    const autosave = api("/api/school-radio/audio-lab", { method: "PATCH", cookie, body: {
+      projectId: project.id, title: "Private project changed by AudioLab", editDecision: { normalize: false }
+    } }).finally(() => { requestSettled = true; });
+    let lockWaitError = null;
+    try {
+      await waitForRouteProjectLock(db, holderPid, () => requestSettled);
+    } catch (error) {
+      lockWaitError = error;
+    } finally {
+      releaseSubmission();
+      releaseSubmission = null;
+    }
+    await submission;
+    const response = await autosave;
+    if (lockWaitError) throw new Error(`${lockWaitError.message} Route status: ${response.status}.`);
+    assert.equal(response.status, 403, await response.clone().text());
+    const unchanged = await db.audioProject.findUnique({ where: { id: project.id } });
+    assert.equal(unchanged.title, project.title);
+    assert.equal(unchanged.currentVersion, project.currentVersion);
+    assert.deepEqual(unchanged.editDecision, project.editDecision);
+    assert.equal(await db.audioProjectVersion.count({ where: { projectId: project.id } }), 1);
+  } finally {
+    if (releaseSubmission) releaseSubmission();
+    try {
+      if (organisationId) {
+        await db.correctionsSubmission.deleteMany({ where: { organisationId } });
+        await db.audioRender.deleteMany({ where: { organisationId } });
+        await db.audioProjectVersion.deleteMany({ where: { project: { organisationId } } });
+        await db.audioProject.deleteMany({ where: { organisationId } });
+        await db.correctionsProgramme.deleteMany({ where: { organisationId } });
+        await db.organisation.delete({ where: { id: organisationId } });
+      }
+      if (userId) await db.user.delete({ where: { id: userId } });
+      if (planId) await db.plan.delete({ where: { id: planId } });
+    } finally {
+      await db.$disconnect();
+    }
+  }
+});
 
 test("general School Studio cannot access or purge supervised Corrections takes", async () => {
   if (!ciDatabase) throw new Error("C9 School Studio integration runs only against the exact disposable CI database.");

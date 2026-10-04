@@ -75,6 +75,10 @@ test("legacy School Studio routes use the shared boundary for lists, writes, upl
     assert.match(source, /studio-general-asset-boundary\.mjs/, `${path} must enforce the private boundary`);
   }
   for (const path of [
+    "../app/api/school-radio/audio-lab/route.js",
+    "../app/api/school-radio/audio-lab/uploads/route.js",
+    "../app/api/school-radio/audio-lab/uploads/[uploadId]/parts/[partNumber]/route.js",
+    "../app/api/school-radio/audio-lab/uploads/[uploadId]/complete/route.js",
     "../app/api/school-radio/audio-lab/projects/[projectId]/editor/route.js",
     "../app/api/school-radio/multitrack/projects/[projectId]/route.js"
   ]) {
@@ -82,6 +86,17 @@ test("legacy School Studio routes use the shared boundary for lists, writes, upl
     assert.match(source, /lockGeneralStudioAudioProject|lockWritableWaveformProject/,
       `${path} must hold the project lock before writing`);
   }
+  const completion = await readFile(new URL("../app/api/school-radio/audio-lab/uploads/[uploadId]/complete/route.js", import.meta.url), "utf8");
+  assert.match(completion.slice(completion.indexOf("} catch (error) {")), /lockGeneralStudioAudioProject\(tx, access\.organisation\.id, session\.projectId\)/,
+    "failed upload cleanup must recheck the project under the C3 lock");
+  assert.ok(completion.indexOf("await r2.client.send(new DeleteObjectCommand({ Bucket: r2.bucketName, Key: finalKey }))") > completion.indexOf("} catch (error) {"),
+    "a denied final database write must remove the copied output object");
+  const uploadStart = await readFile(new URL("../app/api/school-radio/audio-lab/uploads/route.js", import.meta.url), "utf8");
+  assert.match(uploadStart, /schoolAudioUploadSession\.aggregate\(\{ where: \{[^\n]+expiresAt: \{ gt: new Date\(\) \}/,
+    "expired upload sessions must not retain an organisation quota reservation");
+  const uploadPart = await readFile(new URL("../app/api/school-radio/audio-lab/uploads/[uploadId]/parts/[partNumber]/route.js", import.meta.url), "utf8");
+  assert.match(uploadPart, /CORRECTIONS_STUDIO_OUTPUT_BLOCKED[\s\S]*schoolAudioUploadSession\.updateMany\([\s\S]*status: "FAILED"/,
+    "a private transition during a part upload must release that session's quota reservation");
   const trash = await readFile(new URL("../lib/audio-take-trash-service.js", import.meta.url), "utf8");
   assert.match(trash, /withLockedGeneralTake/);
   assert.match(trash, /assertGeneralStudioMediaAsset/);
