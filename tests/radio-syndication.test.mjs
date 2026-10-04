@@ -102,6 +102,7 @@ test("Stage 19.20 routes preserve tenant boundaries and protected delivery", asy
   assert.match(route, /RADIO_SYNDICATION_AGREEMENT_/);
   assert.match(service, /sourceOrganisationId: organisationId/);
   assert.match(delivery, /targetOrganisationId, importedAt: \{ not: null \}/);
+  assert.match(delivery, /generalRadioSyndicationDeliveryAllowed\(prisma, agreement\)/);
   assert.match(media, /private, no-store/);
   assert.match(live, /protectedLiveResponse/);
   assert.match(audio, /cacheControl/);

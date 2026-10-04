@@ -177,6 +177,14 @@ jobs:
           INTEGRATION_BASE_URL: http://127.0.0.1:3100
         run: node --test tests/integration/corrections-c9-school-content-boundary.test.mjs
 
+      - name: Validate public School podcast audio withdraws after a Corrections submission
+        env:
+          INTEGRATION_BASE_URL: http://127.0.0.1:3100
+        run: node --test tests/integration/corrections-c9-public-school-podcast-boundary.test.mjs
+
+      - name: Validate radio syndication rejects sources that later become Corrections-private
+        run: node --test tests/integration/corrections-c9-radio-syndication-boundary.test.mjs
+
       - name: Show application logs after failure
         if: failure()
         run: cat /tmp/ruvanas-next.log || true
