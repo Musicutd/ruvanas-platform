@@ -1,6 +1,6 @@
 # Ruvanas Inside C9 fictional demo refresh
 
-This branch is based on C9 commit `696b70370e6e3746bc5a082f4071f438ab7677bf`. It prepares an updated, public, read-only tour for an **isolated demo service**. It is not a customer release, C8 acceptance, or approval to merge or deploy production.
+This branch includes tested C9 commit `ec19141d0c10f3309fc3ac8f0b137718e2a6cf49` while preserving its demo-only overlay. It prepares an updated, public, read-only tour for an **isolated demo service**. It is not a customer release, C8 acceptance, or approval to merge or deploy production. C8 code and migrations are excluded.
 
 ## Boundaries
 
@@ -25,6 +25,14 @@ This branch is based on C9 commit `696b70370e6e3746bc5a082f4071f438ab7677bf`. It
 - On 3 October, after tightening the synthetic-only preflight, the full local unit suite passed **1,074** with **8 skipped** and no failures; static integrity checked **1,494** files; syntax checks passed. These are local, database-free checks and do not establish the live demo database's contents.
 
 ## Before any demo-service update
+
+The 5 October refresh adds `scripts/check-inside-demo-before-migrate.mjs`. The existing demo service must use this startup command after exact-head CI passes:
+
+`node scripts/check-inside-demo-before-migrate.mjs && npm run db:migrate:deploy && node scripts/seed-inside-demo.mjs && npm run start:web`
+
+The first command validates the exact DEMO/service/internal-database/public-URL identity and existing strong demo password before creating a client, refuses storage/Edge configuration, and runs the existing synthetic-only database validator in a PostgreSQL-enforced read-only serializable transaction. A failure, uncertainty or unexpected row stops the chain before migration, seed or web startup, with redacted output. The seed retains its own independent guard before writes. The only migration added since the prior demo deploy is the C9 Studio programme-pack organisation foreign key; populated packs are not permitted in this fictional tour. Do not reset or remove unexpected data to pass these checks.
+
+These guards do not independently certify authentication metadata, free-text audit content or any external system. No real customer use, production connection, object storage, live players or offline Edge promise is authorised by this refresh.
 
 1. Confirm the destination is the existing isolated demo service and database, not the production service; verify its `RUVANAS_ENVIRONMENT` is exactly `DEMO` and its branch/deploy settings. Keep production Auto-Deploy Off.
 2. Confirm no production credentials, customer data, facility data, media, or live players are connected to that service. Do not infer this from source code alone.
