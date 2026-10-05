@@ -240,6 +240,33 @@ jobs:
         if: always()
         run: test ! -f /tmp/ruvanas-next.pid || kill $(cat /tmp/ruvanas-next.pid) || true
 
+  c9-recovery-rehearsal:
+    # A standard public-repository runner, never Render or a customer backup.
+    if: github.event_name == 'pull_request' && github.repository == 'Musicutd/ruvanas-platform'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies without activation scripts
+        run: npm ci --ignore-scripts
+
+      - name: Generate Prisma client for isolated recovery fixture
+        run: npx --no-install prisma generate
+
+      - name: Rehearse C9 fictional database and local-byte backup and restore
+        env:
+          C9_RECOVERY_REHEARSAL: "true"
+        run: node scripts/ci-c9-recovery-rehearsal.mjs
+
   encoder-image:
     runs-on: ubuntu-latest
     timeout-minutes: 20
