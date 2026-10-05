@@ -4,8 +4,8 @@ import { copyFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import {
-  assertRecoveryDatabaseUrl, assertRecoveryRehearsalEnvironment, assertOwnedRecoveryContainer,
-  RECOVERY_DATABASES, RECOVERY_LABEL, recoveryContainerPort, runRecoveryCleanup, verifyRecoveryBytes
+  assertRecoveryDatabaseUrl, assertRecoveryRehearsalEnvironment, assertOwnedRecoveryContainer, assertOwnedRecoveryNetwork,
+  RECOVERY_DATABASES, RECOVERY_LABEL, recoveryContainerAddress, runRecoveryCleanup, verifyRecoveryBytes
 } from "../lib/corrections-recovery-rehearsal-safety.mjs";
 
 // No supplied database, archive, target, object-store or Docker connection is
@@ -61,10 +61,8 @@ async function main() {
   const inspect = () => json(docker(["inspect", containerId]))[0];
   const verifyNetwork = () => {
     const network = json(docker(["network", "inspect", networkId]))[0];
-    if (network.Id !== networkId || network.Name !== networkName || network.Internal !== true ||
-        network.Labels?.[RECOVERY_LABEL] !== nonce || network.Driver !== "bridge") {
-      throw new Error("RECOVERY_REHEARSAL_NETWORK_BOUNDARY_DENIED");
-    }
+    assertOwnedRecoveryNetwork(network, { id: networkId, name: networkName, nonce });
+    return network;
   };
   try {
     await mkdir(join(directory, "docker"), { mode: 0o700 });
@@ -74,7 +72,7 @@ async function main() {
     verifyNetwork();
     stage = "CREATE_DATABASE_CONTAINER";
     containerId = docker(["create", "--name", name, "--label", `${RECOVERY_LABEL}=${nonce}`,
-      "--network", networkName, "--publish", "127.0.0.1::5432", "--user", "postgres", "--read-only",
+      "--network", networkName, "--user", "postgres", "--read-only",
       "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--pids-limit", "128", "--memory", "768m",
       "--tmpfs", "/var/lib/postgresql/data:rw,noexec,nosuid,size=512m,uid=999,gid=999,mode=0700",
       "--tmpfs", "/var/run/postgresql:rw,noexec,nosuid,size=16m,uid=999,gid=999,mode=0755",
@@ -90,20 +88,19 @@ async function main() {
     resourceSummary = { running: startedContainer.State?.Running === true,
       networkCount: Object.keys(startedContainer.NetworkSettings?.Networks || {}).length,
       publishedBindings: Array.isArray(bindings) ? bindings.length : 0,
-      loopbackOnly: Array.isArray(bindings) && bindings.length > 0 && bindings.every((binding) => binding.HostIp === "127.0.0.1"),
       tmpfsData: Boolean(startedContainer.HostConfig?.Tmpfs?.["/var/lib/postgresql/data"]),
       persistentMount: Boolean(startedContainer.Mounts?.some((mount) => mount.Type === "bind" || mount.Type === "volume")) };
-    const port = recoveryContainerPort(startedContainer, ownership(), networkName);
+    const host = recoveryContainerAddress(startedContainer, ownership(), verifyNetwork());
+    const port = 5432;
     const verifyBoundary = () => {
-      verifyNetwork();
-      if (recoveryContainerPort(inspect(), ownership(), networkName) !== port) {
+      if (recoveryContainerAddress(inspect(), ownership(), verifyNetwork()) !== host) {
         throw new Error("RECOVERY_REHEARSAL_CONTAINER_BOUNDARY_DENIED");
       }
     };
-    const sourceUrl = `postgresql://postgres:${password}@127.0.0.1:${port}/${RECOVERY_DATABASES.source}`;
-    const targetUrl = `postgresql://postgres:${password}@127.0.0.1:${port}/${RECOVERY_DATABASES.target}`;
-    assertRecoveryDatabaseUrl(sourceUrl, { port, password, database: RECOVERY_DATABASES.source });
-    assertRecoveryDatabaseUrl(targetUrl, { port, password, database: RECOVERY_DATABASES.target });
+    const sourceUrl = `postgresql://postgres:${password}@${host}:${port}/${RECOVERY_DATABASES.source}`;
+    const targetUrl = `postgresql://postgres:${password}@${host}:${port}/${RECOVERY_DATABASES.target}`;
+    assertRecoveryDatabaseUrl(sourceUrl, { host, port, password, database: RECOVERY_DATABASES.source });
+    assertRecoveryDatabaseUrl(targetUrl, { host, port, password, database: RECOVERY_DATABASES.target });
     stage = "WAIT_FOR_DATABASE";
     let ready = false;
     for (let attempt = 0; attempt < 40; attempt += 1) {
@@ -125,7 +122,8 @@ async function main() {
     }
     stage = "SEED_FICTIONAL_RECORDS";
     verifyBoundary();
-    const expected = await fixture.seedCorrectionsRecoveryFixture(source, { sourceDatabaseUrl: sourceUrl });
+    const expected = await fixture.seedCorrectionsRecoveryFixture(source, { sourceDatabaseUrl: sourceUrl,
+      container: inspect(), ownership: ownership(), network: verifyNetwork(), password });
     const bytesDirectory = join(directory, "synthetic-media");
     await mkdir(bytesDirectory, { mode: 0o700 });
     for (const entry of expected.media) {
