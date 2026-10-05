@@ -42,6 +42,23 @@ async function waitForRouteProjectLock(db, holderPid, settled) {
   throw new Error("The general Studio route did not reach the C3 project lock.");
 }
 
+async function waitForRouteMediaLock(db, holderPid, settled, table = "MediaAsset") {
+  const queryPattern = `%"${table}"%FOR UPDATE%`;
+  const deadline = Date.now() + 8_000;
+  while (Date.now() < deadline) {
+    const waiters = await db.$queryRaw`
+      SELECT pid FROM pg_stat_activity
+      WHERE datname = current_database() AND wait_event_type = 'Lock'
+        AND query LIKE ${queryPattern}
+        AND ${holderPid}::integer = ANY(pg_blocking_pids(pid))
+        AND pid <> pg_backend_pid()`;
+    if (waiters.length) return;
+    if (settled()) throw new Error("The handoff finished before waiting for the shared media attachment.");
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error("The handoff did not reach the shared media lock.");
+}
+
 test("AudioLab autosave waits for a C3 submission and leaves its private project unchanged", async () => {
   if (!ciDatabase || !process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 32) {
     throw new Error("C9 School Studio route race runs only against the exact disposable CI database.");
@@ -166,7 +183,7 @@ test("Studio handoff listing, reuse and creation wait for C3 privacy transition"
       name: `Fictional C9 handoff ${suffix}`, code: `C9_HANDOFF_${suffix}`,
       productFamily: "ONLINE", tierNumber: 3, monthlyPriceCents: 0,
       storageLimitGb: 1, listenerLimit: 10, maxBitrateKbps: 128,
-      onlineRadioEnabled: true
+      onlineRadioEnabled: true, schoolRadioEnabled: true
     } });
     planId = plan.id;
     const organisation = await db.organisation.create({ data: {
@@ -213,7 +230,7 @@ test("Studio handoff listing, reuse and creation wait for C3 privacy transition"
       const programme = await db.correctionsProgramme.create({ data: {
         organisationId, facilityId: facility.id, title: `${label} private programme`, createdByUserId: userId
       } });
-      return { project, render, programme };
+      return { project, render, programme, version };
     }
 
     async function holdC3Submission({ project, render, programme }) {
@@ -300,6 +317,126 @@ test("Studio handoff listing, reuse and creation wait for C3 privacy transition"
     if (lockWaitError) throw new Error(`${lockWaitError.message} Route status: ${denied.status}.`);
     assert.equal(denied.status, 403, await denied.clone().text());
     assert.equal(await db.studioProductHandoff.count({ where: { renderId: newOutput.render.id } }), 0);
+
+    // Privacy can arrive through another project's C4 approved-source take.
+    // Its FK lock is on the media, not on the handoff's own project. Exercise
+    // list, idempotent reuse and a new School handoff independently.
+    const supervisor = await db.staffSupervisor.create({ data: { organisationId, userId } });
+    const schoolProgramme = await db.schoolProgramme.create({ data: {
+      organisationId, supervisorId: supervisor.id, title: "Fictional handoff programme", createdByUserId: userId
+    } });
+    const schoolEpisode = await db.schoolEpisode.create({ data: {
+      organisationId, programmeId: schoolProgramme.id, title: "Fictional handoff episode", createdByUserId: userId
+    } });
+    const schoolControl = await approvedRender("ordinary-school-handoff");
+    await db.audioProject.update({ where: { id: schoolControl.project.id }, data: { episodeId: schoolEpisode.id } });
+    const schoolCreated = await api(handoffPath, { method: "POST", cookie, body: {
+      renderId: schoolControl.render.id, destination: "SCHOOL_EPISODE"
+    } });
+    assert.equal(schoolCreated.status, 201, await schoolCreated.clone().text());
+    assert.equal(await db.schoolSubmission.count({ where: { organisationId } }), 1);
+    assert.equal((await db.schoolEpisode.findUnique({ where: { id: schoolEpisode.id } })).status, "IN_REVIEW");
+    // A separate DRAFT target makes the negative CREATE_SCHOOL case otherwise
+    // eligible: denial must come from source privacy, not a status transition.
+    const pendingSchoolEpisode = await db.schoolEpisode.create({ data: {
+      organisationId, programmeId: schoolProgramme.id, title: "Fictional pending handoff episode", createdByUserId: userId
+    } });
+    for (const action of ["LIST", "REUSE", "CREATE_SCHOOL", "PROMO_ONLY"]) {
+      const output = await approvedRender(`shared-${action}`);
+      if (action === "CREATE_SCHOOL") {
+        await db.audioProject.update({ where: { id: output.project.id }, data: { episodeId: pendingSchoolEpisode.id } });
+      } else if (action === "REUSE") {
+        const ordinary = await api(handoffPath, { method: "POST", cookie, body: handoffBody(output.render) });
+        assert.equal(ordinary.status, 201, await ordinary.clone().text());
+      }
+      const handoffsBefore = await db.studioProductHandoff.count({ where: { organisationId } });
+      const auditsBefore = await db.auditLog.count({ where: { organisationId, action: "STUDIO_PRODUCT_HANDOFF_CREATED" } });
+      const schoolBefore = await db.schoolEpisode.findUnique({ where: { id: pendingSchoolEpisode.id } });
+      const schoolSubmissionsBefore = await db.schoolSubmission.count({ where: { organisationId } });
+      let entered;
+      let release;
+      const started = new Promise((resolve) => { entered = resolve; });
+      const gate = new Promise((resolve) => { release = resolve; });
+      const work = db.$transaction(async (tx) => {
+        const [{ pid }] = await tx.$queryRaw`SELECT pg_backend_pid() AS pid`;
+        if (action === "PROMO_ONLY") {
+          // This reverse use locks the PromoVersion FK, not MediaAsset. A
+          // media-only guard cannot serialize this supported output relation.
+          await tx.audioRender.create({ data: {
+            organisationId, projectId: historical.project.id, versionId: historical.version.id,
+            outputPromoVersionId: output.render.outputPromoVersionId,
+            requestedByUserId: userId, preset: "SPEECH_MP3", status: "SUCCEEDED"
+          } });
+        } else {
+          await tx.audioTake.create({ data: {
+            organisationId, projectId: historical.project.id, mediaAssetId: output.render.outputMediaAssetId,
+            promoVersionId: output.render.outputPromoVersionId, recordedByUserId: userId,
+            durationMs: 20_000, status: "READY", sourceEditDecision: {}
+          } });
+        }
+        entered(pid);
+        await gate;
+      }, { timeout: 25_000 });
+      heldSubmission = { work, release, pid: await Promise.race([
+        started, work.then(() => { throw new Error("The attachment ended before holding its media FK lock."); })
+      ]) };
+      let settled = false;
+      const pending = (action === "LIST"
+        ? api(`${handoffPath}?renderId=${output.render.id}`, { cookie })
+        : api(handoffPath, { method: "POST", cookie, body: {
+          renderId: output.render.id, destination: action === "CREATE_SCHOOL" ? "SCHOOL_EPISODE" : "ONLINE_PODCAST"
+        } })).finally(() => { settled = true; });
+      lockWaitError = null;
+      try {
+        await waitForRouteMediaLock(db, heldSubmission.pid, () => settled,
+          action === "PROMO_ONLY" ? "PromoVersion" : "MediaAsset");
+      } catch (error) {
+        lockWaitError = error;
+      } finally {
+        heldSubmission.release();
+      }
+      await heldSubmission.work;
+      heldSubmission = null;
+      const rejected = await pending;
+      if (lockWaitError) throw new Error(`${lockWaitError.message} Route status: ${rejected.status}.`);
+      assert.equal(rejected.status, 409, await rejected.clone().text());
+      assert.equal((await rejected.json()).handoff, undefined);
+      assert.equal(await db.studioProductHandoff.count({ where: { organisationId } }), handoffsBefore);
+      assert.equal(await db.auditLog.count({ where: { organisationId, action: "STUDIO_PRODUCT_HANDOFF_CREATED" } }), auditsBefore);
+      assert.equal(await db.schoolSubmission.count({ where: { organisationId } }), schoolSubmissionsBefore);
+      assert.deepEqual(await db.schoolEpisode.findUnique({ where: { id: pendingSchoolEpisode.id } }), schoolBefore);
+      assert.equal((await db.audioProject.findUnique({ where: { id: output.project.id } })).status, output.project.status);
+    }
+
+    // Even locking the exact output media is insufficient: a newer render
+    // can make the other project's older output private without touching it.
+    const oldShared = await approvedRender("shared-older-render");
+    const newerPrivate = await approvedRender("shared-newer-render");
+    await db.audioRender.create({ data: {
+      organisationId, projectId: newerPrivate.project.id, versionId: newerPrivate.version.id,
+      outputMediaAssetId: oldShared.render.outputMediaAssetId,
+      outputPromoVersionId: oldShared.render.outputPromoVersionId,
+      requestedByUserId: userId, preset: "SPEECH_MP3", status: "SUCCEEDED"
+    } });
+    const beforeOlderHandoff = await db.studioProductHandoff.count({ where: { organisationId } });
+    heldSubmission = await holdC3Submission(newerPrivate);
+    let olderSettled = false;
+    const olderHandoff = api(handoffPath, { method: "POST", cookie, body: handoffBody(oldShared.render) })
+      .finally(() => { olderSettled = true; });
+    lockWaitError = null;
+    try {
+      await waitForRouteProjectLock(db, heldSubmission.pid, () => olderSettled);
+    } catch (error) {
+      lockWaitError = error;
+    } finally {
+      heldSubmission.release();
+    }
+    await heldSubmission.work;
+    heldSubmission = null;
+    const olderRejected = await olderHandoff;
+    if (lockWaitError) throw new Error(`${lockWaitError.message} Route status: ${olderRejected.status}.`);
+    assert.equal(olderRejected.status, 403, await olderRejected.clone().text());
+    assert.equal(await db.studioProductHandoff.count({ where: { organisationId } }), beforeOlderHandoff);
   } finally {
     if (heldSubmission) {
       heldSubmission.release();
@@ -308,10 +445,15 @@ test("Studio handoff listing, reuse and creation wait for C3 privacy transition"
     try {
       if (organisationId) {
         await db.studioProductHandoff.deleteMany({ where: { organisationId } });
+        await db.schoolSubmission.deleteMany({ where: { organisationId } });
+        await db.audioTake.deleteMany({ where: { organisationId } });
         await db.correctionsSubmission.deleteMany({ where: { organisationId } });
         await db.audioRender.deleteMany({ where: { organisationId } });
         await db.audioProjectVersion.deleteMany({ where: { project: { organisationId } } });
         await db.audioProject.deleteMany({ where: { organisationId } });
+        await db.schoolEpisode.deleteMany({ where: { organisationId } });
+        await db.schoolProgramme.deleteMany({ where: { organisationId } });
+        await db.staffSupervisor.deleteMany({ where: { organisationId } });
         await db.correctionsProgramme.deleteMany({ where: { organisationId } });
         await db.promoVersion.deleteMany({ where: { promoAsset: { organisationId } } });
         await db.promoAsset.deleteMany({ where: { organisationId } });

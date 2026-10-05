@@ -72,6 +72,10 @@ test("School Show Builder item edits and voice-project creation use a locked cur
 test("proposed voice source locks project, media and take before insertion", async () => {
   const locks = [];
   const tx = {
+    mediaAsset: { findMany: async ({ select }) => select.organisationId ? [{
+      id: "media-a", organisationId: "school-org", libraryType: "ORGANISATION_PROMO",
+      audioTakes: [{ projectId: "project-a" }], audioRenderOutputs: [], promoVersions: [], audioClips: []
+    }] : [{ id: "media-a" }] },
     audioTake: { findFirst: async ({ where }) => where.projectId ? { id: "take-a" } : { projectId: "project-a", mediaAssetId: "media-a" } },
     audioProject: { findFirst: async () => ({ id: "project-a" }) },
     $queryRaw: async (strings) => {
@@ -86,6 +90,10 @@ test("proposed voice source locks project, media and take before insertion", asy
 
 test("proposed School source rejects a version changed after its media was locked", async () => {
   const tx = {
+    mediaAsset: { findMany: async ({ select }) => select.organisationId ? [{
+      id: "original-media", organisationId: "school-org", libraryType: "ORGANISATION_PROMO",
+      audioTakes: [], audioRenderOutputs: [], promoVersions: [], audioClips: []
+    }] : [{ id: "original-media" }] },
     promoVersion: { findFirst: async ({ where }) => where.mediaAssetId ? null : { mediaAssetId: "original-media" } },
     $queryRaw: async () => [{ id: "original-media" }]
   };
