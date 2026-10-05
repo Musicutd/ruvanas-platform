@@ -82,14 +82,17 @@ jobs:
 
       - name: Start application for route-level tests
         env:
-          # Disposable C7 object-store fixture. These are test-only values;
-          # the server is started by the C7 integration test, never production.
+          # Disposable C7/C8 object-store fixture. These are test-only values;
+          # each integration test starts its own synthetic store, never production.
           R2_ACCOUNT_ID: ci-local
           R2_ACCESS_KEY_ID: ci-test
           R2_SECRET_ACCESS_KEY: ci-test
           R2_BUCKET_NAME: c7-test
           R2_ENDPOINT: http://127.0.0.1:9107
         run: |
+          # Deterministic synthetic Ed25519 key matching the C8 test public key.
+          # It is generated only for this disposable CI application process.
+          export CORRECTIONS_EDGE_SIGNING_PRIVATE_KEY="$(node -e 'const {createPrivateKey}=require("node:crypto"); const key=Buffer.concat([Buffer.from("302e020100300506032b657004220420","hex"),Buffer.alloc(32,7)]); process.stdout.write(createPrivateKey({key,format:"der",type:"pkcs8"}).export({type:"pkcs8",format:"pem"}));')"
           npm start -- --hostname 127.0.0.1 --port 3100 > /tmp/ruvanas-next.log 2>&1 &
           echo $! > /tmp/ruvanas-next.pid
           for attempt in {1..30}; do
@@ -111,6 +114,19 @@ jobs:
           INTEGRATION_BASE_URL: http://127.0.0.1:3100
         run: node --test tests/integration/corrections-c7.test.mjs
 
+      - name: Validate C8 Edge identity and one-use enrolment on isolated CI database
+        env:
+          INTEGRATION_BASE_URL: http://127.0.0.1:3100
+          C8_CI_INTEGRATION: "true"
+        run: node --test tests/integration/corrections-c8-identity.test.mjs
+
+      - name: Validate C8 signed manifest, protected media and offline reconciliation
+        env:
+          INTEGRATION_BASE_URL: http://127.0.0.1:3100
+          C8_CI_INTEGRATION: "true"
+          C8_AUDIBLE_LAB: "false"
+        run: node --test tests/integration/corrections-c8-manifest.test.mjs
+
       - name: Show application logs after failure
         if: failure()
         run: cat /tmp/ruvanas-next.log || true
@@ -128,3 +144,23 @@ jobs:
 
       - name: Build and validate Online Radio encoder image
         run: docker build --file Dockerfile.online-radio-worker --tag ruvanas-online-radio-encoder:ci .
+
+  edge-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Build C8 Edge image and validate module loading
+        run: docker build --file edge/Dockerfile --tag ruvanas-c8-edge:ci .
+
+      - name: Verify synthetic Edge container starts fail closed without cloud access
+        env:
+          C8_CONTAINER_SMOKE: "true"
+        run: node scripts/ci-c8-edge-container-smoke.mjs

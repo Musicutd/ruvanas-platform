@@ -8,6 +8,7 @@ import {
   updatePlayedInsertionIds
 } from "@/lib/playback-queue.mjs";
 import LiveChannelPlayer from "./LiveChannelPlayer";
+import CorrectionsEdgePlayer from "./CorrectionsEdgePlayer";
 import { drainProofBatch } from "@/lib/playback-proof-drain.mjs";
 
 const PLAYBACK_QUEUE_KEY = "ruvanas_proof_of_play_queue_v1";
@@ -219,8 +220,11 @@ export default function PlayerPage() {
     if (!response.ok) throw new Error(data.error || "Unable to load player state.");
     setAccessBlocked(false);
     setAccessBlockedCode(null);
-    setState(data);
-    await loadManifest();
+    setState((previous) => previous?.secureEdge && data.secureEdge &&
+      previous.secureEdge.nodeId === data.secureEdge.nodeId &&
+      previous?.secureEdge?.manifestVersion === data.secureEdge?.manifestVersion &&
+      previous?.secureEdge?.endpointOrigin === data.secureEdge?.endpointOrigin ? previous : data);
+    if (!data.secureEdge) await loadManifest();
     setLoading(false);
   }, [loadManifest]);
 
@@ -297,11 +301,12 @@ export default function PlayerPage() {
       }
       await flushPlaybackQueue();
       await pollPlayerCommands();
+      if (state.secureEdge) await loadState();
     };
-    heartbeat();
-    timer.current = window.setInterval(heartbeat, state.heartbeatIntervalSeconds * 1000);
+    heartbeat().catch(() => {});
+    timer.current = window.setInterval(() => { heartbeat().catch(() => {}); }, state.heartbeatIntervalSeconds * 1000);
     return () => window.clearInterval(timer.current);
-  }, [state, manifest?.version, flushPlaybackQueue, pollPlayerCommands]);
+  }, [state, manifest?.version, flushPlaybackQueue, pollPlayerCommands, loadState]);
 
   useEffect(() => {
     if (!state) return undefined;
@@ -323,7 +328,7 @@ export default function PlayerPage() {
   }, [flushPlaybackQueue]);
 
   useEffect(() => {
-    if (!state || !manifest) return undefined;
+    if (!state || !manifest || state.secureEdge) return undefined;
     manifestTimer.current = window.setInterval(() => {
       loadManifest().catch((error) => setMessage(error.message));
     }, manifest.refreshAfterSeconds * 1000);
@@ -494,7 +499,9 @@ export default function PlayerPage() {
     <p style={styles.eyebrow}>RUVANAS WEB PLAYER</p>
     <h1 style={styles.heading}>{state.player.name}</h1>
     <p style={styles.copy}>{state.player.location} / {state.player.zone}</p>
-    {activeInsertion ? <>
+    {state.secureEdge ? <CorrectionsEdgePlayer
+      key={JSON.stringify(state.secureEdge)}
+      connection={state.secureEdge} /> : activeInsertion ? <>
       <h2 style={styles.channel}>{activeInsertion.programmingSource?.startsWith("CORRECTIONS_") ? "Private Ruvanas Inside" : activeInsertion.itemType === "SCHOOL_ANNOUNCEMENT" ? "School Radio" : activeInsertion.campaignName}</h2>
       <p style={styles.nowPlaying}>{activeInsertion.programmingSource?.startsWith("CORRECTIONS_") ? "Scheduled audio playing" : activeInsertion.itemType === "SCHOOL_ANNOUNCEMENT" ? "Announcement playing" : "Campaign playing"}: <strong>{activeInsertion.artist} — {activeInsertion.title}</strong></p>
       <audio ref={insertionAudio} key={activePlaybackKey} src={insertionMediaSourceRef.current.mediaUrl} controls autoPlay onPlay={startTrack} onEnded={finishTrack} onError={failTrack} style={{ width: "100%" }} />
