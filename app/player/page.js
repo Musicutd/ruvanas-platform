@@ -500,7 +500,8 @@ export default function PlayerPage() {
     <h1 style={styles.heading}>{state.player.name}</h1>
     <p style={styles.copy}>{state.player.location} / {state.player.zone}</p>
     {state.secureEdge ? <CorrectionsEdgePlayer
-      key={JSON.stringify(state.secureEdge)} connection={state.secureEdge} /> : activeInsertion ? <>
+      key={JSON.stringify(state.secureEdge)}
+      connection={state.secureEdge} /> : activeInsertion ? <>
       <h2 style={styles.channel}>{activeInsertion.programmingSource?.startsWith("CORRECTIONS_") ? "Private Ruvanas Inside" : activeInsertion.itemType === "SCHOOL_ANNOUNCEMENT" ? "School Radio" : activeInsertion.campaignName}</h2>
       <p style={styles.nowPlaying}>{activeInsertion.programmingSource?.startsWith("CORRECTIONS_") ? "Scheduled audio playing" : activeInsertion.itemType === "SCHOOL_ANNOUNCEMENT" ? "Announcement playing" : "Campaign playing"}: <strong>{activeInsertion.artist} — {activeInsertion.title}</strong></p>
       <audio ref={insertionAudio} key={activePlaybackKey} src={insertionMediaSourceRef.current.mediaUrl} controls autoPlay onPlay={startTrack} onEnded={finishTrack} onError={failTrack} style={{ width: "100%" }} />

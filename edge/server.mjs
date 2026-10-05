@@ -67,6 +67,30 @@ export function createCorrectionsEdgeServer({ cache, proofQueue = null, host = "
   }
   const unavailable = new Set();
   const sessions = new Map();
+  const unresolvedStarts = new Map();
+  let indexedProofRecords = 0;
+  const indexProofJournal = () => {
+    while (indexedProofRecords < (proofQueue?.records.length || 0)) {
+      const payload = proofQueue.records[indexedProofRecords++].payload;
+      if (payload.eventType === "STARTED") unresolvedStarts.set(payload.sessionId, payload);
+      else if (["COMPLETED", "FAILED", "INTERRUPTED"].includes(payload.eventType)) {
+        unresolvedStarts.delete(payload.sessionId);
+      }
+    }
+  };
+  const unresolvedForPlayer = (grant, decision) => {
+    indexProofJournal();
+    if ([...sessions.values()].some((session) => session.playerId === grant.playerId &&
+        session.zoneId === grant.zoneId && !session.ended && session.startPromise &&
+        (session.superseded || session.manifestVersion !== cache.active.version ||
+          !samePlaybackSource(session.decision, decision)))) return true;
+    return [...unresolvedStarts.values()].find((started) => {
+      if (started.playerId !== grant.playerId || started.zoneId !== grant.zoneId) return false;
+      const prior = sessions.get(started.sessionId);
+      return !prior || prior.superseded || prior.terminalPromise || prior.ended ||
+        prior.manifestVersion !== cache.active.version || !samePlaybackSource(prior.decision, decision);
+    });
+  };
   let trustedEndpointOrigin = endpointOrigin;
   let seenCacheRevision = cache.cacheRevision;
   const handler = async (request, response) => {
@@ -106,6 +130,11 @@ export function createCorrectionsEdgeServer({ cache, proofQueue = null, host = "
         const scope = { ...cache.scope, zoneId: grant.zoneId, playerId: grant.playerId,
           manifestVersion: cache.active.version };
         const expiry = new Date(Math.min(Date.parse(cache.active.payload.validUntil), now.getTime() + 5 * 60_000));
+        // A fresh browser lease must not inherit an unclosed media ticket from
+        // an earlier page load. The old session can still submit terminal proof.
+        for (const session of sessions.values()) if (!session.ended &&
+            session.playerId === grant.playerId && session.zoneId === grant.zoneId &&
+            session.manifestVersion === cache.active.version) session.superseded = true;
         return respond(response, 200, { accessToken: issueLocalEdgeLease(scope, cache.key,
           { type: "access", now, validUntil: expiry }), accessValidUntil: expiry.toISOString(),
           refreshToken: issueLocalEdgeLease(scope, cache.key,
@@ -136,17 +165,36 @@ export function createCorrectionsEdgeServer({ cache, proofQueue = null, host = "
       });
       if (request.method === "GET" && pathname === "/v1/playback") {
         if (decision.state !== "READY") return respond(response, 200, { state: decision.state, refreshAfterSeconds: 5 });
+        if (unresolvedForPlayer(grant, decision)) return respond(response, 200, { state: "UNRESOLVED_SESSION",
+          refreshAfterSeconds: 5 });
         try { await cache.readMedia(decision.contentKey); }
         catch {
           unavailable.add(decision.contentKey);
           return respond(response, 200, { state: "CONTENT_UNAVAILABLE", refreshAfterSeconds: 5 });
         }
+        if (cache.suspended || cache.active?.version !== grant.manifestVersion) {
+          return respond(response, 401, { error: "This Edge player lease is no longer authorised." });
+        }
+        const latestDecision = resolveCorrectionsEdgePlayback(cache.active?.payload, {
+          zoneId: grant.zoneId, playerId: grant.playerId, instant: cache.trustedNow(),
+          unavailableContentKeys: unavailable
+        });
+        if (!samePlaybackSource(decision, latestDecision)) {
+          return respond(response, 200, { state: "RETRY_CURRENT_SOURCE", refreshAfterSeconds: 1 });
+        }
+        if (unresolvedForPlayer(grant, latestDecision)) {
+          return respond(response, 200, { state: "UNRESOLVED_SESSION", refreshAfterSeconds: 5 });
+        }
         let sessionId = [...sessions].find(([, session]) => !session.ended &&
+          !session.superseded && !session.terminalPromise &&
           session.playerId === grant.playerId && session.zoneId === grant.zoneId &&
           session.manifestVersion === cache.active.version &&
           samePlaybackSource(session.decision, decision))?.[0];
         if (!sessionId) {
           sessionId = randomUUID();
+          for (const session of sessions.values()) if (!session.ended &&
+              session.playerId === grant.playerId && session.zoneId === grant.zoneId &&
+              session.manifestVersion === cache.active.version) session.superseded = true;
           if (sessions.size >= 5000) for (const [id, session] of sessions) {
             if (cache.trustedNow().getTime() - session.createdAt > 2 * 60 * 60_000 || session.ended) sessions.delete(id);
           }
@@ -168,7 +216,8 @@ export function createCorrectionsEdgeServer({ cache, proofQueue = null, host = "
             !timingSafeEqual(Buffer.from(suppliedTicket), Buffer.from(session.ticket)) ||
             session.playerId !== grant.playerId || session.zoneId !== grant.zoneId ||
             session.manifestVersion !== cache.active?.version ||
-            !samePlaybackSource(session.decision, decision) || session.ended) {
+            !samePlaybackSource(session.decision, decision) || session.ended ||
+            session.superseded || session.terminalPromise) {
           return respond(response, 403, { error: "This player session is not current." });
         }
         if (decision.state !== "READY" || pathname.slice(10) !== mediaOpaque(cache, grant, decision.contentKey)) {
@@ -177,6 +226,9 @@ export function createCorrectionsEdgeServer({ cache, proofQueue = null, host = "
         let media;
         try { media = await cache.readMedia(decision.contentKey); }
         catch { unavailable.add(decision.contentKey); return respond(response, 503, { error: "Protected Edge content is unavailable." }); }
+        if (session.ended || session.superseded || session.terminalPromise) {
+          return respond(response, 403, { error: "This player session is no longer current." });
+        }
         const total = media.bytes.length;
         const match = /^bytes=(\d+)-(\d*)$/.exec(request.headers.range || "");
         const start = match ? Number(match[1]) : 0;
@@ -184,14 +236,31 @@ export function createCorrectionsEdgeServer({ cache, proofQueue = null, host = "
         if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < start || start >= total) {
           response.writeHead(416, { "Content-Range": `bytes */${total}` }); return response.end();
         }
-        if (proofQueue && !session.startedAt) {
-          const now = cache.trustedNow();
-          await proofQueue.append({ schema: 1, ...cache.scope, zoneId: grant.zoneId, playerId: grant.playerId,
-            eventId: randomUUID(), sessionId: url.searchParams.get("session"), manifestVersion: cache.active.version,
-            contentKey: decision.contentKey, programmingSource: decision.source, windowId: decision.windowId || null,
-            overrideId: decision.overrideId || null, insertionId: decision.insertionId || null,
-            eventType: "STARTED", occurredAt: now.toISOString(), positionSeconds: 0 });
-          session.startedAt = now.getTime();
+        if (proofQueue && session.startedAt === null) {
+          if (!session.startPromise) {
+            const now = cache.trustedNow();
+            session.startPromise = proofQueue.append({ schema: 1, ...cache.scope, zoneId: grant.zoneId,
+              playerId: grant.playerId, eventId: randomUUID(), sessionId: url.searchParams.get("session"),
+              manifestVersion: cache.active.version, contentKey: decision.contentKey,
+              programmingSource: decision.source, windowId: decision.windowId || null,
+              overrideId: decision.overrideId || null, insertionId: decision.insertionId || null,
+              eventType: "STARTED", occurredAt: now.toISOString(), positionSeconds: 0 })
+              .then(() => { session.startedAt = now.getTime(); })
+              .finally(() => { session.startPromise = null; });
+          }
+          await session.startPromise;
+          if (session.ended || session.superseded || session.terminalPromise) {
+            return respond(response, 403, { error: "This player session is no longer current." });
+          }
+        }
+        const latest = resolveCorrectionsEdgePlayback(cache.active?.payload, {
+          zoneId: grant.zoneId, playerId: grant.playerId, instant: cache.trustedNow(),
+          unavailableContentKeys: unavailable
+        });
+        if (cache.suspended || session.superseded || session.terminalPromise ||
+            cache.active?.version !== session.manifestVersion ||
+            !samePlaybackSource(session.decision, latest)) {
+          return respond(response, 403, { error: "This player session is no longer current." });
         }
         response.writeHead(match ? 206 : 200, { "Content-Type": media.mimeType,
           "Content-Length": end - start + 1, "Accept-Ranges": "bytes", "Cache-Control": "private, no-store",
@@ -203,28 +272,64 @@ export function createCorrectionsEdgeServer({ cache, proofQueue = null, host = "
         const body = await smallBody(request);
         const session = sessions.get(body?.sessionId);
         if (!session || session.playerId !== grant.playerId || session.zoneId !== grant.zoneId ||
-            !session.startedAt || session.ended || !["COMPLETED", "FAILED", "INTERRUPTED"].includes(body.eventType)) {
-          return respond(response, 400, { error: "No started Edge playback session matches this proof." });
+            !["COMPLETED", "FAILED", "INTERRUPTED"].includes(body.eventType)) {
+          return respond(response, 400, { error: "No scoped Edge playback session matches this proof." });
         }
-        const now = cache.trustedNow();
         const position = Number(body.positionSeconds);
         const duration = session.decision.item.durationSeconds;
-        if (body.eventType === "COMPLETED" && (cache.active?.version !== session.manifestVersion ||
-            !samePlaybackSource(session.decision, decision))) {
+        if (!Number.isSafeInteger(position) || position < 0 || position > Math.ceil(duration) + 5) {
+          return respond(response, 400, { error: "The claimed playback position is invalid." });
+        }
+        if (session.terminalPromise) await session.terminalPromise;
+        if (session.ended) {
+          if (session.terminalEventType === body.eventType && session.terminalPositionSeconds === position) {
+            return respond(response, 200, { queued: session.startedAt !== null,
+              duplicate: true, pendingProofCount: proofQueue.pendingCount });
+          }
+          return respond(response, 400, { error: "This Edge playback session already ended differently." });
+        }
+        if (session.startedAt === null) {
+          if (session.startPromise) {
+            return respond(response, 409, { error: "The Edge media start is still being recorded; retry interruption." });
+          }
+          if (body.eventType === "COMPLETED") {
+            return respond(response, 400, { error: "No started Edge playback session matches this proof." });
+          }
+          // The browser can lose authority or fail before its media request
+          // starts. Close that unused ticket without inventing delivery proof.
+          session.ended = true;
+          session.terminalEventType = body.eventType;
+          session.terminalPositionSeconds = position;
+          return respond(response, 200, { queued: false, abandoned: true,
+            pendingProofCount: proofQueue.pendingCount });
+        }
+        const now = cache.trustedNow();
+        const currentDecision = resolveCorrectionsEdgePlayback(cache.active?.payload, {
+          zoneId: grant.zoneId, playerId: grant.playerId, instant: now,
+          unavailableContentKeys: unavailable
+        });
+        if (body.eventType === "COMPLETED" && (session.superseded ||
+            cache.active?.version !== session.manifestVersion ||
+            !samePlaybackSource(session.decision, currentDecision))) {
           return respond(response, 409, { error: "Current private programming changed; report interruption instead." });
         }
-        if (!Number.isSafeInteger(position) || position < 0 || position > Math.ceil(duration) + 5 ||
-            (body.eventType === "COMPLETED" && (position < Math.max(1, Math.floor(duration - 5)) ||
-              now.getTime() - session.startedAt < Math.max(1, duration - 5) * 1000))) {
+        if (body.eventType === "COMPLETED" && (position < Math.max(1, Math.floor(duration - 5)) ||
+              now.getTime() - session.startedAt < Math.max(1, duration - 5) * 1000)) {
           return respond(response, 400, { error: "The claimed playback duration is not possible." });
         }
-        await proofQueue.append({ schema: 1, ...cache.scope, zoneId: grant.zoneId, playerId: grant.playerId,
+        session.terminalPromise = proofQueue.append({ schema: 1, ...cache.scope,
+          zoneId: grant.zoneId, playerId: grant.playerId,
           eventId: randomUUID(), sessionId: body.sessionId, manifestVersion: session.manifestVersion,
           contentKey: session.decision.contentKey, programmingSource: session.decision.source,
           windowId: session.decision.windowId || null, overrideId: session.decision.overrideId || null,
           insertionId: session.decision.insertionId || null,
-          eventType: body.eventType, occurredAt: now.toISOString(), positionSeconds: position });
-        session.ended = true;
+          eventType: body.eventType, occurredAt: now.toISOString(), positionSeconds: position })
+          .then(() => {
+            session.ended = true;
+            session.terminalEventType = body.eventType;
+            session.terminalPositionSeconds = position;
+          }).finally(() => { session.terminalPromise = null; });
+        await session.terminalPromise;
         return respond(response, 200, { queued: true, pendingProofCount: proofQueue.pendingCount });
       }
       return respond(response, 404, { error: "No such Edge player action." });

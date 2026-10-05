@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash, generateKeyPairSync, randomBytes, randomUUID, webcrypto } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -107,6 +108,35 @@ test("authenticated local player sees only its current private media; C6 overrid
       origin: browserOrigin, authorization: `EdgeSession ${zoneBLease.accessToken}`,
       "content-type": "application/json" }, body: JSON.stringify({ sessionId: sessionState.sessionId,
       eventType: "FAILED", positionSeconds: 0 }) })).status, 400);
+    const abandoned = await fetch(`${url}/v1/proof`, { method: "POST", headers: {
+      origin: browserOrigin, authorization: `EdgeSession ${zoneBLease.accessToken}`,
+      "content-type": "application/json" }, body: JSON.stringify({ sessionId: zoneBState.sessionId,
+      eventType: "INTERRUPTED", positionSeconds: 0 }) });
+    assert.equal(abandoned.status, 200, "an unstarted browser session can be safely abandoned");
+    assert.equal((await abandoned.json()).queued, false, "abandonment must not invent STARTED or INTERRUPTED delivery proof");
+    assert.equal(proofQueue.pendingCount, 1);
+    const duplicateAbandonment = await fetch(`${url}/v1/proof`, { method: "POST", headers: {
+      origin: browserOrigin, authorization: `EdgeSession ${zoneBLease.accessToken}`,
+      "content-type": "application/json" }, body: JSON.stringify({ sessionId: zoneBState.sessionId,
+      eventType: "INTERRUPTED", positionSeconds: 0 }) });
+    assert.equal(duplicateAbandonment.status, 200);
+    assert.equal((await duplicateAbandonment.json()).duplicate, true);
+    assert.equal((await fetch(`${url}/v1/proof`, { method: "POST", headers: {
+      origin: browserOrigin, authorization: `EdgeSession ${zoneBLease.accessToken}`,
+      "content-type": "application/json" }, body: JSON.stringify({ sessionId: zoneBState.sessionId,
+      eventType: "COMPLETED", positionSeconds: 0 }) })).status, 400,
+    "an abandoned session cannot later claim completion");
+    const freshZoneB = await (await fetch(`${url}/v1/playback`, { headers: {
+      origin: browserOrigin, authorization: `EdgeSession ${zoneBLease.accessToken}` } })).json();
+    assert.notEqual(freshZoneB.sessionId, zoneBState.sessionId, "abandonment must provide a new playback session");
+    const failedBeforeStart = await fetch(`${url}/v1/proof`, { method: "POST", headers: {
+      origin: browserOrigin, authorization: `EdgeSession ${zoneBLease.accessToken}`,
+      "content-type": "application/json" }, body: JSON.stringify({ sessionId: freshZoneB.sessionId,
+      eventType: "FAILED", positionSeconds: 0 }) });
+    assert.equal(failedBeforeStart.status, 200);
+    assert.equal((await failedBeforeStart.json()).queued, false,
+      "a media error before STARTED must abandon the ticket without claiming delivery");
+    assert.equal(proofQueue.pendingCount, 1);
     cache.suspended = true;
     assert.equal((await fetch(`${url}/v1/playback`, { headers: {
       origin: browserOrigin, authorization: `EdgeSession ${localLease.accessToken}` } })).status, 401,
@@ -145,9 +175,118 @@ test("authenticated local player sees only its current private media; C6 overrid
       eventType: "FAILED", positionSeconds: 0 }) });
     assert.equal(failure.status, 200);
     assert.equal(proofQueue.pendingCount, 2);
-    assert.equal((await fetch(`${url}/v1/proof`, { method: "POST", headers: { ...auth,
+    const duplicateFailure = await fetch(`${url}/v1/proof`, { method: "POST", headers: { ...auth,
       "content-type": "application/json" }, body: JSON.stringify({ sessionId: normalState.sessionId,
-      eventType: "FAILED", positionSeconds: 0 }) })).status, 400);
+      eventType: "FAILED", positionSeconds: 0 }) });
+    assert.equal(duplicateFailure.status, 200, "a lost proof response can be retried idempotently");
+    assert.equal((await duplicateFailure.json()).duplicate, true);
+    assert.equal(proofQueue.pendingCount, 2, "the same terminal event must not be appended twice");
+    const concurrentState = await (await fetch(`${url}/v1/playback`, { headers: auth })).json();
+    assert.equal((await fetch(`${url}${concurrentState.mediaUrl}`, { headers: auth })).status, 200);
+    const originalAppend = proofQueue.append.bind(proofQueue);
+    let releaseTerminalAppend;
+    const terminalGate = new Promise((resolve) => { releaseTerminalAppend = resolve; });
+    let enteredTerminalAppend;
+    const terminalEntered = new Promise((resolve) => { enteredTerminalAppend = resolve; });
+    let terminalAppends = 0;
+    proofQueue.append = (payload) => {
+      if (payload.sessionId === concurrentState.sessionId && payload.eventType !== "STARTED") {
+        terminalAppends++;
+        enteredTerminalAppend();
+        return terminalGate.then(() => originalAppend(payload));
+      }
+      return originalAppend(payload);
+    };
+    const terminalHeaders = { ...auth, "content-type": "application/json" };
+    const terminalRequest = (eventType) => fetch(`${url}/v1/proof`, { method: "POST",
+      headers: terminalHeaders, body: JSON.stringify({ sessionId: concurrentState.sessionId,
+        eventType, positionSeconds: 0 }) });
+    const firstTerminal = terminalRequest("FAILED");
+    await terminalEntered;
+    assert.equal((await fetch(`${url}${concurrentState.mediaUrl}`, { headers: auth })).status, 403,
+      "a session whose terminal proof is being stored cannot serve its old media ticket");
+    const duringTerminal = await (await fetch(`${url}/v1/playback`, { headers: auth })).json();
+    assert.equal(duringTerminal.state, "UNRESOLVED_SESSION",
+      "an in-flight terminal report must block fresh playback, not reissue the old session");
+    const duplicateTerminal = terminalRequest("FAILED");
+    const conflictingTerminal = terminalRequest("INTERRUPTED");
+    releaseTerminalAppend();
+    const [firstResponse, duplicateResponse, conflictingResponse] = await Promise.all([
+      firstTerminal, duplicateTerminal, conflictingTerminal
+    ]);
+    assert.equal(firstResponse.status, 200);
+    assert.equal(duplicateResponse.status, 200);
+    assert.equal((await duplicateResponse.json()).duplicate, true);
+    assert.equal(conflictingResponse.status, 400);
+    assert.equal(terminalAppends, 1, "concurrent terminal reports must append only one immutable proof");
+    proofQueue.append = originalAppend;
+    const replacementWhileTerminal = await (await fetch(`${url}/v1/playback`, { headers: auth })).json();
+    assert.equal(replacementWhileTerminal.state, "READY");
+    assert.notEqual(replacementWhileTerminal.sessionId, concurrentState.sessionId);
+    assert.equal((await fetch(`${url}${replacementWhileTerminal.mediaUrl}`, { headers: auth })).status, 200);
+    const replacementLease = await fetch(`${url}/v1/session`, { method: "POST",
+      headers: { origin: browserOrigin, "content-type": "application/json" },
+      body: JSON.stringify({ grant: grantFor() }) });
+    assert.equal(replacementLease.status, 200);
+    assert.equal((await fetch(`${url}${replacementWhileTerminal.mediaUrl}`, { headers: auth })).status, 403,
+      "a new browser lease must invalidate the prior page's media ticket");
+    const replacementAuth = { origin: browserOrigin,
+      authorization: `EdgeSession ${(await replacementLease.json()).accessToken}` };
+    const afterReloadBlocked = await (await fetch(`${url}/v1/playback`, { headers: replacementAuth })).json();
+    assert.equal(afterReloadBlocked.state, "UNRESOLVED_SESSION",
+      "a new browser tab without the old pending record must not resume playback");
+    const restartedEdge = createCorrectionsEdgeServer({ cache, proofQueue, allowedPlayerOrigin: browserOrigin });
+    const restartedAddress = await restartedEdge.listen();
+    try {
+      const restartedState = await (await fetch(`http://127.0.0.1:${restartedAddress.port}/v1/playback`,
+        { headers: auth })).json();
+      assert.equal(restartedState.state, "UNRESOLVED_SESSION",
+        "the signed proof journal must preserve the safety gate across an Edge process restart");
+    } finally { await new Promise((resolve) => restartedEdge.server.close(resolve)); }
+    assert.equal((await fetch(`${url}/v1/proof`, { method: "POST", headers: {
+      ...replacementAuth, "content-type": "application/json" },
+      body: JSON.stringify({ sessionId: replacementWhileTerminal.sessionId,
+        eventType: "COMPLETED", positionSeconds: 20 }) })).status, 409,
+    "a superseded browser session cannot newly claim delivery");
+    assert.equal((await fetch(`${url}/v1/proof`, { method: "POST", headers: {
+      ...replacementAuth, "content-type": "application/json" },
+      body: JSON.stringify({ sessionId: replacementWhileTerminal.sessionId,
+        eventType: "INTERRUPTED", positionSeconds: 0 }) })).status, 200,
+    "the old playback session must still permit a delayed terminal proof");
+    const afterReload = await (await fetch(`${url}/v1/playback`, { headers: replacementAuth })).json();
+    assert.equal(afterReload.state, "READY");
+    assert.notEqual(afterReload.sessionId, replacementWhileTerminal.sessionId);
+    let releaseStartAppend;
+    const startGate = new Promise((resolve) => { releaseStartAppend = resolve; });
+    let enteredStartAppend;
+    const startEntered = new Promise((resolve) => { enteredStartAppend = resolve; });
+    proofQueue.append = (payload) => {
+      if (payload.sessionId === afterReload.sessionId && payload.eventType === "STARTED") {
+        enteredStartAppend();
+        return startGate.then(() => originalAppend(payload));
+      }
+      return originalAppend(payload);
+    };
+    const inFlightMedia = fetch(`${url}${afterReload.mediaUrl}`, { headers: replacementAuth });
+    await startEntered;
+    const nextLease = await fetch(`${url}/v1/session`, { method: "POST",
+      headers: { origin: browserOrigin, "content-type": "application/json" },
+      body: JSON.stringify({ grant: grantFor() }) });
+    assert.equal(nextLease.status, 200);
+    const nextAuth = { origin: browserOrigin,
+      authorization: `EdgeSession ${(await nextLease.json()).accessToken}` };
+    assert.equal((await (await fetch(`${url}/v1/playback`, { headers: nextAuth })).json()).state,
+      "UNRESOLVED_SESSION", "an in-flight STARTED proof must block a new browser lease");
+    releaseStartAppend();
+    assert.equal((await inFlightMedia).status, 403,
+      "media from the superseded session must not escape after STARTED is stored");
+    assert.equal((await (await fetch(`${url}/v1/playback`, { headers: nextAuth })).json()).state,
+      "UNRESOLVED_SESSION", "the committed STARTED proof must keep the gate closed");
+    proofQueue.append = originalAppend;
+    assert.equal((await fetch(`${url}/v1/proof`, { method: "POST", headers: {
+      ...nextAuth, "content-type": "application/json" }, body: JSON.stringify({
+      sessionId: afterReload.sessionId, eventType: "INTERRUPTED", positionSeconds: 0 }) })).status, 200);
+    assert.equal((await (await fetch(`${url}/v1/playback`, { headers: nextAuth })).json()).state, "READY");
     assert.equal((await fetch(`${url}/v1/media/${"0".repeat(64)}`, { headers: auth })).status, 401);
     const wrongGrant = grantFor({ zoneId: "zoneC", playerId: "playerC" });
     assert.equal((await fetch(`${url}/v1/playback`, { headers: {
@@ -163,6 +302,11 @@ test("authenticated local player sees only its current private media; C6 overrid
     assert.deepEqual(Buffer.from(await (await fetch(`${url}${interrupted.mediaUrl}`, { headers: auth })).arrayBuffer()), emergency);
     await cache.sync(make(3));
     auth = { authorization: `Edge ${Buffer.from(JSON.stringify(grantFor())).toString("base64url")}` };
+    assert.equal((await (await fetch(`${url}/v1/playback`, { headers: auth })).json()).state,
+      "UNRESOLVED_SESSION", "a manifest update cannot skip the Emergency session's terminal evidence");
+    assert.equal((await fetch(`${url}/v1/proof`, { method: "POST", headers: {
+      ...auth, "content-type": "application/json" }, body: JSON.stringify({ sessionId: interrupted.sessionId,
+      eventType: "INTERRUPTED", positionSeconds: 0 }) })).status, 200);
     const returned = await (await fetch(`${url}/v1/playback`, { headers: auth })).json();
     assert.equal(returned.source, "CORRECTIONS_CENTRAL");
   } finally {
@@ -184,7 +328,7 @@ test("same-audio source transitions require a new Edge session and cannot comple
     durationSeconds: 6, mimeType: "audio/wav", rightsUse: "CORRECTIONS_RADIO",
     sourceType: "LICENSED_MUSIC", trackId: "track-one" };
   const contentKey = edgeContentKey(item);
-  let clock = new Date("2026-10-04T10:00:58.000Z");
+  let clock = new Date("2026-10-04T10:00:50.000Z");
   const cache = new CorrectionsEdgeCache({ root, key: randomBytes(32), publicKeyPem, scope,
     now: () => clock, fetchMedia: async () => media });
   const window = (id, startMinute, endMinute) => ({ id, facilityId: scope.facilityId,
@@ -251,18 +395,53 @@ test("same-audio source transitions require a new Edge session and cannot comple
         "old and new proof must attribute different signed sources");
       return after;
     };
+    const closeForNextSource = async (before) => {
+      assert.equal((await (await fetch(`${url}/v1/playback`, { headers })).json()).state,
+        "UNRESOLVED_SESSION", "a started previous source must close before a new one can play");
+      assert.equal((await fetch(`${url}/v1/proof`, { method: "POST", headers: {
+        ...headers, "content-type": "application/json" }, body: JSON.stringify({
+        sessionId: before.sessionId, eventType: "INTERRUPTED", positionSeconds: 2 }) })).status, 200);
+    };
     const windowA = await playback();
     assert.equal(windowA.source, "CORRECTIONS_CENTRAL");
     assert.deepEqual(windowA.startedSource, { windowId: "window-a", insertionId: null, overrideId: null });
-    await transition(windowA, "2026-10-04T10:01:02.000Z",
+    clock = new Date("2026-10-04T10:00:59.000Z");
+    const originalTrustedNow = cache.trustedNow.bind(cache);
+    let trustedCalls = 0;
+    let decisionWasResolved;
+    const decisionResolved = new Promise((resolve) => { decisionWasResolved = resolve; });
+    cache.trustedNow = () => {
+      const instant = originalTrustedNow();
+      if (++trustedCalls === 2) decisionWasResolved();
+      return instant;
+    };
+    let finishSlowProof;
+    const slowProof = new Promise((resolve, reject) => {
+      const request = http.request(`${url}/v1/proof`, { method: "POST", headers: {
+        ...headers, "content-type": "application/json" } }, (response) => {
+        response.resume(); response.on("end", () => resolve(response.statusCode));
+      });
+      request.on("error", reject);
+      request.write(JSON.stringify({ sessionId: windowA.sessionId, eventType: "COMPLETED" }).slice(0, -1) + ",");
+      finishSlowProof = () => request.end('"positionSeconds":6}');
+    });
+    await decisionResolved;
+    clock = new Date("2026-10-04T10:01:02.000Z");
+    finishSlowProof();
+    assert.equal(await slowProof, 409,
+      "COMPLETED must re-resolve the current source after a slow request body crosses a schedule boundary");
+    cache.trustedNow = originalTrustedNow;
+    const windowB = await transition(windowA, "2026-10-04T10:01:02.000Z",
       { windowId: "window-b", insertionId: null, overrideId: null });
     clock = new Date("2026-10-04T10:01:11.000Z");
+    await closeForNextSource(windowB);
     const requestA = await playback();
     assert.equal(requestA.source, "CORRECTIONS_REQUEST");
     assert.deepEqual(requestA.startedSource, { windowId: null, insertionId: "request-a", overrideId: null });
-    await transition(requestA, "2026-10-04T10:01:16.000Z",
+    const requestB = await transition(requestA, "2026-10-04T10:01:16.000Z",
       { windowId: null, insertionId: "request-b", overrideId: null });
     clock = new Date("2026-10-04T10:01:26.000Z");
+    await closeForNextSource(requestB);
     const priorityA = await playback();
     assert.equal(priorityA.source, "CORRECTIONS_PRIORITY");
     assert.deepEqual(priorityA.startedSource, { windowId: null, insertionId: null, overrideId: "priority-a" });
