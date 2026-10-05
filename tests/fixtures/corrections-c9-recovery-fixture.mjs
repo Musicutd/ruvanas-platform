@@ -6,6 +6,7 @@ import { correctionsProgrammePermission, correctionsRenderEvidence, correctionsC
 import { CORRECTIONS_STUDIO_CAPABILITIES, correctionsStudioCan } from "../../lib/corrections-studio-policy.mjs";
 import { correctionsRequestTransition } from "../../lib/corrections-c5-policy.mjs";
 import { createPlaybackProofToken, verifyPlaybackProofToken } from "../../lib/playback-proof.mjs";
+import { recoveryContainerAddress, assertRecoveryDatabaseUrl } from "../../lib/corrections-recovery-rehearsal-safety.mjs";
 
 const SOURCE = "ruvanas_c9_recovery_source";
 const TARGET = "ruvanas_c9_recovery_target";
@@ -69,12 +70,11 @@ function syntheticWav(marker) {
 
 // All content is fictional. Bytes are returned for a local archive rehearsal;
 // this fixture neither uploads objects nor claims to test an external store.
-export async function seedCorrectionsRecoveryFixture(db, { sourceDatabaseUrl } = {}) {
+export async function seedCorrectionsRecoveryFixture(db, { sourceDatabaseUrl, container, ownership, network, password } = {}) {
   assert.equal(process.env.GITHUB_ACTIONS, "true", "Recovery fixture requires disposable GitHub Actions infrastructure.");
   assert.equal(process.env.C9_RECOVERY_REHEARSAL, "true", "Recovery fixture requires the explicit rehearsal flag.");
-  const url = new URL(sourceDatabaseUrl);
-  assert.ok(["postgres:", "postgresql:"].includes(url.protocol) && url.hostname === "127.0.0.1" && /^\d+$/.test(url.port)
-    && url.pathname === `/${SOURCE}`, "Recovery fixture requires the dedicated loopback source database.");
+  const host = recoveryContainerAddress(container, ownership, network);
+  assertRecoveryDatabaseUrl(sourceDatabaseUrl, { host, port: 5432, password, database: SOURCE });
   assert.equal(await databaseName(db), SOURCE, "Connected database must be the dedicated source.");
   for (const model of MODELS) assert.equal(await db[model].count(MIGRATION_BASELINE[model]
     ? { where: { id: { notIn: MIGRATION_BASELINE[model] } } } : undefined), 0, `Source ${model} table must contain only migration baseline rows.`);
