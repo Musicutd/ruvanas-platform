@@ -113,6 +113,22 @@ an actual two-PC run before marking any live result PASS.
    Keep this distinct from stopping only the Edge-to-cloud link: while the
    local Edge still returns an authorised `READY` state, both players should
    continue under the valid signed offline snapshot.
+   Separately interrupt only a browser-to-Edge request while leaving the Edge
+   process and its session journal running. Buffered audio must stop; after
+   connectivity returns, the old session must receive at most one
+   `INTERRUPTED` terminal proof and a fresh session must start before audio
+   resumes. If the interruption cannot be confirmed, playback must stay
+   stopped for operations review.
+   Include a connection that hangs without immediately rejecting: playback
+   must unload after the bounded Edge request timeout. Reload the player while
+   its terminal proof is unavailable; it must not inherit the old media ticket
+   or resume before the pending report is reconciled.
+   Close the browser tab entirely and open a new one after its cloud listener
+   lease expires. The Edge must still refuse fresh playback while its signed
+   journal has a `STARTED` session without terminal evidence. Restart the Edge
+   and repeat: this unresolved-session gate must survive the restart. An
+   unrecoverable session remains stopped for operations review; do not clear
+   proof files to force playback.
 9. Record exact times, both host/IP identities, certificate fingerprints,
    control responses, Edge logs (with secrets redacted), cloud proof counts,
    player state and human audible observations. Stop Edge and link on B,
