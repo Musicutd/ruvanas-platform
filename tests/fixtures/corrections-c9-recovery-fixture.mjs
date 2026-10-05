@@ -19,6 +19,7 @@ const MODELS = ["plan", "organisation", "subscription", "organisationMediaProfil
   "promoAsset", "promoVersion", "audioTake", "audioRender", "correctionsStudioSession", "correctionsSubmission",
   "correctionsReview", "correctionsRequest", "correctionsRequestDecision", "playoutIntent", "proofOfPlayEvent", "auditLog"];
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
+export const RECOVERY_MANIFEST_VERSION = sha256("fictional-recovery-manifest-1").slice(0, 24);
 const id = (name) => `${PREFIX}${name}`;
 const at = (seconds) => new Date(TIME.getTime() + seconds * 1000);
 // migrate deploy itself inserts these public plans and QA configuration rows.
@@ -32,6 +33,20 @@ const MIGRATION_BASELINE = {
   subscription: ["qa-health-subscription", "qa-faith-subscription", "qa-organisations-subscription"],
   organisationMediaProfile: ["qa-organisations-media-profile"]
 };
+// Only fixed fixture operations/model names and a bounded Prisma code reach CI.
+// Never preserve the original error message, metadata, query or connection URL.
+async function fixtureOperation(operation, model, work) {
+  try { return await work(); } catch (error) {
+    if (error?.fixtureDiagnostic === true) throw error;
+    const prismaCode = /^P\d{4}$/.test(error?.code || "") ? error.code : null;
+    const reason = ({ P2002: "UNIQUE_CONSTRAINT", P2003: "FOREIGN_KEY", P2004: "DATABASE_CONSTRAINT", P2021: "TABLE_MISSING", P2022: "COLUMN_MISSING", P2028: "TRANSACTION_FAILED" })[prismaCode]
+      || (error?.code === "ERR_ASSERTION" ? "ASSERTION_FAILED" : error?.name === "PrismaClientValidationError" ? "CLIENT_VALIDATION_FAILED" : "DEPENDENCY_FAILED");
+    console.error(JSON.stringify({ event: "RECOVERY_FIXTURE_FAILURE", operation, model, prismaCode }));
+    const failure = new Error(`RECOVERY_REHEARSAL_FIXTURE_${operation}_${model ? model.replace(/([a-z])([A-Z])/g, "$1_$2").toUpperCase() : "NONE"}_${reason}`);
+    failure.fixtureDiagnostic = true;
+    throw failure;
+  }
+}
 
 function canonical(value) {
   if (value instanceof Date) return value.toISOString();
@@ -71,28 +86,33 @@ function syntheticWav(marker) {
 // All content is fictional. Bytes are returned for a local archive rehearsal;
 // this fixture neither uploads objects nor claims to test an external store.
 export async function seedCorrectionsRecoveryFixture(db, { sourceDatabaseUrl, container, ownership, network, password } = {}) {
-  assert.equal(process.env.GITHUB_ACTIONS, "true", "Recovery fixture requires disposable GitHub Actions infrastructure.");
-  assert.equal(process.env.C9_RECOVERY_REHEARSAL, "true", "Recovery fixture requires the explicit rehearsal flag.");
-  const host = recoveryContainerAddress(container, ownership, network);
-  assertRecoveryDatabaseUrl(sourceDatabaseUrl, { host, port: 5432, password, database: SOURCE });
-  assert.equal(await databaseName(db), SOURCE, "Connected database must be the dedicated source.");
-  for (const model of MODELS) assert.equal(await db[model].count(MIGRATION_BASELINE[model]
-    ? { where: { id: { notIn: MIGRATION_BASELINE[model] } } } : undefined), 0, `Source ${model} table must contain only migration baseline rows.`);
-  await assertPublicPlanCatalogue(db);
+  await fixtureOperation("SOURCE_GUARD", null, async () => {
+    assert.equal(process.env.GITHUB_ACTIONS, "true", "Recovery fixture requires disposable GitHub Actions infrastructure.");
+    assert.equal(process.env.C9_RECOVERY_REHEARSAL, "true", "Recovery fixture requires the explicit rehearsal flag.");
+    const host = recoveryContainerAddress(container, ownership, network);
+    assertRecoveryDatabaseUrl(sourceDatabaseUrl, { host, port: 5432, password, database: SOURCE });
+    assert.equal(await databaseName(db), SOURCE, "Connected database must be the dedicated source.");
+  });
+  for (const model of MODELS) await fixtureOperation("BASELINE_COUNT", model, async () => assert.equal(await db[model].count(MIGRATION_BASELINE[model]
+    ? { where: { id: { notIn: MIGRATION_BASELINE[model] } } } : undefined), 0, `Source ${model} table must contain only migration baseline rows.`));
+  await fixtureOperation("PUBLIC_PLAN_CATALOGUE", "plan", () => assertPublicPlanCatalogue(db));
   const ids = {}, media = [];
-  await db.$transaction(async (tx) => {
+  await fixtureOperation("TRANSACTION", null, () => db.$transaction(async (tx) => {
     const make = async (model, label, data) => {
       ids[label] = id(label);
-      return tx[model].create({ data: { id: ids[label], ...data } });
+      return fixtureOperation("CREATE", model, () => tx[model].create({ data: { id: ids[label], ...data } }));
     };
     ids.plan = "public-plan-corrections-network";
-    const plan = await tx.plan.findUnique({ where: { id: ids.plan } });
-    assert.ok(plan && plan.code === "CORRECTIONS_NETWORK" && plan.productFamily === "CORRECTIONS" && plan.tierNumber === 4 && plan.correctionsRadioEnabled === true,
-      "The fixture must use the existing migrated Inside Network plan.");
+    const plan = await fixtureOperation("NETWORK_PLAN_LOOKUP", "plan", async () => {
+      const row = await tx.plan.findUnique({ where: { id: ids.plan } });
+      assert.ok(row && row.code === "CORRECTIONS_NETWORK" && row.productFamily === "CORRECTIONS" && row.tierNumber === 4 && row.correctionsRadioEnabled === true,
+        "The fixture must use the existing migrated Inside Network plan.");
+      return row;
+    });
     for (const tenant of ["a", "b"]) {
       await make("organisation", `org-${tenant}`, { name: `Fictional organisation ${tenant}`, slug: id(`org-${tenant}`) });
       await make("subscription", `subscription-${tenant}`, { organisationId: ids[`org-${tenant}`], planId: plan.id, status: "ACTIVE" });
-      await tx.correctionsProfile.create({ data: { organisationId: ids[`org-${tenant}`], policyConfiguredAt: TIME } });
+      await fixtureOperation("CREATE", "correctionsProfile", () => tx.correctionsProfile.create({ data: { organisationId: ids[`org-${tenant}`], policyConfiguredAt: TIME } }));
     }
     for (const [label, role, tenant] of [["owner-a", "OWNER", "a"], ["manager-a", "MANAGER", "a"], ["reviewer-a", "MANAGER", "a"], ["owner-b", "OWNER", "b"]]) {
       await make("user", label, { name: `Fictional ${label}`, email: `${label}@recovery.example.invalid`, passwordHash: "ci-only-unusable", role });
@@ -101,7 +121,7 @@ export async function seedCorrectionsRecoveryFixture(db, { sourceDatabaseUrl, co
     for (const [label, tenant] of [["facility-a", "a"], ["facility-a-other", "a"], ["facility-b", "b"]]) {
       await make("location", label, { organisationId: ids[`org-${tenant}`], name: `Fictional ${label}`, slug: label,
         status: "ACTIVE", countryCode: "MT", timezone: "Europe/Malta" });
-      await tx.correctionsFacility.create({ data: { locationId: ids[label], policyConfiguredAt: TIME, dualApprovalRequired: true, requestAvailability: "INTERNAL_ONLY" } });
+      await fixtureOperation("CREATE", "correctionsFacility", () => tx.correctionsFacility.create({ data: { locationId: ids[label], policyConfiguredAt: TIME, dualApprovalRequired: true, requestAvailability: "INTERNAL_ONLY" } }));
       await make("zone", `zone-${label}`, { locationId: ids[label], name: `Fictional ${label} zone`, slug: "private-zone" });
     }
     for (const label of ["manager-a", "reviewer-a"]) await make("correctionsFacilityGrant", `grant-${label}`, {
@@ -136,9 +156,9 @@ export async function seedCorrectionsRecoveryFixture(db, { sourceDatabaseUrl, co
       await make("audioRender", `render-${revision}`, { organisationId: scope.organisationId, projectId: ids.project, versionId: ids[`version-${revision}`],
         outputMediaAssetId: ids[`render-media-${revision}`], outputPromoVersionId: ids[`promo-version-${revision}`], requestedByUserId: ids["manager-a"], preset: "WAV_MASTER",
         status: "SUCCEEDED", completedAt: at(revision * 10), resultJson: { immutableSource: true, checksumSha256: media[revision].checksumSha256 } });
-      const render = await tx.audioRender.findUnique({ where: { id: ids[`render-${revision}`] }, include: { outputMediaAsset: true, outputPromoVersion: true } });
-      const evidence = revision === 1 ? correctionsRenderEvidence(render) : correctionsContributorRenderEvidence(render, {
-        organisationId: scope.organisationId, projectId: ids.project, versionId: ids[`version-${revision}`] });
+      const render = await fixtureOperation("LOOKUP", "audioRender", () => tx.audioRender.findUnique({ where: { id: ids[`render-${revision}`] }, include: { outputMediaAsset: true, outputPromoVersion: true } }));
+      const evidence = await fixtureOperation(revision === 1 ? "LEGACY_RENDER_EVIDENCE" : "CONTRIBUTOR_RENDER_EVIDENCE", "audioRender", () => revision === 1 ? correctionsRenderEvidence(render) : correctionsContributorRenderEvidence(render, {
+        organisationId: scope.organisationId, projectId: ids.project, versionId: ids[`version-${revision}`] }));
       await make("correctionsSubmission", `submission-${revision}`, { ...scope, programmeId: ids.programme, revision, renderId: render.id,
         sourceFingerprint: evidence.fingerprint, organisationPolicyVersion: 1, facilityPolicyVersion: 1, dualApprovalRequired: true,
         status: revision === 1 ? "CHANGES_REQUESTED" : "APPROVED", titleSnapshot: "Fictional reviewed programme", submittedByUserId: ids["manager-a"], submittedAt: at(revision * 10 + 1),
@@ -154,22 +174,22 @@ export async function seedCorrectionsRecoveryFixture(db, { sourceDatabaseUrl, co
       await make("playoutIntent", `intent-${label}`, { organisationId: scope.organisationId, scheduleItemId: sha256(label), playerId: ids.player, zoneId: ids["zone-facility-a"],
         channelId: ids.channel, mediaAssetId: ids["render-media-2"], promoVersionId: ids["promo-version-2"], locationId: scope.facilityId,
         locationName: "Fictional facility-a", locationTimezone: "Europe/Malta", locationGroups: [], publicationRevision: 2,
-        sourceRevision: `${ids["submission-2"]}:${(await tx.correctionsSubmission.findUnique({ where: { id: ids["submission-2"] } })).sourceFingerprint}`,
+        sourceRevision: `${ids["submission-2"]}:${(await fixtureOperation("LOOKUP", "correctionsSubmission", () => tx.correctionsSubmission.findUnique({ where: { id: ids["submission-2"] } }))).sourceFingerprint}`,
         plannedStart: at(label === "request-pending" ? 100 : 200), expiresAt: at(label === "request-pending" ? 192 : 292),
         correctionsRequestId: ids[label], correctionsProgrammeId: ids.programme, correctionsSubmissionId: ids["submission-2"] });
     }
     for (const [label, request, eventType] of [["proof-failed", "request-pending", "FAILED"], ["proof-completed", "request-delivered", "COMPLETED"]])
       await make("proofOfPlayEvent", label, { organisationId: scope.organisationId, clientEventId: id(`client-${label}`), playerId: ids.player, zoneId: ids["zone-facility-a"],
         scheduleItemId: sha256(request), itemType: "CORRECTIONS_AUDIO", playoutIntentId: ids[`intent-${request}`], channelId: ids.channel,
-        mediaAssetId: ids["render-media-2"], promoVersionId: ids["promo-version-2"], manifestVersion: "fictional-recovery-manifest-1", programmingSource: "CORRECTIONS_REQUEST",
+        mediaAssetId: ids["render-media-2"], promoVersionId: ids["promo-version-2"], manifestVersion: RECOVERY_MANIFEST_VERSION, programmingSource: "CORRECTIONS_REQUEST",
         eventType, occurredAt: at(request === "request-pending" ? 101 : 202), positionSeconds: eventType === "COMPLETED" ? 2 : 0,
         playerName: "Fictional player", locationName: "Fictional facility-a", zoneName: "Fictional facility-a zone", trackTitle: "Fictional approved programme", trackArtist: "Fictional contributor" });
     for (const [label, action, entityId, details] of [["audit-review", "CORRECTIONS_PROGRAMME_APPROVED", ids.programme, { submissionId: ids["submission-2"] }],
       ["audit-schedule", "CORRECTIONS_REQUEST_SCHEDULED", ids["request-pending"], { intentId: ids["intent-request-pending"] }],
       ["audit-delivery", "CORRECTIONS_REQUEST_DELIVERY_CONFIRMED", ids["request-delivered"], { intentId: ids["intent-request-delivered"], proofEventId: id("client-proof-completed") }]])
       await make("auditLog", label, { organisationId: scope.organisationId, actorUserId: ids["owner-a"], action, entityType: action.includes("PROGRAMME") ? "CorrectionsProgramme" : "CorrectionsRequest", entityId, details, createdAt: at(300) });
-  }, { timeout: 60_000 });
-  return { fixtureVersion: 1, ids, rowDigests: await digests(db), media,
+  }, { timeout: 60_000 }));
+  return { fixtureVersion: 1, ids, rowDigests: await fixtureOperation("DIGEST_CAPTURE", null, () => digests(db)), media,
     checks: ["exact-row-digests", "public-plan-catalogue", "tenant-and-facility-isolation", "contributor-capabilities", "studio-and-review-history", "delivery-proof-and-audit"] };
 }
 
@@ -219,6 +239,7 @@ export async function assertCorrectionsRecoveryFixture(db, expected) {
   assert.equal(correctionsRequestTransition(pending, "PLAYED"), null);
   assert.equal(await db.proofOfPlayEvent.count({ where: { playoutIntent: { correctionsRequestId: pending.id }, eventType: "COMPLETED" } }), 0);
   const proof = await get("proofOfPlayEvent", "proof-completed", { playoutIntent: true });
+  assert.equal(proof.manifestVersion, RECOVERY_MANIFEST_VERSION);
   assert.equal(proof.eventType, "COMPLETED"); assert.equal(proof.playoutIntent.correctionsRequestId, delivered.id);
   for (const field of ["organisationId", "playerId", "zoneId", "scheduleItemId", "mediaAssetId", "promoVersionId", "channelId"]) assert.equal(proof[field], proof.playoutIntent[field]);
   const binding = { playerId: proof.playerId, manifestVersion: proof.manifestVersion, scheduleItemId: proof.scheduleItemId, contentId: proof.promoVersionId, programmingSource: proof.programmingSource };
