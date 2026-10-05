@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
 import bcrypt from "bcryptjs";
-import { HeadObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
+import { HeadObjectCommand, ListMultipartUploadsCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { PrismaClient } from "@prisma/client";
 import { GENERAL_STUDIO_AUDIO_PROJECT_WHERE, GENERAL_STUDIO_MEDIA_ASSET_WHERE, lockGeneralStudioAudioProject } from "../../lib/studio-general-asset-boundary.mjs";
 import { permanentlyDeleteAudioTake, restoreAudioTake, trashAudioTake } from "../../lib/audio-take-trash-service.js";
@@ -10,6 +10,7 @@ import { canDeleteUncommittedAudioUploadObject } from "../../lib/audio-lab-uploa
 import { lockCorrectionsStaffRenderSources } from "../../lib/corrections-staff-render-source-lock.mjs";
 import { runSerializableTransaction } from "../../lib/transaction-retry.mjs";
 import { inventoryStudioAudioStorage } from "../../lib/studio-audio-storage-inventory.mjs";
+import { inventoryStudioAudioUploads } from "../../lib/studio-audio-upload-inventory.mjs";
 
 const ciDatabase = process.env.GITHUB_ACTIONS === "true" &&
   process.env.DATABASE_URL === "postgresql://postgres:postgres@localhost:5432/ruvanas";
@@ -610,6 +611,46 @@ test("general School Studio cannot access or purge supervised Corrections takes"
     });
     assert.equal(inventory.pages.final.items[0].classification, "UNREFERENCED_REVIEW");
     assert.equal(inventory.pages.legacy.items[0].classification, "LEGACY_TOMBSTONE_OBJECT_REVIEW");
+
+    const normalQuarantineKey = `quarantine/${organisationId}/audio-lab/${normalProject.id}/${randomUUID()}.webm`;
+    const privateQuarantineKey = `quarantine/${organisationId}/audio-lab/${privateProject.id}/${randomUUID()}.webm`;
+    const normalUploadId = `ci-normal-${randomUUID()}`;
+    const privateUploadId = `ci-private-${randomUUID()}`;
+    for (const [projectId, quarantineKey, multipartUploadId] of [
+      [normalProject.id, normalQuarantineKey, normalUploadId],
+      [privateProject.id, privateQuarantineKey, privateUploadId]
+    ]) {
+      await db.schoolAudioUploadSession.create({ data: {
+        organisationId, projectId, quarantineKey, multipartUploadId,
+        createdByUserId: userId, originalName: "ci-inventory.webm", mimeType: "audio/webm",
+        expectedSizeBytes: 128n, partSizeBytes: 128, partCount: 1,
+        status: "FAILED", expiresAt: oldObjectDate
+      } });
+    }
+    const uploadInventoryStorage = { bucketName: "CI-only-no-network", client: { send: async (command) => {
+      if (command instanceof ListObjectsV2Command) return { IsTruncated: false, Contents: [
+        { Key: normalQuarantineKey, ETag: '"normal"', Size: 128, LastModified: oldObjectDate },
+        { Key: privateQuarantineKey, ETag: '"private"', Size: 128, LastModified: oldObjectDate }
+      ] };
+      if (command instanceof ListMultipartUploadsCommand) return { IsTruncated: false, Uploads: [
+        { Key: normalQuarantineKey, UploadId: normalUploadId, Initiated: oldObjectDate },
+        { Key: privateQuarantineKey, UploadId: privateUploadId, Initiated: oldObjectDate }
+      ] };
+      if (command instanceof HeadObjectCommand && command.input.Key === normalQuarantineKey) return {
+        ETag: '"normal"', ContentLength: 128, LastModified: oldObjectDate,
+        Metadata: { quarantine: "true", project: normalProject.id }
+      };
+      throw new Error("Inventory touched private bytes or sent an unexpected storage command.");
+    } } };
+    const uploadInventory = await inventoryStudioAudioUploads({
+      database: db, storage: uploadInventoryStorage, organisationId, now: observedAt
+    });
+    assert.deepEqual(uploadInventory.pages.quarantine.items.map((item) => item.classification), [
+      "OLD_QUARANTINE_OBJECT_REVIEW", "PROTECTED_PROJECT_REVIEW"
+    ]);
+    assert.deepEqual(uploadInventory.pages.multipart.items.map((item) => item.classification), [
+      "OLD_MULTIPART_UPLOAD_REVIEW", "PROTECTED_PROJECT_REVIEW"
+    ]);
   } finally {
     if (releasePrivateSession) releasePrivateSession();
     if (heldPrivateSession) await heldPrivateSession.catch(() => {});
@@ -618,6 +659,7 @@ test("general School Studio cannot access or purge supervised Corrections takes"
       if (organisationId) {
         await db.correctionsSubmission.deleteMany({ where: { organisationId } });
         await db.correctionsStudioSession.deleteMany({ where: { organisationId } });
+        await db.schoolAudioUploadSession.deleteMany({ where: { organisationId } });
         await db.audioTake.deleteMany({ where: { organisationId } });
         await db.audioRender.deleteMany({ where: { organisationId } });
         await db.audioProjectVersion.deleteMany({ where: { project: { organisationId } } });
