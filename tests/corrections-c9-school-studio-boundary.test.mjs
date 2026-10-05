@@ -65,7 +65,7 @@ test("Studio product handoffs lock and recheck an exact render before listing or
   const post = route.slice(route.indexOf("export async function POST"));
   assert.match(lockedRender, /await lockGeneralStudioAudioProject\(tx, organisationId, locator\.projectId\)/);
   assert.ok(lockedRender.indexOf("await lockGeneralStudioAudioProject") < lockedRender.indexOf("return findRender(tx"));
-  assert.match(get, /prisma\.\$transaction\([\s\S]*isolationLevel: "ReadCommitted"/);
+  assert.match(get, /runLockedHandoffTransaction\(async \(tx\)/);
   assert.ok(get.indexOf("lockedGeneralRender(tx") < get.indexOf("tx.studioProductHandoff.findMany"));
   assert.match(route, /async function runLockedHandoffTransaction[\s\S]*isolationLevel: "ReadCommitted"/);
   assert.match(route, /error\?\.code === "P2034"/);
@@ -77,6 +77,10 @@ test("Studio product handoffs lock and recheck an exact render before listing or
   assert.ok(post.indexOf("assertStudioRenderReady") < post.indexOf("tx.studioProductHandoff.findUnique"));
   assert.ok(post.indexOf("tx.studioProductHandoff.findUnique") < post.indexOf("tx.studioProductHandoff.create"));
   assert.doesNotMatch(get + post, /prisma\.studioProductHandoff\.find/);
+  const outputCheck = route.slice(route.indexOf("async function assertGeneralHandoffOutput"), route.indexOf("function publicHandoff"));
+  assert.match(outputCheck, /lockGeneralStudioMediaAssets\(database, organisationId, ids\)/);
+  assert.ok(get.indexOf("assertGeneralHandoffOutput") < get.indexOf("tx.studioProductHandoff.findMany"));
+  assert.ok(post.indexOf("assertGeneralHandoffOutput") < post.indexOf("tx.studioProductHandoff.findUnique"));
 });
 
 test("legacy School Studio routes use the shared boundary for lists, writes, upload stages and handoff", async () => {

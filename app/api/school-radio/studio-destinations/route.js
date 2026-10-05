@@ -12,7 +12,7 @@ import {
   studioHandoffKey,
   studioWorkflowPath
 } from "@/lib/studio-product-handoff.mjs";
-import { GENERAL_STUDIO_AUDIO_PROJECT_WHERE, assertGeneralStudioAudioProject, generalStudioUsableMediaAssetIds, lockGeneralStudioAudioProject } from "@/lib/studio-general-asset-boundary.mjs";
+import { GENERAL_STUDIO_AUDIO_PROJECT_WHERE, assertGeneralStudioAudioProject, lockGeneralStudioMediaAssets, lockGeneralStudioAudioProject } from "@/lib/studio-general-asset-boundary.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -76,7 +76,10 @@ async function runLockedHandoffTransaction(operation) {
 async function assertGeneralHandoffOutput(database, organisationId, render) {
   await assertGeneralStudioAudioProject(database, organisationId, render.projectId);
   const ids = [...new Set([render.outputMediaAsset?.id, render.outputPromoVersion?.mediaAssetId].filter(Boolean))];
-  const usable = await generalStudioUsableMediaAssetIds(database, organisationId, ids);
+  // A different project can share this output, and any render submitted from
+  // that project makes its older outputs private too. Lock all such projects
+  // and the exact media before rechecking, including on list/idempotent reuse.
+  const usable = await lockGeneralStudioMediaAssets(database, organisationId, ids);
   if (usable.size !== ids.length) throw Object.assign(new Error("This Studio output is unavailable in general Studio."), { status: 403 });
 }
 
@@ -96,13 +99,13 @@ export async function GET(request) {
   const renderId = new URL(request.url).searchParams.get("renderId");
   if (!renderId) return NextResponse.json({ error: "Choose a Studio output." }, { status: 400 });
   try {
-    const result = await prisma.$transaction(async (tx) => {
+    const result = await runLockedHandoffTransaction(async (tx) => {
       const render = await lockedGeneralRender(tx, renderId, access.organisation.id);
       if (!render) return null;
       await assertGeneralHandoffOutput(tx, access.organisation.id, render);
       const handoffs = await tx.studioProductHandoff.findMany({ where: { renderId, organisationId: access.organisation.id }, orderBy: { createdAt: "asc" } });
       return { render, handoffs };
-    }, { isolationLevel: "ReadCommitted" });
+    });
     if (!result) return NextResponse.json({ error: "The Studio output was not found." }, { status: 404 });
     return NextResponse.json({
       destinations: studioDestinationAvailability({ entitlements: access.entitlements, project: result.render.project }),
