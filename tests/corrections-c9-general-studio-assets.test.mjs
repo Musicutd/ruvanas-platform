@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   GENERAL_STUDIO_MEDIA_ASSET_WHERE,
@@ -58,4 +59,11 @@ test("generic Audio Lab project lookup excludes supervised and submitted project
   assert.deepEqual(calls[0].where, { id: "ordinary", organisationId: "org-a", ...GENERAL_STUDIO_AUDIO_PROJECT_WHERE });
   await assert.rejects(assertGeneralStudioAudioProject(database, "org-a", "private"), { status: 403, code: "CORRECTIONS_STUDIO_OUTPUT_BLOCKED" });
   await assert.rejects(assertGeneralStudioAudioProject(database, "org-a", null), { status: 403, code: "CORRECTIONS_STUDIO_OUTPUT_BLOCKED" });
+});
+
+test("subscriber audio library excludes an entire promo asset when any version is protected", async () => {
+  const route = await readFile(new URL("../app/api/media/library/route.js", import.meta.url), "utf8");
+  assert.match(route, /import \{ GENERAL_STUDIO_MEDIA_ASSET_WHERE \} from "@\/lib\/studio-general-asset-boundary\.mjs"/);
+  assert.match(route, /promoAsset\.findMany\(\{[\s\S]*?where: \{[\s\S]*?organisationId: organisation\.id,[\s\S]*?versions: \{ every: \{ mediaAsset: \{ is: GENERAL_STUDIO_MEDIA_ASSET_WHERE \} \} \}/);
+  assert.ok(route.indexOf("versions: { every:") < route.search(/include:\s*\{\s*versions:/), "the visibility check must happen before version metadata is loaded");
 });

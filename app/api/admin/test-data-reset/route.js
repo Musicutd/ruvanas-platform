@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requirePlatformAdmin } from "@/lib/access-control";
 import { accessDenied } from "@/lib/api-response";
 import { SELF_SERVICE_REGISTRATION_ENABLED } from "@/lib/registration-availability.mjs";
+import { subscriberTestResetAvailable } from "@/lib/subscriber-test-reset-availability.mjs";
 import {
   resetSubscriberTestData,
   subscriberTestResetPreview,
@@ -23,6 +24,9 @@ async function superAdminAccess() {
   if (!access.ok) return { response: accessDenied(access) };
   if (access.user.role !== "SUPER_ADMIN") {
     return { response: NextResponse.json({ error: "Only a Ruvanas Super Admin can reset subscriber test data." }, { status: 403 }) };
+  }
+  if (!subscriberTestResetAvailable()) {
+    return { response: NextResponse.json({ error: "Subscriber test-data reset is unavailable." }, { status: 404 }) };
   }
   if (SELF_SERVICE_REGISTRATION_ENABLED) {
     return { response: NextResponse.json({ error: "Subscriber reset is unavailable while public plan registration is enabled." }, { status: 409 }) };

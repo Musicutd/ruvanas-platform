@@ -42,7 +42,7 @@ export default function TrialOrganisationDeleteControl({ organisationId, organis
       ) : (
         <div style={styles.confirmPanel}>
           <strong>Delete {organisationName}?</strong>
-          <span>This removes the organisation and its tenant data. User accounts remain.</span>
+          <span>This removes the organisation and its tenant data. User accounts remain. Organisations with Corrections access or evidence cannot be deleted here.</span>
           <label style={styles.label}>Type <code>{required}</code>
             <input value={confirmation} onChange={(event) => setConfirmation(event.target.value)} autoComplete="off" spellCheck="false" style={styles.input} />
           </label>

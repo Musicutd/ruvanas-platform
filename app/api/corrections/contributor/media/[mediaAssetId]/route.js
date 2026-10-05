@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getR2Storage } from "@/lib/r2";
 import { currentCorrectionsContributorSession } from "@/lib/corrections-contributor-auth";
+import { correctionsStudioSourcesAvailable } from "@/lib/corrections-studio-source-service";
+import { correctionsStudioCurrentTakes, correctionsStudioSourceTakeSelect } from "@/lib/corrections-studio-sources.mjs";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -11,14 +13,21 @@ export async function GET(request, { params }) {
   const access = await currentCorrectionsContributorSession();
   if (!access) return NextResponse.json({ error: "Session unavailable." }, { status: 403 });
   const id = (await params).mediaAssetId;
-  const asset = await prisma.mediaAsset.findFirst({ where: {
-    id, organisationId: access.session.organisationId, libraryType: "ORGANISATION_PROMO", status: "READY",
-    OR: [
-      { audioTakes: { some: { projectId: access.session.projectId, trashedAt: null } } },
-      { audioRenderOutputs: { some: { projectId: access.session.projectId, status: "SUCCEEDED" } } }
-    ]
-  }, select: { storageKey: true, mimeType: true, sizeBytes: true } });
-  if (!asset) return NextResponse.json({ error: "Audio unavailable." }, { status: 404 });
+  const organisationId = access.session.organisationId;
+  const projectId = access.session.projectId;
+  const [asset, takes, renders] = await Promise.all([
+    prisma.mediaAsset.findFirst({ where: { id, organisationId, libraryType: "ORGANISATION_PROMO", status: "READY" },
+      select: { storageKey: true, mimeType: true, sizeBytes: true } }),
+    prisma.audioTake.findMany({ where: { mediaAssetId: id, organisationId, projectId }, select: correctionsStudioSourceTakeSelect }),
+    prisma.audioRender.findMany({ where: { outputMediaAssetId: id, organisationId, projectId, status: "SUCCEEDED" },
+      select: { version: { select: { state: true } } } })
+  ]);
+  let available = correctionsStudioCurrentTakes(takes).length > 0;
+  for (const render of renders) {
+    if (available) break;
+    available = await correctionsStudioSourcesAvailable(prisma, { organisationId, projectId, versionState: render.version.state });
+  }
+  if (!asset || !available) return NextResponse.json({ error: "Audio unavailable." }, { status: 404 });
   const size = Number(asset.sizeBytes);
   const range = request.headers.get("range");
   let start = 0, end = size - 1;

@@ -348,10 +348,46 @@ test("generic Studio live output excludes private Inside channels, stations and 
     }
     const hiddenPlayout = await api("/api/studio/playout", { cookie });
     assert.equal(hiddenPlayout.status, 200, await hiddenPlayout.clone().text());
-    assert.ok(!(await hiddenPlayout.json()).sessions.some(({ id }) => id === ordinaryPlayout.id));
+    const hiddenPlayoutView = await hiddenPlayout.json();
+    assert.ok(!hiddenPlayoutView.sessions.some(({ id }) => id === ordinaryPlayout.id));
+    assert.deepEqual(hiddenPlayoutView.stopOnlySessions.find(({ id }) => id === ordinaryPlayout.id),
+      { id: ordinaryPlayout.id, revision: 1, stopOnly: true },
+      "an ordinary session tainted by private media gets a redacted stop control");
+    assert.ok(!hiddenPlayoutView.stopOnlySessions.some(({ id }) => id === insidePlayout.id || id === productMarkedPlayout.id),
+      "private-channel and Corrections sessions must not get stop controls");
+    assert.ok(hiddenPlayoutView.stopOnlySessions.every((item) =>
+      Object.keys(item).sort().join(",") === "id,revision,stopOnly"), "stop controls carry no private session details");
+    assert.doesNotMatch(JSON.stringify(hiddenPlayoutView.stopOnlySessions), /Previously queued private take|mediaAssetId|channelId|title|items|currentItemId/);
     const hiddenBroadcast = await api("/api/studio/broadcast", { cookie });
     assert.equal(hiddenBroadcast.status, 200, await hiddenBroadcast.clone().text());
     assert.ok(!(await hiddenBroadcast.json()).sessions.some(({ id }) => id === ordinaryBroadcast.id));
+
+    // A previously ordinary active session can become private when queued
+    // media is submitted to Inside. Its queue remains hidden and immutable,
+    // but the owner must still be able to end that general Studio output.
+    for (const privateSession of [insidePlayout, productMarkedPlayout]) {
+      const deniedStop = await post("/api/studio/playout", {
+        action: "END_SESSION", sessionId: privateSession.id, expectedRevision: 0
+      });
+      assert.equal(deniedStop.status, 403, await deniedStop.clone().text());
+    }
+    const stopKey = randomUUID();
+    const playoutStopInput = { action: "END_SESSION", sessionId: ordinaryPlayout.id, expectedRevision: 1 };
+    const stoppedPlayout = await api("/api/studio/playout", {
+      method: "POST", cookie, idempotencyKey: stopKey, body: playoutStopInput
+    });
+    assert.equal(stoppedPlayout.status, 200, await stoppedPlayout.clone().text());
+    const playoutStopResult = await stoppedPlayout.json();
+    assert.deepEqual(playoutStopResult, { stopped: true, sessionId: ordinaryPlayout.id, revision: 2 });
+    assert.equal((await db.studioPlayoutSession.findUnique({ where: { id: ordinaryPlayout.id } })).status, "ENDED");
+    const repeatedStop = await api("/api/studio/playout", {
+      method: "POST", cookie, idempotencyKey: stopKey, body: playoutStopInput
+    });
+    assert.equal(repeatedStop.status, 200, await repeatedStop.clone().text());
+    assert.deepEqual(await repeatedStop.json(), { ...playoutStopResult, repeated: true });
+    const afterStop = await api("/api/studio/playout", { cookie });
+    assert.equal(afterStop.status, 200, await afterStop.clone().text());
+    assert.ok(!(await afterStop.json()).stopOnlySessions.some(({ id }) => id === ordinaryPlayout.id));
   } finally {
     try {
       if (organisationId) {

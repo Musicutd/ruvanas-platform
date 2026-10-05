@@ -19,7 +19,9 @@ test("Corrections staff grants cannot cross facility, tenant, member or role", (
   const assignment = { organisationId: "org-a", organisationMemberId: "member-1", facilityId: "facility-1", permission: "EDITOR" };
   const args = { role: "CONTENT_EDITOR", organisationId: "org-a", memberId: "member-1", facilityId: "facility-1", assignment, action: "SUBMIT" };
   assert.equal(correctionsGrantAllowed("VIEWER", "MANAGER"), false);
+  assert.equal(correctionsGrantAllowed("VIEWER", "EDITOR"), false);
   assert.equal(correctionsGrantAllowed("CONTENT_EDITOR", "MANAGER"), false);
+  assert.equal(correctionsGrantAllowed("MANAGER", "EDITOR"), false);
   assert.equal(correctionsProgrammePermission(args), true);
   assert.equal(correctionsProgrammePermission({ ...args, organisationId: "org-b" }), false);
   assert.equal(correctionsProgrammePermission({ ...args, facilityId: "facility-2" }), false);

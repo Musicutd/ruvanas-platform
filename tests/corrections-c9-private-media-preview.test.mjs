@@ -53,3 +53,39 @@ test("generic stream denies unsubmitted sources before storage; DELETE commits p
   assert.ok(deletion.indexOf("await tx.mediaAsset.delete") < deletion.indexOf("new DeleteObjectCommand"));
   assert.ok(deletion.indexOf("await tx.mediaAsset.delete") < deletion.indexOf("await r2.client.send"));
 });
+
+test("a recent generic player intent cannot revive cancelled or private Inside audio", async () => {
+  const playerMedia = await readFile(new URL("../app/api/player/media/[mediaAssetId]/route.js", import.meta.url), "utf8");
+  const start = playerMedia.indexOf("const recentInsertionIntents =");
+  const end = playerMedia.indexOf("let recentInsertionIntent =", start);
+  assert.ok(start >= 0 && end > start, "the generic recent-intent fallback must remain identifiable");
+  const fallback = playerMedia.slice(start, end);
+  for (const field of ["cancelledAt", "correctionsRequestId", "correctionsRehabContentId",
+    "correctionsProgrammeId", "correctionsSubmissionId", "correctionsTrackId",
+    "correctionsAnnouncementId", "correctionsOverrideId"]) {
+    assert.match(fallback, new RegExp(`${field}: null`), field);
+  }
+  assert.match(playerMedia, /schoolMediaIntentIsCurrent\(prisma, \{ player, intent, instant \}\)/);
+});
+
+test("ordinary campaign and direct player media routes recheck current Inside privacy before storage", async () => {
+  const [programming, playerMedia, publicMedia] = await Promise.all([
+    readFile(new URL("../lib/player-programming.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/player/media/[mediaAssetId]/route.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/public/player/[slug]/media/[mediaAssetId]/route.js", import.meta.url), "utf8")
+  ]);
+  const campaignQuery = programming.match(/prisma\.campaign\.findMany\(\{[\s\S]*?\n    \}\)/)?.[0];
+  assert.ok(campaignQuery, "campaign manifest query must remain identifiable");
+  assert.match(campaignQuery, /promoVersion:\s*\{\s*mediaAsset:\s*\{\s*is:/);
+  assert.match(campaignQuery, /GENERAL_STUDIO_MEDIA_ASSET_WHERE/);
+  for (const route of [playerMedia, publicMedia]) {
+    assert.match(route, /GENERAL_STUDIO_MEDIA_ASSET_WHERE/);
+    assert.match(route, /status: "READY"/);
+    assert.ok(route.indexOf("GENERAL_STUDIO_MEDIA_ASSET_WHERE") < route.indexOf("protectedAudioResponse(request, asset)"));
+  }
+  // Approved School exchange insertions may originate from another
+  // organisation; the existing insertion authority, not source ownership,
+  // controls that route before the shared privacy check.
+  assert.doesNotMatch(playerMedia, /organisationId:\s*player\.organisationId[^\n]*libraryType:\s*"RUVANAS_CATALOGUE"/);
+  assert.match(playerMedia, /resolution\.reason === "CORRECTIONS_PRIVATE" && isCurrentInsideAudio/);
+});

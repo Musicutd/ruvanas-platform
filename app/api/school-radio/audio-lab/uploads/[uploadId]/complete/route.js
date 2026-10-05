@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import {
+  AbortMultipartUploadCommand,
   CompleteMultipartUploadCommand,
   CopyObjectCommand,
   DeleteObjectCommand,
@@ -18,7 +19,8 @@ import { buildPromoProcessingJobs } from "@/lib/promo-versioning.mjs";
 import { securityLog } from "@/lib/security-log";
 import { recordedClipData } from "@/lib/studio-recording.mjs";
 import { invalidateApprovedAudioOutputs } from "@/lib/audio-project-governance";
-import { GENERAL_STUDIO_AUDIO_PROJECT_WHERE, assertGeneralStudioAudioProject } from "@/lib/studio-general-asset-boundary.mjs";
+import { GENERAL_STUDIO_AUDIO_PROJECT_WHERE, lockGeneralStudioAudioProject } from "@/lib/studio-general-asset-boundary.mjs";
+import { canDeleteUncommittedAudioUploadObject } from "@/lib/audio-lab-upload-cleanup.mjs";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -124,13 +126,26 @@ export async function POST(request, { params }) {
   const editDecision = normalizeEditDecision(parsed.data.editDecision);
 
   try {
-    await assertGeneralStudioAudioProject(prisma, access.organisation.id, session.projectId);
-    await prisma.schoolAudioUploadSession.update({ where: { id: session.id }, data: { status: "COMPLETING" } });
+    const completingSession = await prisma.$transaction(async (tx) => {
+      await lockGeneralStudioAudioProject(tx, access.organisation.id, session.projectId);
+      const currentSession = await tx.schoolAudioUploadSession.findFirst({
+        where: { id: session.id, organisationId: access.organisation.id, createdByUserId: access.user.id,
+          status: { in: ["INITIATED", "UPLOADING"] }, expiresAt: { gt: new Date() } },
+        include: { parts: { orderBy: { partNumber: "asc" } } }
+      });
+      if (!currentSession) throw Object.assign(new Error("The upload session has expired or is unavailable."), { code: "AUDIO_UPLOAD_SESSION_CHANGED", status: 409 });
+      const currentBytes = currentSession.parts.reduce((total, part) => total + BigInt(part.sizeBytes), 0n);
+      if (currentSession.parts.length !== currentSession.partCount || currentBytes !== currentSession.expectedSizeBytes) {
+        throw new Error("The recording upload is incomplete. Retry the missing parts first.");
+      }
+      await tx.schoolAudioUploadSession.update({ where: { id: session.id }, data: { status: "COMPLETING" } });
+      return currentSession;
+    });
     await r2.client.send(new CompleteMultipartUploadCommand({
       Bucket: r2.bucketName,
       Key: session.quarantineKey,
       UploadId: session.multipartUploadId,
-      MultipartUpload: { Parts: session.parts.map((part) => ({ PartNumber: part.partNumber, ETag: part.eTag })) }
+      MultipartUpload: { Parts: completingSession.parts.map((part) => ({ PartNumber: part.partNumber, ETag: part.eTag })) }
     }));
     const [head, sampleObject] = await Promise.all([
       r2.client.send(new HeadObjectCommand({ Bucket: r2.bucketName, Key: session.quarantineKey })),
@@ -152,19 +167,21 @@ export async function POST(request, { params }) {
     await r2.client.send(new DeleteObjectCommand({ Bucket: r2.bucketName, Key: session.quarantineKey }));
 
     const result = await prisma.$transaction(async (tx) => {
-      await assertGeneralStudioAudioProject(tx, access.organisation.id, session.projectId);
-      const mediaAsset = await tx.mediaAsset.create({ data: { organisationId: access.organisation.id, libraryType: "ORGANISATION_PROMO", name: session.project.title, originalName: session.originalName, storageKey: finalKey, mimeType: validation.contentType, sizeBytes: session.expectedSizeBytes, durationSeconds: parsed.data.durationMs ? Math.max(1, Math.round(parsed.data.durationMs / 1000)) : null, mediaType: "ANNOUNCEMENT", status: "READY" } });
-      const promoAsset = await tx.promoAsset.create({ data: { organisationId: access.organisation.id, name: session.project.title, mediaType: "ANNOUNCEMENT", languageCode: "und" } });
+      const currentProject = await lockGeneralStudioAudioProject(tx, access.organisation.id, session.projectId);
+      const currentSession = await tx.schoolAudioUploadSession.findFirst({ where: {
+        id: session.id, organisationId: access.organisation.id, createdByUserId: access.user.id, status: "COMPLETING"
+      }, select: { id: true } });
+      if (!currentSession) throw new Error("The upload session is no longer available.");
+      const mediaAsset = await tx.mediaAsset.create({ data: { organisationId: access.organisation.id, libraryType: "ORGANISATION_PROMO", name: currentProject.title, originalName: session.originalName, storageKey: finalKey, mimeType: validation.contentType, sizeBytes: session.expectedSizeBytes, durationSeconds: parsed.data.durationMs ? Math.max(1, Math.round(parsed.data.durationMs / 1000)) : null, mediaType: "ANNOUNCEMENT", status: "READY" } });
+      const promoAsset = await tx.promoAsset.create({ data: { organisationId: access.organisation.id, name: currentProject.title, mediaType: "ANNOUNCEMENT", languageCode: "und" } });
       const promoVersion = await tx.promoVersion.create({ data: { promoAssetId: promoAsset.id, mediaAssetId: mediaAsset.id, version: 1, status: "IN_REVIEW", qcStatus: "PENDING", sourceType: "STUDIO", sourceReference: `audio-project:${session.projectId}`, languageCode: "und", checksumSha256: parsed.data.checksumSha256 || null, durationSeconds: mediaAsset.durationSeconds, submittedById: access.user.id, submittedAt: new Date(), processingJobs: { create: buildPromoProcessingJobs() } } });
       const take = await tx.audioTake.create({ data: { organisationId: access.organisation.id, projectId: session.projectId, mediaAssetId: mediaAsset.id, promoVersionId: promoVersion.id, recordedByUserId: access.user.id, deviceLabel: parsed.data.deviceLabel || null, durationMs: parsed.data.durationMs || null, status: "READY", sourceEditDecision: editDecision } });
       let placement = null;
       let invalidatedApprovals = 0;
       if (targetTrack) {
-        const [currentProject, currentTargetTrack] = await Promise.all([
-          tx.audioProject.findUnique({ where: { id: session.projectId }, select: { id: true, title: true, currentVersion: true, editDecision: true } }),
-          tx.audioTrack.findFirst({ where: { id: targetTrack.id, projectId: session.projectId, armed: true, locked: false }, include: { clips: { orderBy: { timelineStartMs: "asc" } } } })
-        ]);
-        if (!currentProject || !currentTargetTrack) throw new Error("The destination track is no longer armed and available.");
+        if (currentProject.type !== "MULTITRACK") throw new Error("Direct recording is available only for a multitrack project.");
+        const currentTargetTrack = await tx.audioTrack.findFirst({ where: { id: targetTrack.id, projectId: session.projectId, armed: true, locked: false }, include: { clips: { orderBy: { timelineStartMs: "asc" } } } });
+        if (!currentTargetTrack) throw new Error("The destination track is no longer armed and available.");
         const clip = await tx.audioClip.create({
           data: { trackId: currentTargetTrack.id, ...recordedClipData({ mediaAssetId: mediaAsset.id, durationMs: parsed.data.durationMs, clips: currentTargetTrack.clips }) }
         });
@@ -185,12 +202,49 @@ export async function POST(request, { params }) {
     });
     return NextResponse.json({ takeId: result.take.id, mediaAssetId: result.mediaAsset.id, promoVersionId: result.promoVersion.id, reviewStatus: result.promoVersion.status, placement: result.placement, streamUrl: `/api/media/${result.mediaAsset.id}/stream` }, { status: 201 });
   } catch (error) {
-    await prisma.$transaction([
-      prisma.schoolAudioUploadSession.update({ where: { id: session.id }, data: { status: "FAILED" } }),
-      prisma.audioProject.updateMany({ where: { id: session.projectId, organisationId: access.organisation.id, ...GENERAL_STUDIO_AUDIO_PROJECT_WHERE }, data: { status: session.project.type === "MULTITRACK" ? "READY" : "DRAFT" } })
-    ]).catch(() => {});
+    // Another completion may already own this session and its quarantine key.
+    if (error?.code === "AUDIO_UPLOAD_SESSION_CHANGED") {
+      return NextResponse.json({ error: error.message }, { status: 409 });
+    }
+    await prisma.$transaction(async (tx) => {
+      const currentProject = await lockGeneralStudioAudioProject(tx, access.organisation.id, session.projectId);
+      const failed = await tx.schoolAudioUploadSession.updateMany({ where: {
+        id: session.id, organisationId: access.organisation.id, createdByUserId: access.user.id,
+        status: { in: ["INITIATED", "UPLOADING", "COMPLETING"] }
+      }, data: { status: "FAILED" } });
+      if (failed.count && currentProject.status === "UPLOADING") {
+        const anotherUpload = await tx.schoolAudioUploadSession.findFirst({ where: {
+          projectId: currentProject.id, id: { not: session.id },
+          status: { in: ["INITIATED", "UPLOADING", "COMPLETING"] }, expiresAt: { gt: new Date() }
+        }, select: { id: true } });
+        if (!anotherUpload) await tx.audioProject.update({ where: { id: currentProject.id }, data: { status: currentProject.type === "MULTITRACK" ? "READY" : "DRAFT" } });
+      }
+    }).catch(async (cleanupError) => {
+      if (cleanupError?.code === "CORRECTIONS_STUDIO_OUTPUT_BLOCKED") {
+        // Release this request's storage reservation without changing private project or render evidence.
+        await prisma.schoolAudioUploadSession.updateMany({ where: {
+          id: session.id, organisationId: access.organisation.id, createdByUserId: access.user.id,
+          status: { in: ["INITIATED", "UPLOADING", "COMPLETING"] }
+        }, data: { status: "FAILED" } }).catch(() => {});
+      }
+    });
+    try { await r2.client.send(new AbortMultipartUploadCommand({ Bucket: r2.bucketName, Key: session.quarantineKey, UploadId: session.multipartUploadId })); } catch {}
     try { await r2.client.send(new DeleteObjectCommand({ Bucket: r2.bucketName, Key: session.quarantineKey })); } catch {}
-    try { await r2.client.send(new DeleteObjectCommand({ Bucket: r2.bucketName, Key: finalKey })); } catch {}
+    try {
+      if (await canDeleteUncommittedAudioUploadObject(prisma, {
+        sessionId: session.id, organisationId: access.organisation.id,
+        projectId: session.projectId, finalKey
+      })) {
+        await r2.client.send(new DeleteObjectCommand({ Bucket: r2.bucketName, Key: finalKey }));
+      }
+    } catch (cleanupError) {
+      // An unavailable database or failed object deletion is not proof that
+      // the final key is unreferenced. Never guess and erase possible evidence.
+      securityLog("error", "AUDIO_LAB_FINAL_OBJECT_CLEANUP_UNVERIFIED", request, {
+        uploadId: session.id, projectId: session.projectId,
+        error: cleanupError instanceof Error ? cleanupError.message : "unknown"
+      });
+    }
     securityLog("error", "AUDIO_LAB_UPLOAD_FAILED", request, { uploadId: session.id, projectId: session.projectId, error: error instanceof Error ? error.message : "unknown" });
     return NextResponse.json({ error: error instanceof Error ? error.message : "The recording could not be finalised." }, { status: error?.status || 500 });
   }

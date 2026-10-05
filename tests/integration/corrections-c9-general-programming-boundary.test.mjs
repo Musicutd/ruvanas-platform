@@ -112,18 +112,138 @@ test("general programming cannot expose or draft schedules for private Inside fa
       organisationId, name: "Legacy private rights channel", slug: `c9-private-rights-${suffix}`,
       status: "ACTIVE", musicRightsUse: "CORRECTIONS_RADIO"
     } });
-    await db.channelAssignment.create({ data: {
-      channelId: privateChannel.id, zoneId: sideZone.id
+    const safeStation = await db.station.create({ data: {
+      organisationId, productFamily: "RETAIL", name: "Fictional separate retail station", slug: `c9-safe-retail-${suffix}`,
+      status: "ACTIVE", listenerLimit: 10, storageLimitGb: 1, maxBitrateKbps: 128
+    } });
+    const safeChannel = await db.channel.create({ data: {
+      organisationId, stationId: safeStation.id, name: "Fictional public retail channel",
+      slug: `c9-safe-retail-channel-${suffix}`, status: "ACTIVE"
     } });
     await db.channelAssignment.createMany({ data: [
       { channelId: normalChannel.id, zoneId: normalLocation.zones[0].id },
-      { channelId: normalChannel.id, zoneId: privateFacility.zones[0].id }
+      { channelId: normalChannel.id, zoneId: privateFacility.zones[0].id },
+      { channelId: safeChannel.id, zoneId: sideZone.id }
     ] });
+
+    const safePlaylistMode = await db.musicMode.create({ data: {
+      organisationId, name: "Fictional public playlist", slug: `c9-public-playlist-${suffix}`, status: "ACTIVE"
+    } });
+    const privatePlaylistMode = await db.musicMode.create({ data: {
+      organisationId, name: "Fictional private playlist sentinel", slug: `c9-private-playlist-${suffix}`, status: "ACTIVE"
+    } });
+    const activePrivatePlaylistMode = await db.musicMode.create({ data: {
+      organisationId, name: "Fictional active Inside playlist sentinel", slug: `c9-active-inside-playlist-${suffix}`, status: "ACTIVE"
+    } });
+    const safeAdvancedMode = await db.musicMode.create({ data: {
+      organisationId, name: "Fictional ordinary advanced playlist", slug: `c9-public-advanced-${suffix}`, status: "DRAFT"
+    } });
+    const privateAdvancedMode = await db.musicMode.create({ data: {
+      organisationId, name: "Fictional private advanced sentinel", slug: `c9-private-advanced-${suffix}`, status: "DRAFT"
+    } });
+    const simplePlaylistData = { organisationId, createdByUserId: userId, status: "ACTIVE", rightsUse: "RETAIL_RADIO", simpleBuildMode: "RANDOM_GENRE_POOL", durationMinutes: 60, genreCodes: ["POP"] };
+    const safePlaylist = await db.smartPlaylist.create({ data: { ...simplePlaylistData, musicModeId: safePlaylistMode.id } });
+    const historicalPrivatePlaylist = await db.smartPlaylist.create({ data: { ...simplePlaylistData, musicModeId: privatePlaylistMode.id } });
+    const activePrivatePlaylist = await db.smartPlaylist.create({ data: { ...simplePlaylistData, musicModeId: activePrivatePlaylistMode.id, rightsUse: "CORRECTIONS_RADIO" } });
+    const safeAdvancedPlaylist = await db.smartPlaylist.create({ data: {
+      organisationId, createdByUserId: userId, musicModeId: safeAdvancedMode.id,
+      status: "DRAFT", rightsUse: "RETAIL_RADIO"
+    } });
+    const privateAdvancedPlaylist = await db.smartPlaylist.create({ data: {
+      organisationId, createdByUserId: userId, musicModeId: privateAdvancedMode.id,
+      status: "DRAFT", rightsUse: "CORRECTIONS_RADIO"
+    } });
+    await db.subscriberPlaylistEvent.create({ data: {
+      organisationId, channelId: privateChannel.id, smartPlaylistId: historicalPrivatePlaylist.id,
+      startsAt: new Date(Date.now() + 86_400_000), endsAt: new Date(Date.now() + 90_000_000),
+      timezone: "Europe/Malta", createdByUserId: userId, cancelledAt: new Date()
+    } });
+    const privateEvent = await db.subscriberPlaylistEvent.create({ data: {
+      organisationId, channelId: privateChannel.id, smartPlaylistId: activePrivatePlaylist.id,
+      startsAt: new Date(Date.now() + 172_800_000), endsAt: new Date(Date.now() + 176_400_000),
+      timezone: "Europe/Malta", createdByUserId: userId
+    } });
 
     const login = await api("/api/auth/login", { method: "POST", body: { email: user.email, password } });
     assert.equal(login.status, 200, await login.clone().text());
     const cookie = login.headers.get("set-cookie")?.split(";")[0];
     assert.ok(cookie);
+
+    const simpleView = await api("/api/programming/simple", { cookie });
+    assert.equal(simpleView.status, 200, await simpleView.clone().text());
+    const simple = await simpleView.json();
+    assert.ok(simple.channels.some(({ id }) => id === safeChannel.id));
+    assert.ok(!simple.channels.some(({ id }) => [normalChannel.id, privateChannel.id, privateRightsChannel.id].includes(id)));
+    assert.ok(simple.playlists.some(({ id }) => id === safePlaylist.id));
+    assert.ok(!simple.playlists.some(({ id }) => id === historicalPrivatePlaylist.id));
+    assert.ok(!simple.playlists.some(({ id }) => id === activePrivatePlaylist.id));
+    assert.ok(!simple.events.some(({ id }) => id === privateEvent.id));
+    assert.doesNotMatch(JSON.stringify(simple), /Fictional private playlist sentinel|Fictional active Inside playlist sentinel|Inside channel|Legacy private rights channel/);
+    const simplePayload = { name: "Fictional ordinary playlist", channelId: privateChannel.id, durationValue: 1, durationUnit: "HOURS", buildMode: "RANDOM_GENRE_POOL", genreCodes: ["POP"] };
+    for (const channelId of [normalChannel.id, privateChannel.id, privateRightsChannel.id]) {
+      const blocked = await api("/api/programming/simple", { method: "POST", cookie, body: { ...simplePayload, channelId } });
+      assert.equal(blocked.status, 404, await blocked.clone().text());
+      const nonstop = await api("/api/programming/simple/nonstop", { method: "PUT", cookie, body: { channelId, enabled: false } });
+      assert.equal(nonstop.status, 404, await nonstop.clone().text());
+      const genericAutoDj = await api("/api/programming/autodj", { method: "PUT", cookie, body: { channelId, enabled: false, playbackPolicy: "RUN_24_7" } });
+      assert.equal(genericAutoDj.status, 404, await genericAutoDj.clone().text());
+    }
+    assert.equal(await db.autoDjPolicy.count({ where: { organisationId } }), 0);
+    const historicalPrivatePolicy = await db.autoDjPolicy.create({ data: {
+      organisationId, channelId: safeChannel.id, rightsUse: "CORRECTIONS_RADIO",
+      targetType: "ZONE", targetId: privateFacility.zones[0].id, enabled: true, state: "ACTIVE"
+    } });
+    for (const path of ["/api/programming/simple/nonstop", "/api/programming/autodj"]) {
+      const blocked = await api(path, { method: "PUT", cookie, body: {
+        channelId: safeChannel.id, enabled: false,
+        ...(path.endsWith("/autodj") ? { playbackPolicy: "RUN_24_7" } : {})
+      } });
+      assert.equal(blocked.status, 409, await blocked.clone().text());
+    }
+    const unchangedPrivatePolicy = await db.autoDjPolicy.findUnique({ where: { id: historicalPrivatePolicy.id } });
+    assert.equal(unchangedPrivatePolicy.rightsUse, "CORRECTIONS_RADIO");
+    assert.equal(unchangedPrivatePolicy.targetId, privateFacility.zones[0].id);
+    assert.equal(unchangedPrivatePolicy.enabled, true);
+    await db.autoDjPolicy.delete({ where: { id: historicalPrivatePolicy.id } });
+    const expansionView = await api("/api/programming/autodj-expansion", { cookie });
+    assert.equal(expansionView.status, 200, await expansionView.clone().text());
+    const expansion = await expansionView.json();
+    assert.ok(expansion.targets.some(({ channelId }) => channelId === safeChannel.id));
+    assert.ok(!expansion.targets.some(({ channelId }) => [normalChannel.id, privateChannel.id, privateRightsChannel.id].includes(channelId)));
+    assert.doesNotMatch(JSON.stringify(expansion), /Inside channel|Legacy private rights channel|Fictional private facility/);
+    for (const [method, path, body] of [
+      ["POST", `/api/programming/simple/${historicalPrivatePlaylist.id}`, { action: "duplicate" }],
+      ["PATCH", `/api/programming/simple/${historicalPrivatePlaylist.id}`, simplePayload],
+      ["DELETE", `/api/programming/simple/${historicalPrivatePlaylist.id}`],
+      ["POST", `/api/programming/simple/${activePrivatePlaylist.id}`, { action: "duplicate" }],
+      ["DELETE", `/api/programming/simple/events/${privateEvent.id}`]
+    ]) {
+      const blocked = await api(path, { method, cookie, body });
+      assert.equal(blocked.status, 404, await blocked.clone().text());
+    }
+    const eventPayload = {
+      channelId: privateChannel.id, playlistId: safePlaylist.id, timezone: "Europe/Malta",
+      startsAt: "2030-01-01T09:00", endsAt: "2030-01-01T10:00"
+    };
+    const privateEventCreate = await api("/api/programming/simple/events", { method: "POST", cookie, body: eventPayload });
+    assert.equal(privateEventCreate.status, 404, await privateEventCreate.clone().text());
+    const privateEventUpdate = await api(`/api/programming/simple/events/${privateEvent.id}`, {
+      method: "PATCH", cookie, body: { ...eventPayload, channelId: safeChannel.id }
+    });
+    assert.equal(privateEventUpdate.status, 404, await privateEventUpdate.clone().text());
+    assert.equal(await db.subscriberPlaylistEvent.count({ where: { id: privateEvent.id, cancelledAt: null } }), 1);
+    assert.ok((await db.smartPlaylist.findUnique({ where: { id: historicalPrivatePlaylist.id } })).status === "ACTIVE");
+    const advancedView = await api("/api/programming/smart-playlists", { cookie });
+    assert.equal(advancedView.status, 200, await advancedView.clone().text());
+    const advanced = await advancedView.json();
+    assert.ok(advanced.playlists.some(({ id }) => id === safeAdvancedPlaylist.id));
+    assert.ok(!advanced.playlists.some(({ id }) => id === privateAdvancedPlaylist.id));
+    assert.doesNotMatch(JSON.stringify(advanced), /Fictional private advanced sentinel/);
+    const privateAdvancedPreview = await api(`/api/programming/smart-playlists/${privateAdvancedPlaylist.id}/preview`, { cookie });
+    assert.equal(privateAdvancedPreview.status, 404, await privateAdvancedPreview.clone().text());
+    const privateAdvancedArchive = await api(`/api/programming/smart-playlists/${privateAdvancedPlaylist.id}/archive`, { method: "POST", cookie });
+    assert.equal(privateAdvancedArchive.status, 404, await privateAdvancedArchive.clone().text());
+    assert.equal((await db.smartPlaylist.findUnique({ where: { id: privateAdvancedPlaylist.id } })).status, "DRAFT");
 
     const retailView = await api("/api/programming", { cookie });
     assert.equal(retailView.status, 200, await retailView.clone().text());
@@ -169,7 +289,8 @@ test("general programming cannot expose or draft schedules for private Inside fa
       schedules: [{ weekday: 1, startsAt: "09:00", endsAt: "10:00" }]
     });
     for (const [targetType, targetId] of [
-      ["LOCATION", privateFacility.id], ["ZONE", privateFacility.zones[0].id], ["CHANNEL", privateChannel.id]
+      ["LOCATION", privateFacility.id], ["ZONE", privateFacility.zones[0].id],
+      ["STATION", normalStation.id], ["CHANNEL", normalChannel.id], ["CHANNEL", privateChannel.id]
     ]) {
       const blocked = await api("/api/promotions", { method: "POST", cookie, body: promotionPayload(targetType, targetId) });
       assert.equal(blocked.status, 400, await blocked.clone().text());
@@ -178,7 +299,8 @@ test("general programming cannot expose or draft schedules for private Inside fa
       ["LOCATION", normalLocation.id, [normalLocation.zones[0].id, sideZone.id]],
       ["ALL_LOCATIONS", null, [normalLocation.zones[0].id, sideZone.id]],
       ["LOCATION_GROUP", mixedGroup.id, [normalLocation.zones[0].id, sideZone.id]],
-      ["CHANNEL", normalChannel.id, [normalLocation.zones[0].id]]
+      ["STATION", safeStation.id, [sideZone.id]],
+      ["CHANNEL", safeChannel.id, [sideZone.id]]
     ]) {
       const preview = await api("/api/promotions", { method: "POST", cookie, body: promotionPayload(targetType, targetId) });
       assert.equal(preview.status, 200, await preview.clone().text());
@@ -208,10 +330,29 @@ test("general programming cannot expose or draft schedules for private Inside fa
       ...campaignBase, name: "Fictional normal campaign", status: "PUBLISHED",
       targets: { create: { targetType: "LOCATION", locationId: normalLocation.id } }
     } });
+    const historicalStationCampaign = await db.campaign.create({ data: {
+      ...campaignBase, name: "Fictional historically private station campaign", status: "DRAFT",
+      targets: { create: { targetType: "STATION", stationId: normalStation.id } }
+    } });
+    const historicalChannelCampaign = await db.campaign.create({ data: {
+      ...campaignBase, name: "Fictional historically private channel campaign", status: "DRAFT",
+      targets: { create: { targetType: "CHANNEL", channelId: normalChannel.id } }
+    } });
+    const safeStationCampaign = await db.campaign.create({ data: {
+      ...campaignBase, name: "Fictional safe station campaign", status: "DRAFT",
+      targets: { create: { targetType: "STATION", stationId: safeStation.id } }
+    } });
+    const safeChannelCampaign = await db.campaign.create({ data: {
+      ...campaignBase, name: "Fictional safe channel campaign", status: "DRAFT",
+      targets: { create: { targetType: "CHANNEL", channelId: safeChannel.id } }
+    } });
     const historicalList = await api("/api/promotions", { cookie });
     assert.equal(historicalList.status, 200, await historicalList.clone().text());
     const listedCampaigns = (await historicalList.json()).campaigns;
     assert.ok(!listedCampaigns.some(({ id }) => id === privateCampaign.id));
+    assert.ok(!listedCampaigns.some(({ id }) => id === historicalStationCampaign.id || id === historicalChannelCampaign.id));
+    assert.ok(listedCampaigns.some(({ id }) => id === safeStationCampaign.id));
+    assert.ok(listedCampaigns.some(({ id }) => id === safeChannelCampaign.id));
     assert.deepEqual(listedCampaigns.find(({ id }) => id === mixedCampaign.id)?.targets.map(({ label }) => label), [normalLocation.name]);
     const historicalPreview = await api("/api/promotions", { method: "POST", cookie, body: promotionPayload("LOCATION", normalLocation.id) });
     assert.equal(historicalPreview.status, 200, await historicalPreview.clone().text());
@@ -255,6 +396,10 @@ test("general programming cannot expose or draft schedules for private Inside fa
     assert.ok(reportBody.dimensions.campaigns.some(({ id }) => id === normalCampaign.id));
     assert.ok(reportBody.dimensions.campaigns.some(({ id }) => id === mixedCampaign.id));
     assert.ok(!reportBody.dimensions.campaigns.some(({ id }) => id === privateCampaign.id));
+    assert.ok(!reportBody.dimensions.campaigns.some(({ id }) =>
+      id === historicalStationCampaign.id || id === historicalChannelCampaign.id));
+    assert.ok(reportBody.dimensions.campaigns.some(({ id }) => id === safeStationCampaign.id));
+    assert.ok(reportBody.dimensions.campaigns.some(({ id }) => id === safeChannelCampaign.id));
     const privateReport = await api(`/api/reports/campaign-proof?${reportQuery}&locationId=${privateFacility.id}`, { cookie });
     assert.equal(privateReport.status, 200, await privateReport.clone().text());
     assert.equal((await privateReport.json()).report.summary.planned, 0);
@@ -271,11 +416,21 @@ test("general programming cannot expose or draft schedules for private Inside fa
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
     assert.equal(exportStatus.status, "READY", exportStatus.error || "Export did not complete");
+    const currentExport = await db.reportExportJob.findUnique({ where: { id: exportUrl.split("/").at(-1) } });
+    assert.equal(currentExport.filters.visibilityScope, "GENERAL_NON_CORRECTIONS_CAMPAIGN_PROOF_V1");
     const csvResponse = await api(exportStatus.downloadUrl, { cookie });
     assert.equal(csvResponse.status, 200, await csvResponse.clone().text());
     const csv = await csvResponse.text();
     assert.match(csv, /Fictional normal shop/);
     assert.doesNotMatch(csv, /Fictional private facility/);
+    const unmarkedLegacyExport = await db.reportExportJob.create({ data: {
+      organisationId, requestedByUserId: userId, status: "READY", filters: reportDates,
+      csvContent: "Fictional private facility", completedAt: new Date(),
+      expiresAt: new Date(Date.now() + 60_000)
+    } });
+    const legacyExportUrl = `/api/reports/campaign-proof/exports/${unmarkedLegacyExport.id}`;
+    assert.equal((await api(legacyExportUrl, { cookie })).status, 404);
+    assert.equal((await api(`${legacyExportUrl}/download`, { cookie })).status, 404);
 
     const proofBase = {
       organisationId, itemType: "PROMO", promoVersionId: promoVersion.id, mediaAssetId: media.id,
@@ -341,6 +496,46 @@ test("general programming cannot expose or draft schedules for private Inside fa
     const combinedText = await combinedCsv.text();
     assert.match(combinedText, /Fictional normal shop/);
     assert.doesNotMatch(combinedText, /Fictional private facility|Fictional private snapshot/);
+
+    // The combined report covers ordinary proof rows; the malformed campaign-proof
+    // fixtures below exercise a different, stricter intent-matching contract.
+    const unconfirmedIntent = await db.playoutIntent.create({ data: {
+      ...intentBase, scheduleItemId: randomUUID(), playerId: normalPlayer.id,
+      zoneId: normalLocation.zones[0].id, campaignId: normalCampaign.id,
+      locationId: normalLocation.id, locationName: normalLocation.name,
+      plannedStart: new Date(intentBase.plannedStart.getTime() + 1_000)
+    } });
+    await db.playoutIntent.create({ data: {
+      ...intentBase, scheduleItemId: randomUUID(), playerId: normalPlayer.id,
+      zoneId: normalLocation.zones[0].id, channelId: normalChannel.id, campaignId: normalCampaign.id,
+      locationId: normalLocation.id, locationName: normalLocation.name,
+      plannedStart: new Date(intentBase.plannedStart.getTime() + 2_000)
+    } });
+    await db.proofOfPlayEvent.createMany({ data: [
+      { ...proofBase, clientEventId: randomUUID(), scheduleItemId: unconfirmedIntent.scheduleItemId,
+        playoutIntentId: unconfirmedIntent.id, playerId: normalPlayer.id, zoneId: normalLocation.zones[0].id,
+        campaignId: normalCampaign.id, programmingSource: "CORRECTIONS_PROGRAMME",
+        playerName: normalPlayer.name, locationName: normalLocation.name, zoneName: normalLocation.zones[0].name },
+      { ...proofBase, clientEventId: randomUUID(), scheduleItemId: unconfirmedIntent.scheduleItemId,
+        playoutIntentId: unconfirmedIntent.id, playerId: privatePlayer.id, zoneId: privateFacility.zones[0].id,
+        campaignId: normalCampaign.id, playerName: privatePlayer.name,
+        locationName: privateFacility.name, zoneName: privateFacility.zones[0].name },
+      { ...proofBase, clientEventId: randomUUID(), scheduleItemId: unconfirmedIntent.scheduleItemId,
+        playoutIntentId: unconfirmedIntent.id, playerId: privatePlayer.id, zoneId: normalLocation.zones[0].id,
+        campaignId: normalCampaign.id, playerName: privatePlayer.name,
+        locationName: normalLocation.name, zoneName: normalLocation.zones[0].name },
+      { ...proofBase, clientEventId: randomUUID(), scheduleItemId: randomUUID(),
+        playoutIntentId: unconfirmedIntent.id, playerId: normalPlayer.id, zoneId: normalLocation.zones[0].id,
+        campaignId: normalCampaign.id, playerName: normalPlayer.name,
+        locationName: normalLocation.name, zoneName: normalLocation.zones[0].name }
+    ] });
+    const verifiedReport = await api(`/api/reports/campaign-proof?${reportQuery}`, { cookie });
+    assert.equal(verifiedReport.status, 200, await verifiedReport.clone().text());
+    const verifiedSummary = (await verifiedReport.json()).report.summary;
+    assert.equal(verifiedSummary.planned, 2,
+      "a historically private-assigned channel cannot contribute a general campaign intent");
+    assert.equal(verifiedSummary.completed, 1,
+      "private-source, private-facility, wrong-player, or wrong-item proof cannot confirm an ordinary campaign intent");
 
     await db.subscription.update({ where: { organisationId }, data: { planId: insidePlan.id } });
     assert.equal((await api("/api/programming", { cookie })).status, 403);

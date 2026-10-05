@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getActiveOrganisationContext } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { resolveEntitlements } from "@/lib/entitlements.mjs";
+import { GENERAL_STUDIO_MEDIA_ASSET_WHERE } from "@/lib/studio-general-asset-boundary.mjs";
 import {
   canManageSubscriberAudio,
   subscriberAudioReviewState
@@ -60,7 +61,13 @@ export async function GET() {
     }
 
     const assets = await prisma.promoAsset.findMany({
-      where: { organisationId: organisation.id, status: { not: "ARCHIVED" } },
+      where: {
+        organisationId: organisation.id,
+        status: { not: "ARCHIVED" },
+        // A private version also makes the parent title and approved-version
+        // pointer private, even when another version is ordinary audio.
+        versions: { every: { mediaAsset: { is: GENERAL_STUDIO_MEDIA_ASSET_WHERE } } }
+      },
       include: {
         versions: {
           orderBy: { version: "desc" },

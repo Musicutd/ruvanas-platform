@@ -4,6 +4,7 @@ import test from "node:test";
 
 const route = await readFile(new URL("../app/api/newsroom/route.js", import.meta.url), "utf8");
 const stationBoundary = await readFile(new URL("../lib/general-station-boundary.mjs", import.meta.url), "utf8");
+const writeBoundary = await readFile(new URL("../lib/newsroom-write-boundary.mjs", import.meta.url), "utf8");
 
 test("Online Newsroom requires the Online entitlement and offers only ordinary station and channel targets", () => {
   assert.match(route, /function onlineEntitlementRequired\(access\)[\s\S]*access\.entitlements\.onlineRadioEnabled/);
@@ -20,8 +21,11 @@ test("Online Newsroom selectors and writes reject private Studio projects and me
   assert.match(route, /GENERAL_STUDIO_AUDIO_PROJECT_WHERE, GENERAL_STUDIO_MEDIA_ASSET_WHERE/);
   assert.match(route, /prisma\.audioProject\.findMany\(\{ where: \{ organisationId, status: \{ not: "ARCHIVED" \}, \.\.\.GENERAL_STUDIO_AUDIO_PROJECT_WHERE \}/);
   assert.match(route, /prisma\.mediaAsset\.findMany\(\{ where: \{ organisationId, status: "READY", mimeType: \{ startsWith: "audio\/" \}, \.\.\.GENERAL_STUDIO_MEDIA_ASSET_WHERE \}/);
-  assert.match(route, /prisma\.station\.findFirst\(\{ where: \{ id: data\.stationId, organisationId, status: \{ not: "CANCELLED" \}, \.\.\.onlineStationWhere \}/);
-  assert.match(route, /prisma\.channel\.findFirst\(\{ where: \{ id: data\.channelId, stationId: data\.stationId, organisationId, status: \{ not: "ARCHIVED" \}, \.\.\.onlineChannelWhere \}/);
+  assert.match(route, /lockVisibleOnlineNewsroomCreateTargets\(tx, \{[\s\S]*stationWhere: onlineStationWhere, channelWhere: onlineChannelWhere/);
+  assert.match(writeBoundary, /FROM "Station" WHERE "id" = \$\{stationId\} AND "organisationId" = \$\{organisationId\} FOR UPDATE/);
+  assert.match(writeBoundary, /FROM "Channel" WHERE "stationId" = \$\{stationId\} ORDER BY "id" FOR UPDATE/);
+  assert.match(writeBoundary, /where: \{ id: stationId, organisationId, status: \{ not: "CANCELLED" \}, \.\.\.stationWhere \}/);
+  assert.match(writeBoundary, /where: \{ id: channelId, stationId, organisationId, status: \{ not: "ARCHIVED" \}, \.\.\.channelWhere \}/);
   assert.match(route, /prisma\.audioProject\.findFirst\(\{ where: \{ id: data\.audioProjectId, organisationId, status: \{ not: "ARCHIVED" \}, \.\.\.GENERAL_STUDIO_AUDIO_PROJECT_WHERE \}/);
   assert.match(route, /prisma\.mediaAsset\.findFirst\(\{ where: \{ id: data\.interviewMediaAssetId, organisationId, status: "READY", mimeType: \{ startsWith: "audio\/" \}, \.\.\.GENERAL_STUDIO_MEDIA_ASSET_WHERE \}/);
 });

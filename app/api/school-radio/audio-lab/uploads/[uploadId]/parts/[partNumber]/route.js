@@ -1,11 +1,11 @@
-import { UploadPartCommand } from "@aws-sdk/client-s3";
+import { AbortMultipartUploadCommand, UploadPartCommand } from "@aws-sdk/client-s3";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getR2Storage } from "@/lib/r2";
 import { ORGANISATION_CONTENT_ROLES } from "@/lib/permissions.mjs";
 import { requireActiveStudio } from "@/lib/studio-access";
 import { validateUploadPart } from "@/lib/audio-lab.mjs";
-import { GENERAL_STUDIO_AUDIO_PROJECT_WHERE, assertGeneralStudioAudioProject } from "@/lib/studio-general-asset-boundary.mjs";
+import { GENERAL_STUDIO_AUDIO_PROJECT_WHERE, assertGeneralStudioAudioProject, lockGeneralStudioAudioProject } from "@/lib/studio-general-asset-boundary.mjs";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -45,12 +45,29 @@ export async function PUT(request, { params }) {
     const uploaded = await r2.client.send(new UploadPartCommand({ Bucket: r2.bucketName, Key: session.quarantineKey, UploadId: session.multipartUploadId, PartNumber: partNumber, Body: body, ContentLength: body.length }));
     if (!uploaded.ETag) throw new Error("Storage did not confirm the uploaded part.");
     await prisma.$transaction(async (tx) => {
-      await assertGeneralStudioAudioProject(tx, access.organisation.id, session.projectId);
+      await lockGeneralStudioAudioProject(tx, access.organisation.id, session.projectId);
+      const currentSession = await tx.schoolAudioUploadSession.findFirst({ where: {
+        id: session.id, organisationId: access.organisation.id, createdByUserId: access.user.id,
+        status: { in: ["INITIATED", "UPLOADING"] }, expiresAt: { gt: new Date() }
+      }, select: { id: true } });
+      if (!currentSession) throw new Error("The upload session has expired or is unavailable.");
       await tx.schoolAudioUploadPart.upsert({ where: { sessionId_partNumber: { sessionId: session.id, partNumber } }, create: { sessionId: session.id, partNumber, eTag: uploaded.ETag, sizeBytes: body.length }, update: { eTag: uploaded.ETag, sizeBytes: body.length } });
       await tx.schoolAudioUploadSession.update({ where: { id: session.id }, data: { status: "UPLOADING" } });
     });
     return NextResponse.json({ partNumber, receivedBytes: body.length });
   } catch (error) {
+    if (error?.code === "CORRECTIONS_STUDIO_OUTPUT_BLOCKED") {
+      // The private transition makes this multipart session unusable. Release its quota
+      // reservation without changing the project or its submitted render evidence.
+      await prisma.schoolAudioUploadSession.updateMany({ where: {
+        id: session.id, organisationId: access.organisation.id, createdByUserId: access.user.id,
+        status: { in: ["INITIATED", "UPLOADING"] }
+      }, data: { status: "FAILED" } }).catch(() => {});
+      try {
+        const r2 = getR2Storage();
+        await r2.client.send(new AbortMultipartUploadCommand({ Bucket: r2.bucketName, Key: session.quarantineKey, UploadId: session.multipartUploadId }));
+      } catch {}
+    }
     return NextResponse.json({ error: error instanceof Error ? error.message : "The recording part could not be uploaded." }, { status: error?.status || 400 });
   }
 }

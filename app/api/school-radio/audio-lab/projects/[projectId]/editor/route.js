@@ -7,7 +7,7 @@ import { assertStudioWaveformWriteAllowed, normalizeEditorState } from "@/lib/wa
 import { normalizeVoiceCleanup } from "@/lib/voice-cleanup.mjs";
 import { applyStudioMasteringPreset, normalizeStudioEffects, normalizeStudioMastering } from "@/lib/studio-effects-mastering.mjs";
 import { saveStudioWaveformSnapshot, serializeStudioWaveformProject, studioWaveformEditorInclude } from "@/lib/studio-waveform-persistence";
-import { GENERAL_STUDIO_AUDIO_PROJECT_WHERE, assertGeneralStudioAudioProject, generalStudioMediaAssetIds, generalStudioUsableMediaAssetIds } from "@/lib/studio-general-asset-boundary.mjs";
+import { GENERAL_STUDIO_AUDIO_PROJECT_WHERE, assertGeneralStudioAudioProject, lockGeneralStudioAudioProject, generalStudioMediaAssetIds, generalStudioUsableMediaAssetIds } from "@/lib/studio-general-asset-boundary.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +32,12 @@ async function assertGeneralWaveformProjectMedia(database, organisationId, proje
   ].filter(Boolean))];
   const usable = await generalStudioUsableMediaAssetIds(database, organisationId, assetIds);
   if (usable.size !== assetIds.length) throw Object.assign(new Error("The AudioLab project contains media unavailable in general Studio."), { status: 403 });
+}
+
+async function lockWritableWaveformProject(tx, organisationId, projectId) {
+  const current = await lockGeneralStudioAudioProject(tx, organisationId, projectId);
+  if (current.status === "ARCHIVED") throw Object.assign(new Error("The AudioLab project was not found."), { status: 404 });
+  return current;
 }
 
 export async function GET(_request, { params }) {
@@ -67,10 +73,10 @@ export async function POST(request, { params }) {
       if (!durationMs) return NextResponse.json({ error: "This take is still being analysed. Try again shortly." }, { status: 409 });
       const state = { clips: [{ clientId: `take-${take.id}`, kind: "SOURCE", mediaAssetId: take.mediaAssetId, sourceStartMs: 0, sourceEndMs: durationMs, timelineStartMs: 0, gainDb: 0, fadeInMs: 0, fadeOutMs: 0, fadeInCurve: "linear", fadeOutCurve: "linear", locked: false }], markers: [], normalize: true, targetLufs: -16, noiseCleanup: false, voiceCleanup: normalizeVoiceCleanup(), effects: normalizeStudioEffects(), mastering: applyStudioMasteringPreset("PODCAST") };
       await prisma.$transaction(async (tx) => {
-        await assertGeneralStudioAudioProject(tx, access.organisation.id, projectId);
+        const current = await lockWritableWaveformProject(tx, access.organisation.id, projectId);
         const sources = await generalStudioMediaAssetIds(tx, access.organisation.id, [take.mediaAssetId]);
         if (!sources.has(take.mediaAssetId)) throw Object.assign(new Error("This source take is not available in general Studio."), { status: 403 });
-        return saveStudioWaveformSnapshot(tx, { project, userId: access.user.id, state, reason: "Waveform editor initialized" });
+        return saveStudioWaveformSnapshot(tx, { project: current, userId: access.user.id, state, reason: "Waveform editor initialized" });
       });
     } else {
       const renderRequested = parsed.data.action === "QUEUE_RENDER";
@@ -85,15 +91,15 @@ export async function POST(request, { params }) {
         return NextResponse.json({ error: "Choose an Effects or Mastering preset before creating a preview." }, { status: 409 });
       }
       const saved = await prisma.$transaction(async (tx) => {
-        await assertGeneralStudioAudioProject(tx, access.organisation.id, projectId);
+        const current = await lockWritableWaveformProject(tx, access.organisation.id, projectId);
         const sourceIds = [...new Set(requestedState.clips.filter((clip) => clip.kind === "SOURCE").map((clip) => clip.mediaAssetId))];
         const sources = await generalStudioMediaAssetIds(tx, access.organisation.id, sourceIds);
         if (sources.size !== sourceIds.length) throw Object.assign(new Error("One or more clip sources are not available in general Studio."), { status: 403 });
-        return saveStudioWaveformSnapshot(tx, { project, userId: access.user.id, state: requestedState, reason: renderRequested ? "Final render requested" : cleanupPreviewRequested ? "Voice cleanup comparison requested" : masterPreviewRequested ? "Effects and mastering preview requested" : parsed.data.reason || "Waveform editor save" });
+        return saveStudioWaveformSnapshot(tx, { project: current, userId: access.user.id, state: requestedState, reason: renderRequested ? "Final render requested" : cleanupPreviewRequested ? "Voice cleanup comparison requested" : masterPreviewRequested ? "Effects and mastering preview requested" : parsed.data.reason || "Waveform editor save" });
       });
       if (parsed.data.action === "QUEUE_RENDER") {
         await prisma.$transaction(async (tx) => {
-          await assertGeneralStudioAudioProject(tx, access.organisation.id, projectId);
+          await lockWritableWaveformProject(tx, access.organisation.id, projectId);
           const sourceIds = [...new Set(saved.clean.clips.filter((clip) => clip.kind === "SOURCE").map((clip) => clip.mediaAssetId))];
           const usable = await generalStudioMediaAssetIds(tx, access.organisation.id, sourceIds);
           if (usable.size !== sourceIds.length) throw Object.assign(new Error("One or more clip sources are not available in general Studio."), { status: 403 });
@@ -103,7 +109,7 @@ export async function POST(request, { params }) {
       } else if (cleanupPreviewRequested) {
         const groupId = crypto.randomUUID();
         await prisma.$transaction(async (tx) => {
-          await assertGeneralStudioAudioProject(tx, access.organisation.id, projectId);
+          await lockWritableWaveformProject(tx, access.organisation.id, projectId);
           const sourceIds = [...new Set(saved.clean.clips.filter((clip) => clip.kind === "SOURCE").map((clip) => clip.mediaAssetId))];
           const usable = await generalStudioMediaAssetIds(tx, access.organisation.id, sourceIds);
           if (usable.size !== sourceIds.length) throw Object.assign(new Error("One or more clip sources are not available in general Studio."), { status: 403 });
@@ -114,7 +120,7 @@ export async function POST(request, { params }) {
       } else if (masterPreviewRequested) {
         const groupId = crypto.randomUUID();
         await prisma.$transaction(async (tx) => {
-          await assertGeneralStudioAudioProject(tx, access.organisation.id, projectId);
+          await lockWritableWaveformProject(tx, access.organisation.id, projectId);
           const sourceIds = [...new Set(saved.clean.clips.filter((clip) => clip.kind === "SOURCE").map((clip) => clip.mediaAssetId))];
           const usable = await generalStudioMediaAssetIds(tx, access.organisation.id, sourceIds);
           if (usable.size !== sourceIds.length) throw Object.assign(new Error("One or more clip sources are not available in general Studio."), { status: 403 });

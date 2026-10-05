@@ -5,6 +5,7 @@ import { ORGANISATION_CONTENT_ROLES, ORGANISATION_MANAGER_ROLES, isOrganisationR
 import { requireActiveSchoolRadio } from "@/lib/school-radio-access";
 import { normalizePodcastChapters, normalizeTranscriptSegments, validatePodcastPublication } from "@/lib/school-podcast-live.mjs";
 import { SCHOOL_PUBLICATION_POLICY_VERSION, controlledPublicationSnapshot, validateControlledSchoolPublication } from "@/lib/school-publication.mjs";
+import { GENERAL_STUDIO_MEDIA_ASSET_WHERE } from "@/lib/studio-general-asset-boundary.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -44,7 +45,7 @@ export async function GET() {
   const [series, programmes, eligibleEpisodes, profile, readiness] = await Promise.all([
     prisma.schoolPodcastSeries.findMany({ where: { organisationId, product: "SCHOOL_RADIO" }, orderBy: { updatedAt: "desc" }, include }),
     prisma.schoolProgramme.findMany({ where: { organisationId, status: "ACTIVE" }, orderBy: { title: "asc" }, select: { id: true, title: true } }),
-    prisma.schoolEpisode.findMany({ where: { organisationId, status: "APPROVED", podcastEpisode: null, submissions: { some: { organisationId, status: "SUBMITTED", promoVersion: { status: "APPROVED", mediaAsset: { organisationId, status: "READY" }, promoAsset: { organisationId } } } } }, orderBy: { approvedAt: "desc" }, select: { id: true, title: true, summary: true, programmeId: true } }),
+    prisma.schoolEpisode.findMany({ where: { organisationId, status: "APPROVED", podcastEpisode: null, submissions: { some: { organisationId, status: "SUBMITTED", promoVersion: { status: "APPROVED", mediaAsset: { organisationId, status: "READY", ...GENERAL_STUDIO_MEDIA_ASSET_WHERE }, promoAsset: { organisationId } } } } }, orderBy: { approvedAt: "desc" }, select: { id: true, title: true, summary: true, programmeId: true } }),
     prisma.schoolProfile.findUnique({ where: { organisationId }, select: { publishingPolicy: true } }),
     prisma.schoolSafeguardingReadiness.findUnique({ where: { organisationId }, select: { status: true } })
   ]);
@@ -78,7 +79,7 @@ export async function POST(request) {
     } else if (data.action === "CREATE_EPISODE") {
       const [series, episode] = await Promise.all([
         prisma.schoolPodcastSeries.findFirst({ where: { id: data.seriesId, organisationId, product: "SCHOOL_RADIO" }, select: { id: true } }),
-        prisma.schoolEpisode.findFirst({ where: { id: data.episodeId, organisationId, status: "APPROVED", podcastEpisode: null, submissions: { some: { organisationId, status: "SUBMITTED", promoVersion: { status: "APPROVED", mediaAsset: { organisationId, status: "READY" }, promoAsset: { organisationId } } } } }, select: { id: true } })
+        prisma.schoolEpisode.findFirst({ where: { id: data.episodeId, organisationId, status: "APPROVED", podcastEpisode: null, submissions: { some: { organisationId, status: "SUBMITTED", promoVersion: { status: "APPROVED", mediaAsset: { organisationId, status: "READY", ...GENERAL_STUDIO_MEDIA_ASSET_WHERE }, promoAsset: { organisationId } } } } }, select: { id: true } })
       ]);
       if (!series || !episode) return NextResponse.json({ error: "Choose an approved, unpublished school episode and a valid series." }, { status: 404 });
       result = await prisma.schoolPodcastEpisode.create({ data: { organisationId, seriesId: series.id, episodeId: episode.id, publicationScope: "INTERNAL_ONLY", accessibleDescription: data.accessibleDescription || null, createdByUserId: access.user.id } });
@@ -104,7 +105,7 @@ export async function POST(request) {
       const denied = managerRequired(access); if (denied) return denied;
       const podcast = await prisma.schoolPodcastEpisode.findFirst({
         where: { id: data.podcastEpisodeId, organisationId, series: { product: "SCHOOL_RADIO" } },
-        include: { transcript: true, series: true, episode: { include: { programme: { select: { title: true } }, contributors: true, submissions: { where: { organisationId, status: "SUBMITTED", promoVersion: { status: "APPROVED", mediaAsset: { organisationId, status: "READY" }, promoAsset: { organisationId } } }, orderBy: { revision: "desc" }, take: 1 } } } }
+        include: { transcript: true, series: true, episode: { include: { programme: { select: { title: true } }, contributors: true, submissions: { where: { organisationId, status: "SUBMITTED", promoVersion: { status: "APPROVED", mediaAsset: { organisationId, status: "READY", ...GENERAL_STUDIO_MEDIA_ASSET_WHERE }, promoAsset: { organisationId } } }, orderBy: { revision: "desc" }, take: 1 } } } }
       });
       if (!podcast) return NextResponse.json({ error: "The podcast episode was not found." }, { status: 404 });
       if (data.action === "PUBLISH") {

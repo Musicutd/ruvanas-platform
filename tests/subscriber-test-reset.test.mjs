@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
+import { subscriberTestResetAvailable } from "../lib/subscriber-test-reset-availability.mjs";
+import { buildAdminNavigation } from "../lib/user-experience-navigation.mjs";
 import {
   resetSubscriberTestData,
   subscriberTestResetPreview,
@@ -10,6 +12,35 @@ import {
 } from "../lib/subscriber-test-reset.mjs";
 
 const retainedUser = { id: "super-1", email: "manuelchircop@gmail.com", name: "Manuel", role: "SUPER_ADMIN" };
+
+const localResetEnvironment = {
+  SUBSCRIBER_TEST_RESET_ENABLED: "1",
+  NODE_ENV: "development",
+  DATABASE_URL: "postgresql://test:test@localhost:5432/fictional_test_data"
+};
+
+test("subscriber reset is available only with explicit opt-in against a loopback development database", () => {
+  assert.equal(subscriberTestResetAvailable(localResetEnvironment), true);
+  for (const host of ["127.0.0.1", "[::1]"]) {
+    assert.equal(subscriberTestResetAvailable({ ...localResetEnvironment, DATABASE_URL: `postgres://test:test@${host}:5432/fictional_test_data` }), true);
+  }
+  assert.equal(subscriberTestResetAvailable({ ...localResetEnvironment, SUBSCRIBER_TEST_RESET_ENABLED: undefined }), false);
+  assert.equal(subscriberTestResetAvailable({ ...localResetEnvironment, SUBSCRIBER_TEST_RESET_ENABLED: "true" }), false);
+  assert.equal(subscriberTestResetAvailable({ ...localResetEnvironment, NODE_ENV: "production" }), false);
+  assert.equal(subscriberTestResetAvailable({ ...localResetEnvironment, NODE_ENV: "test" }), false);
+  assert.equal(subscriberTestResetAvailable({ ...localResetEnvironment, DATABASE_URL: "postgresql://test:test@database.internal:5432/ruvanas" }), false);
+  assert.equal(subscriberTestResetAvailable({ ...localResetEnvironment, DATABASE_URL: "postgresql://test:test@localhost.example:5432/ruvanas" }), false);
+  assert.equal(subscriberTestResetAvailable({ ...localResetEnvironment, DATABASE_URL: "https://localhost:5432/ruvanas" }), false);
+  assert.equal(subscriberTestResetAvailable({ ...localResetEnvironment, DATABASE_URL: "not a database URL" }), false);
+});
+
+test("subscriber reset navigation appears only for an opted-in local Super Admin", () => {
+  const hrefs = (role, environment) => buildAdminNavigation(role, environment)
+    .flatMap((section) => section.items.map((item) => item.href));
+  assert.equal(hrefs("SUPER_ADMIN", localResetEnvironment).includes("/admin/test-data-reset"), true);
+  assert.equal(hrefs("SUPER_ADMIN", { ...localResetEnvironment, NODE_ENV: "production" }).includes("/admin/test-data-reset"), false);
+  assert.equal(hrefs("SUPPORT", localResetEnvironment).includes("/admin/test-data-reset"), false);
+});
 
 test("subscriber reset can only retain the signed-in Super Admin with exact confirmation", () => {
   assert.equal(validateSubscriberTestReset({ actor: retainedUser, retainedEmail: " ManuelChircop@gmail.com ", confirmation: SUBSCRIBER_TEST_RESET_CONFIRMATION }), retainedUser.email);
@@ -230,23 +261,27 @@ test("rights evidence archive failures report the exact safe reset stage", async
 });
 
 test("reset endpoint, interface, and migration keep the operation controlled and explicit", async () => {
-  const [route, page, client, navigation, schema, migration] = await Promise.all([
+  const [route, page, client, organisationsPage, navigation, schema, migration] = await Promise.all([
     readFile(new URL("../app/api/admin/test-data-reset/route.js", import.meta.url), "utf8"),
     readFile(new URL("../app/admin/test-data-reset/page.js", import.meta.url), "utf8"),
     readFile(new URL("../app/admin/test-data-reset/TestDataReset.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/admin/organisations/page.js", import.meta.url), "utf8"),
     readFile(new URL("../lib/user-experience-navigation.mjs", import.meta.url), "utf8"),
     readFile(new URL("../prisma/schema.prisma", import.meta.url), "utf8"),
     readFile(new URL("../prisma/migrations/20261117000000_subscriber_reset_rights_evidence_archive/migration.sql", import.meta.url), "utf8")
   ]);
   assert.match(route, /access\.user\.role !== "SUPER_ADMIN"/);
+  assert.match(route, /!subscriberTestResetAvailable\(\)/);
   assert.match(route, /SELF_SERVICE_REGISTRATION_ENABLED/);
   assert.match(route, /resetSubscriberTestData/);
-  assert.match(page, /user\?\.role !== "SUPER_ADMIN"/);
+  assert.match(page, /user\?\.role !== "SUPER_ADMIN" \|\| !subscriberTestResetAvailable\(\)/);
+  assert.match(organisationsPage, /canManageEntitlements && subscriberTestResetAvailable\(\)/);
   assert.match(client, /DELETE TEST SUBSCRIBERS/);
   assert.match(client, /Permanent action/);
   assert.match(client, /rights-evidence records to archive/);
   assert.match(client, /immutable archive/);
   assert.match(navigation, /\/admin\/test-data-reset/);
+  assert.match(navigation, /subscriberTestResetAvailable\(environment\)/);
   assert.match(schema, /model RightsEvidenceResetArchive/);
   assert.match(migration, /archive\."payload" = to_jsonb\(OLD\)/);
   assert.match(migration, /RightsEvidenceResetArchive_immutable/);

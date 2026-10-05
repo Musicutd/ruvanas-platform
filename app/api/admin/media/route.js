@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
+import { GENERAL_STUDIO_MEDIA_ASSET_WHERE } from "@/lib/studio-general-asset-boundary.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -64,6 +65,9 @@ export async function GET() {
     const assets = await prisma.promoAsset.findMany({
       where: {
         status: { not: "ARCHIVED" },
+        // A mixed ordinary/private version history is private as a whole.
+        // Never serialize Corrections render metadata into the generic list.
+        versions: { every: { mediaAsset: { is: GENERAL_STUDIO_MEDIA_ASSET_WHERE } } },
         ...(organisationIds
           ? { organisationId: { in: organisationIds } }
           : {})
