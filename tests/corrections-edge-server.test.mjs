@@ -108,6 +108,13 @@ test("authenticated local player sees only its current private media; C6 overrid
       "content-type": "application/json" }, body: JSON.stringify({ sessionId: sessionState.sessionId,
       eventType: "FAILED", positionSeconds: 0 }) })).status, 400);
     cache.suspended = true;
+    assert.equal((await fetch(`${url}/v1/playback`, { headers: {
+      origin: browserOrigin, authorization: `EdgeSession ${localLease.accessToken}` } })).status, 401,
+    "a suspended Edge rejects a local browser playback poll before manifest expiry");
+    assert.equal((await fetch(`${url}/v1/renew`, { method: "POST", headers: {
+      origin: browserOrigin, "content-type": "application/json" },
+      body: JSON.stringify({ refreshToken: localLease.refreshToken }) })).status, 401,
+    "a suspended Edge cannot renew a formerly valid local browser lease");
     assert.equal((await fetch(`${url}${sessionState.mediaUrl}`, { headers: {
       origin: browserOrigin } })).status, 401, "a suspended Edge cannot use an earlier browser media ticket");
     cache.suspended = false;
