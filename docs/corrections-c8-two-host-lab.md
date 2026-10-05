@@ -106,6 +106,13 @@ an actual two-PC run before marking any live result PASS.
    withdrawal stops both players, and repeat sync adds no duplicate proof.
    Also test expiry, corruption/repair, credential rotation/revocation,
    cross-facility denial, Priority/Emergency ordering and return separately.
+   For a live 401/403 Edge suspension, wait until both browsers have buffered
+   private audio, then confirm that each player audibly stops within its next
+   five-second local Edge poll, unloads its old source and cannot resume those
+   buffered bytes through Play or Retry. No `COMPLETED` proof may be claimed.
+   Keep this distinct from stopping only the Edge-to-cloud link: while the
+   local Edge still returns an authorised `READY` state, both players should
+   continue under the valid signed offline snapshot.
 9. Record exact times, both host/IP identities, certificate fingerprints,
    control responses, Edge logs (with secrets redacted), cloud proof counts,
    player state and human audible observations. Stop Edge and link on B,

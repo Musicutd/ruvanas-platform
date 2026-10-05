@@ -2,8 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { verifyCorrectionsEdgeAttestation } from "@/lib/corrections-edge-attestation.mjs";
+import { pollCorrectionsEdgePlayback, unloadCorrectionsEdgeAudio } from "@/lib/corrections-edge-player-safety.mjs";
 
 const INSTANCE_KEY = "ruvanas_player_instance_v1";
+
+class EdgeRequestError extends Error {
+  constructor(message, status) { super(message); this.status = status; }
+}
 
 function instanceHeader() {
   let id = window.sessionStorage.getItem(INSTANCE_KEY);
@@ -17,6 +22,7 @@ export default function CorrectionsEdgePlayer({ connection }) {
   const audio = useRef(null);
   const lease = useRef(null);
   const active = useRef(null);
+  const blockedSessionId = useRef(null);
   const busy = useRef(false);
   const stopped = useRef(false);
 
@@ -28,7 +34,7 @@ export default function CorrectionsEdgePlayer({ connection }) {
       ...(body ? { body: JSON.stringify(body) } : {})
     });
     const result = await response.json();
-    if (!response.ok) throw new Error(result.error || "The private Edge player is unavailable.");
+    if (!response.ok) throw new EdgeRequestError(result.error || "The private Edge player is unavailable.", response.status);
     return result;
   }, [connection.endpointOrigin]);
 
@@ -66,7 +72,7 @@ export default function CorrectionsEdgePlayer({ connection }) {
       if (Date.parse(lease.current?.accessValidUntil || "") < Date.now() + 10_000) await renew();
       await edgeRequest("/v1/proof", { method: "POST", body: { sessionId: item.sessionId,
         eventType, positionSeconds: eventType === "COMPLETED" ? Math.ceil(item.durationSeconds) :
-          Math.max(0, Math.floor(audio.current?.currentTime || 0)) } });
+          (item.stoppedAtSeconds ?? Math.max(0, Math.floor(audio.current?.currentTime || 0))) } });
     } catch {
       // The Edge, not the browser, holds the append-only proof journal. A
       // failed terminal report must never be represented as delivered.
@@ -74,32 +80,43 @@ export default function CorrectionsEdgePlayer({ connection }) {
     }
   }, [edgeRequest, renew]);
 
+  const haltPlayback = useCallback(() => {
+    const item = active.current;
+    const positionSeconds = unloadCorrectionsEdgeAudio(audio.current);
+    if (item) {
+      item.stoppedAtSeconds = positionSeconds;
+      blockedSessionId.current = item.sessionId;
+    }
+    active.current = null;
+    setCurrent(null);
+    return item;
+  }, []);
+
   const poll = useCallback(async () => {
     if (busy.current || stopped.current) return;
     busy.current = true;
     try {
       if (!lease.current) await establish();
-      if (Date.parse(lease.current.accessValidUntil) < Date.now() + 20_000) await renew();
-      let result;
-      try { result = await edgeRequest("/v1/playback"); }
-      catch (error) {
-        // A new signed manifest invalidates the prior lease. Obtain a fresh
-        // cloud grant only after a new attestation; never guess another URL.
-        lease.current = null;
-        await establish();
-        result = await edgeRequest("/v1/playback");
-      }
+      const result = await pollCorrectionsEdgePlayback({
+        needsRenewal: Date.parse(lease.current.accessValidUntil) < Date.now() + 20_000,
+        renew, playback: () => edgeRequest("/v1/playback"),
+        halt: haltPlayback, interrupt: (item) => closePlayback("INTERRUPTED", item),
+        clearLease: () => { lease.current = null; }, establish
+      });
+      if (stopped.current) return;
       if (result.state !== "READY") {
-        if (active.current) {
-          audio.current?.pause();
-          await closePlayback("INTERRUPTED");
-          active.current = null; setCurrent(null);
-        }
+        const interrupted = haltPlayback();
+        if (interrupted) await closePlayback("INTERRUPTED", interrupted);
         setStatus(result.state === "EXPIRED_OR_UNAVAILABLE" ?
           "Offline permission expired. Private playback is safely stopped." :
           "No authorised private audio is available for this player right now.");
         return;
       }
+      if (result.sessionId === blockedSessionId.current) {
+        setStatus("The Edge reused an interrupted session. Private playback remains stopped until a fresh session is authorised.");
+        return;
+      }
+      blockedSessionId.current = null;
       if (active.current?.sessionId === result.sessionId) {
         // A browser can pause a replaced audio source during an override
         // transition even though the Edge session remains valid. Do not let
@@ -111,19 +128,18 @@ export default function CorrectionsEdgePlayer({ connection }) {
         return;
       }
       if (active.current) {
-        audio.current?.pause();
-        await closePlayback("INTERRUPTED");
+        const interrupted = haltPlayback();
+        await closePlayback("INTERRUPTED", interrupted);
       }
       active.current = { ...result, ended: false };
       setCurrent(result);
       setStatus(`Private ${result.source.replace(/^CORRECTIONS_/, "").toLowerCase()} programme · Secure Edge`);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "The assigned Secure Edge is unavailable.");
-      if (active.current && Date.now() >= Date.parse(connection.validUntil)) {
-        audio.current?.pause(); active.current = null; setCurrent(null);
-      }
+      if (stopped.current) return;
+      haltPlayback();
+      setStatus(`${error instanceof Error ? error.message : "The assigned Secure Edge is unavailable."} Private playback is stopped; delivery is not confirmed.`);
     } finally { busy.current = false; }
-  }, [closePlayback, connection.validUntil, edgeRequest, establish, renew]);
+  }, [closePlayback, edgeRequest, establish, haltPlayback, renew]);
 
   useEffect(() => {
     stopped.current = false;
@@ -132,14 +148,27 @@ export default function CorrectionsEdgePlayer({ connection }) {
     return () => { stopped.current = true; window.clearInterval(timer); audio.current?.pause(); };
   }, [poll]);
 
+  useEffect(() => () => {
+    stopped.current = true;
+    unloadCorrectionsEdgeAudio(audio.current);
+  }, []);
+
   useEffect(() => {
-    if (!current || !audio.current) return;
-    const source = new URL(current.mediaUrl, connection.endpointOrigin);
-    if (source.origin !== connection.endpointOrigin) { setStatus("The Edge returned an untrusted media address."); return; }
+    if (!current || !audio.current || active.current?.sessionId !== current.sessionId) return;
+    let source;
+    try { source = new URL(current.mediaUrl, connection.endpointOrigin); }
+    catch { haltPlayback(); setStatus("The Edge returned an invalid media address. Playback stopped."); return; }
+    if (source.origin !== connection.endpointOrigin) {
+      haltPlayback(); setStatus("The Edge returned an untrusted media address. Playback stopped."); return;
+    }
     audio.current.src = source.href;
     audio.current.load();
-    audio.current.play().catch(() => setStatus("Press Play to start the approved private audio."));
-  }, [connection.endpointOrigin, current]);
+    audio.current.play().catch(() => {
+      if (active.current?.sessionId === current.sessionId) {
+        setStatus("Press Play to start the approved private audio.");
+      }
+    });
+  }, [connection.endpointOrigin, current, haltPlayback]);
 
   return <section aria-label="Private Secure Edge player">
     <h2>Private Ruvanas Inside · Secure Edge</h2>
@@ -147,8 +176,14 @@ export default function CorrectionsEdgePlayer({ connection }) {
     <p>Facility player: {connection.playerId} · This player cannot browse or download the catalogue.</p>
     {current ? <audio ref={audio} controls controlsList="nodownload noremoteplayback" preload="auto"
       onContextMenu={(event) => event.preventDefault()} style={{ width: "100%" }}
-      onEnded={async () => { await closePlayback("COMPLETED"); active.current = null; setCurrent(null); poll(); }}
-      onError={async () => { await closePlayback("FAILED"); active.current = null; setCurrent(null); }} /> :
+      onEnded={async () => { const item = active.current; if (!item) return;
+        await closePlayback("COMPLETED", item);
+        if (active.current !== item) return;
+        active.current = null; setCurrent(null); poll(); }}
+      onError={async () => { const item = active.current; if (!item) return;
+        await closePlayback("FAILED", item);
+        if (active.current !== item) return;
+        active.current = null; setCurrent(null); }} /> :
       <button type="button" onClick={poll}>Retry private connection</button>}
   </section>;
 }
