@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import test from "node:test";
 import bcrypt from "bcryptjs";
 import { PrismaClient } from "@prisma/client";
 import { GENERAL_STATION_MANAGEMENT_WHERE } from "../../lib/general-station-boundary.mjs";
 import { lockVisibleOnlineNewsroomCreateTargets, lockVisibleSchoolNewsroomCreateTargets } from "../../lib/newsroom-write-boundary.mjs";
+import { lockCorrectionsStaffRenderEvidence, lockCorrectionsStaffRenderSources } from "../../lib/corrections-staff-render-source-lock.mjs";
 
 const ciDatabase = process.env.GITHUB_ACTIONS === "true" &&
   process.env.DATABASE_URL === "postgresql://postgres:postgres@localhost:5432/ruvanas";
@@ -17,7 +18,7 @@ async function api(path, cookie, body) {
   });
 }
 
-async function waitForNewsroomProjectLocks(db, holderPid, settled) {
+async function waitForNewsroomProjectLocks(db, holderPid, settled, minimumWaiters = 2) {
   const deadline = Date.now() + 8_000;
   while (Date.now() < deadline) {
     const waiters = await db.$queryRaw`
@@ -34,7 +35,7 @@ async function waitForNewsroomProjectLocks(db, holderPid, settled) {
       return (blockersByPid.get(pid) || []).some((blocker) =>
         blocker === holderPid || (blockersByPid.has(blocker) && waitsForHolder(blocker, next)));
     };
-    if (waiters.filter(({ pid }) => waitsForHolder(pid)).length >= 2) return;
+    if (waiters.filter(({ pid }) => waitsForHolder(pid)).length >= minimumWaiters) return;
     if (settled()) throw new Error("A newsroom publication finished before the private source was committed.");
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
@@ -212,6 +213,263 @@ test("School and Online Newsroom publication waits for a C3 source reclassificat
         await db.station.deleteMany({ where: { organisationId } });
         await db.correctionsFacility.deleteMany({ where: { location: { organisationId } } });
         await db.location.deleteMany({ where: { organisationId } });
+        await db.auditLog.deleteMany({ where: { organisationId } });
+        await db.subscription.deleteMany({ where: { organisationId } });
+        await db.organisationMember.deleteMany({ where: { organisationId } });
+        await db.organisation.delete({ where: { id: organisationId } });
+      }
+      if (userId) await db.user.delete({ where: { id: userId } });
+      if (planId) await db.plan.delete({ where: { id: planId } });
+    } finally {
+      await db.$disconnect();
+    }
+  }
+});
+
+test("Newsroom HTTP writes reject media-only older outputs after a newer C3 render makes their project private", async () => {
+  if (!ciDatabase || baseUrl !== "http://127.0.0.1:3100" || !process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 32) {
+    throw new Error("C9 Newsroom media races run only against the exact disposable CI database and loopback test server.");
+  }
+  const db = new PrismaClient();
+  const suffix = randomUUID();
+  let organisationId;
+  let userId;
+  let planId;
+  let heldTransition;
+  let pendingRequest;
+  try {
+    const plan = await db.plan.create({ data: {
+      name: `Fictional C9 Newsroom media races ${suffix}`, code: `C9_NEWS_MEDIA_${suffix}`,
+      productFamily: "ONLINE", tierNumber: 3, monthlyPriceCents: 0,
+      storageLimitGb: 1, listenerLimit: 10, maxBitrateKbps: 128,
+      schoolRadioEnabled: true, onlineRadioEnabled: true
+    } });
+    planId = plan.id;
+    const organisation = await db.organisation.create({ data: {
+      name: `Fictional Newsroom render races ${suffix}`, slug: `c9-news-render-races-${suffix}`
+    } });
+    organisationId = organisation.id;
+    const password = `CI-only-${randomUUID()}!`;
+    const user = await db.user.create({ data: {
+      email: `c9-news-render-races-${suffix}@example.invalid`, passwordHash: await bcrypt.hash(password, 4), role: "OWNER"
+    } });
+    userId = user.id;
+    await db.organisationMember.create({ data: { organisationId, userId, role: "OWNER" } });
+    await db.subscription.create({ data: { organisationId, planId, status: "ACTIVE" } });
+    const station = await db.station.create({ data: {
+      organisationId, productFamily: "ONLINE", name: "Fictional ordinary Newsroom station",
+      slug: `c9-news-render-station-${suffix}`, status: "ACTIVE",
+      listenerLimit: 10, storageLimitGb: 1, maxBitrateKbps: 128
+    } });
+    const supervisor = await db.staffSupervisor.create({ data: { organisationId, userId } });
+    const schoolProgramme = await db.schoolProgramme.create({ data: {
+      organisationId, supervisorId: supervisor.id, title: "Fictional Newsroom programme", createdByUserId: userId
+    } });
+    const facility = await db.location.create({ data: {
+      organisationId, name: "Fictional Newsroom render facility", slug: `c9-news-render-facility-${suffix}`,
+      correctionsFacility: { create: {} }
+    } });
+    const login = await fetch(`${baseUrl}/api/auth/login`, {
+      method: "POST", headers: { origin: baseUrl, "content-type": "application/json" },
+      body: JSON.stringify({ email: user.email, password }), redirect: "manual"
+    });
+    assert.equal(login.status, 200, await login.clone().text());
+    const cookie = login.headers.get("set-cookie")?.split(";")[0];
+    assert.ok(cookie);
+
+    async function renderPair(caseName, promoOnly) {
+      const project = await db.audioProject.create({ data: {
+        organisationId, title: `Fictional older Newsroom output ${caseName}`, editDecision: {},
+        status: "READY", currentVersion: 2, createdByUserId: userId
+      } });
+      async function output(versionNumber) {
+        const media = await db.mediaAsset.create({ data: {
+          organisationId, libraryType: "ORGANISATION_PROMO", name: `Fictional ${caseName} output ${versionNumber}`,
+          originalName: "fictional-newsroom-output.mp3", storageKey: `c9-news-render-races/${suffix}/${caseName}-${versionNumber}.mp3`,
+          mimeType: "audio/mpeg", sizeBytes: 1024n, durationSeconds: 20, mediaType: "ANNOUNCEMENT", status: "READY"
+        } });
+        const promo = await db.promoAsset.create({ data: {
+          organisationId, name: `Fictional ${caseName} promo ${versionNumber}`, mediaType: "ANNOUNCEMENT", status: "ACTIVE"
+        } });
+        const promoVersion = await db.promoVersion.create({ data: {
+          promoAssetId: promo.id, mediaAssetId: media.id, version: 1,
+          status: "APPROVED", qcStatus: "PASSED", durationSeconds: 20
+        } });
+        await db.promoAsset.update({ where: { id: promo.id }, data: { currentApprovedVersionId: promoVersion.id } });
+        const version = await db.audioProjectVersion.create({ data: {
+          projectId: project.id, version: versionNumber, state: { editor: { clips: [] } }, createdByUserId: userId
+        } });
+        const render = await db.audioRender.create({ data: {
+          organisationId, projectId: project.id, versionId: version.id,
+          // Historical cases deliberately have no direct output-media alias.
+          outputMediaAssetId: promoOnly && versionNumber === 1 ? null : media.id,
+          outputPromoVersionId: promoVersion.id,
+          requestedByUserId: userId, preset: "SCHOOL_RADIO_MP3", status: "SUCCEEDED"
+        } });
+        return { media, promoVersion, render: { ...render, version } };
+      }
+      const older = await output(1);
+      const newer = await output(2);
+      const programme = await db.correctionsProgramme.create({ data: {
+        organisationId, facilityId: facility.id, title: `Fictional private Newsroom ${caseName}`, createdByUserId: userId
+      } });
+      assert.notEqual(older.media.id, newer.media.id, "C3 must lock a different output from the older Newsroom source.");
+      if (promoOnly) assert.equal(older.render.outputMediaAssetId, null);
+      return { project, older, newer, programme };
+    }
+
+    async function createStory(label, { product, action, source }, mediaId) {
+      let episodeId = null;
+      if (source === "EPISODE_RUNDOWN") {
+        const episode = await db.schoolEpisode.create({ data: {
+          organisationId, programmeId: schoolProgramme.id, title: `Fictional ${label} episode`,
+          status: "APPROVED", approvedAt: new Date(), createdByUserId: userId
+        } });
+        episodeId = episode.id;
+        await db.schoolRundown.create({ data: {
+          organisationId, episodeId, status: "APPROVED", revision: 1, approvedRevision: 1,
+          createdByUserId: userId, items: { create: {
+            type: "INTERVIEW", position: 0, label: "Fictional media-only episode source", sourceMediaAssetId: mediaId
+          } }
+        } });
+      }
+      const story = await db.schoolNewsStory.create({ data: {
+        organisationId, product, ...(product === "ONLINE_RADIO" ? { stationId: station.id } : {}),
+        episodeId, title: `Fictional ${label}`, type: "NEWS_BULLETIN",
+        status: action === "SAVE" ? "SCRIPTING" : "APPROVED",
+        script: "Unchanged fictional script", factCheckNotes: "Fictional checked notes",
+        sourcesJson: [{ label: "Fictional recorded source" }], interviewConsentConfirmed: true,
+        interviewMediaAssetId: source === "CURRENT" ? mediaId : null, createdByUserId: userId
+      } });
+      if (source === "HISTORICAL") await db.newsStoryRevision.create({ data: {
+        organisationId, storyId: story.id, revision: 1, script: "Fictional earlier script",
+        interviewMediaAssetId: mediaId, createdByUserId: userId
+      } });
+      assert.equal(story.audioProjectId, null, "Only reverse media associations may protect this story.");
+      return story;
+    }
+    async function snapshot(storyId) {
+      const [story, audits] = await Promise.all([
+        db.schoolNewsStory.findUnique({ where: { id: storyId }, include: {
+          revisions: { orderBy: { revision: "asc" } }, decisions: { orderBy: { id: "asc" } },
+          episode: { include: { rundown: { include: { items: { orderBy: { position: "asc" } } } } } }
+        } }),
+        db.auditLog.findMany({ where: { organisationId, entityType: "NewsStory", entityId: storyId }, orderBy: { id: "asc" } })
+      ]);
+      return { story, audits };
+    }
+    const mutation = (scenario, storyId, mediaId) => scenario.action === "SAVE" ? {
+      action: "SAVE", storyId, script: "Fictional edited script", factCheckNotes: "Fictional edited fact check",
+      sources: [{ label: "Fictional edited source" }], interviewMediaAssetId: mediaId, interviewConsentConfirmed: true
+    } : { action: "PUBLISH", storyId };
+    const scenarios = [
+      ...["SCHOOL_RADIO", "ONLINE_RADIO"].flatMap((product) => [
+        { product, action: "SAVE", source: "INCOMING" },
+        { product, action: "PUBLISH", source: "CURRENT" },
+        { product, action: "PUBLISH", source: "HISTORICAL" }
+      ]),
+      { product: "SCHOOL_RADIO", action: "PUBLISH", source: "EPISODE_RUNDOWN" }
+    ];
+    for (const scenario of scenarios) {
+      const caseName = `${scenario.product}-${scenario.action}-${scenario.source}`.toLowerCase();
+      const path = scenario.product === "SCHOOL_RADIO" ? "/api/school-radio/newsroom" : "/api/newsroom";
+      const sources = await renderPair(caseName, scenario.source === "HISTORICAL");
+      // Separate matched stories prevent a positive control's transition from
+      // making the raced request invalid independently of its privacy source.
+      const ordinary = await createStory(`ordinary ${caseName}`, scenario, sources.older.media.id);
+      const ordinaryResponse = await api(path, cookie, mutation(scenario, ordinary.id, sources.older.media.id));
+      assert.equal(ordinaryResponse.status, 200, await ordinaryResponse.clone().text());
+      const ordinaryAfter = await snapshot(ordinary.id);
+      assert.equal(ordinaryAfter.audits.length, 1);
+      if (scenario.action === "SAVE") {
+        assert.equal(ordinaryAfter.story.status, "SCRIPTING");
+        assert.equal(ordinaryAfter.story.interviewMediaAssetId, sources.older.media.id);
+        assert.equal(ordinaryAfter.story.script, "Fictional edited script");
+        assert.equal(ordinaryAfter.story.revisions.length, 1);
+        assert.equal(ordinaryAfter.story.revisions[0].interviewMediaAssetId, sources.older.media.id);
+        assert.equal(ordinaryAfter.story.decisions.length, 0);
+      } else {
+        assert.equal(ordinaryAfter.story.status, "PUBLISHED");
+        assert.ok(ordinaryAfter.story.publishedAt);
+        assert.equal(ordinaryAfter.story.decisions.length, 1);
+        assert.equal(ordinaryAfter.story.decisions[0].action, "PUBLISH");
+      }
+
+      const raced = await createStory(`raced ${caseName}`, scenario, sources.older.media.id);
+      const before = await snapshot(raced.id);
+      let entered;
+      let release;
+      const started = new Promise((resolve) => { entered = resolve; });
+      const gate = new Promise((resolve) => { release = resolve; });
+      // Real C3 source/evidence locks, then a synthetic new submission marker.
+      // No assertion is made about the complete C3 HTTP approval workflow.
+      const work = db.$transaction(async (tx) => {
+        const [{ pid }] = await tx.$queryRaw`SELECT pg_backend_pid() AS pid`;
+        await lockCorrectionsStaffRenderSources(tx, { organisationId, render: sources.newer.render });
+        await lockCorrectionsStaffRenderEvidence(tx, sources.newer.render);
+        await tx.correctionsSubmission.create({ data: {
+          programmeId: sources.programme.id, organisationId, facilityId: facility.id,
+          revision: 1, renderId: sources.newer.render.id,
+          sourceFingerprint: createHash("sha256").update(`${suffix}:${caseName}`).digest("hex"),
+          organisationPolicyVersion: 1, facilityPolicyVersion: 1,
+          titleSnapshot: sources.programme.title,
+          evidenceSnapshot: { mediaAssetId: sources.newer.media.id, promoVersionId: sources.newer.promoVersion.id },
+          submittedByUserId: userId
+        } });
+        await tx.correctionsProgramme.update({ where: { id: sources.programme.id }, data: { status: "SUBMITTED", latestRevision: 1 } });
+        entered(pid);
+        await gate;
+      }, { isolationLevel: "Serializable", timeout: 25_000 });
+      heldTransition = { work, release, pid: null };
+      heldTransition.pid = await Promise.race([
+        started, work.then(() => { throw new Error("The newer C3 Newsroom fixture finished before holding its project lock."); })
+      ]);
+      let settled = false;
+      pendingRequest = api(path, cookie, mutation(scenario, raced.id, sources.older.media.id)).finally(() => { settled = true; });
+      pendingRequest.catch(() => {});
+      let waitError;
+      try {
+        await waitForNewsroomProjectLocks(db, heldTransition.pid, () => settled, 1);
+      } catch (error) {
+        waitError = error;
+      } finally {
+        heldTransition.release();
+      }
+      await heldTransition.work;
+      heldTransition = null;
+      const denied = await pendingRequest;
+      pendingRequest = null;
+      const responseText = await denied.clone().text();
+      if (waitError) throw new Error(`${caseName}: ${waitError.message} HTTP ${denied.status}: ${responseText}`);
+      assert.equal(denied.status, 409, `${caseName}: ${responseText}`);
+      assert.deepEqual(await snapshot(raced.id), before, `${caseName} must preserve story, revisions, decisions, audits and episode/rundown state.`);
+    }
+  } finally {
+    heldTransition?.release();
+    await heldTransition?.work.catch(() => {});
+    await pendingRequest?.catch(() => {});
+    try {
+      if (organisationId) {
+        await db.newsStoryDecision.deleteMany({ where: { organisationId } });
+        await db.newsStoryRevision.deleteMany({ where: { organisationId } });
+        await db.schoolNewsStory.deleteMany({ where: { organisationId } });
+        await db.schoolRundownItem.deleteMany({ where: { rundown: { organisationId } } });
+        await db.schoolRundown.deleteMany({ where: { organisationId } });
+        await db.correctionsSubmission.deleteMany({ where: { organisationId } });
+        await db.audioRender.deleteMany({ where: { organisationId } });
+        await db.audioProjectVersion.deleteMany({ where: { project: { organisationId } } });
+        await db.audioProject.deleteMany({ where: { organisationId } });
+        await db.promoAsset.updateMany({ where: { organisationId }, data: { currentApprovedVersionId: null } });
+        await db.promoVersion.deleteMany({ where: { promoAsset: { organisationId } } });
+        await db.promoAsset.deleteMany({ where: { organisationId } });
+        await db.mediaAsset.deleteMany({ where: { organisationId } });
+        await db.schoolEpisode.deleteMany({ where: { organisationId } });
+        await db.schoolProgramme.deleteMany({ where: { organisationId } });
+        await db.staffSupervisor.deleteMany({ where: { organisationId } });
+        await db.correctionsProgramme.deleteMany({ where: { organisationId } });
+        await db.correctionsFacility.deleteMany({ where: { location: { organisationId } } });
+        await db.location.deleteMany({ where: { organisationId } });
+        await db.station.deleteMany({ where: { organisationId } });
         await db.auditLog.deleteMany({ where: { organisationId } });
         await db.subscription.deleteMany({ where: { organisationId } });
         await db.organisationMember.deleteMany({ where: { organisationId } });

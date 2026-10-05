@@ -3,7 +3,8 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { ORGANISATION_CONTENT_ROLES } from "@/lib/permissions.mjs";
 import { requireActiveSchoolRadio } from "@/lib/school-radio-access";
-import { GENERAL_STUDIO_AUDIO_PROJECT_WHERE, lockGeneralStudioAudioProject } from "@/lib/studio-general-asset-boundary.mjs";
+import { GENERAL_STUDIO_AUDIO_PROJECT_WHERE, lockGeneralStudioAudioProject, lockGeneralStudioMediaAssets } from "@/lib/studio-general-asset-boundary.mjs";
+import { runGeneralSourceWriteTransaction } from "@/lib/general-source-write-transaction.mjs";
 import { generalSchoolRundownWhere } from "@/lib/school-general-content-boundary.mjs";
 import {
   ASSIGNMENT_TEMPLATE_CODES,
@@ -130,13 +131,14 @@ async function lockLearningSources(tx, organisationId, { audioProjectId, episode
       throw notFound("The linked School audio changed. Reload Learning and try again.");
     }
   }
-  // Global catalogue tracks are deliberately exempt from the Inside media
-  // predicate and are shared across organisations; never take their row lock.
-  const ownedMedia = mediaIds.size ? await tx.mediaAsset.findMany({
-    where: { id: { in: [...mediaIds] }, organisationId }, select: { id: true }
-  }) : [];
-  for (const mediaAssetId of ownedMedia.map(({ id }) => id).sort()) {
-    await tx.$queryRaw`SELECT "id" FROM "MediaAsset" WHERE "id" = ${mediaAssetId} FOR UPDATE`;
+  try {
+    // A non-voice item may be an older render of another project entering
+    // Inside review. Resolve its reverse projects and promo links before the
+    // final Learning predicate; licensed global catalogue reuse stays shared.
+    await lockGeneralStudioMediaAssets(tx, organisationId, [...mediaIds]);
+  } catch (error) {
+    if (error?.code !== "CORRECTIONS_STUDIO_OUTPUT_BLOCKED") throw error;
+    throw notFound("The linked School audio is no longer available to Learning.");
   }
 }
 
@@ -183,7 +185,7 @@ export async function POST(request) {
   try {
     // Keep READ COMMITTED: each eligibility query after a row-lock wait must
     // see the newly committed Inside attachment, not an earlier snapshot.
-    const result = await prisma.$transaction(async (tx) => {
+    const result = await runGeneralSourceWriteTransaction(prisma, async (tx) => {
       let entity;
       if (data.action === "CREATE_ASSIGNMENT") {
         const group = await tx.studentGroup.findFirst({ where: { id: data.studentGroupId, organisationId }, select: { id: true } });
@@ -258,7 +260,7 @@ export async function POST(request) {
       }
       await tx.auditLog.create({ data: { organisationId, actorUserId: access.user.id, action: `SCHOOL_LEARNING_${data.action}`, entityType: data.action.includes("ASSIGNMENT") && !data.action.includes("SUBMISSION") ? "Assignment" : data.action === "ASSESS_SUBMISSION" ? "Assessment" : data.action === "ADD_PORTFOLIO_ENTRY" ? "PortfolioEntry" : "AssignmentSubmission", entityId: entity.id, details: { staffManagedOnly: true, publicPublishingEnabled: false } } });
       return entity;
-    }, { isolationLevel: "ReadCommitted", timeout: 15_000 });
+    });
     return NextResponse.json({ result }, { status: new Set(["CREATE_ASSIGNMENT", "SUBMIT_ASSIGNMENT", "ADD_PORTFOLIO_ENTRY"]).has(data.action) ? 201 : 200 });
   } catch (error) {
     if (error?.code === "P2002") return NextResponse.json({ error: "That learning-workspace record already exists." }, { status: 409 });

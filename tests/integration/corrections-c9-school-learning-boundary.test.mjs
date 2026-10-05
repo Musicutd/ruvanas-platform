@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import test from "node:test";
 import bcrypt from "bcryptjs";
 import { PrismaClient } from "@prisma/client";
+import { lockCorrectionsStaffRenderEvidence, lockCorrectionsStaffRenderSources } from "../../lib/corrections-staff-render-source-lock.mjs";
 
 const baseUrl = process.env.INTEGRATION_BASE_URL || "http://127.0.0.1:3100";
 const ciDatabase = process.env.GITHUB_ACTIONS === "true" &&
@@ -34,8 +35,8 @@ async function waitForLearningProjectLock(db, holderPid, settled) {
 }
 
 test("School Learning hides historical private episodes, submissions and portfolios", async () => {
-  if (!ciDatabase || !process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 32) {
-    throw new Error("C9 School Learning integration runs only against the exact disposable CI database.");
+  if (!ciDatabase || baseUrl !== "http://127.0.0.1:3100" || !process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 32) {
+    throw new Error("C9 School Learning integration runs only against the exact disposable CI database and loopback test server.");
   }
   const db = new PrismaClient();
   const suffix = randomUUID();
@@ -266,6 +267,167 @@ test("School Learning hides historical private episodes, submissions and portfol
     if (waitError) throw new Error(`${waitError.message} Route status: ${racedResponse.status}.`);
     assert.equal(racedResponse.status, 404, await racedResponse.clone().text());
     assert.equal(await db.assignmentSubmission.count({ where: { organisationId, audioProjectId: normalProject.id } }), beforeRace);
+
+    async function olderOutputEpisode(caseName, type) {
+      const episode = await db.schoolEpisode.create({ data: {
+        organisationId, programmeId: programme.id, title: `Fictional ${caseName} episode`,
+        status: "APPROVED", approvedAt: new Date(), createdByUserId: userId
+      } });
+      const project = await db.audioProject.create({ data: {
+        organisationId, title: `Fictional ${caseName} render project`, type: "MULTITRACK",
+        status: "READY", currentVersion: 2, editDecision: {}, createdByUserId: userId
+      } });
+      async function output(versionNumber) {
+        const checksum = createHash("sha256").update(`${suffix}:${caseName}:${versionNumber}`).digest("hex");
+        const media = await db.mediaAsset.create({ data: {
+          organisationId, libraryType: "ORGANISATION_PROMO", name: `${caseName}-${versionNumber}`,
+          originalName: `${caseName}-${versionNumber}.mp3`, storageKey: `c9-learning/${suffix}/${caseName}-${versionNumber}.mp3`,
+          mimeType: "audio/mpeg", sizeBytes: 1024n, durationSeconds: 20,
+          mediaType: type === "JINGLE" ? "JINGLE" : "ANNOUNCEMENT", status: "READY"
+        } });
+        const promo = await db.promoAsset.create({ data: {
+          organisationId, name: `${caseName}-${versionNumber}`, mediaType: media.mediaType
+        } });
+        const promoVersion = await db.promoVersion.create({ data: {
+          promoAssetId: promo.id, mediaAssetId: media.id, version: 1, status: "APPROVED",
+          qcStatus: "PASSED", checksumSha256: checksum, durationSeconds: 20
+        } });
+        await db.promoAsset.update({ where: { id: promo.id }, data: { currentApprovedVersionId: promoVersion.id } });
+        const version = await db.audioProjectVersion.create({ data: {
+          projectId: project.id, version: versionNumber, state: { editor: { clips: [] } }, createdByUserId: userId
+        } });
+        const render = await db.audioRender.create({ data: {
+          organisationId, projectId: project.id, versionId: version.id,
+          outputMediaAssetId: media.id, outputPromoVersionId: promoVersion.id,
+          requestedByUserId: userId, preset: "SCHOOL_RADIO_MP3", status: "SUCCEEDED",
+          completedAt: new Date(), resultJson: { checksumSha256: checksum }
+        } });
+        return { media, promoVersion, render: { ...render, version } };
+      }
+      const older = await output(1);
+      const newer = await output(2);
+      const announcement = type === "ANNOUNCEMENT" ? await db.schoolAnnouncement.create({ data: {
+        organisationId, promoVersionId: older.promoVersion.id, title: `Fictional ${caseName} announcement`,
+        status: "APPROVED", createdByUserId: userId
+      } }) : null;
+      await db.schoolRundown.create({ data: {
+        organisationId, episodeId: episode.id, status: "APPROVED", revision: 1,
+        approvedRevision: 1, createdByUserId: userId, items: { create: {
+          type, position: 0, label: `Fictional older ${type.toLowerCase()}`,
+          ...(type === "INTERVIEW" ? { sourceMediaAssetId: older.media.id }
+            : type === "JINGLE" ? { sourcePromoVersionId: older.promoVersion.id }
+              : { sourceAnnouncementId: announcement.id })
+        } }
+      } });
+      const privateProgramme = await db.correctionsProgramme.create({ data: {
+        organisationId, facilityId: facility.id, title: `Fictional private ${caseName}`, createdByUserId: userId
+      } });
+      assert.notEqual(older.media.id, newer.media.id, "C3 must lock a newer output distinct from the selected older media.");
+      return { episode, project, older, newer, privateProgramme };
+    }
+
+    async function episodeEvidenceSnapshot(episodeId) {
+      const [episode, rundown, submissions, audits] = await Promise.all([
+        db.schoolEpisode.findUnique({ where: { id: episodeId } }),
+        db.schoolRundown.findUnique({ where: { episodeId }, include: { items: { orderBy: { position: "asc" } } } }),
+        db.assignmentSubmission.findMany({ where: { organisationId, episodeId }, orderBy: { id: "asc" }, include: {
+          contributors: { orderBy: { contributorId: "asc" } },
+          assessment: { include: { scores: { orderBy: { criterionId: "asc" } }, annotations: { orderBy: { id: "asc" } } } },
+          portfolios: { orderBy: { id: "asc" } }
+        } }),
+        db.auditLog.count({ where: { organisationId, action: { startsWith: "SCHOOL_LEARNING_" } } })
+      ]);
+      return { episode, rundown, submissions, audits };
+    }
+
+    // Each otherwise-valid HTTP action uses a non-voice older output. The
+    // pending C3 submission locks that output's project and its distinct newer
+    // media; a Learning guard that locks only the selected media cannot wait.
+    for (const { learningAction, type } of [
+      { learningAction: "SUBMIT_ASSIGNMENT", type: "INTERVIEW" },
+      { learningAction: "ASSESS_SUBMISSION", type: "JINGLE" },
+      { learningAction: "ADD_PORTFOLIO_ENTRY", type: "ANNOUNCEMENT" }
+    ]) {
+      const caseName = `${learningAction}-${type}`.toLowerCase();
+      const sources = await olderOutputEpisode(caseName, type);
+      let candidate;
+      let controlBody;
+      if (learningAction === "SUBMIT_ASSIGNMENT") {
+        controlBody = { action: learningAction, assignmentId: assignment.id,
+          contributorIds: [contributor.id], episodeId: sources.episode.id, reflection: "Ordinary eligible evidence" };
+      } else {
+        candidate = await submission(sources.episode.id, "SUBMITTED");
+        const assessmentBody = { action: "ASSESS_SUBMISSION", submissionId: candidate.id,
+          scores: [{ criterionId, score: 8 }], annotations: [{ positionMs: 100, note: "Ordinary eligible feedback" }] };
+        if (learningAction === "ASSESS_SUBMISSION") controlBody = assessmentBody;
+        else {
+          const assessed = await action(assessmentBody);
+          assert.equal(assessed.status, 200, await assessed.clone().text());
+          controlBody = { action: learningAction, submissionId: candidate.id,
+            contributorId: contributor.id, title: "Ordinary eligible portfolio evidence" };
+        }
+      }
+      const control = await action(controlBody);
+      assert.equal(control.status, learningAction === "ASSESS_SUBMISSION" ? 200 : 201, await control.clone().text());
+      // Assessment remains eligible for reassessment; portfolio remains
+      // eligible for upsert. Capture after the control so neither prerequisite
+      // nor the expected saved state is invalidated by the positive request.
+      const before = await episodeEvidenceSnapshot(sources.episode.id);
+      assert.equal(before.submissions.length, 1);
+      if (learningAction !== "SUBMIT_ASSIGNMENT") {
+        assert.equal(before.submissions[0].status, "ASSESSED");
+        assert.equal(before.submissions[0].assessment.status, "RELEASED");
+        assert.equal(before.submissions[0].assessment.totalScore, 8);
+      }
+      if (learningAction === "ADD_PORTFOLIO_ENTRY") assert.equal(before.submissions[0].portfolios.length, 1);
+      const raceBody = learningAction === "ASSESS_SUBMISSION" ? { ...controlBody,
+        scores: [{ criterionId, score: 9 }], annotations: [{ positionMs: 200, note: "Must not overwrite feedback" }] }
+        : learningAction === "ADD_PORTFOLIO_ENTRY" ? { ...controlBody, title: "Must not overwrite portfolio evidence" }
+          : { ...controlBody, reflection: "Must not add private evidence" };
+      let entered;
+      let release;
+      const started = new Promise((resolve) => { entered = resolve; });
+      const gate = new Promise((resolve) => { release = resolve; });
+      const work = db.$transaction(async (tx) => {
+        const [{ pid }] = await tx.$queryRaw`SELECT pg_backend_pid() AS pid`;
+        // Exercise the actual C3 source/evidence locks with a synthetic
+        // submission. This is not a test of the C3 HTTP approval workflow.
+        await lockCorrectionsStaffRenderSources(tx, { organisationId, render: sources.newer.render });
+        await lockCorrectionsStaffRenderEvidence(tx, sources.newer.render);
+        await tx.correctionsSubmission.create({ data: {
+          programmeId: sources.privateProgramme.id, organisationId, facilityId: facility.id,
+          revision: 1, renderId: sources.newer.render.id,
+          sourceFingerprint: createHash("sha256").update(`${suffix}:${caseName}`).digest("hex"),
+          organisationPolicyVersion: 1, facilityPolicyVersion: 1,
+          titleSnapshot: sources.privateProgramme.title,
+          evidenceSnapshot: { mediaAssetId: sources.newer.media.id, promoVersionId: sources.newer.promoVersion.id },
+          submittedByUserId: userId
+        } });
+        await tx.correctionsProgramme.update({ where: { id: sources.privateProgramme.id }, data: { status: "SUBMITTED", latestRevision: 1 } });
+        entered(pid);
+        await gate;
+      }, { timeout: 25_000 });
+      heldTransition = { work, release, pid: await Promise.race([
+        started, work.then(() => { throw new Error("The C3 fixture finished before holding the older-output project lock."); })
+      ]) };
+      let settled = false;
+      const pending = action(raceBody).finally(() => { settled = true; });
+      let waitError;
+      try {
+        await waitForLearningProjectLock(db, heldTransition.pid, () => settled);
+      } catch (error) {
+        waitError = error;
+      } finally {
+        heldTransition.release();
+      }
+      await heldTransition.work;
+      heldTransition = null;
+      const rejected = await pending;
+      if (waitError) throw new Error(`${caseName}: ${waitError.message} Route status: ${rejected.status}.`);
+      assert.equal(rejected.status, 404, await rejected.clone().text());
+      assert.deepEqual(await episodeEvidenceSnapshot(sources.episode.id), before,
+        `${caseName}: rejected privacy race changed Learning evidence or audit history`);
+    }
   } finally {
     if (heldTransition) {
       heldTransition.release();
@@ -284,9 +446,15 @@ test("School Learning hides historical private episodes, submissions and portfol
         await db.assignment.deleteMany({ where: { organisationId } });
         await db.schoolRundownItem.deleteMany({ where: { rundown: { organisationId } } });
         await db.schoolRundown.deleteMany({ where: { organisationId } });
+        await db.schoolAnnouncement.deleteMany({ where: { organisationId } });
         await db.correctionsStudioSession.deleteMany({ where: { organisationId } });
+        await db.correctionsSubmission.deleteMany({ where: { organisationId } });
         await db.audioTake.deleteMany({ where: { organisationId } });
+        await db.audioRender.deleteMany({ where: { organisationId } });
+        await db.audioProjectVersion.deleteMany({ where: { project: { organisationId } } });
         await db.audioProject.deleteMany({ where: { organisationId } });
+        await db.promoVersion.deleteMany({ where: { promoAsset: { organisationId } } });
+        await db.promoAsset.deleteMany({ where: { organisationId } });
         await db.mediaAsset.deleteMany({ where: { organisationId } });
         await db.schoolEpisode.deleteMany({ where: { organisationId } });
         await db.schoolProgramme.deleteMany({ where: { organisationId } });
