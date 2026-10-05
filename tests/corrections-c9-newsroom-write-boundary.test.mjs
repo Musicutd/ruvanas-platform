@@ -3,6 +3,13 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { lockVisibleNewsroomStory, lockVisibleOnlineNewsroomCreateTargets, lockVisibleSchoolNewsroomCreateTargets } from "../lib/newsroom-write-boundary.mjs";
 
+function mediaSource(id, associations = {}) {
+  return {
+    id, organisationId: "org", libraryType: "ORGANISATION_PROMO",
+    audioTakes: [], audioRenderOutputs: [], promoVersions: [], audioClips: [], ...associations
+  };
+}
+
 test("Newsroom CREATE locks current targets before checking their privacy", async () => {
   const calls = [];
   const tx = {
@@ -49,6 +56,15 @@ test("School Newsroom locks current, historical, incoming and episode sources be
       return [{ sourceMediaAssetId: "media-rundown", sourceTrack: null,
         sourcePromoVersion: null, sourceAnnouncement: null,
         sourceTake: { projectId: "project-take", mediaAssetId: "media-take" } }];
+    } },
+    mediaAsset: { async findMany(query) {
+      return query.where.id.in.map((id) => mediaSource(id, id === "media-current" ? {
+        audioRenderOutputs: [{ projectId: "project-render" }]
+      } : id === "media-old" ? {
+        promoVersions: [{ id: "promo-old", mediaAssetId: id, renderedAudioVersions: [{ projectId: "project-promo" }] }]
+      } : id === "media-incoming" ? {
+        audioClips: [{ track: { projectId: "project-clip" } }]
+      } : {}));
     } }
   };
   const visibleWhere = { AND: [{ revisions: { every: {} } }] };
@@ -60,9 +76,13 @@ test("School Newsroom locks current, historical, incoming and episode sources be
   const lockedTables = calls.filter((call) => call.sql).map((call) => call.sql.match(/FROM "([^"]+)"/)?.[1]);
   assert.deepEqual(lockedTables.slice(0, 4), ["SchoolNewsStory", "SchoolEpisode", "SchoolRundown", "SchoolRundownItem"]);
   assert.deepEqual(calls.filter((call) => call.sql?.includes('FROM "AudioProject"')).map((call) => call.values[0]),
-    ["project-current", "project-old", "project-take"]);
+    ["project-current", "project-old", "project-take", "project-clip", "project-promo", "project-render"]);
   assert.deepEqual(calls.filter((call) => call.sql?.includes('FROM "MediaAsset"')).map((call) => call.values[0]),
     ["media-current", "media-incoming", "media-old", "media-rundown", "media-take"]);
+  assert.deepEqual(calls.filter((call) => call.sql?.includes('FROM "PromoVersion"')).map((call) => call.values[0]), ["promo-old"]);
+  const sourceTables = lockedTables.slice(4);
+  assert.ok(sourceTables.lastIndexOf("AudioProject") < sourceTables.indexOf("MediaAsset"));
+  assert.ok(sourceTables.lastIndexOf("MediaAsset") < sourceTables.indexOf("PromoVersion"));
   assert.deepEqual(calls.at(-1).finalWhere, { id: "story", organisationId: "org", product: "SCHOOL_RADIO", ...visibleWhere });
 });
 
@@ -77,13 +97,41 @@ test("Online Newsroom locks its station channels and proposed sources before rev
         audioProjectId: null, interviewMediaAssetId: null, revisions: [] };
       calls.push({ finalWhere: query.where });
       return { id: "story" };
+    } },
+    mediaAsset: { async findMany(query) {
+      return query.where.id.in.map((id) => mediaSource(id, { audioTakes: [{ projectId: "project-media" }] }));
     } }
   };
   await lockVisibleNewsroomStory(tx, { organisationId: "org", storyId: "story", product: "ONLINE_RADIO",
     visibleWhere: { AND: [{ status: "APPROVED" }] }, additionalProjectId: "project", additionalMediaAssetId: "media" });
   assert.deepEqual(calls.filter((call) => call.sql).map((call) => call.sql.match(/FROM "([^"]+)"/)?.[1]),
-    ["SchoolNewsStory", "Station", "Channel", "AudioProject", "MediaAsset"]);
+    ["SchoolNewsStory", "Station", "Channel", "AudioProject", "AudioProject", "MediaAsset"]);
+  assert.deepEqual(calls.filter((call) => call.sql?.includes('FROM "AudioProject"')).map((call) => call.values[0]),
+    ["project", "project-media"]);
   assert.equal(calls.at(-1).finalWhere.AND[0].status, "APPROVED");
+});
+
+test("Newsroom maps a newly private media-only source to an unavailable current story", async () => {
+  let storyReads = 0;
+  const tx = {
+    async $queryRaw() { return [{ id: "locked" }]; },
+    schoolNewsStory: { async findFirst() {
+      storyReads += 1;
+      return { stationId: null, episodeId: null, audioProjectId: null,
+        interviewMediaAssetId: "media-private", revisions: [] };
+    } },
+    mediaAsset: { async findMany(query) {
+      // Source discovery and refresh still find the asset; its final ordinary
+      // privacy predicate fails after the competing submission commits.
+      return query.select.audioTakes ? [mediaSource("media-private", {
+        audioRenderOutputs: [{ projectId: "project-private" }]
+      })] : [];
+    } }
+  };
+  assert.equal(await lockVisibleNewsroomStory(tx, {
+    organisationId: "org", storyId: "story", product: "SCHOOL_RADIO", visibleWhere: {}, include: {}
+  }), null);
+  assert.equal(storyReads, 1, "Private media must not reach the final story read or subsequent caller writes.");
 });
 
 test("both Newsroom routes recheck locked story state and proposed SAVE audio within the write transaction", async () => {

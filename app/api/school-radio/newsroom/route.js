@@ -7,6 +7,7 @@ import { NEWSROOM_PRODUCTS, canEditNewsStory, normalizeNewsSources, transitionNe
 import { GENERAL_STUDIO_MEDIA_ASSET_WHERE } from "@/lib/studio-general-asset-boundary.mjs";
 import { generalSchoolNewsStoryWhere, generalSchoolRundownWhere } from "@/lib/school-general-content-boundary.mjs";
 import { lockVisibleNewsroomStory, lockVisibleSchoolNewsroomCreateTargets } from "@/lib/newsroom-write-boundary.mjs";
+import { runGeneralSourceWriteTransaction } from "@/lib/general-source-write-transaction.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -49,7 +50,7 @@ export async function POST(request) {
   try {
     let result;
     if (data.action === "CREATE") {
-      result = await prisma.$transaction(async (tx) => {
+      result = await runGeneralSourceWriteTransaction(prisma, async (tx) => {
         if (!await lockVisibleSchoolNewsroomCreateTargets(tx, {
           organisationId, programmeId: data.programmeId, episodeId: data.episodeId
         })) throw new Error("Choose an active programme and available episode from this school.");
@@ -57,7 +58,7 @@ export async function POST(request) {
         await tx.newsStoryDecision.create({ data: { organisationId, storyId: story.id, action: "CREATE", fromStatus: story.status, toStatus: story.status, actorUserId: access.user.id } });
         await tx.auditLog.create({ data: { organisationId, actorUserId: access.user.id, action: "SCHOOL_NEWS_CREATE", entityType: "NewsStory", entityId: story.id, details: { status: story.status, product: NEWSROOM_PRODUCTS.SCHOOL_RADIO } } });
         return story;
-      }, { isolationLevel: "ReadCommitted", timeout: 15_000 });
+      });
     } else {
       const story = await prisma.schoolNewsStory.findFirst({ where: { id: data.storyId, organisationId, product: NEWSROOM_PRODUCTS.SCHOOL_RADIO, ...generalSchoolNewsStoryWhere(organisationId) } });
       if (!story) return NextResponse.json({ error: "The newsroom story was not found." }, { status: 404 });
@@ -66,7 +67,7 @@ export async function POST(request) {
         if (new Set(["IN_REVIEW", "APPROVED", "PUBLISHED", "ARCHIVED"]).has(story.status)) return NextResponse.json({ error: "Return the story to scripting before changing reviewed content." }, { status: 409 });
         if (data.interviewMediaAssetId && !await prisma.mediaAsset.findFirst({ where: { id: data.interviewMediaAssetId, organisationId, status: "READY", mimeType: { startsWith: "audio/" }, ...GENERAL_STUDIO_MEDIA_ASSET_WHERE }, select: { id: true } })) throw new Error("Choose an available interview recording from this school.");
         const sources = normalizeNewsSources(data.sources);
-        result = await prisma.$transaction(async (tx) => {
+        result = await runGeneralSourceWriteTransaction(prisma, async (tx) => {
           const current = await lockVisibleNewsroomStory(tx, { organisationId, storyId: story.id, product: NEWSROOM_PRODUCTS.SCHOOL_RADIO,
             visibleWhere: generalSchoolNewsStoryWhere(organisationId), include,
             additionalMediaAssetId: data.interviewMediaAssetId });
@@ -78,11 +79,11 @@ export async function POST(request) {
           const updated = await tx.schoolNewsStory.update({ where: { id: current.id }, data: { script: data.script || null, factCheckNotes: data.factCheckNotes || null, sourcesJson: sources, interviewMediaAssetId: data.interviewMediaAssetId || null, interviewConsentConfirmed: data.interviewConsentConfirmed } });
           await tx.newsStoryRevision.create({ data: { organisationId, storyId: current.id, revision: (latest?.revision || 0) + 1, script: updated.script, factCheckNotes: updated.factCheckNotes, sourcesJson: sources, interviewMediaAssetId: updated.interviewMediaAssetId, createdByUserId: access.user.id } });
           return updated;
-        }, { isolationLevel: "ReadCommitted", timeout: 15_000 });
+        });
       } else {
         const managerActions = new Set(["ASSIGN", "APPROVE", "REQUEST_CHANGES", "PUBLISH", "ARCHIVE"]);
         if (managerActions.has(data.action) && !isOrganisationRoleAllowed(access.membership.role, ORGANISATION_MANAGER_ROLES)) return NextResponse.json({ error: "An organisation owner or manager must complete this editorial action." }, { status: 403 });
-        result = await prisma.$transaction(async (tx) => {
+        result = await runGeneralSourceWriteTransaction(prisma, async (tx) => {
           const current = await lockVisibleNewsroomStory(tx, { organisationId, storyId: story.id, product: NEWSROOM_PRODUCTS.SCHOOL_RADIO,
             visibleWhere: generalSchoolNewsStoryWhere(organisationId), include });
           if (!current) throw new Error("The newsroom story or source audio is no longer available. Refresh and try again.");
@@ -96,7 +97,7 @@ export async function POST(request) {
           const updated = await tx.schoolNewsStory.update({ where: { id: current.id }, data: updates });
           await tx.newsStoryDecision.create({ data: { organisationId, storyId: current.id, action: data.action, fromStatus: current.status, toStatus: transition.status, note: transition.notes, actorUserId: access.user.id } });
           return updated;
-        }, { isolationLevel: "ReadCommitted", timeout: 15_000 });
+        });
       }
     }
     if (data.action !== "CREATE") await prisma.auditLog.create({ data: { organisationId, actorUserId: access.user.id, action: `SCHOOL_NEWS_${data.action}`, entityType: "NewsStory", entityId: result.id, details: { status: result.status, product: NEWSROOM_PRODUCTS.SCHOOL_RADIO } } });

@@ -5,6 +5,7 @@ import { requireActiveNewsroom } from "@/lib/newsroom-access";
 import { GENERAL_STATION_MANAGEMENT_WHERE } from "@/lib/general-station-boundary.mjs";
 import { GENERAL_STUDIO_AUDIO_PROJECT_WHERE, GENERAL_STUDIO_MEDIA_ASSET_WHERE } from "@/lib/studio-general-asset-boundary.mjs";
 import { lockVisibleNewsroomStory, lockVisibleOnlineNewsroomCreateTargets } from "@/lib/newsroom-write-boundary.mjs";
+import { runGeneralSourceWriteTransaction } from "@/lib/general-source-write-transaction.mjs";
 import { ORGANISATION_CONTENT_ROLES, ORGANISATION_MANAGER_ROLES, isOrganisationRoleAllowed } from "@/lib/permissions.mjs";
 import {
   NEWSROOM_POLICY_VERSION,
@@ -161,7 +162,7 @@ export async function POST(request) {
   try {
     let result;
     if (data.action === "CREATE") {
-      result = await prisma.$transaction(async (tx) => {
+      result = await runGeneralSourceWriteTransaction(prisma, async (tx) => {
         if (!await lockVisibleOnlineNewsroomCreateTargets(tx, {
           organisationId, stationId: data.stationId, channelId: data.channelId,
           stationWhere: onlineStationWhere, channelWhere: onlineChannelWhere
@@ -170,7 +171,7 @@ export async function POST(request) {
         await tx.newsStoryDecision.create({ data: { organisationId, storyId: story.id, action: "CREATE", fromStatus: story.status, toStatus: story.status, actorUserId: access.user.id } });
         await tx.auditLog.create({ data: { organisationId, actorUserId: access.user.id, action: "ONLINE_NEWS_CREATE", entityType: "NewsStory", entityId: story.id, details: { stationId: data.stationId, channelId: data.channelId || null, type: story.type, product: NEWSROOM_PRODUCTS.ONLINE_RADIO, policyVersion: NEWSROOM_POLICY_VERSION, requestId } } });
         return story;
-      }, { isolationLevel: "ReadCommitted", timeout: 15_000 });
+      });
     } else {
       const story = await onlineStory(organisationId, data.storyId);
       if (!story) return NextResponse.json({ error: "The newsroom story was not found." }, { status: 404 });
@@ -184,7 +185,7 @@ export async function POST(request) {
           data.interviewMediaAssetId ? prisma.mediaAsset.findFirst({ where: { id: data.interviewMediaAssetId, organisationId, status: "READY", mimeType: { startsWith: "audio/" }, ...GENERAL_STUDIO_MEDIA_ASSET_WHERE }, select: { id: true } }) : null
         ]);
         if ((data.audioProjectId && !audioProject) || (data.interviewMediaAssetId && !interviewAsset)) return NextResponse.json({ error: "Choose production audio owned by this organisation." }, { status: 404 });
-        result = await prisma.$transaction(async (tx) => {
+        result = await runGeneralSourceWriteTransaction(prisma, async (tx) => {
           const current = await lockVisibleNewsroomStory(tx, { organisationId, storyId: story.id, product: NEWSROOM_PRODUCTS.ONLINE_RADIO,
             visibleWhere: visibleOnlineStoryWhere(organisationId), include: storyInclude,
             additionalProjectId: data.audioProjectId, additionalMediaAssetId: data.interviewMediaAssetId });
@@ -202,12 +203,12 @@ export async function POST(request) {
           await tx.newsStoryRevision.create({ data: { organisationId, storyId: current.id, revision, script: updated.script, factCheckNotes: updated.factCheckNotes, sourcesJson: sources, audioProjectId: updated.audioProjectId, interviewMediaAssetId: updated.interviewMediaAssetId, createdByUserId: access.user.id } });
           await tx.auditLog.create({ data: { organisationId, actorUserId: access.user.id, action: "ONLINE_NEWS_SAVE", entityType: "NewsStory", entityId: current.id, details: { revision, sourceCount: sources.length, sourceFingerprint: newsroomSourceFingerprint(sources), audioProjectId: updated.audioProjectId, policyVersion: NEWSROOM_POLICY_VERSION, requestId } } });
           return updated;
-        }, { isolationLevel: "ReadCommitted", timeout: 15_000 });
+        });
       } else if (data.action === "ASSIGN") {
         const denied = managerRequired(access); if (denied) return denied;
         const assignee = await prisma.organisationMember.findFirst({ where: { organisationId, userId: data.assigneeUserId, role: { in: ORGANISATION_CONTENT_ROLES } }, select: { userId: true } });
         if (!assignee) return NextResponse.json({ error: "Choose an active newsroom editor in this organisation." }, { status: 404 });
-        result = await prisma.$transaction(async (tx) => {
+        result = await runGeneralSourceWriteTransaction(prisma, async (tx) => {
           const current = await lockVisibleNewsroomStory(tx, { organisationId, storyId: story.id, product: NEWSROOM_PRODUCTS.ONLINE_RADIO,
             visibleWhere: visibleOnlineStoryWhere(organisationId), include: storyInclude });
           if (!current) throw new Error("The newsroom story is no longer available. Refresh and try again.");
@@ -216,12 +217,12 @@ export async function POST(request) {
           await tx.newsStoryDecision.create({ data: { organisationId, storyId: current.id, action: "ASSIGN", fromStatus: current.status, toStatus: transition.status, actorUserId: access.user.id } });
           await tx.auditLog.create({ data: { organisationId, actorUserId: access.user.id, action: "ONLINE_NEWS_ASSIGN", entityType: "NewsStory", entityId: current.id, details: { assigneeUserId: assignee.userId, policyVersion: NEWSROOM_POLICY_VERSION, requestId } } });
           return updated;
-        }, { isolationLevel: "ReadCommitted", timeout: 15_000 });
+        });
       } else {
         const managerActions = new Set(["APPROVE", "REQUEST_CHANGES", "PUBLISH", "ARCHIVE"]);
         if (managerActions.has(data.action)) { const denied = managerRequired(access); if (denied) return denied; }
         else if (!canEditNewsStory({ role: access.membership.role, userId: access.user.id, assignedToUserId: story.assignedToUserId })) return NextResponse.json({ error: "This story is assigned to another editor." }, { status: 403 });
-        result = await prisma.$transaction(async (tx) => {
+        result = await runGeneralSourceWriteTransaction(prisma, async (tx) => {
           const current = await lockVisibleNewsroomStory(tx, { organisationId, storyId: story.id, product: NEWSROOM_PRODUCTS.ONLINE_RADIO,
             visibleWhere: visibleOnlineStoryWhere(organisationId), include: storyInclude });
           if (!current) throw new Error("The newsroom story or production audio is no longer available. Refresh and try again.");
@@ -236,7 +237,7 @@ export async function POST(request) {
           await tx.newsStoryDecision.create({ data: { organisationId, storyId: current.id, action: data.action, fromStatus: current.status, toStatus: transition.status, note: transition.notes, actorUserId: access.user.id } });
           await tx.auditLog.create({ data: { organisationId, actorUserId: access.user.id, action: `ONLINE_NEWS_${data.action}`, entityType: "NewsStory", entityId: current.id, details: { fromStatus: current.status, toStatus: transition.status, sourceFingerprint: newsroomSourceFingerprint(Array.isArray(current.sourcesJson) ? current.sourcesJson : []), liveScheduleChanged: false, publicWebPublished: false, policyVersion: NEWSROOM_POLICY_VERSION, requestId } } });
           return updated;
-        }, { isolationLevel: "ReadCommitted", timeout: 15_000 });
+        });
       }
     }
     return NextResponse.json({ result, notice: data.action === "PUBLISH" ? "Story released by the newsroom. Live programming and public web pages were not changed." : "Newsroom action completed." }, { status: data.action === "CREATE" ? 201 : 200 });

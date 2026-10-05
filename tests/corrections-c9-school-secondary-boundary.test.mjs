@@ -18,6 +18,9 @@ test("School Learning excludes protected projects and historical project-linked 
   assert.match(route, /status: \{ in: \["READY", "SUBMITTED"\] \}, \.\.\.generalSchoolAudioProjectWhere\(organisationId\)/);
   assert.match(route, /status: \{ in: \["READY", "SUBMITTED"\] \}, OR: \[\{ studentGroupId:[\s\S]*\.\.\.generalSchoolAudioProjectWhere\(organisationId\)/);
   assert.match(route, /ASSESS_SUBMISSION[\s\S]*generalSchoolSubmissionWhere\(organisationId\)/);
+  assert.match(route, /await lockGeneralStudioMediaAssets\(tx, organisationId, \[\.\.\.mediaIds\]\)/);
+  assert.match(route, /runGeneralSourceWriteTransaction\(prisma, async \(tx\)/);
+  assert.match(route, /CORRECTIONS_STUDIO_OUTPUT_BLOCKED[\s\S]*throw notFound\("The linked School audio is no longer available to Learning\."\)/);
   assert.match(route, /"Cache-Control": "private, no-store"/);
 });
 
