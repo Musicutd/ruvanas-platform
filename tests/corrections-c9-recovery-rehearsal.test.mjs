@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { RECOVERY_MANIFEST_VERSION } from "./fixtures/corrections-c9-recovery-fixture.mjs";
 import {
   assertOwnedRecoveryContainer, assertOwnedRecoveryNetwork, assertRecoveryDatabaseUrl, assertRecoveryRehearsalEnvironment,
   RECOVERY_DATABASES, RECOVERY_LABEL, recoveryContainerAddress, runRecoveryCleanup, verifyRecoveryBytes
@@ -15,6 +16,13 @@ const networkName = `${ownership.name}-network`;
 const networkId = "c".repeat(64);
 const host = "172.30.0.2";
 const networkOwnership = { id: networkId, name: networkName, nonce: ownership.nonce };
+
+test("fictional proof manifest uses the existing database's 24-hex version contract", async () => {
+  assert.match(RECOVERY_MANIFEST_VERSION, /^[0-9a-f]{24}$/);
+  assert.equal(RECOVERY_MANIFEST_VERSION, createHash("sha256").update("fictional-recovery-manifest-1").digest("hex").slice(0, 24));
+  const migration = await readFile(new URL("../prisma/migrations/20260827110000_proof_of_play/migration.sql", import.meta.url), "utf8");
+  assert.match(migration, /"ProofOfPlayEvent_manifest_version_check" CHECK \("manifestVersion" ~ '\^\[0-9a-f\]\{24\}\$'\)/);
+});
 function network() {
   return { Id: networkId, Name: networkName, Internal: true, Driver: "bridge", Scope: "local",
     Labels: { [RECOVERY_LABEL]: ownership.nonce }, IPAM: { Config: [{ Subnet: "172.30.0.0/16", Gateway: "172.30.0.1" }] },
@@ -146,6 +154,27 @@ test("operator command fails before resources or dependencies without CI and nev
   assert.equal(result.status, 1); assert.equal(result.stdout, "");
   assert.equal(JSON.parse(result.stderr).reason, "RECOVERY_REHEARSAL_ENVIRONMENT_DENIED");
   assert.equal(result.stderr.includes(secret), false);
+});
+
+test("fixture dependency diagnostics expose only fixed phase/model and Prisma code", () => {
+  const secret = "private-connection-metadata-do-not-log";
+  const script = `import { seedCorrectionsRecoveryFixture } from "./tests/fixtures/corrections-c9-recovery-fixture.mjs";
+    let input = ""; for await (const chunk of process.stdin) input += chunk;
+    const options = JSON.parse(input);
+    const db = { $queryRaw: async () => [{ name: "ruvanas_c9_recovery_source" }],
+      plan: { count: async () => { throw Object.assign(new Error("${secret}"), { code: "P2003", meta: { connection: "${secret}" } }); } } };
+    try { await seedCorrectionsRecoveryFixture(db, options); process.exitCode = 2; }
+    catch (error) { process.stdout.write(error.message); }`;
+  const result = spawnSync(process.execPath, ["--input-type=module", "-e", script], {
+    input: JSON.stringify({ sourceDatabaseUrl: `postgresql://postgres:synthetic@${host}:5432/${RECOVERY_DATABASES.source}`,
+      container: container(), ownership, network: network(), password: "synthetic" }),
+    env: { PATH: process.env.PATH || "", GITHUB_ACTIONS: "true", C9_RECOVERY_REHEARSAL: "true" },
+    encoding: "utf8", timeout: 10_000
+  });
+  assert.equal(result.status, 0);
+  assert.equal(result.stdout, "RECOVERY_REHEARSAL_FIXTURE_BASELINE_COUNT_PLAN_FOREIGN_KEY");
+  assert.deepEqual(JSON.parse(result.stderr), { event: "RECOVERY_FIXTURE_FAILURE", operation: "BASELINE_COUNT", model: "plan", prismaCode: "P2003" });
+  assert.equal((result.stdout + result.stderr).includes(secret), false);
 });
 
 test("CI restores only its current generated archive and does not upload backup artifacts", async () => {
