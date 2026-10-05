@@ -7,6 +7,7 @@ import { validateAudioUpload } from "@/lib/audio-validation.mjs";
 import { createDefaultEditDecision } from "@/lib/audio-lab.mjs";
 import { currentCorrectionsContributorSession, sameOrigin } from "@/lib/corrections-contributor-auth";
 import { assertCurrentCorrectionsContributorWrite } from "@/lib/corrections-studio-service";
+import { canDeleteUncommittedCorrectionsRecording } from "@/lib/corrections-recording-cleanup.mjs";
 import { runSerializableTransaction } from "@/lib/transaction-retry.mjs";
 import { MAX_CORRECTIONS_RECORDING_BYTES } from "@/lib/request-size-policy.mjs";
 
@@ -36,7 +37,9 @@ export async function POST(request) {
     const take = await runSerializableTransaction(prisma, async (tx) => {
       const { session, entitlements } = await assertCurrentCorrectionsContributorWrite(tx, access, "RECORD");
       const currentUsed = await tx.mediaAsset.aggregate({ where: { organisationId: session.organisationId, status: { in: ["UPLOADING", "PROCESSING", "READY"] } }, _sum: { sizeBytes: true } });
-      if ((currentUsed._sum.sizeBytes || 0n) + BigInt(buffer.length) > BigInt(entitlements.storageLimitGb) * 1024n ** 3n) throw new Error("The organisation storage limit has been reached.");
+      if ((currentUsed._sum.sizeBytes || 0n) + BigInt(buffer.length) > BigInt(entitlements.storageLimitGb) * 1024n ** 3n) {
+        throw Object.assign(new Error("The organisation storage limit has been reached."), { status: 413 });
+      }
       const media = await tx.mediaAsset.create({ data: { organisationId: session.organisationId, libraryType: "ORGANISATION_PROMO", name: file.name.slice(0, 160), originalName: file.name.slice(0, 240), storageKey: key, mimeType: validation.contentType, sizeBytes: BigInt(buffer.length), durationSeconds: Math.max(1, Math.round(durationMs / 1000)), mediaType: "ANNOUNCEMENT", status: "READY" } });
       const created = await tx.audioTake.create({ data: { organisationId: session.organisationId, projectId: session.projectId, mediaAssetId: media.id, recordedByUserId: session.supervisorUserId, durationMs, status: "READY", sourceEditDecision: createDefaultEditDecision() } });
       await tx.audioProject.update({ where: { id: session.projectId }, data: { status: "READY" } });
@@ -45,7 +48,27 @@ export async function POST(request) {
     });
     return NextResponse.json({ ok: true, takeId: take.id }, { status: 201 });
   } catch (error) {
-    await r2.client.send(new DeleteObjectCommand({ Bucket: r2.bucketName, Key: key })).catch(() => {});
-    return NextResponse.json({ error: error.message || "The recording could not be stored." }, { status: error.status || 409 });
+    let safeToDelete = false;
+    try {
+      safeToDelete = await canDeleteUncommittedCorrectionsRecording(prisma, {
+        organisationId: access.session.organisationId, projectId: access.session.projectId, storageKey: key
+      });
+    } catch {
+      // An unavailable database cannot prove that an object is uncommitted.
+    }
+    if (safeToDelete) {
+      try {
+        await r2.client.send(new DeleteObjectCommand({ Bucket: r2.bucketName, Key: key }));
+      } catch {
+        console.error("Corrections Studio recording cleanup could not delete an uncommitted object.");
+      }
+    } else {
+      console.error("Corrections Studio recording cleanup retained an object for reconciliation.");
+    }
+    const expected = Number.isInteger(error?.status) && [403, 409, 413].includes(error.status);
+    return NextResponse.json({ error: expected ? error.message :
+      safeToDelete ? "The recording could not be stored. Please try again." :
+        "The recording outcome could not be confirmed. Ask staff to check before trying again." },
+    { status: expected ? error.status : 409 });
   }
 }
