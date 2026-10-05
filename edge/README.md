@@ -40,16 +40,16 @@ facility, zone and player. Opaque media URLs are not reusable downloads.
 
 ## Container packaging check
 
-CI runs `docker build --file edge/Dockerfile --tag ruvanas-c8-edge:ci .` from the
-repository root. It only builds a local image: there is no image push or
-deployment. The Dockerfile also parses the Edge entry point and loads its
-service and sync module graphs during the build. A passing job establishes
-that the Node 22 Alpine image can be assembled from the checked-out sources
-and that those modules and their relative imports are present and loadable.
+CI builds the image locally without pushing or deploying it. The Dockerfile
+parses the Edge entry point and loads its service and sync modules. A separate
+CI smoke starts the actual container with fresh synthetic keys, an ephemeral
+cache and no external network, then confirms unprovisioned startup fails,
+ungranted playback and media are denied, and an attestation without a challenge
+or a browser request from an untrusted origin is rejected. The
+smoke uses no customer credentials or production data and removes the container.
 
-The check does not start the Edge, provision credentials or a writable cache
-volume, connect to cloud or player services, validate browser-to-Edge TLS or
-facility networking, or prove playback, offline recovery, security hardening
+This does not connect to a real cloud or player, validate browser-to-Edge TLS
+or facility networking, or prove playback, offline recovery, appliance security
 or production readiness. Those still require the separate C8 release gates.
 
 ## Recovery and decommissioning

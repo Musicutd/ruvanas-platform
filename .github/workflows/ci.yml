@@ -257,5 +257,15 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
       - name: Build C8 Edge image and validate module loading
         run: docker build --file edge/Dockerfile --tag ruvanas-c8-edge:ci .
+
+      - name: Verify synthetic Edge container starts fail closed without cloud access
+        env:
+          C8_CONTAINER_SMOKE: "true"
+        run: node scripts/ci-c8-edge-container-smoke.mjs
