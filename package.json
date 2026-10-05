@@ -8,6 +8,7 @@
     "backup:protected-media": "node scripts/protected-media-recovery.mjs backup",
     "audit:studio-audio-storage": "node scripts/studio-audio-storage-inventory.mjs",
     "audit:studio-audio-uploads": "node scripts/studio-audio-upload-inventory.mjs",
+    "audit:corrections-recordings": "node scripts/corrections-recording-storage-inventory.mjs",
     "ci:media-toolchain": "node scripts/check-media-toolchain.mjs",
     "ci:performance-indexes": "node scripts/check-performance-indexes.mjs",
     "ci:prepare-media-toolchain": "npm rebuild ffmpeg-static --foreground-scripts",
