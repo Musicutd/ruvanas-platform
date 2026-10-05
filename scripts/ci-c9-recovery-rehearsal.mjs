@@ -30,7 +30,19 @@ async function main() {
   const command = (binary, args, { input, environment = {}, timeout = 120_000 } = {}) => {
     const result = spawnSync(binary, args, { env: { ...childEnvironment, ...environment }, input,
       stdio: ["pipe", "pipe", "pipe"], timeout, maxBuffer: 64 * 1024 * 1024 });
-    if (result.error || result.signal || result.status !== 0) throw new Error("RECOVERY_REHEARSAL_SUBPROCESS_FAILED");
+    if (result.error || result.signal || result.status !== 0) {
+      // Classify only fixed diagnostics. Raw output can contain a connection
+      // string or generated password and must never become an error message.
+      const output = (result.stderr || Buffer.alloc(0)).toString("utf8");
+      const category = [
+        ["HOME_UNAVAILABLE", /HOME.*not set/i], ["DAEMON_UNAVAILABLE", /Cannot connect to the Docker daemon/i],
+        ["IMAGE_UNAVAILABLE", /pull access denied|manifest unknown|TLS handshake timeout/i],
+        ["PERMISSION_DENIED", /permission denied|Operation not permitted/i],
+        ["READ_ONLY_FILESYSTEM", /read-only file system/i],
+        ["PORT_UNAVAILABLE", /port is already allocated|address already in use/i]
+      ].find(([, pattern]) => pattern.test(output))?.[0] || "FAILED";
+      throw new Error(`RECOVERY_REHEARSAL_SUBPROCESS_${category}`);
+    }
     return result;
   };
   const docker = (args, options) => command("docker", ["--host", "unix:///var/run/docker.sock", "--config", join(directory, "docker"), ...args], options);
@@ -41,6 +53,8 @@ async function main() {
   let target;
   let result;
   let failureReason;
+  let failureCause;
+  let resourceSummary;
   let cleanupFailures = [];
   let stage = "CREATE_ISOLATED_RESOURCES";
   const ownership = () => ({ id: containerId, name, nonce });
@@ -54,9 +68,11 @@ async function main() {
   };
   try {
     await mkdir(join(directory, "docker"), { mode: 0o700 });
+    stage = "CREATE_ISOLATED_NETWORK";
     networkId = docker(["network", "create", "--internal", "--label", `${RECOVERY_LABEL}=${nonce}`, networkName]).stdout.toString("utf8").trim();
     if (!/^[0-9a-f]{64}$/.test(networkId)) throw new Error("RECOVERY_REHEARSAL_NETWORK_BOUNDARY_DENIED");
     verifyNetwork();
+    stage = "CREATE_DATABASE_CONTAINER";
     containerId = docker(["create", "--name", name, "--label", `${RECOVERY_LABEL}=${nonce}`,
       "--network", networkName, "--publish", "127.0.0.1::5432", "--user", "postgres", "--read-only",
       "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--pids-limit", "128", "--memory", "768m",
@@ -64,9 +80,20 @@ async function main() {
       "--tmpfs", "/var/run/postgresql:rw,noexec,nosuid,size=16m,uid=999,gid=999,mode=0755",
       "--tmpfs", "/tmp:rw,noexec,nosuid,size=16m,mode=1777",
       "--env", `POSTGRES_PASSWORD=${password}`, "--env", `POSTGRES_DB=${RECOVERY_DATABASES.source}`, "postgres:16"]).stdout.toString("utf8").trim();
+    stage = "VERIFY_CONTAINER_IDENTITY";
     assertOwnedRecoveryContainer(inspect(), ownership());
+    stage = "START_DATABASE_CONTAINER";
     docker(["start", containerId]);
-    const port = recoveryContainerPort(inspect(), ownership(), networkName);
+    stage = "VERIFY_CONTAINER_BOUNDARY";
+    const startedContainer = inspect();
+    const bindings = startedContainer.NetworkSettings?.Ports?.["5432/tcp"];
+    resourceSummary = { running: startedContainer.State?.Running === true,
+      networkCount: Object.keys(startedContainer.NetworkSettings?.Networks || {}).length,
+      publishedBindings: Array.isArray(bindings) ? bindings.length : 0,
+      loopbackOnly: Array.isArray(bindings) && bindings.length > 0 && bindings.every((binding) => binding.HostIp === "127.0.0.1"),
+      tmpfsData: Boolean(startedContainer.HostConfig?.Tmpfs?.["/var/lib/postgresql/data"]),
+      persistentMount: Boolean(startedContainer.Mounts?.some((mount) => mount.Type === "bind" || mount.Type === "volume")) };
+    const port = recoveryContainerPort(startedContainer, ownership(), networkName);
     const verifyBoundary = () => {
       verifyNetwork();
       if (recoveryContainerPort(inspect(), ownership(), networkName) !== port) {
@@ -148,8 +175,9 @@ async function main() {
     result = { event: "c9_recovery_rehearsal_passed", scope: "DISPOSABLE_DATABASE_AND_LOCAL_SYNTHETIC_BYTES_ONLY",
       migrationsVerified: migrations.length, checks, mediaObjectsVerified: expected.media.length, restoredBytes,
       durationMs: Date.now() - startedAt, productionRecoveryVerified: false, physicalC8Verified: false };
-  } catch {
+  } catch (error) {
     failureReason = `RECOVERY_REHEARSAL_FAILED_${stage}`;
+    failureCause = /^RECOVERY_REHEARSAL_[A-Z_]+$/.test(error?.message || "") ? error.message : "RECOVERY_REHEARSAL_ASSERTION_OR_DEPENDENCY_FAILED";
   } finally {
     // Exact current-run ownership, never a name glob, Docker prune or broad
     // database/filesystem deletion. Cleanup failure prevents a PASSED report.
@@ -169,7 +197,7 @@ async function main() {
     });
   }
   if (failureReason || cleanupFailures.length) {
-    throw Object.assign(new Error(failureReason || "RECOVERY_REHEARSAL_CLEANUP_FAILED"), { cleanupFailures });
+    throw Object.assign(new Error(failureReason || "RECOVERY_REHEARSAL_CLEANUP_FAILED"), { cleanupFailures, failureCause, resourceSummary });
   }
   process.stdout.write(`${JSON.stringify(result)}\n`);
 }
@@ -178,6 +206,8 @@ main().catch((error) => {
   const reason = /^RECOVERY_REHEARSAL_[A-Z_]+$/.test(error?.message || "") ? error.message : "RECOVERY_REHEARSAL_DEPENDENCY_FAILED";
   const cleanupFailures = (error?.cleanupFailures || []).filter((value) =>
     ["SOURCE_DISCONNECT", "TARGET_DISCONNECT", "CONTAINER", "NETWORK", "TEMPORARY_DIRECTORY"].includes(value));
-  process.stderr.write(`${JSON.stringify({ event: "c9_recovery_rehearsal_failed", reason, cleanupFailures, productionRecoveryVerified: false })}\n`);
+  const cause = /^RECOVERY_REHEARSAL_[A-Z_]+$/.test(error?.failureCause || "") ? error.failureCause : undefined;
+  process.stderr.write(`${JSON.stringify({ event: "c9_recovery_rehearsal_failed", reason, cause,
+    resources: error?.resourceSummary, cleanupFailures, productionRecoveryVerified: false })}\n`);
   process.exitCode = 1;
 });
