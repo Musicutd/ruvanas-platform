@@ -3,10 +3,11 @@ import { prisma } from "@/lib/prisma";
 import { requireOrganisationProductAccess, ORGANISATION_MANAGER_ROLES } from "@/lib/access-control";
 import { stationDomainDnsName, stationDomainDnsValue } from "@/lib/station-website.mjs";
 import { verifyStationDomainDns } from "@/lib/station-website-service";
+import { GENERAL_STATION_MANAGEMENT_WHERE } from "@/lib/general-station-boundary.mjs";
 
 export async function PATCH(request, { params }) {
   try {
-    const domain = await prisma.stationDomain.findFirst({ where: { id: String(params.domainId || ""), stationId: String(params.stationId || "") }, include: { station: { select: { stationWebsiteEnabled: true } } } });
+    const domain = await prisma.stationDomain.findFirst({ where: { id: String(params.domainId || ""), stationId: String(params.stationId || ""), station: GENERAL_STATION_MANAGEMENT_WHERE }, include: { station: { select: { stationWebsiteEnabled: true } } } });
     if (!domain) return NextResponse.json({ error: "Station domain not found." }, { status: 404 });
     const access = await requireOrganisationProductAccess(domain.organisationId, "ONLINE", ORGANISATION_MANAGER_ROLES);
     if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });

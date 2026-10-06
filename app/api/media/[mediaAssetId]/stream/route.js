@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { requireOrganisationAccess, requireOrganisationProductAccess } from "@/lib/access-control";
 import { accessDenied } from "@/lib/api-response";
 import { getR2Storage } from "@/lib/r2";
+import { generalStudioMediaAssetIds } from "@/lib/studio-general-asset-boundary.mjs";
+import { correctionsPrivateMediaPreviewScope } from "@/lib/corrections-private-media-preview.mjs";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -108,21 +110,24 @@ export async function GET(request, { params }) {
       return accessDenied(access);
     }
 
-    // A Studio output submitted to Corrections becomes facility-scoped review
-    // media. The general organisation stream must not bypass Inside grants.
-    const [correctionsUses, rehabilitationUses] = await Promise.all([
-      prisma.correctionsSubmission.findMany({ where: { render: { outputMediaAssetId: asset.id } }, select: { facilityId: true }, take: 100 }),
-      prisma.correctionsRehabContent.findMany({ where: { mediaAssetId: asset.id }, select: { facilityId: true }, take: 100 })
+    // Only ordinary media uses the general organisation stream. Submitted
+    // render review remains available to authorised facility staff, but raw
+    // supervised takes/renders cannot be previewed through this generic URL.
+    const [ordinaryIds, scope] = await Promise.all([
+      generalStudioMediaAssetIds(prisma, asset.organisationId, [asset.id]),
+      correctionsPrivateMediaPreviewScope(prisma, asset.id)
     ]);
-    if (correctionsUses.length || rehabilitationUses.length) {
+    if (!ordinaryIds.has(asset.id) || scope.protectedUse) {
+      if (!scope.available) return NextResponse.json({ error: "This audio file is not available for playback." }, { status: 404 });
       const insideAccess = await requireOrganisationProductAccess(asset.organisationId, "CORRECTIONS");
       if (!insideAccess.ok || !insideAccess.membership) return accessDenied(insideAccess.ok ? { ok: false, status: 403, error: "Inside facility access is required." } : insideAccess);
       if (insideAccess.membership.role !== "OWNER") {
-        const facilityIds = [...correctionsUses, ...rehabilitationUses].map((item) => item.facilityId).filter(Boolean);
-        const assigned = facilityIds.length && await prisma.correctionsFacilityGrant.count({
-          where: { organisationId: asset.organisationId, organisationMemberId: insideAccess.membership.id, facilityId: { in: facilityIds } }
+        if (scope.ownerOnly || !scope.facilityIds.length) return NextResponse.json({ error: "Inside facility access is required." }, { status: 403 });
+        const assigned = await prisma.correctionsFacilityGrant.findMany({
+          where: { organisationId: asset.organisationId, organisationMemberId: insideAccess.membership.id, facilityId: { in: scope.facilityIds } },
+          select: { facilityId: true }
         });
-        if (!assigned) return NextResponse.json({ error: "Inside facility access is required." }, { status: 403 });
+        if (new Set(assigned.map(({ facilityId }) => facilityId)).size !== scope.facilityIds.length) return NextResponse.json({ error: "Inside facility access is required." }, { status: 403 });
       }
     }
 

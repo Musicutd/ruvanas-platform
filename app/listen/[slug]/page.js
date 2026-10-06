@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { GENERAL_STATION_MANAGEMENT_WHERE } from "@/lib/general-station-boundary.mjs";
 import PublicRadioPlayer from "@/app/components/PublicRadioPlayer";
 import PwaLifecycle from "@/app/components/PwaLifecycle";
 
@@ -7,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export async function generateMetadata({ params }) {
   const { slug } = await params;
-  const station = await prisma.station.findFirst({ where: { slug, status: "ACTIVE", publicPlayerEnabled: true }, select: { name: true, description: true, publicPlayerTagline: true, stationWebsiteEnabled: true } });
+  const station = await prisma.station.findFirst({ where: { slug, status: "ACTIVE", publicPlayerEnabled: true, ...GENERAL_STATION_MANAGEMENT_WHERE }, select: { name: true, description: true, publicPlayerTagline: true, stationWebsiteEnabled: true } });
   return station ? {
     title: `Listen live — ${station.name} | Ruvanas`,
     description: station.publicPlayerTagline || station.description || `Listen live to ${station.name} on Ruvanas.`,
@@ -17,7 +18,7 @@ export async function generateMetadata({ params }) {
 
 export default async function PublicListenPage({ params }) {
   const { slug } = await params;
-  const station = await prisma.station.findFirst({ where: { slug, status: "ACTIVE", publicPlayerEnabled: true }, select: { id: true, stationWebsiteEnabled: true } });
+  const station = await prisma.station.findFirst({ where: { slug, status: "ACTIVE", publicPlayerEnabled: true, ...GENERAL_STATION_MANAGEMENT_WHERE }, select: { id: true, stationWebsiteEnabled: true } });
   if (!station) notFound();
   return <main style={styles.page}><PublicRadioPlayer slug={slug} />{station.stationWebsiteEnabled ? <PwaLifecycle stationPath={`/radio/${slug}`} /> : null}</main>;
 }

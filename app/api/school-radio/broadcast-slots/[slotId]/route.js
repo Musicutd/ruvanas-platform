@@ -12,7 +12,7 @@ export async function PATCH(request, { params }) {
   const parsed = cancelSchema.safeParse(await request.json());
   if (!parsed.success) return NextResponse.json({ error: "Provide a short cancellation reason." }, { status: 400 });
   const slot = await prisma.schoolBroadcastSlot.findFirst({
-    where: { id: String(params.slotId || ""), organisationId: access.organisation.id, status: "APPROVED" }
+    where: { id: String(params.slotId || ""), organisationId: access.organisation.id, status: "APPROVED", OR: [{ location: { correctionsFacility: { is: null } } }, { zone: { location: { correctionsFacility: { is: null } } } }] }
   });
   if (!slot) return NextResponse.json({ error: "The active broadcast slot was not found." }, { status: 404 });
   const updated = await prisma.$transaction(async (tx) => {

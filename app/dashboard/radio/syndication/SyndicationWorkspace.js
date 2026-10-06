@@ -103,7 +103,11 @@ export default function SyndicationWorkspace() {
 
     <section className={styles.panel}>
       <div className={styles.heading}><div><p className={styles.kicker}>YOUR OFFERS</p><h2>Source approvals and control</h2></div><span>{ownOffers.length} offers</span></div>
-      <div className={styles.cards}>{ownOffers.length ? ownOffers.map((offer) => <article className={styles.card} key={offer.id}>
+      <div className={styles.cards}>{ownOffers.length ? ownOffers.map((offer) => offer.unavailableSource ? <article className={styles.card} key={offer.id}>
+        <div className={styles.cardHead}><div><b>UNAVAILABLE SOURCE</b><h3>{offer.title}</h3><p>Its details are hidden from general syndication.</p></div><span className={styles.badge}>{offer.status}</span></div>
+        <p>This older offer cannot be published or delivered. Withdraw it to close its rights requests.</p>
+        <div className={styles.actions}><button className={styles.danger} disabled={Boolean(working)} onClick={() => act({ action: "CHANGE_OFFER", offerId: offer.id, offerAction: "WITHDRAW", reason: "Source is unavailable in general syndication." }, "Offer withdrawn and delivery revoked.")}>Withdraw</button></div>
+      </article> : <article className={styles.card} key={offer.id}>
         <div className={styles.cardHead}><div><b>{offer.kind === "LIVE_RELAY" ? "LIVE RELAY" : "RECORDED"}</b><h3>{offer.title}</h3><p>{offer.sourceStation.name} · {offer.network.name}</p></div><span className={styles.badge}>{offer.status}</span></div>
         <p>{offer.permittedTerritories} · {new Date(offer.availableFrom).toLocaleString()} → {offer.availableUntil ? new Date(offer.availableUntil).toLocaleString() : "open ended"}</p>
         <div className={styles.actions}>{offer.status === "DRAFT" || offer.status === "PAUSED" ? <button disabled={Boolean(working)} onClick={() => act({ action: "CHANGE_OFFER", offerId: offer.id, offerAction: "PUBLISH" }, "Offer published to eligible network stations.")}>Publish</button> : null}{offer.status === "AVAILABLE" ? <button className={styles.secondary} disabled={Boolean(working)} onClick={() => act({ action: "CHANGE_OFFER", offerId: offer.id, offerAction: "PAUSE" }, "Offer paused. Delivery is now blocked.")}>Pause</button> : null}{offer.status !== "WITHDRAWN" ? <button className={styles.danger} disabled={Boolean(working)} onClick={() => act({ action: "CHANGE_OFFER", offerId: offer.id, offerAction: "WITHDRAW", reason: "Withdrawn by the source organisation." }, "Offer withdrawn and delivery revoked.")}>Withdraw</button> : null}</div>

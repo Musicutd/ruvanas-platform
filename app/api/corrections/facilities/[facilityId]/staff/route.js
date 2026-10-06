@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { correctionsFacilityAccess, correctionsRequestContext } from "@/lib/corrections-access";
 import { correctionsError, correctionsResponse } from "@/lib/corrections-http";
 import { correctionsGrantAllowed } from "@/lib/corrections-workflow.mjs";
+import { correctionsCurrentFacilityEdit } from "@/lib/corrections-facility-write-authority.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -30,17 +31,28 @@ export async function POST(request, { params }) {
   if (resolved.error) return resolved.error;
   const { access, facility } = resolved;
   const body = await request.json().catch(() => ({}));
+  if (typeof body.memberId !== "string" || !body.memberId) return correctionsResponse({ error: "Choose an eligible team member and matching facility role." }, 400);
   try {
-    const member = await prisma.organisationMember.findFirst({ where: { id: body.memberId, organisationId: access.organisationId }, select: { id: true, role: true } });
-    if (!member || !(correctionsGrantAllowed(member.role, body.permission) || (member.role === "OWNER" && body.permission === "MANAGER"))) return correctionsResponse({ error: "Choose an eligible team member and matching facility role." }, 400);
-    const elevated = body.permission === "MANAGER" && ["OWNER", "MANAGER"].includes(member.role);
-    const capabilities = { canPriorityActivate: elevated && body.canPriorityActivate === true, canPriorityStop: elevated && body.canPriorityStop === true, canEmergencyActivate: elevated && body.canEmergencyActivate === true, canEmergencyClear: elevated && body.canEmergencyClear === true };
-    const grant = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
+      const currentOwner = await correctionsCurrentFacilityEdit(tx, {
+        organisationId: access.organisationId, memberId: access.context.membership.id,
+        facilityId: facility.locationId, ownerOnly: true
+      });
+      if (!currentOwner) return { denied: true };
+      // Serialise grant creation with UPDATE_ROLE. If the role change wins,
+      // read its new role; if this grant wins, UPDATE_ROLE reconciles it.
+      const members = await tx.$queryRaw`SELECT "id", "role" FROM "OrganisationMember" WHERE "id" = ${body.memberId} AND "organisationId" = ${access.organisationId} FOR SHARE`;
+      const member = members[0];
+      if (!member || !(correctionsGrantAllowed(member.role, body.permission) || (member.role === "OWNER" && body.permission === "MANAGER"))) return null;
+      const elevated = body.permission === "MANAGER" && ["OWNER", "MANAGER"].includes(member.role);
+      const capabilities = { canPriorityActivate: elevated && body.canPriorityActivate === true, canPriorityStop: elevated && body.canPriorityStop === true, canEmergencyActivate: elevated && body.canEmergencyActivate === true, canEmergencyClear: elevated && body.canEmergencyClear === true };
       const saved = await tx.correctionsFacilityGrant.upsert({ where: { organisationMemberId_facilityId: { organisationMemberId: member.id, facilityId: facility.locationId } }, create: { organisationId: access.organisationId, organisationMemberId: member.id, facilityId: facility.locationId, permission: body.permission, ...capabilities, createdByUserId: access.context.user.id }, update: { permission: body.permission, ...capabilities, createdByUserId: access.context.user.id } });
       await tx.auditLog.create({ data: { organisationId: access.organisationId, actorUserId: access.context.user.id, action: "CORRECTIONS_FACILITY_ACCESS_GRANTED", entityType: "CorrectionsFacilityGrant", entityId: saved.id, details: { facilityId: facility.locationId, memberId: member.id, permission: body.permission, ...capabilities } } });
-      return saved;
+      return { grant: saved, memberId: member.id, capabilities };
     });
-    return correctionsResponse({ ok: true, grant: { id: grant.id, memberId: member.id, permission: grant.permission, ...capabilities } });
+    if (result?.denied) return correctionsResponse({ error: "Your facility authority changed. Please sign in again." }, 403);
+    if (!result) return correctionsResponse({ error: "Choose an eligible team member and matching facility role." }, 400);
+    return correctionsResponse({ ok: true, grant: { id: result.grant.id, memberId: result.memberId, permission: result.grant.permission, ...result.capabilities } });
   } catch (error) { return correctionsError(error); }
 }
 
@@ -52,12 +64,18 @@ export async function DELETE(request, { params }) {
   if (typeof body.memberId !== "string" || !body.memberId) return correctionsResponse({ error: "Choose a team member." }, 400);
   try {
     const removed = await prisma.$transaction(async (tx) => {
+      const currentOwner = await correctionsCurrentFacilityEdit(tx, {
+        organisationId: access.organisationId, memberId: access.context.membership.id,
+        facilityId: facility.locationId, ownerOnly: true
+      });
+      if (!currentOwner) return null;
       const grant = await tx.correctionsFacilityGrant.findUnique({ where: { organisationMemberId_facilityId: { organisationMemberId: body.memberId, facilityId: facility.locationId } } });
       if (!grant || grant.organisationId !== access.organisationId) return false;
       await tx.correctionsFacilityGrant.delete({ where: { id: grant.id } });
       await tx.auditLog.create({ data: { organisationId: access.organisationId, actorUserId: access.context.user.id, action: "CORRECTIONS_FACILITY_ACCESS_REVOKED", entityType: "CorrectionsFacilityGrant", entityId: grant.id, details: { facilityId: facility.locationId, memberId: body.memberId, permission: grant.permission } } });
       return true;
     });
+    if (removed === null) return correctionsResponse({ error: "Your facility authority changed. Please sign in again." }, 403);
     return correctionsResponse({ ok: true, removed });
   } catch (error) { return correctionsError(error); }
 }

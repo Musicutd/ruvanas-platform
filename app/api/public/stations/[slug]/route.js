@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { GENERAL_STATION_MANAGEMENT_WHERE } from "@/lib/general-station-boundary.mjs";
 
 export async function GET(request, { params }) {
   try {
@@ -8,7 +9,7 @@ export async function GET(request, { params }) {
         slug: params.slug,
         status: "ACTIVE",
         publicPlayerEnabled: true,
-        OR: [{ productFamily: null }, { productFamily: { not: "CORRECTIONS" } }]
+        ...GENERAL_STATION_MANAGEMENT_WHERE
       },
       select: { id: true, name: true, slug: true, description: true, logoUrl: true, publicPlayerTagline: true, publicPlayerAccent: true, stationWebsiteEnabled: true }
     });
@@ -31,7 +32,7 @@ export async function GET(request, { params }) {
       listenUrl: `/listen/${station.slug}`,
       embedUrl: `/embed/${station.slug}`,
       websiteUrl: station.stationWebsiteEnabled ? `/radio/${station.slug}` : null
-    }, { headers: { "Cache-Control": "public, max-age=60, stale-while-revalidate=300" } });
+    }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     console.error("Public station API error:", error);
 

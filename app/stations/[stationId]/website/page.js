@@ -5,15 +5,17 @@ import { stationDomainDnsName, stationDomainDnsValue } from "@/lib/station-websi
 import StationWebsiteSettings from "./StationWebsiteSettings";
 import { subscriberProductForStationFamily } from "@/lib/product-access.mjs";
 import { requireSubscriberProduct } from "@/lib/subscriber-product-access";
+import { GENERAL_STATION_MANAGEMENT_WHERE } from "@/lib/general-station-boundary.mjs";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Station website | Ruvanas" };
 
 export default async function StationWebsiteSettingsPage({ params }) {
+  const { stationId } = await params;
   const context = await getActiveOrganisationContext();
   if (!context?.membership) redirect("/login");
   const station = await prisma.station.findFirst({
-    where: { id: String(params.stationId || ""), organisationId: context.membership.organisationId },
+    where: { id: String(stationId || ""), organisationId: context.membership.organisationId, ...GENERAL_STATION_MANAGEMENT_WHERE },
     select: {
       id: true, name: true, slug: true, productFamily: true, stationWebsiteEnabled: true, stationWebsiteHeadline: true,
       stationWebsiteAbout: true, stationWebsiteHeroImageUrl: true, stationWebsiteContactEmail: true,

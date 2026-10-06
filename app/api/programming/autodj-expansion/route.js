@@ -5,6 +5,7 @@ import { CANONICAL_AUTODJ_GENRES, assertGenreSelection, licensedGenresForLevel }
 import { listAutoDjTargets, resolveAutoDjTarget } from "@/lib/autodj-targets";
 import { parseTimedPlaylistInput, invalidationForCatalogueDowngrade } from "@/lib/timed-playlist-generator.mjs";
 import { createGeneratedDraft, generatedPlaylistInclude, safeGeneratedPlaylist } from "@/lib/generated-playlist-service";
+import { generalGeneratedPlaylistIds, listGeneralGeneratedPlaylistIds } from "@/lib/general-generated-playlist-boundary.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -17,13 +18,20 @@ export async function GET() {
     const access = await contextForAutoDjExpansion();
     if (access.response) return access.response;
     const { membership } = access.context;
-    const [genres, targets, playlists] = await Promise.all([
+    const [genres, targets, allowedPlaylistIds] = await Promise.all([
       configuredGenres(),
       listAutoDjTargets(membership.organisationId, access.entitlements),
-      prisma.generatedPlaylist.findMany({ where: { organisationId: membership.organisationId, status: { not: "ARCHIVED" } }, include: generatedPlaylistInclude, orderBy: { updatedAt: "desc" }, take: 100 })
+      listGeneralGeneratedPlaylistIds(prisma, membership.organisationId)
     ]);
+    const playlists = allowedPlaylistIds.length ? await prisma.generatedPlaylist.findMany({
+      where: { id: { in: allowedPlaylistIds }, organisationId: membership.organisationId, status: { not: "ARCHIVED" }, rightsUse: { not: "CORRECTIONS_RADIO" } },
+      include: generatedPlaylistInclude,
+      orderBy: [{ updatedAt: "desc" }, { id: "desc" }]
+    }) : [];
+    const stillAllowedIds = await generalGeneratedPlaylistIds(prisma, membership.organisationId, playlists);
+    const generalPlaylists = playlists.filter((playlist) => stillAllowedIds.has(playlist.id));
     const today = new Date().toISOString().slice(0, 10);
-    for (const playlist of playlists) {
+    for (const playlist of generalPlaylists) {
       if (playlist.scheduledDate.toISOString().slice(0, 10) < today) continue;
       const invalidReason = invalidationForCatalogueDowngrade(playlist, access.entitlements.licensedMusicCatalogueLevel, genres);
       if (invalidReason && playlist.invalidReason !== invalidReason) {
@@ -42,7 +50,7 @@ export async function GET() {
         { code: "LICENSED_CATALOGUE", label: "Licensed Music Catalogue", enabled: access.entitlements.licensedMusicCatalogueEnabled }
       ],
       genres: [...CANONICAL_AUTODJ_GENRES.map((genre) => ({ code: genre.code, label: genre.label, enabled: availableCodes.has(genre.code), minimumLevel: genre.minimumLevel, premiumMore: false })), ...licensed.filter((genre) => genre.premiumMore)],
-      targets, playlists: playlists.map(safeGeneratedPlaylist)
+      targets, playlists: generalPlaylists.map(safeGeneratedPlaylist)
     });
   } catch (error) {
     console.error("AutoDJ expansion list error:", error);

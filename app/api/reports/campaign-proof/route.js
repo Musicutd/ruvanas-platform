@@ -18,7 +18,7 @@ function filtersFromUrl(request) {
 }
 
 export async function GET(request) {
-  const access = await requireActiveReportOrganisation();
+  const access = await requireActiveReportOrganisation({ excludeCorrections: true });
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   try {
     const [report, dimensions] = await Promise.all([

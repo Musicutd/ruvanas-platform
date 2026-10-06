@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { ORGANISATION_CONTENT_ROLES } from "@/lib/permissions.mjs";
 import { requireActiveStudio } from "@/lib/studio-access";
+import { GENERAL_STUDIO_AUDIO_PROJECT_WHERE } from "@/lib/studio-general-asset-boundary.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +10,7 @@ export async function GET(_request, { params }) {
   const access = await requireActiveStudio(ORGANISATION_CONTENT_ROLES);
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const session = await prisma.schoolAudioUploadSession.findFirst({
-    where: { id: String(params.uploadId || ""), organisationId: access.organisation.id, createdByUserId: access.user.id },
+    where: { id: String((await params).uploadId || ""), organisationId: access.organisation.id, createdByUserId: access.user.id, project: { is: GENERAL_STUDIO_AUDIO_PROJECT_WHERE } },
     select: { id: true, status: true, partSizeBytes: true, partCount: true, expiresAt: true, parts: { orderBy: { partNumber: "asc" }, select: { partNumber: true, sizeBytes: true } } }
   });
   if (!session) return NextResponse.json({ error: "The upload session was not found." }, { status: 404 });

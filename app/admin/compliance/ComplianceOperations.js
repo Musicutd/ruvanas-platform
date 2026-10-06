@@ -3,6 +3,22 @@
 import { useMemo, useState } from "react";
 
 const DEFAULT_RETENTION = { rawPlaybackDays: 395, playerHeartbeatDays: 90, audioProjectDays: 730, supportTicketDays: 730, auditDays: 2555 };
+const INSIDE_INVENTORY_LABELS = {
+  contributors: "Contributors", supervisedSessions: "Supervised Studio sessions",
+  supervisedStudioProjects: "Supervised Studio projects", supervisedStudioVersions: "Studio edit versions",
+  supervisedStudioTakes: "Studio source takes", supervisedStudioTracks: "Studio timeline tracks",
+  supervisedStudioClips: "Studio timeline clips", supervisedStudioMarkers: "Studio timeline markers",
+  supervisedStudioRenders: "Studio renders", supervisedStudioTranscripts: "Studio transcripts",
+  studioLinkedMediaAssets: "Studio-linked media assets (may be shared)",
+  submittedVersions: "Submitted versions", reviews: "Guard reviews",
+  familyRequests: "Family requests", internalRequests: "Internal requests",
+  requestDecisions: "Request decisions", developmentMilestones: "Development milestones",
+  rehabilitationContent: "Rehabilitation content", announcements: "Announcements",
+  priorityOverrides: "Priority and emergency overrides",
+  insidePlaybackProofEvents: "Inside playback proof events",
+  insideCompletedProofEvents: "Completed Inside proof events",
+  correctionsAuditEvents: "Corrections-labelled audit events"
+};
 
 async function callApi(url, options) {
   const response = await fetch(url, { ...options, headers: { "Content-Type": "application/json" } });
@@ -20,6 +36,7 @@ export default function ComplianceOperations({ role, organisations, supportTicke
   const selected = useMemo(() => organisations.find((item) => item.id === organisationId) || organisations[0], [organisationId, organisations]);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const [insideInventory, setInsideInventory] = useState(null);
   const canManageCompliance = role === "SUPER_ADMIN";
 
   async function run(work) {
@@ -60,6 +77,15 @@ export default function ComplianceOperations({ role, organisations, supportTicke
       await callApi("/api/admin/support/tickets", { method: "PATCH", body: JSON.stringify({ ticketId, status, priority, assignedToUserId: assignedToUserId || null }) });
       setMessage("Support ticket updated.");
       window.setTimeout(() => window.location.reload(), 500);
+    });
+  }
+
+  async function loadInsideInventory() {
+    const requestedOrganisationId = selected.id;
+    await run(async () => {
+      const body = await callApi(`/api/admin/corrections/privacy-inventory?organisationId=${encodeURIComponent(requestedOrganisationId)}`);
+      setInsideInventory(body);
+      setMessage("Corrections inventory loaded. No records were changed.");
     });
   }
 
@@ -111,13 +137,21 @@ export default function ComplianceOperations({ role, organisations, supportTicke
 
       <section style={styles.card}>
         <h2 style={styles.heading}>Retention policy & safe preview</h2>
-        <p style={styles.help}>Saving changes records the reviewed policy. Preview counts records older than each cutoff; it never deletes them.</p>
+        <p style={styles.help}>Saving changes records the general-platform policy. Preview shows age-based counts only; it never deletes records or approves them for deletion. For any organisation with Ruvanas Inside access or evidence, the generic preview is blocked until a separate authority-approved Corrections policy and legal-hold review exist. Older previews may include Inside records and must not be used as deletion lists.</p>
         <form onSubmit={(event) => { const form = new FormData(event.currentTarget); submitCompliance(event, { action: "UPDATE_RETENTION", organisationId: selected.id, ...Object.fromEntries(Object.keys(DEFAULT_RETENTION).map((key) => [key, Number(form.get(key))])) }, "Retention policy saved."); }} style={styles.grid}>
           {Object.entries({ rawPlaybackDays: "Raw playback evidence", playerHeartbeatDays: "Inactive player heartbeat", audioProjectDays: "Audio projects", supportTicketDays: "Support tickets", auditDays: "Audit logs" }).map(([key, label]) => <Field key={key} label={`${label} (days)`}><input name={key} type="number" required min={key === "playerHeartbeatDays" ? 7 : key === "auditDays" ? 365 : key === "rawPlaybackDays" ? 30 : 90} max="3650" defaultValue={policy[key]} style={styles.input} /></Field>)}
           <button disabled={busy} style={styles.primary}>Save reviewed policy</button>
-          <button type="button" disabled={busy} style={styles.secondary} onClick={(event) => submitCompliance(event, { action: "PREVIEW_RETENTION", organisationId: selected.id }, "Retention preview completed. No records were deleted.")}>Run no-delete preview</button>
+          <button type="button" disabled={busy} style={styles.secondary} onClick={(event) => submitCompliance(event, { action: "PREVIEW_RETENTION", organisationId: selected.id }, "Age-based preview completed. No records were deleted or approved for deletion.")}>Run no-delete preview</button>
         </form>
-        <div style={styles.compactList}>{selected.retentionJobs?.map((job) => <p key={job.id}><strong>{job.status}</strong> · {new Date(job.createdAt).toLocaleString()} · No deletion · {JSON.stringify(job.candidateCounts || {})}</p>)}</div>
+        <div style={styles.compactList}>{selected.retentionJobs?.map((job) => <p key={job.id}><strong>{job.status}</strong> · {new Date(job.createdAt).toLocaleString()} · Age-based counts only, not approved deletion candidates · {JSON.stringify(job.candidateCounts || {})}</p>)}</div>
+        <div style={styles.subsection}>
+          <h3 style={styles.subheading}>Ruvanas Inside record counts (initial inventory)</h3>
+          <p style={styles.help}>Counts only for the selected organisation. Studio-linked media can also be used elsewhere and must not be treated as deletion candidates. Proof and audit counts use Corrections source/action labels; they are not a complete legal evidence assessment. Edge evidence is not included. This is not a deletion preview or a retention decision; Corrections records need separate legal-hold and authority-approved rules.</p>
+          <button type="button" disabled={busy} style={styles.secondary} onClick={loadInsideInventory}>Count Inside records</button>
+          {insideInventory?.organisationId === selected.id && <div style={styles.metrics} aria-live="polite">
+            {Object.entries(INSIDE_INVENTORY_LABELS).map(([key, label]) => <Metric key={key} label={label} value={insideInventory.counts[key]} />)}
+          </div>}
+        </div>
       </section>
 
       <section style={styles.card}>

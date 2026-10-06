@@ -17,6 +17,7 @@ const FINDINGS = {
   LATEST_RESTORE_DRILL_FAILED: "The latest restore drill failed.",
   LATEST_RESTORE_DRILL_PARTIAL: "The latest restore drill was only partial.",
   RECOVERY_TARGETS_UNCONFIRMED: "RPO and RTO targets are not both confirmed.",
+  RPO_TARGET_UNVERIFIED: "The latest passed backup has no capture time, so its RPO cannot be verified.",
   RPO_TARGET_MISSED: "The latest verified backup exceeded the RPO target.",
   RTO_TARGET_MISSED: "The latest restore drill exceeded the RTO target."
 };

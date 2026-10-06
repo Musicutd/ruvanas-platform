@@ -3,7 +3,7 @@ import { getActiveOrganisationContext } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { resolveEntitlements } from "@/lib/entitlements.mjs";
 import { normaliseCampaignPayload, campaignTargetCreateData } from "@/lib/campaign-scheduling.mjs";
-import { loadCampaignTopology, prepareCampaignPreview } from "@/lib/campaign-service";
+import { loadCampaignTopology, prepareCampaignPreview, visibleCampaignTargets } from "@/lib/campaign-service";
 import {
   canDraftSubscriberPromotions,
   canPublishSubscriberPromotions,
@@ -17,8 +17,9 @@ export const dynamic = "force-dynamic";
 async function activeContext() {
   const context = await getActiveOrganisationContext({ subscription: { include: { plan: true, billingContract: true } } });
   if (!context || !context.membership) return { error: "No active organisation is available.", status: context ? 403 : 401 };
-  if (!resolveEntitlements(context.membership.organisation.subscription).serviceEnabled) {
-    return { error: "Promotions are unavailable while this radio service is inactive.", status: 403 };
+  const entitlements = resolveEntitlements(context.membership.organisation.subscription);
+  if (!entitlements.serviceEnabled || entitlements.planProductFamily === "CORRECTIONS") {
+    return { error: "Promotions are unavailable for this service.", status: 403 };
   }
   return { context };
 }
@@ -115,7 +116,10 @@ export async function GET() {
         ...topology.locations.map((item) => ({ type: "LOCATION", id: item.id, label: item.name })),
         ...topology.zones.map((zone) => ({ type: "ZONE", id: zone.id, label: lookup[zone.id] }))
       ],
-      campaigns: campaigns.map((campaign) => serialiseCampaign(campaign, lookup))
+      campaigns: campaigns.map((campaign) => ({
+        ...campaign,
+        targets: visibleCampaignTargets(campaign.targets, topology)
+      })).filter((campaign) => campaign.targets.length > 0).map((campaign) => serialiseCampaign(campaign, lookup))
     });
   } catch (error) {
     console.error("Subscriber promotions load error:", error);

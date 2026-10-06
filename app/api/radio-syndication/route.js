@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { GENERAL_STUDIO_MEDIA_ASSET_WHERE } from "@/lib/studio-general-asset-boundary.mjs";
+import { GENERAL_STUDIO_CHANNEL_WHERE, GENERAL_STUDIO_STATION_WHERE } from "@/lib/studio-general-output-boundary.mjs";
+import { GENERAL_RADIO_SYNDICATION_SOURCE_WHERE } from "@/lib/radio-syndication-general-boundary.mjs";
 import {
   RADIO_SYNDICATION_POLICY_VERSION,
   canManageRadioSyndication,
@@ -64,37 +67,71 @@ async function audit(tx, { access, networkId, action, entityType, entityId, deta
 
 async function eligibleSource(input, organisationId) {
   const membership = await prisma.stationNetworkAgreement.findFirst({
-    where: { stationNetworkId: input.stationNetworkId, stationId: input.sourceStationId, stationOrganisationId: organisationId, status: "ACTIVE", network: { status: "ACTIVE" }, station: { status: "ACTIVE" } },
+    where: { stationNetworkId: input.stationNetworkId, stationId: input.sourceStationId, stationOrganisationId: organisationId, status: "ACTIVE", network: { status: "ACTIVE" }, station: { is: { status: "ACTIVE", ...GENERAL_STUDIO_STATION_WHERE } } },
     include: { station: { include: { streamConfig: true } } }
   });
   if (!membership) throw new Error("Choose one of your active stations in an active network.");
   if (input.kind === "RECORDED_PROGRAMME") {
+    if (!input.sourcePodcastEpisodeId) throw new Error("Choose a published Online Radio programme with ready protected audio.");
     const episode = await prisma.schoolPodcastEpisode.findFirst({
-      where: { id: input.sourcePodcastEpisodeId, organisationId, status: "PUBLISHED", series: { product: "ONLINE_RADIO", stationId: input.sourceStationId }, mediaAsset: { organisationId, status: "READY" } },
+      where: {
+        id: input.sourcePodcastEpisodeId, organisationId, status: "PUBLISHED",
+        series: { is: {
+          product: "ONLINE_RADIO", stationId: input.sourceStationId,
+          station: { is: { status: "ACTIVE", ...GENERAL_STUDIO_STATION_WHERE } },
+          OR: [{ channelId: null }, { channel: { is: GENERAL_STUDIO_CHANNEL_WHERE } }]
+        } },
+        mediaAsset: { is: { organisationId, status: "READY", ...GENERAL_STUDIO_MEDIA_ASSET_WHERE } }
+      },
       include: { mediaAsset: true }
     });
     if (!episode) throw new Error("Choose a published Online Radio programme with ready protected audio.");
     return { membership, episode, channel: null };
   }
-  const channel = await prisma.channel.findFirst({ where: { id: input.sourceChannelId, organisationId, stationId: input.sourceStationId, status: "ACTIVE" } });
+  if (!input.sourceChannelId) throw new Error("Choose an active channel whose station has a configured live output.");
+  const channel = await prisma.channel.findFirst({ where: { id: input.sourceChannelId, organisationId, stationId: input.sourceStationId, status: "ACTIVE", ...GENERAL_STUDIO_CHANNEL_WHERE } });
   if (!channel || !membership.station.streamConfig?.streamUrl) throw new Error("Choose an active channel whose station has a configured live output.");
   return { membership, episode: null, channel };
 }
 
 async function currentOfferSource(offer) {
-  return eligibleSource({
+  const source = await eligibleSource({
     stationNetworkId: offer.stationNetworkId,
     sourceStationId: offer.sourceStationId,
     kind: offer.kind,
     sourcePodcastEpisodeId: offer.sourcePodcastEpisodeId,
     sourceChannelId: offer.sourceChannelId
   }, offer.sourceOrganisationId);
+  if (source.membership.id !== offer.sourceNetworkAgreementId ||
+      (offer.kind === "RECORDED_PROGRAMME" && offer.sourceChannelId) ||
+      (offer.kind === "LIVE_RELAY" && offer.sourcePodcastEpisodeId)) {
+    throw new Error("This offer's original source is no longer available for syndication.");
+  }
+  return source;
+}
+
+async function eligibleTarget(networkId, stationId, channelId, organisationId, expectedMembershipId = null) {
+  const membership = await prisma.stationNetworkAgreement.findFirst({ where: {
+    stationNetworkId: networkId, stationId, stationOrganisationId: organisationId, status: "ACTIVE",
+    network: { status: "ACTIVE" }, station: { is: { status: "ACTIVE", ...GENERAL_STUDIO_STATION_WHERE } }
+  }, select: { id: true } });
+  if (!membership || (expectedMembershipId && membership.id !== expectedMembershipId)) {
+    throw new Error("Choose your active receiving station in the same network.");
+  }
+  if (channelId && !await prisma.channel.findFirst({ where: {
+    id: channelId, organisationId, stationId, status: "ACTIVE", ...GENERAL_STUDIO_CHANNEL_WHERE
+  }, select: { id: true } })) {
+    throw new Error("Choose an active receiving channel owned by the receiving station.");
+  }
+  return membership;
 }
 
 export async function GET() {
   const access = await getRadioSyndicationContext();
   if (!access.ok) return failure(access);
-  return NextResponse.json(await loadRadioSyndicationWorkspace(access));
+  return NextResponse.json(await loadRadioSyndicationWorkspace(access), {
+    headers: { "Cache-Control": "private, no-store" }
+  });
 }
 
 export async function POST(request) {
@@ -148,15 +185,14 @@ export async function POST(request) {
     }
 
     if (data.action === "REQUEST_ACCESS") {
-      const offer = await prisma.radioSyndicationOffer.findFirst({ where: { id: data.offerId, status: "AVAILABLE", sourceOrganisationId: { not: organisationId }, network: { status: "ACTIVE" } } });
+      const offer = await prisma.radioSyndicationOffer.findFirst({ where: {
+        id: data.offerId, status: "AVAILABLE", sourceOrganisationId: { not: organisationId },
+        network: { status: "ACTIVE" }, AND: [GENERAL_RADIO_SYNDICATION_SOURCE_WHERE]
+      } });
       if (!offer) return NextResponse.json({ error: "Choose an available offer from another network station." }, { status: 404 });
+      await currentOfferSource(offer);
       const input = normalizeRadioSyndicationRequest(data, offer);
-      const targetMembership = await prisma.stationNetworkAgreement.findFirst({ where: { stationNetworkId: offer.stationNetworkId, stationId: input.targetStationId, stationOrganisationId: organisationId, status: "ACTIVE", station: { status: "ACTIVE" } } });
-      if (!targetMembership) throw new Error("Choose your active receiving station in the same network.");
-      if (input.targetChannelId) {
-        const channel = await prisma.channel.findFirst({ where: { id: input.targetChannelId, organisationId, stationId: input.targetStationId, status: "ACTIVE" }, select: { id: true } });
-        if (!channel) throw new Error("Choose an active receiving channel owned by the receiving station.");
-      }
+      const targetMembership = await eligibleTarget(offer.stationNetworkId, input.targetStationId, input.targetChannelId, organisationId);
       const currentRequest = await prisma.radioSyndicationAgreement.findFirst({ where: { offerId: offer.id, targetStationId: input.targetStationId, status: { in: ["PENDING", "APPROVED"] } }, select: { id: true, status: true } });
       if (currentRequest) throw new Error(currentRequest.status === "APPROVED" ? "This receiving station already has approved access." : "This receiving station already has a pending request.");
       const result = await prisma.$transaction(async (tx) => {
@@ -164,7 +200,7 @@ export async function POST(request) {
         await audit(tx, { access, networkId: offer.stationNetworkId, action: "RADIO_SYNDICATION_ACCESS_REQUESTED", entityType: "RadioSyndicationAgreement", entityId: agreement.id, details: { offerId: offer.id, targetStationId: input.targetStationId, territories: input.requestedTerritories } });
         return agreement;
       });
-      return NextResponse.json({ result }, { status: 201 });
+      return NextResponse.json({ result: { id: result.id, status: result.status } }, { status: 201 });
     }
 
     const agreement = await findAccessibleSyndicationAgreement(data.agreementId, access);
@@ -177,6 +213,7 @@ export async function POST(request) {
         if (agreement.offer.status !== "AVAILABLE") throw new Error("Publish the offer before approving access.");
         if (agreement.targetNetworkAgreement.status !== "ACTIVE" || agreement.targetStation.status !== "ACTIVE") throw new Error("The receiving station must retain active network membership.");
         await currentOfferSource(agreement.offer);
+        await eligibleTarget(agreement.offer.stationNetworkId, agreement.targetStationId, agreement.targetChannelId, agreement.targetOrganisationId, agreement.targetNetworkAgreementId);
       }
       const transition = transitionRadioSyndicationAgreement({ currentStatus: agreement.status, action, notes: data.action === "REVOKE_REQUEST" ? data.reason : data.notes });
       const result = await prisma.$transaction(async (tx) => {
@@ -184,7 +221,7 @@ export async function POST(request) {
         await audit(tx, { access, networkId: agreement.offer.stationNetworkId, action: `RADIO_SYNDICATION_AGREEMENT_${action}`, entityType: "RadioSyndicationAgreement", entityId: agreement.id, details: { targetOrganisationId: agreement.targetOrganisationId, reason: transition.decisionNotes, deliveryRevoked: action === "REVOKE" } });
         return updated;
       });
-      return NextResponse.json({ result });
+      return NextResponse.json({ result: { id: result.id, status: result.status } });
     }
 
     if (agreement.targetOrganisationId !== organisationId) return NextResponse.json({ error: "Only the receiving organisation may change this request." }, { status: 403 });
@@ -195,19 +232,20 @@ export async function POST(request) {
         await audit(tx, { access, networkId: agreement.offer.stationNetworkId, action: "RADIO_SYNDICATION_AGREEMENT_CANCELLED", entityType: "RadioSyndicationAgreement", entityId: agreement.id });
         return updated;
       });
-      return NextResponse.json({ result });
+      return NextResponse.json({ result: { id: result.id, status: result.status } });
     }
 
     const activationTerritory = String(agreement.requestedTerritories).split(",")[0] === "WORLDWIDE" ? "MT" : String(agreement.requestedTerritories).split(",")[0];
     const activation = radioSyndicationDeliveryDecision({ offer: agreement.offer, agreement, territory: activationTerritory });
     if (!activation.allowed) throw new Error(`This syndication delivery cannot be activated (${activation.reason.toLowerCase().replaceAll("_", " ")}).`);
     await currentOfferSource(agreement.offer);
+    await eligibleTarget(agreement.offer.stationNetworkId, agreement.targetStationId, agreement.targetChannelId, agreement.targetOrganisationId, agreement.targetNetworkAgreementId);
     const result = await prisma.$transaction(async (tx) => {
       const updated = await tx.radioSyndicationAgreement.update({ where: { id: agreement.id }, data: { importedByUserId: access.user.id, importedAt: new Date() } });
       await audit(tx, { access, networkId: agreement.offer.stationNetworkId, action: "RADIO_SYNDICATION_DELIVERY_ACTIVATED", entityType: "RadioSyndicationAgreement", entityId: agreement.id, details: { offerId: agreement.offerId, kind: agreement.offer.kind, targetChannelId: agreement.targetChannelId, sourceSecretsExposed: false } });
       return updated;
     });
-    return NextResponse.json({ result });
+    return NextResponse.json({ result: { id: result.id, status: result.status } });
   } catch (error) {
     if (error?.code === "P2002") return NextResponse.json({ error: "An offer or request for this source already exists in the network." }, { status: 409 });
     return NextResponse.json({ error: error instanceof Error ? error.message : "The syndication action could not be completed." }, { status: 409 });

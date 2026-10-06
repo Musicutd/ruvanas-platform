@@ -6,7 +6,7 @@ import { loadCombinedDeliveryReport } from "@/lib/combined-delivery-report-servi
 import { combinedDeliveryCsv } from "@/lib/combined-delivery-report.mjs";
 
 export async function GET(request) {
-  const access = await requireActiveReportOrganisation();
+  const access = await requireActiveReportOrganisation({ excludeCorrections: true });
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   try {
     const params = request.nextUrl.searchParams;

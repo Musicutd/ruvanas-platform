@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function POST(request) {
-  const access = await requireActiveReportOrganisation();
+  const access = await requireActiveReportOrganisation({ excludeCorrections: true });
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   if (!ORGANISATION_MANAGER_ROLES.includes(access.membership.role)) {
     return NextResponse.json({ error: "Only an organisation owner or manager can attest and generate a rights report." }, { status: 403 });

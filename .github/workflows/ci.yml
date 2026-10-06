@@ -104,12 +104,113 @@ jobs:
       - name: Run final Retail, School and Online Radio platform acceptance
         env:
           INTEGRATION_BASE_URL: http://127.0.0.1:3100
+          # The integration glob also runs the isolated C9 revocation fixture.
+          R2_ENDPOINT: http://127.0.0.1:9107
         run: npm run test:acceptance
 
       - name: Validate C7 network tenancy and entitlement routes on isolated CI database
         env:
           INTEGRATION_BASE_URL: http://127.0.0.1:3100
         run: node --test tests/integration/corrections-c7.test.mjs
+
+      - name: Validate C9 privacy inventory access and tenant isolation on isolated CI database
+        env:
+          INTEGRATION_BASE_URL: http://127.0.0.1:3100
+        run: node --test tests/integration/corrections-c9-inventory.test.mjs
+
+      - name: Validate generic retention preview rejects Inside evidence and lock races
+        env:
+          INTEGRATION_BASE_URL: http://127.0.0.1:3100
+        run: node --test tests/integration/corrections-c9-retention-preview-boundary.test.mjs
+
+      - name: Validate C9 generic integration isolation from private Corrections facilities
+        env:
+          INTEGRATION_BASE_URL: http://127.0.0.1:3100
+        run: node --test tests/integration/corrections-c9-service-account-boundary.test.mjs
+
+      - name: Validate C9 general programming isolation from private Corrections facilities
+        env:
+          INTEGRATION_BASE_URL: http://127.0.0.1:3100
+        run: node --test tests/integration/corrections-c9-general-programming-boundary.test.mjs
+
+      - name: Validate C9 campaign media withdraws after becoming Inside-private
+        env:
+          INTEGRATION_BASE_URL: http://127.0.0.1:3100
+        run: node --test tests/integration/corrections-c9-campaign-private-media.test.mjs
+
+      - name: Validate C9 School and Organisations isolation from private Corrections facilities
+        env:
+          INTEGRATION_BASE_URL: http://127.0.0.1:3100
+        run: node --test tests/integration/corrections-c9-school-organisations-boundary.test.mjs
+
+      - name: Validate C9 enrolled School media URLs after episode and rundown withdrawal
+        env:
+          INTEGRATION_BASE_URL: http://127.0.0.1:3100
+        run: node --test tests/integration/corrections-c9-school-player-media.test.mjs
+
+      - name: Validate C9 generic rights reports exclude private Corrections evidence
+        env:
+          INTEGRATION_BASE_URL: http://127.0.0.1:3100
+        run: node --test tests/integration/corrections-c9-rights-report-boundary.test.mjs
+
+      - name: Validate C9 general Studio output cannot bypass Corrections Guard
+        env:
+          INTEGRATION_BASE_URL: http://127.0.0.1:3100
+        run: node --test tests/integration/corrections-c9-general-studio-output.test.mjs
+
+      - name: Validate C9 public player and station pages exclude private Corrections channels
+        env:
+          INTEGRATION_BASE_URL: http://127.0.0.1:3100
+        run: node --test tests/integration/corrections-c9-public-player-boundary.test.mjs
+
+      - name: Validate C9 generic media routes preserve private Corrections evidence
+        env:
+          INTEGRATION_BASE_URL: http://127.0.0.1:3100
+        run: node --test tests/integration/corrections-c9-private-media-boundary.test.mjs
+
+      - name: Validate C9 generic media writes reject private Corrections audio
+        env:
+          INTEGRATION_BASE_URL: http://127.0.0.1:3100
+        run: node --test tests/integration/corrections-c9-media-write-boundary.test.mjs
+
+      - name: Validate supervised contributor revocation at the recording write boundary
+        env:
+          INTEGRATION_BASE_URL: http://127.0.0.1:3100
+          R2_ENDPOINT: http://127.0.0.1:9107
+        run: node --test tests/integration/corrections-c9-contributor-revocation.test.mjs
+
+      - name: Validate trial deletion and private Studio evidence races on disposable PostgreSQL
+        run: node --test tests/integration/trial-organisation-deletion-corrections.test.mjs
+
+      - name: Validate C9 generic School Studio cannot use or delete supervised Corrections evidence
+        env:
+          INTEGRATION_BASE_URL: http://127.0.0.1:3100
+        run: node --test tests/integration/corrections-c9-school-studio-boundary.test.mjs
+
+      - name: Validate C9 School editorial content excludes historical private Corrections links
+        env:
+          INTEGRATION_BASE_URL: http://127.0.0.1:3100
+        run: node --test tests/integration/corrections-c9-school-content-boundary.test.mjs
+
+      - name: Validate C9 School and Online Newsroom writes reject newly private sources
+        env:
+          INTEGRATION_BASE_URL: http://127.0.0.1:3100
+        run: node --test tests/integration/corrections-c9-newsroom-write-boundary.test.mjs
+
+      - name: Validate C9 School Learning excludes private Corrections media
+        env:
+          INTEGRATION_BASE_URL: http://127.0.0.1:3100
+        run: node --test tests/integration/corrections-c9-school-learning-boundary.test.mjs
+
+      - name: Validate public School podcast audio withdraws after a Corrections submission
+        env:
+          INTEGRATION_BASE_URL: http://127.0.0.1:3100
+        run: node --test tests/integration/corrections-c9-public-school-podcast-boundary.test.mjs
+
+      - name: Validate radio syndication rejects sources that later become Corrections-private
+        env:
+          INTEGRATION_BASE_URL: http://127.0.0.1:3100
+        run: node --test tests/integration/corrections-c9-radio-syndication-boundary.test.mjs
 
       - name: Show application logs after failure
         if: failure()
@@ -118,6 +219,33 @@ jobs:
       - name: Stop application
         if: always()
         run: test ! -f /tmp/ruvanas-next.pid || kill $(cat /tmp/ruvanas-next.pid) || true
+
+  c9-recovery-rehearsal:
+    # A standard public-repository runner, never Render or a customer backup.
+    if: github.event_name == 'pull_request' && github.repository == 'Musicutd/ruvanas-platform'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies without activation scripts
+        run: npm ci --ignore-scripts
+
+      - name: Generate Prisma client for isolated recovery fixture
+        run: npx --no-install prisma generate
+
+      - name: Rehearse C9 fictional database and local-byte backup and restore
+        env:
+          C9_RECOVERY_REHEARSAL: "true"
+        run: node scripts/ci-c9-recovery-rehearsal.mjs
 
   encoder-image:
     runs-on: ubuntu-latest

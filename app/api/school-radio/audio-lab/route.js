@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { ORGANISATION_CONTENT_ROLES } from "@/lib/permissions.mjs";
 import { requireActiveStudio } from "@/lib/studio-access";
 import { createDefaultEditDecision, normalizeEditDecision } from "@/lib/audio-lab.mjs";
+import { GENERAL_STUDIO_AUDIO_PROJECT_WHERE, GENERAL_STUDIO_MEDIA_ASSET_WHERE, lockGeneralStudioAudioProject, generalStudioUsableMediaAssetIds } from "@/lib/studio-general-asset-boundary.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -50,22 +51,22 @@ function projectInclude() {
         order: true,
         armed: true,
         locked: true,
-        clips: { select: { timelineStartMs: true, sourceStartMs: true, sourceEndMs: true } }
+        clips: { select: { mediaAssetId: true, timelineStartMs: true, sourceStartMs: true, sourceEndMs: true } }
       }
     }
   };
 }
 
-async function validateLinks(organisationId, values) {
+async function validateLinks(organisationId, values, database = prisma) {
   const [programme, episode, group] = await Promise.all([
     values.programmeId
-      ? prisma.schoolProgramme.findFirst({ where: { id: values.programmeId, organisationId, status: { not: "ARCHIVED" } }, select: { id: true } })
+      ? database.schoolProgramme.findFirst({ where: { id: values.programmeId, organisationId, status: { not: "ARCHIVED" } }, select: { id: true } })
       : null,
     values.episodeId
-      ? prisma.schoolEpisode.findFirst({ where: { id: values.episodeId, organisationId, status: { in: ["DRAFT", "CHANGES_REQUESTED"] } }, select: { id: true, programmeId: true } })
+      ? database.schoolEpisode.findFirst({ where: { id: values.episodeId, organisationId, status: { in: ["DRAFT", "CHANGES_REQUESTED"] } }, select: { id: true, programmeId: true } })
       : null,
     values.studentGroupId
-      ? prisma.studentGroup.findFirst({ where: { id: values.studentGroupId, organisationId }, select: { id: true } })
+      ? database.studentGroup.findFirst({ where: { id: values.studentGroupId, organisationId }, select: { id: true } })
       : null
   ]);
   if (values.programmeId && !programme) throw new Error("Choose an active programme from this organisation.");
@@ -82,7 +83,7 @@ export async function GET() {
   const organisationId = access.organisation.id;
   const [projects, programmes, episodes, groups, trash] = await Promise.all([
     prisma.audioProject.findMany({
-      where: { organisationId, status: { not: "ARCHIVED" } },
+      where: { organisationId, status: { not: "ARCHIVED" }, ...GENERAL_STUDIO_AUDIO_PROJECT_WHERE },
       orderBy: { updatedAt: "desc" },
       take: 50,
       include: projectInclude()
@@ -91,7 +92,7 @@ export async function GET() {
     prisma.schoolEpisode.findMany({ where: { organisationId, status: { in: ["DRAFT", "CHANGES_REQUESTED"] } }, orderBy: { createdAt: "desc" }, select: { id: true, title: true, programmeId: true, status: true } }),
     prisma.studentGroup.findMany({ where: { organisationId }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
     prisma.audioTake.findMany({
-      where: { organisationId, trashedAt: { not: null }, permanentlyDeletedAt: null },
+      where: { organisationId, trashedAt: { not: null }, permanentlyDeletedAt: null, project: { is: GENERAL_STUDIO_AUDIO_PROJECT_WHERE }, mediaAsset: { is: GENERAL_STUDIO_MEDIA_ASSET_WHERE } },
       orderBy: { trashedAt: "desc" },
       take: 100,
       select: {
@@ -104,7 +105,16 @@ export async function GET() {
       }
     })
   ]);
-  return NextResponse.json({ projects, programmes, episodes, groups, trash, studioLevel: access.entitlements.studioLevel, studioProEnabled: access.entitlements.studioProEnabled, limits: { maxRecordingMb: 250, uploadPartMb: 5 } });
+  const allAssetIds = [...new Set(projects.flatMap((project) => [
+    ...project.takes.map((take) => take.mediaAsset.id),
+    ...project.tracks.flatMap((track) => track.clips.map((clip) => clip.mediaAssetId))
+  ]).filter(Boolean))];
+  const usable = await generalStudioUsableMediaAssetIds(prisma, organisationId, allAssetIds);
+  const visibleProjects = projects.filter((project) => [
+    ...project.takes.map((take) => take.mediaAsset.id),
+    ...project.tracks.flatMap((track) => track.clips.map((clip) => clip.mediaAssetId))
+  ].filter(Boolean).every((id) => usable.has(id)));
+  return NextResponse.json({ projects: visibleProjects, programmes, episodes, groups, trash, studioLevel: access.entitlements.studioLevel, studioProEnabled: access.entitlements.studioProEnabled, limits: { maxRecordingMb: 250, uploadPartMb: 5 } });
 }
 
 export async function POST(request) {
@@ -143,10 +153,10 @@ export async function PATCH(request) {
   const parsed = autosaveSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "The AudioLab autosave details are invalid." }, { status: 400 });
   try {
-    await validateLinks(access.organisation.id, parsed.data);
     const result = await prisma.$transaction(async (tx) => {
-      const current = await tx.audioProject.findFirst({ where: { id: parsed.data.projectId, organisationId: access.organisation.id, status: { not: "ARCHIVED" } } });
-      if (!current) throw Object.assign(new Error("The AudioLab project was not found."), { status: 404 });
+      const current = await lockGeneralStudioAudioProject(tx, access.organisation.id, parsed.data.projectId);
+      if (current.status === "ARCHIVED") throw Object.assign(new Error("The AudioLab project was not found."), { status: 404 });
+      await validateLinks(access.organisation.id, parsed.data, tx);
       const editDecision = normalizeEditDecision(parsed.data.editDecision);
       const nextVersion = current.currentVersion + 1;
       const project = await tx.audioProject.update({ where: { id: current.id }, data: { title: parsed.data.title, programmeId: parsed.data.programmeId || null, episodeId: parsed.data.episodeId || null, studentGroupId: parsed.data.studentGroupId || null, editDecision, currentVersion: nextVersion } });

@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function POST(request) {
-  const access = await requireActiveReportOrganisation();
+  const access = await requireActiveReportOrganisation({ excludeCorrections: true });
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   try {
     const job = await createCampaignProofExportJob({

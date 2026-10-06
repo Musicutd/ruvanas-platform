@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { authorizePublicPlayback, publicPlaybackAssetAllowed } from "@/lib/public-player-service";
 import { resolvePlayerProgramming } from "@/lib/player-programming";
 import { protectedAudioResponse } from "@/lib/protected-audio-response";
+import { GENERAL_STUDIO_MEDIA_ASSET_WHERE } from "@/lib/studio-general-asset-boundary.mjs";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -17,7 +18,13 @@ export async function GET(request, { params }) {
     const programming = await resolvePlayerProgramming(access.target.player, instant, { persistOperationalEvidence: false, publicAudience: true });
     const mediaAssetId = String(requestedAssetId || "");
     if (!publicPlaybackAssetAllowed(programming, mediaAssetId, instant)) return NextResponse.json({ error: "This audio is not in the station's current public programme." }, { status: 404 });
-    const asset = await prisma.mediaAsset.findUnique({ where: { id: mediaAssetId }, select: { storageKey: true, mimeType: true, sizeBytes: true } });
+    // A listener can retain a valid URL while its formerly ordinary source is
+    // submitted to Inside. Current public eligibility must win over that URL.
+    const asset = await prisma.mediaAsset.findFirst({
+      where: { id: mediaAssetId, status: "READY", ...GENERAL_STUDIO_MEDIA_ASSET_WHERE },
+      select: { storageKey: true, mimeType: true, sizeBytes: true }
+    });
+    if (!asset) return NextResponse.json({ error: "This audio is not in the station's current public programme." }, { status: 404 });
     return protectedAudioResponse(request, asset);
   } catch (error) {
     console.error("Public player media failed:", error?.code || error?.name || "UNKNOWN");

@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireActiveNewsroom } from "@/lib/newsroom-access";
+import { GENERAL_STATION_MANAGEMENT_WHERE } from "@/lib/general-station-boundary.mjs";
+import { GENERAL_STUDIO_AUDIO_PROJECT_WHERE, GENERAL_STUDIO_MEDIA_ASSET_WHERE } from "@/lib/studio-general-asset-boundary.mjs";
+import { lockVisibleNewsroomStory, lockVisibleOnlineNewsroomCreateTargets } from "@/lib/newsroom-write-boundary.mjs";
+import { runGeneralSourceWriteTransaction } from "@/lib/general-source-write-transaction.mjs";
 import { ORGANISATION_CONTENT_ROLES, ORGANISATION_MANAGER_ROLES, isOrganisationRoleAllowed } from "@/lib/permissions.mjs";
 import {
   NEWSROOM_POLICY_VERSION,
@@ -59,6 +63,39 @@ const storyInclude = {
   decisions: { orderBy: { createdAt: "desc" }, take: 20, select: { id: true, action: true, fromStatus: true, toStatus: true, note: true, createdAt: true, actor: { select: { id: true, name: true } } } }
 };
 
+// The Online newsroom has historically accepted ordinary stations from any
+// product family. Keep those targets, but never expose Inside stations or
+// legacy stations that contain a Corrections-rights channel.
+const onlineStationWhere = GENERAL_STATION_MANAGEMENT_WHERE;
+const onlineChannelWhere = {
+  OR: [{ musicRightsUse: null }, { musicRightsUse: { not: "CORRECTIONS_RADIO" } }],
+  station: { is: onlineStationWhere }
+};
+
+function visibleOnlineStoryWhere(organisationId) {
+  const ordinaryMedia = { organisationId, ...GENERAL_STUDIO_MEDIA_ASSET_WHERE };
+  return {
+    AND: [
+      { OR: [{ stationId: null }, { station: { is: onlineStationWhere } }] },
+      { OR: [{ channelId: null }, { channel: { is: onlineChannelWhere } }] },
+      { OR: [{ audioProjectId: null }, { audioProject: { is: GENERAL_STUDIO_AUDIO_PROJECT_WHERE } }] },
+      { OR: [{ interviewMediaAssetId: null }, { interviewMediaAsset: { is: ordinaryMedia } }] },
+      // A later edit must not make an earlier private revision visible again.
+      // The same predicate also blocks review and publication transitions.
+      { revisions: { none: { OR: [
+        { audioProjectId: { not: null }, audioProject: { isNot: GENERAL_STUDIO_AUDIO_PROJECT_WHERE } },
+        { interviewMediaAssetId: { not: null }, interviewMediaAsset: { isNot: ordinaryMedia } }
+      ] } } }
+    ]
+  };
+}
+
+function onlineEntitlementRequired(access) {
+  return access.entitlements.onlineRadioEnabled
+    ? null
+    : NextResponse.json({ error: "Online Radio is not enabled for this organisation." }, { status: 403 });
+}
+
 function managerRequired(access) {
   return isOrganisationRoleAllowed(access.membership.role, ORGANISATION_MANAGER_ROLES)
     ? null
@@ -80,7 +117,7 @@ function storyReadiness(story) {
 
 async function onlineStory(organisationId, storyId) {
   return prisma.schoolNewsStory.findFirst({
-    where: { id: storyId, organisationId, product: NEWSROOM_PRODUCTS.ONLINE_RADIO },
+    where: { id: storyId, organisationId, product: NEWSROOM_PRODUCTS.ONLINE_RADIO, ...visibleOnlineStoryWhere(organisationId) },
     include: storyInclude
   });
 }
@@ -88,13 +125,14 @@ async function onlineStory(organisationId, storyId) {
 export async function GET() {
   const access = await requireActiveNewsroom(ORGANISATION_CONTENT_ROLES);
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
+  const denied = onlineEntitlementRequired(access); if (denied) return denied;
   const organisationId = access.organisation.id;
   const [stories, stations, channels, studioProjects, interviewAssets, members] = await Promise.all([
-    prisma.schoolNewsStory.findMany({ where: { organisationId, product: NEWSROOM_PRODUCTS.ONLINE_RADIO, status: { not: "ARCHIVED" } }, orderBy: [{ deadline: "asc" }, { updatedAt: "desc" }], take: 200, include: storyInclude }),
-    prisma.station.findMany({ where: { organisationId, status: { not: "CANCELLED" } }, orderBy: { name: "asc" }, select: { id: true, name: true, slug: true, status: true } }),
-    prisma.channel.findMany({ where: { organisationId, stationId: { not: null }, status: { not: "ARCHIVED" } }, orderBy: { name: "asc" }, select: { id: true, stationId: true, name: true, slug: true, status: true } }),
-    prisma.audioProject.findMany({ where: { organisationId, status: { not: "ARCHIVED" } }, orderBy: { updatedAt: "desc" }, take: 100, select: { id: true, title: true, type: true, status: true, currentVersion: true } }),
-    prisma.mediaAsset.findMany({ where: { organisationId, status: "READY", mimeType: { startsWith: "audio/" } }, orderBy: { createdAt: "desc" }, take: 100, select: { id: true, name: true, originalName: true, durationSeconds: true } }),
+    prisma.schoolNewsStory.findMany({ where: { organisationId, product: NEWSROOM_PRODUCTS.ONLINE_RADIO, status: { not: "ARCHIVED" }, ...visibleOnlineStoryWhere(organisationId) }, orderBy: [{ deadline: "asc" }, { updatedAt: "desc" }], take: 200, include: storyInclude }),
+    prisma.station.findMany({ where: { organisationId, status: { not: "CANCELLED" }, ...onlineStationWhere }, orderBy: { name: "asc" }, select: { id: true, name: true, slug: true, status: true } }),
+    prisma.channel.findMany({ where: { organisationId, stationId: { not: null }, status: { not: "ARCHIVED" }, ...onlineChannelWhere }, orderBy: { name: "asc" }, select: { id: true, stationId: true, name: true, slug: true, status: true } }),
+    prisma.audioProject.findMany({ where: { organisationId, status: { not: "ARCHIVED" }, ...GENERAL_STUDIO_AUDIO_PROJECT_WHERE }, orderBy: { updatedAt: "desc" }, take: 100, select: { id: true, title: true, type: true, status: true, currentVersion: true } }),
+    prisma.mediaAsset.findMany({ where: { organisationId, status: "READY", mimeType: { startsWith: "audio/" }, ...GENERAL_STUDIO_MEDIA_ASSET_WHERE }, orderBy: { createdAt: "desc" }, take: 100, select: { id: true, name: true, originalName: true, durationSeconds: true } }),
     prisma.organisationMember.findMany({ where: { organisationId, role: { in: ORGANISATION_CONTENT_ROLES } }, orderBy: { createdAt: "asc" }, take: 100, select: { role: true, user: { select: { id: true, name: true, email: true } } } })
   ]);
   return NextResponse.json({
@@ -114,6 +152,7 @@ export async function GET() {
 export async function POST(request) {
   const access = await requireActiveNewsroom(ORGANISATION_CONTENT_ROLES);
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
+  const denied = onlineEntitlementRequired(access); if (denied) return denied;
   const parsed = actionSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Check the newsroom details and try again." }, { status: 400 });
   const data = parsed.data;
@@ -123,15 +162,14 @@ export async function POST(request) {
   try {
     let result;
     if (data.action === "CREATE") {
-      const [station, channel] = await Promise.all([
-        prisma.station.findFirst({ where: { id: data.stationId, organisationId, status: { not: "CANCELLED" } }, select: { id: true } }),
-        data.channelId ? prisma.channel.findFirst({ where: { id: data.channelId, stationId: data.stationId, organisationId, status: { not: "ARCHIVED" } }, select: { id: true } }) : null
-      ]);
-      if (!station || (data.channelId && !channel)) return NextResponse.json({ error: "Choose a station and optional channel owned by this organisation." }, { status: 404 });
-      result = await prisma.$transaction(async (tx) => {
-        const story = await tx.schoolNewsStory.create({ data: { organisationId, product: NEWSROOM_PRODUCTS.ONLINE_RADIO, stationId: station.id, channelId: channel?.id || null, title: data.title, type: data.type, pitch: data.pitch, deadline: data.deadline ? new Date(data.deadline) : null, createdByUserId: access.user.id } });
+      result = await runGeneralSourceWriteTransaction(prisma, async (tx) => {
+        if (!await lockVisibleOnlineNewsroomCreateTargets(tx, {
+          organisationId, stationId: data.stationId, channelId: data.channelId,
+          stationWhere: onlineStationWhere, channelWhere: onlineChannelWhere
+        })) throw Object.assign(new Error("Choose a station and optional channel owned by this organisation."), { status: 404 });
+        const story = await tx.schoolNewsStory.create({ data: { organisationId, product: NEWSROOM_PRODUCTS.ONLINE_RADIO, stationId: data.stationId, channelId: data.channelId || null, title: data.title, type: data.type, pitch: data.pitch, deadline: data.deadline ? new Date(data.deadline) : null, createdByUserId: access.user.id } });
         await tx.newsStoryDecision.create({ data: { organisationId, storyId: story.id, action: "CREATE", fromStatus: story.status, toStatus: story.status, actorUserId: access.user.id } });
-        await tx.auditLog.create({ data: { organisationId, actorUserId: access.user.id, action: "ONLINE_NEWS_CREATE", entityType: "NewsStory", entityId: story.id, details: { stationId: station.id, channelId: channel?.id || null, type: story.type, product: NEWSROOM_PRODUCTS.ONLINE_RADIO, policyVersion: NEWSROOM_POLICY_VERSION, requestId } } });
+        await tx.auditLog.create({ data: { organisationId, actorUserId: access.user.id, action: "ONLINE_NEWS_CREATE", entityType: "NewsStory", entityId: story.id, details: { stationId: data.stationId, channelId: data.channelId || null, type: story.type, product: NEWSROOM_PRODUCTS.ONLINE_RADIO, policyVersion: NEWSROOM_POLICY_VERSION, requestId } } });
         return story;
       });
     } else {
@@ -143,43 +181,61 @@ export async function POST(request) {
         if (new Set(["IN_REVIEW", "APPROVED", "PUBLISHED", "ARCHIVED"]).has(story.status)) return NextResponse.json({ error: "Return the story to scripting before changing reviewed content." }, { status: 409 });
         const sources = normalizeNewsSources(data.sources);
         const [audioProject, interviewAsset] = await Promise.all([
-          data.audioProjectId ? prisma.audioProject.findFirst({ where: { id: data.audioProjectId, organisationId, status: { not: "ARCHIVED" } }, select: { id: true } }) : null,
-          data.interviewMediaAssetId ? prisma.mediaAsset.findFirst({ where: { id: data.interviewMediaAssetId, organisationId, status: "READY", mimeType: { startsWith: "audio/" } }, select: { id: true } }) : null
+          data.audioProjectId ? prisma.audioProject.findFirst({ where: { id: data.audioProjectId, organisationId, status: { not: "ARCHIVED" }, ...GENERAL_STUDIO_AUDIO_PROJECT_WHERE }, select: { id: true } }) : null,
+          data.interviewMediaAssetId ? prisma.mediaAsset.findFirst({ where: { id: data.interviewMediaAssetId, organisationId, status: "READY", mimeType: { startsWith: "audio/" }, ...GENERAL_STUDIO_MEDIA_ASSET_WHERE }, select: { id: true } }) : null
         ]);
         if ((data.audioProjectId && !audioProject) || (data.interviewMediaAssetId && !interviewAsset)) return NextResponse.json({ error: "Choose production audio owned by this organisation." }, { status: 404 });
-        result = await prisma.$transaction(async (tx) => {
-          const latest = await tx.newsStoryRevision.findFirst({ where: { storyId: story.id }, orderBy: { revision: "desc" }, select: { revision: true } });
-          const updated = await tx.schoolNewsStory.update({ where: { id: story.id }, data: { script: data.script || null, factCheckNotes: data.factCheckNotes || null, sourcesJson: sources, audioProjectId: audioProject?.id || null, interviewMediaAssetId: interviewAsset?.id || null, interviewConsentConfirmed: data.interviewConsentConfirmed } });
+        result = await runGeneralSourceWriteTransaction(prisma, async (tx) => {
+          const current = await lockVisibleNewsroomStory(tx, { organisationId, storyId: story.id, product: NEWSROOM_PRODUCTS.ONLINE_RADIO,
+            visibleWhere: visibleOnlineStoryWhere(organisationId), include: storyInclude,
+            additionalProjectId: data.audioProjectId, additionalMediaAssetId: data.interviewMediaAssetId });
+          if (!current) throw new Error("The newsroom story or production audio is no longer available. Refresh and try again.");
+          if (!canEditNewsStory({ role: access.membership.role, userId: access.user.id, assignedToUserId: current.assignedToUserId })) throw new Error("This story is assigned to another editor.");
+          if (new Set(["IN_REVIEW", "APPROVED", "PUBLISHED", "ARCHIVED"]).has(current.status)) throw new Error("Return the story to scripting before changing reviewed content.");
+          const [currentProject, currentAsset] = await Promise.all([
+            data.audioProjectId ? tx.audioProject.findFirst({ where: { id: data.audioProjectId, organisationId, status: { not: "ARCHIVED" }, ...GENERAL_STUDIO_AUDIO_PROJECT_WHERE }, select: { id: true } }) : null,
+            data.interviewMediaAssetId ? tx.mediaAsset.findFirst({ where: { id: data.interviewMediaAssetId, organisationId, status: "READY", mimeType: { startsWith: "audio/" }, ...GENERAL_STUDIO_MEDIA_ASSET_WHERE }, select: { id: true } }) : null
+          ]);
+          if ((data.audioProjectId && !currentProject) || (data.interviewMediaAssetId && !currentAsset)) throw new Error("Choose production audio owned by this organisation.");
+          const latest = await tx.newsStoryRevision.findFirst({ where: { storyId: current.id }, orderBy: { revision: "desc" }, select: { revision: true } });
+          const updated = await tx.schoolNewsStory.update({ where: { id: current.id }, data: { script: data.script || null, factCheckNotes: data.factCheckNotes || null, sourcesJson: sources, audioProjectId: currentProject?.id || null, interviewMediaAssetId: currentAsset?.id || null, interviewConsentConfirmed: data.interviewConsentConfirmed } });
           const revision = (latest?.revision || 0) + 1;
-          await tx.newsStoryRevision.create({ data: { organisationId, storyId: story.id, revision, script: updated.script, factCheckNotes: updated.factCheckNotes, sourcesJson: sources, audioProjectId: updated.audioProjectId, interviewMediaAssetId: updated.interviewMediaAssetId, createdByUserId: access.user.id } });
-          await tx.auditLog.create({ data: { organisationId, actorUserId: access.user.id, action: "ONLINE_NEWS_SAVE", entityType: "NewsStory", entityId: story.id, details: { revision, sourceCount: sources.length, sourceFingerprint: newsroomSourceFingerprint(sources), audioProjectId: updated.audioProjectId, policyVersion: NEWSROOM_POLICY_VERSION, requestId } } });
+          await tx.newsStoryRevision.create({ data: { organisationId, storyId: current.id, revision, script: updated.script, factCheckNotes: updated.factCheckNotes, sourcesJson: sources, audioProjectId: updated.audioProjectId, interviewMediaAssetId: updated.interviewMediaAssetId, createdByUserId: access.user.id } });
+          await tx.auditLog.create({ data: { organisationId, actorUserId: access.user.id, action: "ONLINE_NEWS_SAVE", entityType: "NewsStory", entityId: current.id, details: { revision, sourceCount: sources.length, sourceFingerprint: newsroomSourceFingerprint(sources), audioProjectId: updated.audioProjectId, policyVersion: NEWSROOM_POLICY_VERSION, requestId } } });
           return updated;
         });
       } else if (data.action === "ASSIGN") {
         const denied = managerRequired(access); if (denied) return denied;
         const assignee = await prisma.organisationMember.findFirst({ where: { organisationId, userId: data.assigneeUserId, role: { in: ORGANISATION_CONTENT_ROLES } }, select: { userId: true } });
         if (!assignee) return NextResponse.json({ error: "Choose an active newsroom editor in this organisation." }, { status: 404 });
-        const transition = transitionNewsStory({ currentStatus: story.status, action: "ASSIGN", product: NEWSROOM_PRODUCTS.ONLINE_RADIO });
-        result = await prisma.$transaction(async (tx) => {
-          const updated = await tx.schoolNewsStory.update({ where: { id: story.id }, data: { status: transition.status, assignedToUserId: assignee.userId } });
-          await tx.newsStoryDecision.create({ data: { organisationId, storyId: story.id, action: "ASSIGN", fromStatus: story.status, toStatus: transition.status, actorUserId: access.user.id } });
-          await tx.auditLog.create({ data: { organisationId, actorUserId: access.user.id, action: "ONLINE_NEWS_ASSIGN", entityType: "NewsStory", entityId: story.id, details: { assigneeUserId: assignee.userId, policyVersion: NEWSROOM_POLICY_VERSION, requestId } } });
+        result = await runGeneralSourceWriteTransaction(prisma, async (tx) => {
+          const current = await lockVisibleNewsroomStory(tx, { organisationId, storyId: story.id, product: NEWSROOM_PRODUCTS.ONLINE_RADIO,
+            visibleWhere: visibleOnlineStoryWhere(organisationId), include: storyInclude });
+          if (!current) throw new Error("The newsroom story is no longer available. Refresh and try again.");
+          const transition = transitionNewsStory({ currentStatus: current.status, action: "ASSIGN", product: NEWSROOM_PRODUCTS.ONLINE_RADIO });
+          const updated = await tx.schoolNewsStory.update({ where: { id: current.id }, data: { status: transition.status, assignedToUserId: assignee.userId } });
+          await tx.newsStoryDecision.create({ data: { organisationId, storyId: current.id, action: "ASSIGN", fromStatus: current.status, toStatus: transition.status, actorUserId: access.user.id } });
+          await tx.auditLog.create({ data: { organisationId, actorUserId: access.user.id, action: "ONLINE_NEWS_ASSIGN", entityType: "NewsStory", entityId: current.id, details: { assigneeUserId: assignee.userId, policyVersion: NEWSROOM_POLICY_VERSION, requestId } } });
           return updated;
         });
       } else {
         const managerActions = new Set(["APPROVE", "REQUEST_CHANGES", "PUBLISH", "ARCHIVE"]);
         if (managerActions.has(data.action)) { const denied = managerRequired(access); if (denied) return denied; }
         else if (!canEditNewsStory({ role: access.membership.role, userId: access.user.id, assignedToUserId: story.assignedToUserId })) return NextResponse.json({ error: "This story is assigned to another editor." }, { status: 403 });
-        const readiness = storyReadiness(story);
-        const transition = transitionNewsStory({ currentStatus: story.status, action: data.action, product: NEWSROOM_PRODUCTS.ONLINE_RADIO, notes: data.notes, interviewConsentConfirmed: story.interviewConsentConfirmed, hasInterviewAsset: Boolean(story.interviewMediaAssetId), ...readiness });
-        const updates = { status: transition.status };
-        if (new Set(["APPROVE", "REQUEST_CHANGES"]).has(data.action)) updates.reviewedByUserId = access.user.id;
-        if (data.action === "PUBLISH") { updates.publishedByUserId = access.user.id; updates.publishedAt = new Date(); }
-        if (transition.notes) updates.editorialFeedbackJson = { notes: transition.notes, byUserId: access.user.id, at: new Date().toISOString() };
-        result = await prisma.$transaction(async (tx) => {
-          const updated = await tx.schoolNewsStory.update({ where: { id: story.id }, data: updates });
-          await tx.newsStoryDecision.create({ data: { organisationId, storyId: story.id, action: data.action, fromStatus: story.status, toStatus: transition.status, note: transition.notes, actorUserId: access.user.id } });
-          await tx.auditLog.create({ data: { organisationId, actorUserId: access.user.id, action: `ONLINE_NEWS_${data.action}`, entityType: "NewsStory", entityId: story.id, details: { fromStatus: story.status, toStatus: transition.status, sourceFingerprint: newsroomSourceFingerprint(Array.isArray(story.sourcesJson) ? story.sourcesJson : []), liveScheduleChanged: false, publicWebPublished: false, policyVersion: NEWSROOM_POLICY_VERSION, requestId } } });
+        result = await runGeneralSourceWriteTransaction(prisma, async (tx) => {
+          const current = await lockVisibleNewsroomStory(tx, { organisationId, storyId: story.id, product: NEWSROOM_PRODUCTS.ONLINE_RADIO,
+            visibleWhere: visibleOnlineStoryWhere(organisationId), include: storyInclude });
+          if (!current) throw new Error("The newsroom story or production audio is no longer available. Refresh and try again.");
+          if (!managerActions.has(data.action) && !canEditNewsStory({ role: access.membership.role, userId: access.user.id, assignedToUserId: current.assignedToUserId })) throw new Error("This story is assigned to another editor.");
+          const readiness = storyReadiness(current);
+          const transition = transitionNewsStory({ currentStatus: current.status, action: data.action, product: NEWSROOM_PRODUCTS.ONLINE_RADIO, notes: data.notes, interviewConsentConfirmed: current.interviewConsentConfirmed, hasInterviewAsset: Boolean(current.interviewMediaAssetId), ...readiness });
+          const updates = { status: transition.status };
+          if (new Set(["APPROVE", "REQUEST_CHANGES"]).has(data.action)) updates.reviewedByUserId = access.user.id;
+          if (data.action === "PUBLISH") { updates.publishedByUserId = access.user.id; updates.publishedAt = new Date(); }
+          if (transition.notes) updates.editorialFeedbackJson = { notes: transition.notes, byUserId: access.user.id, at: new Date().toISOString() };
+          const updated = await tx.schoolNewsStory.update({ where: { id: current.id }, data: updates });
+          await tx.newsStoryDecision.create({ data: { organisationId, storyId: current.id, action: data.action, fromStatus: current.status, toStatus: transition.status, note: transition.notes, actorUserId: access.user.id } });
+          await tx.auditLog.create({ data: { organisationId, actorUserId: access.user.id, action: `ONLINE_NEWS_${data.action}`, entityType: "NewsStory", entityId: current.id, details: { fromStatus: current.status, toStatus: transition.status, sourceFingerprint: newsroomSourceFingerprint(Array.isArray(current.sourcesJson) ? current.sourcesJson : []), liveScheduleChanged: false, publicWebPublished: false, policyVersion: NEWSROOM_POLICY_VERSION, requestId } } });
           return updated;
         });
       }
@@ -187,6 +243,6 @@ export async function POST(request) {
     return NextResponse.json({ result, notice: data.action === "PUBLISH" ? "Story released by the newsroom. Live programming and public web pages were not changed." : "Newsroom action completed." }, { status: data.action === "CREATE" ? 201 : 200 });
   } catch (error) {
     if (error?.code === "P2002") return NextResponse.json({ error: "This newsroom revision was updated elsewhere. Refresh and try again." }, { status: 409 });
-    return NextResponse.json({ error: error instanceof Error ? error.message : "The newsroom action could not be completed." }, { status: 409 });
+    return NextResponse.json({ error: error instanceof Error ? error.message : "The newsroom action could not be completed." }, { status: error?.status || 409 });
   }
 }

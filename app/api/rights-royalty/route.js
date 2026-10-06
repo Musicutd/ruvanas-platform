@@ -7,14 +7,14 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET() {
-  const access = await requireActiveReportOrganisation();
+  const access = await requireActiveReportOrganisation({ excludeCorrections: true });
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const data = await loadRightsRoyaltyWorkspace(access.organisation.id);
   return NextResponse.json({ ...data, permissions: { canManage: ORGANISATION_MANAGER_ROLES.includes(access.membership.role) }, evidenceNotice: "Reports use append-only, device-confirmed completed music playback. They do not measure listeners or calculate a royalty amount." });
 }
 
 export async function POST(request) {
-  const access = await requireActiveReportOrganisation();
+  const access = await requireActiveReportOrganisation({ excludeCorrections: true });
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   if (!ORGANISATION_MANAGER_ROLES.includes(access.membership.role)) return NextResponse.json({ error: "Only an organisation owner or manager can change rights reporting setup." }, { status: 403 });
   try {

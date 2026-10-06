@@ -11,5 +11,7 @@ export async function GET(request, { params }) {
   if (!rateLimit.allowed) return NextResponse.json({ error: "Too many requests." }, { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSeconds) } });
   const page = await loadPublicSchoolPage(slug);
   if (!page) return NextResponse.json({ error: "This public school radio page is not available." }, { status: 404 });
-  return NextResponse.json(page, { headers: { "Cache-Control": "public, max-age=60, s-maxage=120, stale-while-revalidate=300" } });
+  // A published School episode can later become Corrections-private. Do not
+  // retain a previously public listing beyond its current eligibility.
+  return NextResponse.json(page, { headers: { "Cache-Control": "private, no-store" } });
 }

@@ -5,8 +5,10 @@ import ContextHelp from "@/app/components/ContextHelp";
 import SkipLink from "@/app/components/SkipLink";
 import { subscriberProductForStationFamily } from "@/lib/product-access.mjs";
 import { requireSubscriberProduct } from "@/lib/subscriber-product-access";
+import { GENERAL_STATION_MANAGEMENT_WHERE } from "@/lib/general-station-boundary.mjs";
 
 export default async function StationDetailsPage({ params }) {
+  const { stationId } = await params;
   const context = await getActiveOrganisationContext();
 
   if (!context) {
@@ -21,8 +23,9 @@ export default async function StationDetailsPage({ params }) {
 
   const station = await prisma.station.findFirst({
     where: {
-      id: params.stationId,
-      organisationId: membership.organisationId
+      id: stationId,
+      organisationId: membership.organisationId,
+      ...GENERAL_STATION_MANAGEMENT_WHERE
     },
     include: {
       streamConfig: true

@@ -61,7 +61,7 @@ test("Stage 19.17 keeps public pages separate from tenant and provider controls"
   assert.match(domainRoute, /verifyStationDomainDns/);
   assert.match(domainRoute, /status: "ACTIVE"/);
   assert.doesNotMatch(publicRoute + nowPlayingRoute + page, /providerAccountId|adminPasswordEncrypted|sourcePasswordEncrypted|storageKey/);
-  assert.match(nowPlayingRoute, /Cache-Control.*max-age=10/);
+  assert.match(nowPlayingRoute, /Cache-Control.*private, no-store/);
   assert.match(middleware, /NextResponse\.rewrite/);
   assert.match(middleware, /station-websites\/domains/);
   assert.match(schema, /hostname\s+String\s+@unique/);

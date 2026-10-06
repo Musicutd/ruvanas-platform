@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getActiveOrganisationContext } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { resolveEntitlements } from "@/lib/entitlements.mjs";
+import { GENERAL_STUDIO_MEDIA_ASSET_WHERE } from "@/lib/studio-general-asset-boundary.mjs";
 import {
   canManageSubscriberAudio,
   prepareSubscriberPromoSubmission
@@ -34,10 +35,16 @@ export async function PATCH(_request, { params }) {
     }
 
     const promoVersionId = String(params.promoVersionId || "");
+    const ordinaryPromoAsset = {
+      organisationId: organisation.id,
+      status: "ACTIVE",
+      versions: { every: { mediaAsset: { is: GENERAL_STUDIO_MEDIA_ASSET_WHERE } } }
+    };
     const version = await prisma.promoVersion.findFirst({
       where: {
         id: promoVersionId,
-        promoAsset: { organisationId: organisation.id, status: "ACTIVE" }
+        promoAsset: { is: ordinaryPromoAsset },
+        mediaAsset: { is: GENERAL_STUDIO_MEDIA_ASSET_WHERE }
       },
       include: {
         promoAsset: { select: { id: true, name: true } },
@@ -62,7 +69,12 @@ export async function PATCH(_request, { params }) {
     const submittedAt = new Date();
     const updated = await prisma.$transaction(async (tx) => {
       const changed = await tx.promoVersion.updateMany({
-        where: { id: version.id, status: "DRAFT" },
+        where: {
+          id: version.id,
+          status: "DRAFT",
+          promoAsset: { is: ordinaryPromoAsset },
+          mediaAsset: { is: GENERAL_STUDIO_MEDIA_ASSET_WHERE }
+        },
         data: {
           ...transition,
           submittedById: context.user.id,

@@ -5,7 +5,7 @@ import { getRightsRoyaltyExportJob } from "@/lib/rights-royalty-service";
 export const dynamic = "force-dynamic";
 
 export async function GET(_request, { params }) {
-  const access = await requireActiveReportOrganisation();
+  const access = await requireActiveReportOrganisation({ excludeCorrections: true });
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const { jobId } = await params;
   const job = await getRightsRoyaltyExportJob({ jobId, organisationId: access.organisation.id, requestedByUserId: access.user.id });

@@ -111,6 +111,26 @@ test("Stage 19.14 keeps anonymous delivery separate from enrolled players and pr
   assert.match(migration, /FOREIGN KEY \("channelId", "organisationId"\)/);
 });
 
+test("public player, discovery and station websites share the private-station boundary", async () => {
+  const paths = [
+    "../lib/public-player-service.js",
+    "../lib/station-website-service.js",
+    "../app/api/public/stations/[slug]/route.js",
+    "../app/listen/[slug]/page.js",
+    "../app/embed/[slug]/page.js"
+  ];
+  for (const path of paths) {
+    const source = await readFile(new URL(path, import.meta.url), "utf8");
+    assert.match(source, /GENERAL_STATION_MANAGEMENT_WHERE/, path);
+    assert.match(source, /\.\.\.GENERAL_STATION_MANAGEMENT_WHERE/, path);
+  }
+  const playerService = await readFile(new URL(paths[0], import.meta.url), "utf8");
+  assert.match(playerService, /publicPlayerTarget\([\s\S]*?channel\.musicRightsUse === "CORRECTIONS_RADIO"[\s\S]*?if \(station\?\.productFamily === "ONLINE"\)/);
+  const predicate = await readFile(new URL("../lib/general-station-boundary.mjs", import.meta.url), "utf8");
+  assert.match(predicate, /channels:\s*\{\s*none:/);
+  assert.match(predicate, /zoneAssignments:\s*\{\s*some:[\s\S]*?correctionsFacility:\s*\{\s*isNot:\s*null/);
+});
+
 test("station-capacity checks remain bounded with a large active audience", async () => {
   const database = memoryDatabase();
   for (let index = 0; index < 5_000; index += 1) database.leases.push({ id: `lease-${index}`, stationId: "station-1", channelId: "channel-1", organisationId: "org-1", sessionHash: index.toString(16).padStart(64, "0"), expiresAt: new Date(instant.getTime() + 60_000), createdAt: instant });

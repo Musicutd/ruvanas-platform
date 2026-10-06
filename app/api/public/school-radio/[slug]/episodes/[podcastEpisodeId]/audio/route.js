@@ -10,14 +10,14 @@ export async function GET(request, { params }) {
   try {
     const { slug, podcastEpisodeId } = await params;
     const publication = await loadPublicSchoolPodcastAudio(String(slug || "").toLowerCase(), String(podcastEpisodeId || ""));
-    if (!publication) return NextResponse.json({ error: "This school podcast audio is not publicly available." }, { status: 404 });
+    if (!publication) return NextResponse.json({ error: "This school podcast audio is not publicly available." }, { status: 404, headers: { "Cache-Control": "private, no-store" } });
     return deliverProtectedPodcastAudio(request, publication.asset, { onDelivery: async ({ bytesOffered, rangeRequest }) => {
       try {
         await recordPublicAudioDelivery({ organisationId: publication.organisationId, podcastEpisodeId: publication.podcastEpisodeId, bytesOffered, rangeRequest });
       } catch (error) {
         console.error("Public school podcast audio evidence could not be recorded:", error);
       }
-    } });
+    }, cacheControl: "private, no-store" });
   } catch (error) {
     console.error("Public school podcast stream failed:", error);
     return NextResponse.json({ error: "The published audio could not be played." }, { status: 500 });

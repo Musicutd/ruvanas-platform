@@ -4,6 +4,7 @@ import test from "node:test";
 import { CATALOGUE_PILLARS } from "../lib/catalogue-audience.mjs";
 import { complimentaryPlanSnapshot, resolveComplimentaryPlan } from "../lib/complimentary-access.mjs";
 import { resolveEntitlements } from "../lib/entitlements.mjs";
+import { GENERAL_STATION_MANAGEMENT_WHERE } from "../lib/general-station-boundary.mjs";
 import { MUSIC_RIGHTS_USES } from "../lib/media-library-pro.mjs";
 import { DISTRIBUTOR_RIGHTS_USES } from "../lib/music-distributor.mjs";
 import { subscriberProductAccess, enabledSubscriberProducts } from "../lib/product-access.mjs";
@@ -100,8 +101,15 @@ test("Corrections has a separate rights identifier but no public listener or cat
   assert.doesNotMatch(page, /listenAction=/);
   assert.doesNotMatch(audio, /CORRECTIONS:/);
   assert.doesNotMatch(catalogue, /CORRECTIONS_RADIO/);
-  assert.match(publicService, /productFamily: \{ not: "CORRECTIONS" \}/);
-  assert.match(publicStationApi, /productFamily: \{ not: "CORRECTIONS" \}/);
+  assert.deepEqual(GENERAL_STATION_MANAGEMENT_WHERE, {
+    OR: [{ productFamily: null }, { productFamily: { not: "CORRECTIONS" } }],
+    channels: { none: { OR: [
+      { musicRightsUse: "CORRECTIONS_RADIO" },
+      { zoneAssignments: { some: { zone: { location: { correctionsFacility: { isNot: null } } } } } }
+    ] } }
+  });
+  assert.match(publicService, /\.\.\.GENERAL_STATION_MANAGEMENT_WHERE/);
+  assert.match(publicStationApi, /\.\.\.GENERAL_STATION_MANAGEMENT_WHERE/);
   assert.match(activation, /station\.productFamily === "CORRECTIONS"/);
   const denied = await claimPublicListenerLease({}, { station: { productFamily: "CORRECTIONS" }, sessionId: "test" });
   assert.equal(denied.ok, false);

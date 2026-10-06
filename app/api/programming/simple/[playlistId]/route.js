@@ -6,9 +6,10 @@ import { normaliseGenreCode } from "@/lib/autodj-genre-entitlements.mjs";
 import { parseSimplePlaylist } from "@/lib/subscriber-playlists.mjs";
 import { safeSimplePlaylist } from "@/lib/subscriber-playlist-service.mjs";
 import { smartPlaylistSlug } from "@/lib/smart-playlists.mjs";
+import { GENERAL_SIMPLE_PLAYLIST_WHERE } from "@/lib/subscriber-simple-private-boundary.mjs";
 
 async function ownedPlaylist(organisationId, playlistId) {
-  return prisma.smartPlaylist.findFirst({ where: { id: playlistId, organisationId, simpleBuildMode: { not: null } }, include: { musicMode: { select: { id: true, name: true } } } });
+  return prisma.smartPlaylist.findFirst({ where: { id: playlistId, organisationId, simpleBuildMode: { not: null }, ...GENERAL_SIMPLE_PLAYLIST_WHERE }, include: { musicMode: { select: { id: true, name: true } } } });
 }
 
 export async function PATCH(request, { params }) {

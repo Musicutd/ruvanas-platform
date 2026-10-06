@@ -38,6 +38,22 @@ function invitationSummary(invitation) {
   };
 }
 
+async function lockedTeamMembers(tx, organisationId, actorMemberId, actorUserId, targetMemberId) {
+  const rows = [];
+  for (const id of [actorMemberId, targetMemberId].sort()) {
+    const [row] = await tx.$queryRaw`
+      SELECT "id", "userId", "role" FROM "OrganisationMember"
+      WHERE "id" = ${id} AND "organisationId" = ${organisationId} FOR UPDATE
+    `;
+    if (!row) return null;
+    rows.push(row);
+  }
+  const actor = rows.find((row) => row.id === actorMemberId);
+  const target = rows.find((row) => row.id === targetMemberId);
+  if (!actor || !target || actor.userId !== actorUserId || target.userId === actorUserId) return null;
+  return { actor, target };
+}
+
 export async function GET() {
   try {
     const access = await activeContext();
@@ -245,22 +261,41 @@ export async function PATCH(request) {
       try { role = normalizeSubscriberTeamRole(body.role); } catch (error) { return denied(400, error.message); }
       if (!canAssignSubscriberTeamRole(membership.role, role)) return denied(403, "Your role cannot assign that level of access.");
       const saved = await prisma.$transaction(async (tx) => {
+        const current = await lockedTeamMembers(tx, membership.organisationId, membership.id, user.id, target.id);
+        if (!current || !canManageSubscriberTeam(current.actor.role) ||
+            !canManageSubscriberMember(current.actor.role, current.target.role) ||
+            !canAssignSubscriberTeamRole(current.actor.role, role)) return null;
         const result = await tx.organisationMember.update({ where: { id: target.id }, data: { role } });
+        // A team role change must not leave a stronger Inside facility grant
+        // behind. Preserve the facility assignment at viewer level.
+        const compatiblePermissions = role === "MANAGER" ? ["MANAGER", "VIEWER"] :
+          role === "CONTENT_EDITOR" ? ["EDITOR", "VIEWER"] : ["VIEWER"];
+        const reconciledGrants = await tx.correctionsFacilityGrant.updateMany({
+          where: { organisationId: membership.organisationId, organisationMemberId: target.id,
+            permission: { notIn: compatiblePermissions } },
+          data: { permission: "VIEWER", canPriorityActivate: false, canPriorityStop: false,
+            canEmergencyActivate: false, canEmergencyClear: false }
+        });
         await tx.auditLog.create({ data: {
           organisationId: membership.organisationId,
           actorUserId: user.id,
           action: "ORGANISATION_MEMBER_ROLE_UPDATED",
           entityType: "OrganisationMember",
           entityId: target.id,
-          details: { email: target.user.email, fromRole: target.role, toRole: role, requestId: getRequestId(request) }
+          details: { email: target.user.email, fromRole: current.target.role, toRole: role,
+            correctionsFacilityGrantsDowngraded: reconciledGrants.count, requestId: getRequestId(request) }
         } });
         return result;
       });
+      if (!saved) return denied(403, "Your role can no longer change that team member.");
       return NextResponse.json({ ok: true, member: { id: saved.id, role: saved.role } });
     }
 
     if (action === "REMOVE_MEMBER") {
-      await prisma.$transaction(async (tx) => {
+      const removed = await prisma.$transaction(async (tx) => {
+        const current = await lockedTeamMembers(tx, membership.organisationId, membership.id, user.id, target.id);
+        if (!current || !canManageSubscriberTeam(current.actor.role) ||
+            !canManageSubscriberMember(current.actor.role, current.target.role)) return false;
         await tx.organisationMember.delete({ where: { id: target.id } });
         await tx.session.updateMany({
           where: { userId: target.userId, activeOrganisationId: membership.organisationId, revokedAt: null },
@@ -272,9 +307,11 @@ export async function PATCH(request) {
           action: "ORGANISATION_MEMBER_REMOVED",
           entityType: "OrganisationMember",
           entityId: target.id,
-          details: { email: target.user.email, role: target.role, requestId: getRequestId(request) }
+          details: { email: target.user.email, role: current.target.role, requestId: getRequestId(request) }
         } });
+        return true;
       });
+      if (!removed) return denied(403, "Your role can no longer remove that team member.");
       return NextResponse.json({ ok: true });
     }
 

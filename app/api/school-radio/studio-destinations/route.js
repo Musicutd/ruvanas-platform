@@ -12,6 +12,7 @@ import {
   studioHandoffKey,
   studioWorkflowPath
 } from "@/lib/studio-product-handoff.mjs";
+import { GENERAL_STUDIO_AUDIO_PROJECT_WHERE, assertGeneralStudioAudioProject, lockGeneralStudioMediaAssets, lockGeneralStudioAudioProject } from "@/lib/studio-general-asset-boundary.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -33,14 +34,53 @@ async function requireActiveStudio() {
 const renderInclude = {
   project: { select: { id: true, title: true, episodeId: true, currentVersion: true } },
   outputMediaAsset: { select: { id: true, name: true, status: true, durationSeconds: true } },
-  outputPromoVersion: { select: { id: true, version: true, status: true, qcStatus: true, promoAssetId: true } }
+  outputPromoVersion: { select: { id: true, version: true, status: true, qcStatus: true, promoAssetId: true, mediaAssetId: true } }
 };
 
-async function findRender(renderId, organisationId) {
-  return prisma.audioRender.findFirst({
-    where: { id: renderId, organisationId, project: { type: "MULTITRACK", status: { not: "ARCHIVED" } } },
+async function findRender(database, renderId, organisationId) {
+  return database.audioRender.findFirst({
+    where: { id: renderId, organisationId, project: { is: { type: "MULTITRACK", status: { not: "ARCHIVED" }, ...GENERAL_STUDIO_AUDIO_PROJECT_WHERE } } },
     include: renderInclude
   });
+}
+
+async function lockedGeneralRender(tx, renderId, organisationId) {
+  // C3 submission takes this same project lock before making a render private.
+  // ReadCommitted gives the checks after the lock a fresh statement snapshot.
+  // Serializable would retain the locator's pre-C3 snapshot if C3 only locked
+  // the project row and inserted a submission without updating that row.
+  const locator = await tx.audioRender.findFirst({
+    where: { id: renderId, organisationId },
+    select: { projectId: true }
+  });
+  if (!locator) return null;
+  await lockGeneralStudioAudioProject(tx, organisationId, locator.projectId);
+  return findRender(tx, renderId, organisationId);
+}
+
+async function runLockedHandoffTransaction(operation) {
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      return await prisma.$transaction(operation, { isolationLevel: "ReadCommitted" });
+    } catch (error) {
+      // An identical handoff can win the unique key, or a concurrent School
+      // rundown edit can deadlock with the project-first handoff lock order.
+      // Both roll back atomically; replay the entire locked decision so every
+      // approval, visibility and destination check runs again.
+      const deadlock = error?.code === "P2034" || (error?.code === "P2010" && error?.meta?.code === "40P01");
+      if ((error?.code !== "P2002" && !deadlock) || attempt === 3) throw error;
+    }
+  }
+}
+
+async function assertGeneralHandoffOutput(database, organisationId, render) {
+  await assertGeneralStudioAudioProject(database, organisationId, render.projectId);
+  const ids = [...new Set([render.outputMediaAsset?.id, render.outputPromoVersion?.mediaAssetId].filter(Boolean))];
+  // A different project can share this output, and any render submitted from
+  // that project makes its older outputs private too. Lock all such projects
+  // and the exact media before rechecking, including on list/idempotent reuse.
+  const usable = await lockGeneralStudioMediaAssets(database, organisationId, ids);
+  if (usable.size !== ids.length) throw Object.assign(new Error("This Studio output is unavailable in general Studio."), { status: 403 });
 }
 
 function publicHandoff(handoff) {
@@ -58,13 +98,25 @@ export async function GET(request) {
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const renderId = new URL(request.url).searchParams.get("renderId");
   if (!renderId) return NextResponse.json({ error: "Choose a Studio output." }, { status: 400 });
-  const render = await findRender(renderId, access.organisation.id);
-  if (!render) return NextResponse.json({ error: "The Studio output was not found." }, { status: 404 });
-  const handoffs = await prisma.studioProductHandoff.findMany({ where: { renderId, organisationId: access.organisation.id }, orderBy: { createdAt: "asc" } });
-  return NextResponse.json({
-    destinations: studioDestinationAvailability({ entitlements: access.entitlements, project: render.project }),
-    handoffs: handoffs.map(publicHandoff)
-  });
+  try {
+    const result = await runLockedHandoffTransaction(async (tx) => {
+      const render = await lockedGeneralRender(tx, renderId, access.organisation.id);
+      if (!render) return null;
+      await assertGeneralHandoffOutput(tx, access.organisation.id, render);
+      const handoffs = await tx.studioProductHandoff.findMany({ where: { renderId, organisationId: access.organisation.id }, orderBy: { createdAt: "asc" } });
+      return { render, handoffs };
+    });
+    if (!result) return NextResponse.json({ error: "The Studio output was not found." }, { status: 404 });
+    return NextResponse.json({
+      destinations: studioDestinationAvailability({ entitlements: access.entitlements, project: result.render.project }),
+      handoffs: result.handoffs.map(publicHandoff)
+    });
+  } catch (error) {
+    if (error?.code === "CORRECTIONS_STUDIO_OUTPUT_BLOCKED") {
+      return NextResponse.json({ error: "The Studio output was not found." }, { status: 404 });
+    }
+    return NextResponse.json({ error: error instanceof Error ? error.message : "This Studio output is unavailable." }, { status: error?.status || 403 });
+  }
 }
 
 export async function POST(request) {
@@ -76,22 +128,24 @@ export async function POST(request) {
   const definition = STUDIO_PRODUCT_DESTINATIONS[destination];
 
   try {
-    const render = assertStudioRenderReady(await findRender(renderId, access.organisation.id));
-    if (!access.entitlements[definition.entitlement]) return NextResponse.json({ error: `${definition.label} is not included in this organisation's current plan.` }, { status: 403 });
-    const targetEpisodeId = destination === "SCHOOL_EPISODE" ? render.project.episodeId : null;
-    if (destination === "SCHOOL_EPISODE" && !targetEpisodeId) throw new Error("Link this Studio project to a School episode first.");
-    const destinationKey = studioHandoffKey({ renderId, destination, targetEpisodeId });
-    const existing = await prisma.studioProductHandoff.findUnique({ where: { destinationKey } });
-    if (existing) return NextResponse.json({ handoff: publicHandoff(existing), reused: true });
+    const result = await runLockedHandoffTransaction(async (tx) => {
+      const render = assertStudioRenderReady(await lockedGeneralRender(tx, renderId, access.organisation.id));
+      await assertGeneralHandoffOutput(tx, access.organisation.id, render);
+      if (!access.entitlements[definition.entitlement]) {
+        throw Object.assign(new Error(`${definition.label} is not included in this organisation's current plan.`), { status: 403 });
+      }
+      const targetEpisodeId = destination === "SCHOOL_EPISODE" ? render.project.episodeId : null;
+      if (destination === "SCHOOL_EPISODE" && !targetEpisodeId) throw new Error("Link this Studio project to a School episode first.");
+      const destinationKey = studioHandoffKey({ renderId, destination, targetEpisodeId });
+      const existing = await tx.studioProductHandoff.findUnique({ where: { destinationKey } });
+      if (existing) return { handoff: existing, reused: true };
 
-    const workflowPath = studioWorkflowPath({
-      destination,
-      promoVersionId: render.outputPromoVersion.id,
-      mediaAssetId: render.outputMediaAsset.id,
-      targetEpisodeId
-    });
-
-    const handoff = await prisma.$transaction(async (tx) => {
+      const workflowPath = studioWorkflowPath({
+        destination,
+        promoVersionId: render.outputPromoVersion.id,
+        mediaAssetId: render.outputMediaAsset.id,
+        targetEpisodeId
+      });
       let schoolSubmission = null;
       if (destination === "SCHOOL_EPISODE") {
         const episode = await tx.schoolEpisode.findFirst({
@@ -145,16 +199,10 @@ export async function POST(request) {
         entityId: created.id,
         details: { destination, renderId: render.id, projectId: render.project.id, targetEpisodeId, publicPublication: false, billingMutation: false }
       } });
-      return created;
+      return { handoff: created, reused: false };
     });
-    return NextResponse.json({ handoff: publicHandoff(handoff), reused: false }, { status: 201 });
+    return NextResponse.json({ handoff: publicHandoff(result.handoff), reused: result.reused }, { status: result.reused ? 200 : 201 });
   } catch (error) {
-    if (error?.code === "P2002") {
-      const render = await findRender(renderId, access.organisation.id);
-      const destinationKey = studioHandoffKey({ renderId, destination, targetEpisodeId: destination === "SCHOOL_EPISODE" ? render?.project?.episodeId : null });
-      const existing = await prisma.studioProductHandoff.findUnique({ where: { destinationKey } });
-      if (existing) return NextResponse.json({ handoff: publicHandoff(existing), reused: true });
-    }
-    return NextResponse.json({ error: error instanceof Error ? error.message : "The Studio handoff could not be created." }, { status: 409 });
+    return NextResponse.json({ error: error instanceof Error ? error.message : "The Studio handoff could not be created." }, { status: error?.status || 409 });
   }
 }
