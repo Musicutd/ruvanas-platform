@@ -9,11 +9,19 @@ import {
   parseComplimentaryRegistrationRequest
 } from "@/lib/complimentary-registration.mjs";
 import { securityLog } from "@/lib/security-log";
+import { isInsideDemoEnvironment } from "@/lib/inside-demo-environment.mjs";
 
 const REGISTRATION_LIMIT = 5;
 const REGISTRATION_WINDOW_MS = 60 * 60 * 1000;
 
 export async function POST(request) {
+  if (isInsideDemoEnvironment()) {
+    return NextResponse.json(
+      { error: "Account creation is unavailable in this fictional demo." },
+      { status: 403 }
+    );
+  }
+
   try {
     const rateLimitKey = createRateLimitKey("complimentary-register", request);
     const rateLimit = await consumeRateLimit({

@@ -1,4 +1,8 @@
 import FreeAccessRegistration from "./FreeAccessRegistration";
+import { notFound } from "next/navigation";
+import { isInsideDemoEnvironment } from "@/lib/inside-demo-environment.mjs";
+
+export const dynamic = "force-dynamic";
 
 export const metadata = {
   title: "Create a free Ruvanas account",
@@ -6,5 +10,7 @@ export const metadata = {
 };
 
 export default function FreeAccessRegistrationPage() {
+  if (isInsideDemoEnvironment()) notFound();
+
   return <FreeAccessRegistration />;
 }
