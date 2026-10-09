@@ -1,8 +1,67 @@
 # Ruvanas Inside C9 — release-readiness gate (draft)
 
-**Decision: BLOCKED for real facility use.** This document is an evidence ledger, not approval to merge, migrate, deploy, enable customers, or change Render settings. It applies to the C9 branch based on C7 `main` commit `0e1deb3f8a36d18bd19574e17c4b6045b534169e`. Draft C8 PR #217 is outside this branch. The plain-language [launch checklist and proposed first-facility pilot plan](corrections-c9-launch-checklist.md) separates the fictional demo from customer release requirements. Green CI alone does not satisfy those requirements.
+**Decision: BLOCKED for real facility use.** This document is an evidence ledger, not approval to merge, migrate, deploy, enable customers, or change Render settings. Historical C9 entries refer to the branch based on C7 `main` commit `0e1deb3f8a36d18bd19574e17c4b6045b534169e`; Draft C8 PR #217 was outside that C9 branch. The dated local combined C8/C9 update below has its own explicit scope. The plain-language [launch checklist and proposed first-facility pilot plan](corrections-c9-launch-checklist.md) separates the fictional demo from customer release requirements. Green CI alone does not satisfy those requirements.
 
-## 5 October 2026 current review snapshot
+## 9 October 2026 local combined-branch regression update
+
+This dated update concerns the local combined C8/C9 checkout, not a new remote
+PR, production deployment or customer clearance. Its tested application head is
+`d1f44f686f9446379750976493a401c02a7b67ae`. The missing supervised C4-to-C7
+compatibility and `source-map-js` 1.2.2 follow-ups were brought into the combined
+branch locally. Next was narrowly updated to 15.5.27 and the Sharp override to
+0.35.5 with matching locked binaries; the production dependency audit reported
+zero vulnerabilities. No audit threshold was weakened.
+
+The full local unit suite passed: **1,185 passed, eight database-only skips, no
+failures**. Static integrity, Prisma generation/validation and fresh builds
+passed. A newly created, exact-owned, loopback-only PostgreSQL 18 cluster applied
+all **131** migrations. The source-matched web build
+`d1MgqQ42qhojxdV8h6AH1` passed the real C4 submit/independent Guard, C7
+offer/independent acceptance, explicit distribution/window, protected range
+media, synthetic signed proof and source-tampering/withdrawal HTTP regression.
+
+The supervised regression was then extended to the C8 software adapter. A
+separate fictional Super Admin enrolled one target-facility Edge identity with
+a device proof public key distinct from the synthetic cloud signing key. The
+real cloud routes produced a correctly signed, exact-scoped manifest containing
+the pinned media/promo/checksum/window/source revision while the ordinary Studio
+promo remained `IN_REVIEW`. Protected Edge media matched the fixture bytes;
+public access, source tampering and a lost historical session link failed
+closed. Source revocation and distribution withdrawal denied an old media
+entitlement before resync; the next signed manifest omitted it and the old media
+route returned 404. The extended real HTTP test passed with no skipped case.
+Its tested fixture contents have SHA-256
+`749a9eaa8cb4f0892e87f2305440369ac880b48c5dc8682384baedb5905ac7b1`.
+
+Local evidence is in `tmp/c9-network-compatibility-20261009/` at the workspace
+root: `integration-evidence.json` and
+`bridge-1791525780462-evidence.json`. Only date/owned-path and absolute-import
+resolution were mechanically adapted in the local test copies; no CI identity
+was spoofed. The migrations' three QA organisations and 35 public plans were
+preserved. Fictional test rows were cleaned up; app/database exits and closure
+of ports 3188, 9188 and 5550 were independently checked. An initial second-run
+guard stopped before seeding because it expected zero organisation/plan rows;
+review identified those known migration seeds and the corrected guard verifies
+their exact identities/counts. That setup refusal is not an application failure.
+
+The render and delivery proof are synthetic; **this is not** a recording-worker,
+browser playback, human-audibility, physical Edge or two-host TLS pass. Earlier
+one-host audible successes remain valid dated evidence and are not erased or
+renamed as new remaining tests. The C7 supervised test was already selected
+indirectly by the acceptance integration glob; a dedicated CI step now makes
+the C4/C7/C8 bridge explicit. No exact-new-head GitHub result is claimed: these
+changes have not been pushed, merged or deployed.
+
+The authorised Chrome Remote Desktop target is **Home 2nd only**. The browser
+control helper failed before tab access, so no remote device was accessed.
+Neither security prompts nor antivirus/firewall settings were automated.
+Physical two-PC connectivity/offline/reconnect and current human listening
+remain open; customer policy, provider recovery and the separate real-facility
+release gates below remain applicable. Do not restart the expired October 8
+lab or count these software checks as physical acceptance. No production/demo,
+Render, DNS, email, paid-resource or customer-data change occurred.
+
+## 5 October 2026 historical review snapshot
 
 GitHub read-only verification found PRs #217, #218, #220 and #221 open, Draft and unmerged. C9 PR #218 points to `ec19141d0c10f3309fc3ac8f0b137718e2a6cf49`; `validate`, `encoder-image` and `c9-recovery-rehearsal` all passed in [exact-head CI run 37348925292](https://github.com/Musicutd/ruvanas-platform/actions/runs/37348925292). This includes the current shared Studio-source, Newsroom/Learning concurrency, private recording inventory and disposable recovery coverage described below. It does not constitute independent security sign-off or live storage, playback or production acceptance. Remote `main` remains `0e1deb3f8a36d18bd19574e17c4b6045b534169e`.
 

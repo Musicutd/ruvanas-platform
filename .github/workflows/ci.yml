@@ -116,6 +116,11 @@ jobs:
           INTEGRATION_BASE_URL: http://127.0.0.1:3100
         run: node --test tests/integration/corrections-c7.test.mjs
 
+      - name: Validate C4 Guard-supervised output through C7 player and C8 signed manifest
+        env:
+          INTEGRATION_BASE_URL: http://127.0.0.1:3100
+        run: node --test tests/integration/corrections-c7-supervised-network.test.mjs
+
       - name: Validate C9 privacy inventory access and tenant isolation on isolated CI database
         env:
           INTEGRATION_BASE_URL: http://127.0.0.1:3100

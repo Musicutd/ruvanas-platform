@@ -4,6 +4,25 @@ This is a non-production implementation record. C8 is **not** approved for
 facility use until its offline, reconnect, rights, cross-facility, player and
 regression gates have passed. Production Auto-Deploy must remain off.
 
+## 9 October local supervised-output bridge update
+
+The local combined application at `d1f44f686f9446379750976493a401c02a7b67ae`
+passed a new real-HTTP software-adapter regression for C4 Guard-supervised
+`IN_REVIEW` output through C7 to a signed C8 manifest. It checks exact content,
+facility scope, independent cloud/device signing identities, protected bytes,
+source tampering, lost historical session linkage and withdrawal both before
+and after resync. A fresh owned loopback PostgreSQL lab applied 131 migrations;
+fixture rows were cleaned up and all app/store/database ports were closed.
+The [C9 readiness ledger](corrections-c9-release-readiness.md) records exact
+test/build/evidence identity and the narrowly patched dependency checks.
+
+This closes a software-coverage gap in the older C8 fixture, which used a
+globally `APPROVED` promo. It does not prove a real recording/render worker,
+browser playback, human listening, physical Edge or two-host TLS. Existing
+dated one-host passes remain valid; the physical two-PC gate is still open.
+No remote device, security setting or production resource was changed, and
+the local changes have not been pushed or deployed.
+
 ## Existing-core audit and reuse decisions (C8A, before new abstractions)
 
 | Existing core | C8 decision |
