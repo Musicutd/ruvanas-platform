@@ -1,8 +1,88 @@
 # Ruvanas Inside C9 — release-readiness gate (draft)
 
-**Decision: BLOCKED for real facility use.** This document is an evidence ledger, not approval to merge, migrate, deploy, enable customers, or change Render settings. It applies to the C9 branch based on C7 `main` commit `0e1deb3f8a36d18bd19574e17c4b6045b534169e`. Draft C8 PR #217 is outside this branch. The plain-language [launch checklist and proposed first-facility pilot plan](corrections-c9-launch-checklist.md) separates the fictional demo from customer release requirements. Green CI alone does not satisfy those requirements.
+**Decision: BLOCKED for real facility use.** This document is an evidence ledger, not approval to merge, migrate, deploy, enable customers, or change Render settings. Historical C9 entries refer to the branch based on C7 `main` commit `0e1deb3f8a36d18bd19574e17c4b6045b534169e`; Draft C8 PR #217 was outside that C9 branch. The dated local combined C8/C9 update below has its own explicit scope. The plain-language [launch checklist and proposed first-facility pilot plan](corrections-c9-launch-checklist.md) separates the fictional demo from customer release requirements. Green CI alone does not satisfy those requirements.
 
-## 5 October 2026 current review snapshot
+## 10 October 2026 local integration history repair
+
+The approved WP1 repair brings audited C9
+`ab84090d149860ed0461306f812bcd63a02d0342` into the local integration
+candidate based on `846bb8fe402b4da909fa710c69fbed0c15c85fda` by an ordinary
+merge. It preserves the five unpublished integration commits and C8 ancestry;
+it is not a merge into `main`, a PR update or a deployment.
+
+The evidence conflict is consolidated in the historical combined-CI section
+below. The add/add supervised-network test retains the local version, including
+every C9 Guard-to-C7 assertion and the additive C8 signed-manifest, protected
+media, revocation and withdrawal checks. The extra explicit CI invocation of
+that same test is removed: `test:acceptance` already selects it through
+`test:integration`, so its assertions still run once in that path.
+
+Application code, schema, migration contents and the locked security patches
+are unchanged by this repair. Only conflict, syntax, ancestry and preservation
+checks are attributed to WP1. No full test suite, disposable database, physical
+Edge lab or new exact-head GitHub check is claimed. WP2 validation and physical
+acceptance remain separate; the code is not release-approved or pushed.
+
+## 9 October 2026 local combined-branch regression update
+
+This dated update concerns the local combined C8/C9 checkout, not a new remote
+PR, production deployment or customer clearance. Its tested application head is
+`d1f44f686f9446379750976493a401c02a7b67ae`. The missing supervised C4-to-C7
+compatibility and `source-map-js` 1.2.2 follow-ups were brought into the combined
+branch locally. Next was narrowly updated to 15.5.27 and the Sharp override to
+0.35.5 with matching locked binaries; the production dependency audit reported
+zero vulnerabilities. No audit threshold was weakened.
+
+The full local unit suite passed: **1,185 passed, eight database-only skips, no
+failures**. Static integrity, Prisma generation/validation and fresh builds
+passed. A newly created, exact-owned, loopback-only PostgreSQL 18 cluster applied
+all **131** migrations. The source-matched web build
+`d1MgqQ42qhojxdV8h6AH1` passed the real C4 submit/independent Guard, C7
+offer/independent acceptance, explicit distribution/window, protected range
+media, synthetic signed proof and source-tampering/withdrawal HTTP regression.
+
+The supervised regression was then extended to the C8 software adapter. A
+separate fictional Super Admin enrolled one target-facility Edge identity with
+a device proof public key distinct from the synthetic cloud signing key. The
+real cloud routes produced a correctly signed, exact-scoped manifest containing
+the pinned media/promo/checksum/window/source revision while the ordinary Studio
+promo remained `IN_REVIEW`. Protected Edge media matched the fixture bytes;
+public access, source tampering and a lost historical session link failed
+closed. Source revocation and distribution withdrawal denied an old media
+entitlement before resync; the next signed manifest omitted it and the old media
+route returned 404. The extended real HTTP test passed with no skipped case.
+Its tested fixture contents have SHA-256
+`749a9eaa8cb4f0892e87f2305440369ac880b48c5dc8682384baedb5905ac7b1`.
+
+Local evidence is in `tmp/c9-network-compatibility-20261009/` at the workspace
+root: `integration-evidence.json` and
+`bridge-1791525780462-evidence.json`. Only date/owned-path and absolute-import
+resolution were mechanically adapted in the local test copies; no CI identity
+was spoofed. The migrations' three QA organisations and 35 public plans were
+preserved. Fictional test rows were cleaned up; app/database exits and closure
+of ports 3188, 9188 and 5550 were independently checked. An initial second-run
+guard stopped before seeding because it expected zero organisation/plan rows;
+review identified those known migration seeds and the corrected guard verifies
+their exact identities/counts. That setup refusal is not an application failure.
+
+The render and delivery proof are synthetic; **this is not** a recording-worker,
+browser playback, human-audibility, physical Edge or two-host TLS pass. Earlier
+one-host audible successes remain valid dated evidence and are not erased or
+renamed as new remaining tests. The C7 supervised test was already selected
+indirectly by the acceptance integration glob; a dedicated CI step now makes
+the C4/C7/C8 bridge explicit. No exact-new-head GitHub result is claimed: these
+changes have not been pushed, merged or deployed.
+
+The authorised Chrome Remote Desktop target is **Home 2nd only**. The browser
+control helper failed before tab access, so no remote device was accessed.
+Neither security prompts nor antivirus/firewall settings were automated.
+Physical two-PC connectivity/offline/reconnect and current human listening
+remain open; customer policy, provider recovery and the separate real-facility
+release gates below remain applicable. Do not restart the expired October 8
+lab or count these software checks as physical acceptance. No production/demo,
+Render, DNS, email, paid-resource or customer-data change occurred.
+
+## 5 October 2026 historical review snapshot
 
 GitHub read-only verification found PRs #217, #218, #220 and #221 open, Draft and unmerged. C9 PR #218 points to `ec19141d0c10f3309fc3ac8f0b137718e2a6cf49`; `validate`, `encoder-image` and `c9-recovery-rehearsal` all passed in [exact-head CI run 37348925292](https://github.com/Musicutd/ruvanas-platform/actions/runs/37348925292). This includes the current shared Studio-source, Newsroom/Learning concurrency, private recording inventory and disposable recovery coverage described below. It does not constitute independent security sign-off or live storage, playback or production acceptance. Remote `main` remains `0e1deb3f8a36d18bd19574e17c4b6045b534169e`.
 
@@ -129,13 +209,13 @@ The new database fixture runs only on disposable CI PostgreSQL, not against a lo
 
 ### 4 October AudioLab storage-cleanup follow-up — Draft-only
 
-An AudioLab completion can copy its final object and then lose the database commit acknowledgement. The old error handler unconditionally deleted that final object, even if a READY media row had committed. Error cleanup now waits on the same project lock used by completion, checks the upload session and exact final storage-key reference after the transaction settles, and retains the object whenever that decision cannot be proved. A disposable-PostgreSQL race test is included to hold completion open while cleanup waits; it must pass in CI before this change is accepted. No live object-store failure has been exercised.
+An AudioLab completion can copy its final object and then lose the database commit acknowledgement. The old error handler unconditionally deleted that final object, even if a READY media row had committed. Error cleanup now waits on the same project lock used by completion, checks the upload session and exact final storage-key reference after the transaction settles, and retains the object whenever that decision cannot be proved. A disposable-PostgreSQL race test holds completion open while cleanup waits. It passed with the C9 Studio boundary step in [exact-head CI run 37218395900](https://github.com/Musicutd/ruvanas-platform/actions/runs/37218395900) at `b98bbb61f9159a305816039eedb261f75ec9a00a`. No live object-store failure has been exercised.
 
-General Studio recording deletion now leaves a tombstoned take pending automatic object-store cleanup until deletion succeeds. The hourly worker retries failed or interrupted deletion; an object-store failure moves that pending retry one hour forward so the oldest failing batch does not starve newer due recordings. The candidate selector excludes currently Corrections-private projects/media, and the locked write rechecks that boundary after waiting for any concurrent private submission. Its isolation is Read Committed so a pre-lock candidate read cannot freeze a stale privacy snapshot. A blocked private recording remains preserved. The disposable-database fixture tests both lock orders, including Corrections becoming private before a deletion retry. After the final adjustment, focused mock-storage tests, the full local unit suite (**1,057 passed, 8 database-only skipped, 0 failed**), static integrity (**1,515 files**) and the build passed. The build retained its existing Studio CSS warning and missing local `DATABASE_URL` messages during static generation. The database races were not run locally; exact-head CI is still required. No schema or migration changed in this follow-up.
+General Studio recording deletion now leaves a tombstoned take pending automatic object-store cleanup until deletion succeeds. The hourly worker retries failed or interrupted deletion; an object-store failure moves that pending retry one hour forward so the oldest failing batch does not starve newer due recordings. The candidate selector excludes currently Corrections-private projects/media, and the locked write rechecks that boundary after waiting for any concurrent private submission. Its isolation is Read Committed so a pre-lock candidate read cannot freeze a stale privacy snapshot. A blocked private recording remains preserved. The disposable-database fixture tests both lock orders, including Corrections becoming private before a deletion retry. The C9 Studio boundary step passed in the same exact-head CI run. After the final adjustment, focused mock-storage tests, the full local unit suite (**1,057 passed, 8 database-only skipped, 0 failed**), static integrity (**1,515 files**) and the build passed. The build retained its existing Studio CSS warning and missing local `DATABASE_URL` messages during static generation. No schema or migration changed in this follow-up.
 
 This does **not** resolve all storage lifecycle risks. A process death after an object copy but before a database row can leave an unreferenced final object; already-tombstoned old rows with no pending marker need log-backed reconciliation. There is no authorised automatic sweep of those historical objects, and neither these tests nor green CI alone would prove production object-store cleanup or release readiness.
 
-The next Draft-only slice adds a bounded, single-organisation, read-only [Studio storage inventory](corrections-c9-studio-storage-inventory.md) for direct AudioLab final objects and old tombstones. It uses exact cross-tenant media-key references, current project/session boundaries, an age floor, HEAD/provenance checks and optional second observations; its output is a restricted evidence report, never a deletion decision. Fictional unit tests and a synthetic-storage/disposable-database case passed in [C9 CI run 37222222253](https://github.com/Musicutd/ruvanas-platform/actions/runs/37222222253) at `51e74cfc3e6f12b45fd685f26e40c2def24ddb2d`. Live R2 behaviour and any production inventory remain unverified. Quarantine/multipart and deleted-organisation prefixes were outside that first slice.
+The next Draft-only slice adds a bounded, single-organisation, read-only [Studio storage inventory](corrections-c9-studio-storage-inventory.md) for direct AudioLab final objects and old tombstones. It uses exact cross-tenant media-key references, current project/media/session boundaries, an age floor, HEAD/provenance checks and optional second observations; its output is a restricted evidence report, never a deletion decision. Fictional unit tests and a synthetic-storage/disposable-database integration case passed in [exact-head C9 CI run 37222222253](https://github.com/Musicutd/ruvanas-platform/actions/runs/37222222253) at `51e74cfc3e6f12b45fd685f26e40c2def24ddb2d`. Live R2 behaviour and any production inventory remain unverified. Quarantine/multipart and deleted-organisation prefixes were outside that first slice.
 
 A further Draft-only [AudioLab upload inventory](corrections-c9-upload-inventory.md) reports bounded quarantine-object and incomplete-multipart pages using exact session identity, current project privacy and global media-key references. It remains read-only and creates no disposal candidates. Its synthetic unit and disposable-database checks passed in [exact-head C9 CI run 37263124109](https://github.com/Musicutd/ruvanas-platform/actions/runs/37263124109) at `3eee66175e2cc526e78992a8c3c9e857c5f0aa43`. Live R2 behaviour and production storage remain unverified. Deleted-organisation prefixes and other products remain outside scope.
 
@@ -177,9 +257,15 @@ New disposable-CI HTTP coverage pairs valid ordinary controls with real C3 sourc
 
 Local validation for this slice passed: **57 focused tests**, the full unit suite (**1,147 passed, 8 database-only skipped, 0 failed**), catalogue/registration checks (**37 passed**), static integrity (**1,540 files**), Prisma schema validation/generation and the build. The build retained the existing Studio CSS warning and refused the intentionally unavailable loopback validation database during static generation; no real database was used. Independent bounded application and fixture reviews found no additional blocker. Disposable database races still require the exact resulting head's GitHub checks; this local evidence is not launch approval.
 
-### C8/C9 combined integration evidence — separate Draft branch
+### C8/C9 combined integration gate — verified Draft CI evidence
 
-C8 and C9 remain separate Draft branches. C9 alone does not include C8's schema or the Edge-only inventory and veto. The separate combined [Draft PR #221](https://github.com/Musicutd/ruvanas-platform/pull/221) includes both test suites and additive migrations, tenant-scoped Edge counts, the generic deletion/retention veto and the synthetic container startup check. Earlier combined head `1b1e132121fd32cffbc373519783a1f72db9babe` passed three jobs in [CI run 37324046057](https://github.com/Musicutd/ruvanas-platform/actions/runs/37324046057). On 5 October, current combined head `c4dc840c68b38760ae79c62d772ae344762aeb2a` passed `validate`, `edge-image`, `encoder-image` and `c9-recovery-rehearsal` in [exact-head CI run 37349168128](https://github.com/Musicutd/ruvanas-platform/actions/runs/37349168128), including disposable-PostgreSQL coverage for an Edge-only synthetic organisation. Offline proof still queued solely on an appliance cannot appear in the cloud inventory. Physical C8 acceptance and the remaining release gates are still open; no combined branch was merged or deployed.
+C8 and C9 remain separate Draft branches. The third, also-Draft integration branch initially combined C8 `ddaea819515664bbce19329a590e9c4d9cc09ba3` with C9 `426f44594ea580149666eee1c5380f7fc3279015`, preserving both sets of CI steps and all additive migrations. The prior combined head `16401a5e0ded5fddc67d3ec7d4d302d01df44b04` passed all three jobs in [CI run 37263733794](https://github.com/Musicutd/ruvanas-platform/actions/runs/37263733794). On 5 October, combined head `ae41e7674f6e26d4ad5d90b51cdbdb9543b2750b`, including C9's private-recording cleanup and C8's browser recovery/proof safeguards, passed `validate`, `edge-image` and `encoder-image` in [CI run 37306401045](https://github.com/Musicutd/ruvanas-platform/actions/runs/37306401045). Its local checks passed 1,103 unit tests with 8 database-only skips and no failures, static integrity on 1,570 files, Prisma schema validation and the build. The database checks and migrations ran only in disposable GitHub CI PostgreSQL.
+
+C8 head `6e0c76c273d3c805657f5ca1fd75da8727cac056` adds a container startup smoke and passed all three jobs in [CI run 37322930889](https://github.com/Musicutd/ruvanas-platform/actions/runs/37322930889). The smoke runs the actual non-root image with a read-only filesystem, an ephemeral synthetic cache and Docker networking disabled. It checks missing provisioning fails startup, and ungranted playback/media, a missing attestation challenge and an untrusted browser origin are rejected. Its loopback HTTP probes do not establish LAN/TLS, signed-manifest playback or audible acceptance. Combined head `1b1e132121fd32cffbc373519783a1f72db9babe`, carrying that same check, passed all three jobs in [CI run 37324046057](https://github.com/Musicutd/ruvanas-platform/actions/runs/37324046057). Verify the current head and its checks on [Draft PR #221](https://github.com/Musicutd/ruvanas-platform/pull/221) before relying on a newer revision.
+
+The integration candidate adds tenant-scoped counts for cloud-stored Edge nodes, signed manifests and raw proof events, plus an explicit Edge-node veto in the shared generic retention-preview and trial-deletion evidence check. Its dedicated synthetic test uses an Edge-only organisation with no Corrections entitlement, facility marker, audit label or shared playback proof. It requires the privacy response to contain no record content, generic retention to create no preview, and trial deletion to return the exact Corrections-evidence error without deleting the node, manifest or proof. This test passed on disposable PostgreSQL in the combined CI runs above; no local database or physical Edge appliance was used. Proof still queued solely on an offline appliance cannot appear in a cloud inventory before reconciliation. The physical C8 acceptance, legal retention, security review and production release gates remain open.
+
+On 5 October, then-published combined head `c4dc840c68b38760ae79c62d772ae344762aeb2a` passed `validate`, `edge-image`, `encoder-image` and `c9-recovery-rehearsal` in [exact-head CI run 37349168128](https://github.com/Musicutd/ruvanas-platform/actions/runs/37349168128), including the Edge-only synthetic organisation regression. C9 alone does not include the C8 schema or this Edge-only inventory and veto. These historical results do not validate a later local integration head, close physical C8 acceptance, or authorise a merge into `main` or production deployment.
 
 | Gate | What is still required | Status |
 | --- | --- | --- |

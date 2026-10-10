@@ -15,7 +15,7 @@ test("Inside inventory counts only one organisation and reveals no record conten
   });
 
   const result = await countCorrectionsPrivacyInventory(database, "tenant-A");
-  assert.equal(calls.length, 23);
+  assert.equal(calls.length, 26);
   assert.deepEqual(Object.keys(result), [
     "contributors", "supervisedSessions", "supervisedStudioProjects", "supervisedStudioVersions",
     "supervisedStudioTakes", "supervisedStudioTracks", "supervisedStudioClips", "supervisedStudioMarkers",
@@ -23,9 +23,10 @@ test("Inside inventory counts only one organisation and reveals no record conten
     "submittedVersions", "reviews",
     "familyRequests", "internalRequests", "requestDecisions", "developmentMilestones",
     "rehabilitationContent", "announcements", "priorityOverrides",
-    "insidePlaybackProofEvents", "insideCompletedProofEvents", "correctionsAuditEvents"
+    "insidePlaybackProofEvents", "insideCompletedProofEvents", "correctionsAuditEvents",
+    "edgeNodes", "edgeSignedManifests", "edgeRawProofEvents"
   ]);
-  assert.deepEqual(Object.values(result), Array.from({ length: 23 }, (_, index) => index + 1));
+  assert.deepEqual(Object.values(result), Array.from({ length: 26 }, (_, index) => index + 1));
   const projectWhere = { organisationId: "tenant-A", correctionsStudioSessions: { some: { organisationId: "tenant-A" } } };
   const projectRelation = { is: projectWhere };
   assert.deepEqual(calls.find(({ model }) => model === "audioProject").input.where, projectWhere);
@@ -51,7 +52,9 @@ test("Inside inventory counts only one organisation and reveals no record conten
   });
   for (const { model, input } of calls) {
     assert.equal(typeof input.where, "object");
-    const scope = model === "correctionsReview" ? input.where.submission?.is?.organisationId
+    const scope = ["correctionsEdgeManifest", "correctionsEdgeProofEvent"].includes(model)
+      ? input.where.node?.is?.organisationId
+      : model === "correctionsReview" ? input.where.submission?.is?.organisationId
       : model === "correctionsContributorMilestone" ? input.where.contributor?.is?.organisationId
         : ["audioProjectVersion", "audioTrack", "audioMarker"].includes(model) ? input.where.project?.is?.organisationId
           : model === "audioClip" ? input.where.track?.is?.project?.is?.organisationId
@@ -68,6 +71,12 @@ test("Inside inventory counts only one organisation and reveals no record conten
   assert.equal(proofQueries[0].eventType, undefined);
   assert.equal(proofQueries[1].eventType, "COMPLETED");
   assert.deepEqual(calls.find(({ model }) => model === "auditLog").input.where.action, { startsWith: "CORRECTIONS_" });
+  assert.deepEqual(calls.find(({ model }) => model === "correctionsEdgeNode").input.where,
+    { organisationId: "tenant-A" });
+  for (const model of ["correctionsEdgeManifest", "correctionsEdgeProofEvent"]) {
+    assert.deepEqual(calls.find((call) => call.model === model).input.where,
+      { node: { is: { organisationId: "tenant-A" } } });
+  }
   assert.equal(JSON.stringify(result).includes("tenant-A"), false);
 });
 

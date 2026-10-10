@@ -109,7 +109,8 @@ test("trial deletion checks every Corrections marker, playback proof and audit e
     "correctionsStudioSessions", "correctionsRequests", "correctionsRehabCategories",
     "correctionsRehabContent", "correctionsDevelopmentModules", "correctionsAnnouncements",
     "correctionsOverrides", "correctionsNetworkGrants", "correctionsNetworkWindows",
-    "correctionsDistributions", "correctionsNetworkAudioDistributions", "correctionsSyndicationOffers"
+    "correctionsDistributions", "correctionsNetworkAudioDistributions", "correctionsSyndicationOffers",
+    "correctionsEdgeNodes"
   ];
   const evidenceCases = [
     { correctionsProfile: { isNot: null } },

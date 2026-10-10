@@ -1,11 +1,17 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
+import { createHash, generateKeyPairSync } from "node:crypto";
 import { correctionsFacilityPermission } from "../../lib/corrections-policy.mjs";
 import { correctionsProgrammePermission, correctionsRenderEvidence, correctionsContributorRenderEvidence,
   correctionsReviewTransition, correctionsSchedulingGate } from "../../lib/corrections-workflow.mjs";
 import { CORRECTIONS_STUDIO_CAPABILITIES, correctionsStudioCan } from "../../lib/corrections-studio-policy.mjs";
 import { correctionsRequestTransition } from "../../lib/corrections-c5-policy.mjs";
 import { createPlaybackProofToken, verifyPlaybackProofToken } from "../../lib/playback-proof.mjs";
+import { signEdgeManifest, verifyEdgeManifest } from "../../lib/corrections-edge-manifest.mjs";
+import { signCorrectionsEdgeProof, verifyCorrectionsEdgeProof, validCorrectionsEdgeProofPayload } from "../../lib/corrections-edge-proof.mjs";
+import { createEdgeCredential, hashEdgeCredential, edgeNodeIsUsable } from "../../lib/corrections-edge-identity.mjs";
+import { resolveCorrectionsEdgePlayback } from "../../edge/resolver.mjs";
+import { localDateTimeParts } from "../../lib/opening-hours.mjs";
+import { countCorrectionsPrivacyInventory } from "../../lib/corrections-privacy-inventory.mjs";
 import { recoveryContainerAddress, assertRecoveryDatabaseUrl } from "../../lib/corrections-recovery-rehearsal-safety.mjs";
 
 const SOURCE = "ruvanas_c9_recovery_source";
@@ -13,11 +19,15 @@ const TARGET = "ruvanas_c9_recovery_target";
 const PREFIX = "fictional-c9-recovery-";
 const TIME = new Date("2026-01-02T10:00:00.000Z");
 const PROOF_SECRET = "fictional-recovery-proof-secret-ci-only-2026";
+const EDGE_CREDENTIAL_SECRET = "fictional-recovery-edge-secret-ci-only-2026";
+const EDGE_NODE_A = "c8recoveryedgea000000000001";
+const EDGE_NODE_B = "c8recoveryedgeb000000000001";
 const MODELS = ["plan", "organisation", "subscription", "organisationMediaProfile", "user", "organisationMember", "location", "zone",
   "correctionsProfile", "correctionsFacility", "correctionsFacilityGrant", "station", "channel", "channelAssignment",
   "player", "correctionsProgramme", "correctionsContributor", "audioProject", "audioProjectVersion", "mediaAsset",
   "promoAsset", "promoVersion", "audioTake", "audioRender", "correctionsStudioSession", "correctionsSubmission",
-  "correctionsReview", "correctionsRequest", "correctionsRequestDecision", "playoutIntent", "proofOfPlayEvent", "auditLog"];
+  "correctionsReview", "correctionsRequest", "correctionsRequestDecision", "correctionsProgrammeDistribution", "correctionsNetworkWindow",
+  "correctionsEdgeNode", "correctionsEdgeManifest", "correctionsEdgeProofEvent", "playoutIntent", "proofOfPlayEvent", "auditLog"];
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 export const RECOVERY_MANIFEST_VERSION = sha256("fictional-recovery-manifest-1").slice(0, 24);
 const id = (name) => `${PREFIX}${name}`;
@@ -97,6 +107,14 @@ export async function seedCorrectionsRecoveryFixture(db, { sourceDatabaseUrl, co
     ? { where: { id: { notIn: MIGRATION_BASELINE[model] } } } : undefined), 0, `Source ${model} table must contain only migration baseline rows.`));
   await fixtureOperation("PUBLIC_PLAN_CATALOGUE", "plan", () => assertPublicPlanCatalogue(db));
   const ids = {}, media = [];
+  // Independent, ephemeral CI-only keys. Only public keys and signatures enter
+  // the recovered database/expected evidence; no private key enters the dump.
+  const cloudKeys = generateKeyPairSync("ed25519");
+  const proofKeysA = generateKeyPairSync("ed25519");
+  const proofKeysB = generateKeyPairSync("ed25519");
+  const publicPem = (keys) => keys.publicKey.export({ type: "spki", format: "pem" });
+  const privatePem = (keys) => keys.privateKey.export({ type: "pkcs8", format: "pem" });
+  const cloudPublicKeyPem = publicPem(cloudKeys);
   await fixtureOperation("TRANSACTION", null, () => db.$transaction(async (tx) => {
     const make = async (model, label, data) => {
       ids[label] = id(label);
@@ -188,14 +206,90 @@ export async function seedCorrectionsRecoveryFixture(db, { sourceDatabaseUrl, co
       ["audit-schedule", "CORRECTIONS_REQUEST_SCHEDULED", ids["request-pending"], { intentId: ids["intent-request-pending"] }],
       ["audit-delivery", "CORRECTIONS_REQUEST_DELIVERY_CONFIRMED", ids["request-delivered"], { intentId: ids["intent-request-delivered"], proofEventId: id("client-proof-completed") }]])
       await make("auditLog", label, { organisationId: scope.organisationId, actorUserId: ids["owner-a"], action, entityType: action.includes("PROGRAMME") ? "CorrectionsProgramme" : "CorrectionsRequest", entityId, details, createdAt: at(300) });
+
+    // Historical, signed C8 interrupted playback evidence for the same
+    // reviewed source. B has its own facility and proof identity but no content.
+    const submission = await fixtureOperation("LOOKUP", "correctionsSubmission", () => tx.correctionsSubmission.findUnique({ where: { id: ids["submission-2"] } }));
+    await make("correctionsProgrammeDistribution", "edge-distribution", { organisationId: scope.organisationId,
+      sourceFacilityId: scope.facilityId, targetFacilityId: scope.facilityId, programmeId: ids.programme,
+      submissionId: submission.id, effectiveFrom: at(-300), createdByUserId: ids["owner-a"], createdAt: at(-300) });
+    const edgeLocal = localDateTimeParts(at(2), "Europe/Malta");
+    await make("correctionsNetworkWindow", "edge-window", { organisationId: scope.organisationId, facilityId: scope.facilityId,
+      kind: "CENTRAL", distributionId: ids["edge-distribution"], weekday: edgeLocal.weekday,
+      startMinute: 0, endMinute: 1440, allowedContentTypes: ["PROGRAMME"], createdByUserId: ids["owner-a"] });
+    const content = { mediaAssetId: ids["render-media-2"], promoVersionId: ids["promo-version-2"],
+      sha256: media[2].checksumSha256, sizeBytes: media[2].sizeBytes, mimeType: "audio/wav", durationSeconds: 2,
+      rightsUse: "CORRECTIONS_RADIO", sourceType: "PROGRAMME" };
+    const contentKey = `${content.mediaAssetId}:${content.promoVersionId}:${content.sha256}`;
+    const sourceRevision = `c7:${ids["edge-window"]}:${ids["edge-distribution"]}:${submission.id}:${submission.sourceFingerprint}`;
+    const signedWindow = { id: ids["edge-window"], facilityId: scope.facilityId, kind: "CENTRAL", mandatory: false,
+      weekday: edgeLocal.weekday, startMinute: 0, endMinute: 1440, distributionId: ids["edge-distribution"],
+      contentKey, sourceRevision, programmingSource: "CORRECTIONS_CENTRAL", effectiveFrom: at(-300).toISOString(), effectiveUntil: null };
+    async function makeEdgeNode(label, nodeId, organisationId, facilityId, keys) {
+      ids[label] = nodeId;
+      const credential = createEdgeCredential(nodeId);
+      return fixtureOperation("CREATE", "correctionsEdgeNode", () => tx.correctionsEdgeNode.create({ data: {
+        id: nodeId, organisationId, facilityId, name: `Fictional recovery ${label}`, status: "ACTIVE",
+        credentialHash: hashEdgeCredential(credential, EDGE_CREDENTIAL_SECRET), proofPublicKeyPem: publicPem(keys),
+        keyVersion: 1, enrolledAt: TIME, lastSeenAt: at(1), lastSyncAt: at(1), lastSuccessfulSyncAt: at(1)
+      } }));
+    }
+    await makeEdgeNode("edge-node-a", EDGE_NODE_A, scope.organisationId, scope.facilityId, proofKeysA);
+    await makeEdgeNode("edge-node-b", EDGE_NODE_B, ids["org-b"], ids["facility-b"], proofKeysB);
+    const sharedManifest = { schema: 1, sequence: 1, issuedAt: TIME.toISOString(), validUntil: at(86_400).toISOString(),
+      timezone: "Europe/Malta", territoryCode: "MT", policy: { centralVersion: 1, facilityVersion: 1 }, insertions: [], overrides: [] };
+    const signedA = signEdgeManifest({ ...sharedManifest, nodeId: EDGE_NODE_A, ...scope,
+      zones: [{ id: ids["zone-facility-a"], channelId: ids.channel, playerIds: [ids.player] }],
+      windows: [signedWindow], content: [content] }, privatePem(cloudKeys));
+    const signedB = signEdgeManifest({ ...sharedManifest, nodeId: EDGE_NODE_B,
+      organisationId: ids["org-b"], facilityId: ids["facility-b"], zones: [], windows: [], content: [] }, privatePem(cloudKeys));
+    for (const [label, nodeId, signed] of [["edge-manifest-a", EDGE_NODE_A, signedA], ["edge-manifest-b", EDGE_NODE_B, signedB]])
+      await make("correctionsEdgeManifest", label, { nodeId, sequence: 1, version: signed.version,
+        payload: signed.payload, signature: signed.signature, validFrom: TIME, validUntil: at(86_400), createdAt: TIME });
+
+    const sessionId = "5df6fb15-f73b-4c34-b359-bcae7f53f908";
+    const baseProof = { schema: 1, nodeId: EDGE_NODE_A, ...scope, zoneId: ids["zone-facility-a"], playerId: ids.player,
+      sessionId, manifestVersion: signedA.version, contentKey, programmingSource: signedWindow.programmingSource,
+      windowId: signedWindow.id, overrideId: null };
+    const started = signCorrectionsEdgeProof(1, null, { ...baseProof, eventId: "2d8ba00c-6aa0-4fb8-a04e-95017484f177",
+      eventType: "STARTED", occurredAt: at(2).toISOString(), positionSeconds: 0 }, privatePem(proofKeysA));
+    const interrupted = signCorrectionsEdgeProof(2, started.eventHash, { ...baseProof,
+      eventId: "53220f20-8af0-4300-a929-f909824338b4", eventType: "INTERRUPTED",
+      occurredAt: at(4).toISOString(), positionSeconds: 0 }, privatePem(proofKeysA));
+    await make("playoutIntent", "edge-intent", { organisationId: scope.organisationId,
+      scheduleItemId: sha256(`c8:${EDGE_NODE_A}:${sessionId}`), playerId: ids.player, zoneId: ids["zone-facility-a"],
+      channelId: ids.channel, mediaAssetId: content.mediaAssetId, promoVersionId: content.promoVersionId,
+      locationId: scope.facilityId, locationName: "Fictional facility-a", locationTimezone: "Europe/Malta", locationGroups: [],
+      publicationRevision: 1, sourceRevision, plannedStart: at(2), expiresAt: at(86_400),
+      correctionsProgrammeId: ids.programme, correctionsSubmissionId: submission.id });
+    for (const [label, record] of [["edge-started", started], ["edge-interrupted", interrupted]]) {
+      await make("proofOfPlayEvent", `edge-shared-${label}`, { organisationId: scope.organisationId,
+        clientEventId: record.payload.eventId, playerId: ids.player, zoneId: ids["zone-facility-a"], channelId: ids.channel,
+        scheduleItemId: sha256(`c8:${EDGE_NODE_A}:${sessionId}`), itemType: "CORRECTIONS_AUDIO",
+        playoutIntentId: ids["edge-intent"], mediaAssetId: content.mediaAssetId, promoVersionId: content.promoVersionId,
+        manifestVersion: signedA.version.slice(0, 24), programmingSource: signedWindow.programmingSource,
+        eventType: record.payload.eventType, occurredAt: new Date(record.payload.occurredAt), positionSeconds: 0,
+        failureReason: record.payload.eventType === "INTERRUPTED" ? "Edge player reported interruption" : null,
+        playerName: "Fictional player", locationName: "Fictional facility-a", zoneName: "Fictional facility-a zone",
+        trackTitle: "Fictional reviewed programme", trackArtist: "Fictional contributor" });
+      await make("correctionsEdgeProofEvent", `edge-raw-${label}`, { nodeId: EDGE_NODE_A, sequence: record.sequence,
+        eventId: record.payload.eventId, previousHash: record.previousHash, eventHash: record.eventHash,
+        signature: record.signature, payload: record.payload, occurredAt: new Date(record.payload.occurredAt),
+        receivedAt: at(300), proofOfPlayEventId: ids[`edge-shared-${label}`] });
+    }
+    await fixtureOperation("CHECKPOINT", "correctionsEdgeNode", () => tx.correctionsEdgeNode.update({ where: { id: EDGE_NODE_A },
+      data: { lastProofSequence: 2, lastProofHash: interrupted.eventHash, pendingProofCount: 0 } }));
   }, { timeout: 60_000 }));
-  return { fixtureVersion: 1, ids, rowDigests: await fixtureOperation("DIGEST_CAPTURE", null, () => digests(db)), media,
-    checks: ["exact-row-digests", "public-plan-catalogue", "tenant-and-facility-isolation", "contributor-capabilities", "studio-and-review-history", "delivery-proof-and-audit"] };
+  return { fixtureVersion: 2, ids, rowDigests: await fixtureOperation("DIGEST_CAPTURE", null, () => digests(db)), media,
+    edgeCloudPublicKeyPem: cloudPublicKeyPem,
+    checks: ["exact-row-digests", "public-plan-catalogue", "tenant-and-facility-isolation", "contributor-capabilities", "studio-and-review-history",
+      "delivery-proof-and-audit", "edge-signed-authority-and-scope", "edge-raw-proof-chain-and-replay-anchors",
+      "edge-privacy-inventory-counts", "edge-no-false-completion"] };
 }
 
 export async function assertCorrectionsRecoveryFixture(db, expected) {
   assert.equal(await databaseName(db), TARGET, "Recovery assertions require the dedicated restored target.");
-  assert.equal(expected.fixtureVersion, 1);
+  assert.equal(expected.fixtureVersion, 2);
   assert.deepEqual(await digests(db), expected.rowDigests, "All restored IDs, fields, relationships and history must match the source digests.");
   await assertPublicPlanCatalogue(db);
   const ids = expected.ids, get = (model, label, include) => db[model].findUnique({ where: { id: ids[label] }, ...(include ? { include } : {}) });
@@ -250,5 +344,128 @@ export async function assertCorrectionsRecoveryFixture(db, expected) {
   const audit = await get("auditLog", "audit-delivery");
   assert.equal(audit.entityId, delivered.id); assert.equal(audit.details.proofEventId, proof.clientEventId);
   assert.equal(audit.details.intentId, proof.playoutIntentId);
+  const nodeA = await get("correctionsEdgeNode", "edge-node-a", { facility: { include: { correctionsFacility: true } } });
+  const nodeB = await get("correctionsEdgeNode", "edge-node-b", { facility: { include: { correctionsFacility: true } } });
+  assert.ok(nodeA && nodeB, "Both known synthetic Edge identities must survive restore.");
+  assert.equal(nodeA.id, EDGE_NODE_A); assert.equal(nodeB.id, EDGE_NODE_B);
+  assert.equal(edgeNodeIsUsable(nodeA, at(3)), true); assert.equal(edgeNodeIsUsable(nodeB, at(3)), true);
+  assert.equal(edgeNodeIsUsable({ ...nodeA, status: "REVOKED", revokedAt: at(2) }, at(3)), false);
+  assert.equal(nodeA.organisationId, ids["org-a"]); assert.equal(nodeA.facilityId, ids["facility-a"]);
+  assert.equal(nodeB.organisationId, ids["org-b"]); assert.equal(nodeB.facilityId, ids["facility-b"]);
+  assert.notEqual(nodeA.proofPublicKeyPem, nodeB.proofPublicKeyPem);
+  assert.notEqual(nodeA.proofPublicKeyPem, expected.edgeCloudPublicKeyPem);
+  assert.equal(await db.correctionsEdgeNode.count({ where: { organisationId: ids["org-a"] } }), 1);
+  assert.equal(await db.correctionsEdgeNode.count({ where: { organisationId: ids["org-b"] } }), 1);
+  assert.equal(await db.correctionsEdgeNode.count({ where: { facilityId: ids["facility-a-other"] } }), 0);
+  const inventoryA = await countCorrectionsPrivacyInventory(db, ids["org-a"]);
+  const inventoryB = await countCorrectionsPrivacyInventory(db, ids["org-b"]);
+  for (const inventory of [inventoryA, inventoryB]) {
+    assert.equal(Object.keys(inventory).length, 26, "Privacy inventory remains a 26-field count summary.");
+    assert.equal(Object.values(inventory).every((value) => Number.isSafeInteger(value) && value >= 0), true,
+      "Privacy inventory cannot contain record fields or identifiers.");
+  }
+  assert.deepEqual([inventoryA.edgeNodes, inventoryA.edgeSignedManifests, inventoryA.edgeRawProofEvents], [1, 1, 2]);
+  assert.deepEqual([inventoryB.edgeNodes, inventoryB.edgeSignedManifests, inventoryB.edgeRawProofEvents], [1, 1, 0]);
+
+  const manifestA = await get("correctionsEdgeManifest", "edge-manifest-a");
+  const manifestB = await get("correctionsEdgeManifest", "edge-manifest-b");
+  assert.ok(manifestA && manifestB, "Both known signed snapshots must survive restore.");
+  const envelopeA = { payload: manifestA.payload, version: manifestA.version, signature: manifestA.signature };
+  const envelopeB = { payload: manifestB.payload, version: manifestB.version, signature: manifestB.signature };
+  const scopeA = { nodeId: nodeA.id, organisationId: nodeA.organisationId, facilityId: nodeA.facilityId };
+  const scopeB = { nodeId: nodeB.id, organisationId: nodeB.organisationId, facilityId: nodeB.facilityId };
+  assert.equal(verifyEdgeManifest(envelopeA, expected.edgeCloudPublicKeyPem, scopeA, { now: at(3) }), true);
+  assert.equal(verifyEdgeManifest(envelopeB, expected.edgeCloudPublicKeyPem, scopeB, { now: at(3) }), true);
+  assert.equal(verifyEdgeManifest(envelopeA, nodeA.proofPublicKeyPem, scopeA, { now: at(3) }), false);
+  assert.equal(verifyEdgeManifest(envelopeA, expected.edgeCloudPublicKeyPem, scopeB, { now: at(3) }), false);
+  assert.equal(verifyEdgeManifest(envelopeA, expected.edgeCloudPublicKeyPem,
+    { ...scopeA, facilityId: ids["facility-a-other"] }, { now: at(3) }), false);
+  assert.equal(verifyEdgeManifest(envelopeA, expected.edgeCloudPublicKeyPem, scopeA, { now: at(86_401) }), false);
+  assert.equal(verifyEdgeManifest({ ...envelopeA, payload: { ...envelopeA.payload, content: [] } },
+    expected.edgeCloudPublicKeyPem, scopeA, { now: at(3) }), false);
+  assert.equal(manifestA.nodeId, nodeA.id); assert.equal(manifestB.nodeId, nodeB.id);
+  assert.equal(manifestA.sequence, 1); assert.equal(manifestB.sequence, 1);
+  assert.deepEqual(manifestB.payload.content, []); assert.deepEqual(manifestB.payload.windows, []);
+  assert.equal(await db.correctionsEdgeManifest.count({ where: { node: { organisationId: ids["org-a"] } } }), 1);
+  assert.equal(await db.correctionsEdgeManifest.count({ where: { node: { organisationId: ids["org-b"] } } }), 1);
+  const distribution = await get("correctionsProgrammeDistribution", "edge-distribution");
+  const edgeWindow = await get("correctionsNetworkWindow", "edge-window");
+  const exactMedia = expected.media.find((item) => item.mediaAssetId === ids["render-media-2"]);
+  assert.ok(distribution && edgeWindow && exactMedia);
+  assert.equal(distribution.programmeId, ids.programme); assert.equal(distribution.submissionId, ids["submission-2"]);
+  assert.equal(distribution.organisationId, nodeA.organisationId); assert.equal(distribution.targetFacilityId, nodeA.facilityId);
+  assert.equal(edgeWindow.distributionId, distribution.id); assert.equal(edgeWindow.facilityId, nodeA.facilityId);
+  assert.equal(manifestA.payload.windows.length, 1); assert.equal(manifestA.payload.content.length, 1);
+  assert.equal(manifestA.payload.windows[0].id, edgeWindow.id);
+  assert.equal(manifestA.payload.windows[0].distributionId, distribution.id);
+  assert.equal(manifestA.payload.content[0].mediaAssetId, exactMedia.mediaAssetId);
+  assert.equal(manifestA.payload.content[0].promoVersionId, ids["promo-version-2"]);
+  assert.equal(manifestA.payload.content[0].sha256, exactMedia.checksumSha256);
+  assert.equal(manifestA.payload.content[0].sizeBytes, exactMedia.sizeBytes);
+  const resolved = resolveCorrectionsEdgePlayback(manifestA.payload,
+    { zoneId: ids["zone-facility-a"], playerId: ids.player, instant: at(3) });
+  assert.equal(resolved.state, "READY"); assert.equal(resolved.source, "CORRECTIONS_CENTRAL");
+  assert.equal(resolved.windowId, edgeWindow.id);
+  assert.equal(resolved.contentKey, `${exactMedia.mediaAssetId}:${ids["promo-version-2"]}:${exactMedia.checksumSha256}`);
+  assert.equal(resolveCorrectionsEdgePlayback(manifestA.payload,
+    { zoneId: ids["zone-facility-b"], playerId: ids.player, instant: at(3) }).state, "PLAYER_NOT_AUTHORISED");
+  assert.equal(resolveCorrectionsEdgePlayback(manifestA.payload,
+    { zoneId: ids["zone-facility-a"], playerId: ids.player, instant: at(86_401) }).state, "EXPIRED_OR_UNAVAILABLE");
+
+  const edgeIntent = await get("playoutIntent", "edge-intent");
+  assert.ok(edgeIntent, "The synthetic Edge playout intent must survive restore.");
+  assert.equal(edgeIntent.sourceRevision, manifestA.payload.windows[0].sourceRevision);
+  const raw = await db.correctionsEdgeProofEvent.findMany({ where: { nodeId: nodeA.id }, orderBy: { sequence: "asc" } });
+  assert.equal(raw.length, 2, "A known nonempty raw Edge chain must survive restore.");
+  assert.equal(edgeIntent.scheduleItemId, sha256(`c8:${nodeA.id}:${raw[0].payload.sessionId}`));
+  assert.equal(await db.correctionsEdgeProofEvent.count({ where: { nodeId: nodeB.id } }), 0);
+  assert.equal(await db.correctionsEdgeProofEvent.count({ where: { node: { organisationId: ids["org-a"] } } }), 2);
+  assert.equal(await db.correctionsEdgeProofEvent.count({ where: { node: { organisationId: ids["org-b"] } } }), 0);
+  let previousHash = null;
+  for (const [index, row] of raw.entries()) {
+    const record = { sequence: row.sequence, previousHash: row.previousHash, payload: row.payload,
+      eventHash: row.eventHash, signature: row.signature };
+    assert.equal(row.sequence, index + 1); assert.equal(row.previousHash, previousHash);
+    assert.equal(row.eventId, row.payload.eventId); assert.equal(row.payload.manifestVersion, manifestA.version);
+    assert.equal(row.payload.zoneId, ids["zone-facility-a"]); assert.equal(row.payload.playerId, ids.player);
+    assert.equal(row.payload.sessionId, raw[0].payload.sessionId);
+    assert.equal(row.payload.contentKey, resolved.contentKey);
+    assert.equal(row.payload.windowId, manifestA.payload.windows[0].id);
+    assert.equal(row.payload.programmingSource, manifestA.payload.windows[0].programmingSource);
+    assert.equal(row.occurredAt.getTime(), Date.parse(row.payload.occurredAt));
+    assert.equal(validCorrectionsEdgeProofPayload(row.payload, scopeA), true);
+    assert.equal(validCorrectionsEdgeProofPayload(row.payload, scopeB), false);
+    assert.equal(verifyCorrectionsEdgeProof(record, nodeA.proofPublicKeyPem,
+      { sequence: index + 1, previousHash }), true);
+    assert.equal(verifyCorrectionsEdgeProof(record, nodeB.proofPublicKeyPem,
+      { sequence: index + 1, previousHash }), false);
+    assert.equal(verifyCorrectionsEdgeProof({ ...record, payload: { ...row.payload, eventType: "COMPLETED" } },
+      nodeA.proofPublicKeyPem, { sequence: index + 1, previousHash }), false);
+    const bySequence = await db.correctionsEdgeProofEvent.findUnique({ where: {
+      nodeId_sequence: { nodeId: nodeA.id, sequence: row.sequence } } });
+    assert.equal(bySequence.id, row.id, "The restored sequence remains a stable replay anchor.");
+    assert.equal(await db.correctionsEdgeProofEvent.count({ where: { eventId: row.eventId } }), 1);
+    const shared = await db.proofOfPlayEvent.findUnique({ where: { id: row.proofOfPlayEventId } });
+    assert.ok(shared, "Every accepted raw proof retains its materialised shared evidence.");
+    assert.equal(shared.clientEventId, row.eventId); assert.equal(shared.eventType, row.payload.eventType);
+    assert.equal(shared.manifestVersion, manifestA.version.slice(0, 24));
+    assert.equal(shared.playerId, row.payload.playerId); assert.equal(shared.zoneId, row.payload.zoneId);
+    assert.equal(shared.playoutIntentId, edgeIntent.id);
+    assert.equal(shared.organisationId, nodeA.organisationId);
+    assert.equal(shared.mediaAssetId, manifestA.payload.content[0].mediaAssetId);
+    assert.equal(shared.promoVersionId, manifestA.payload.content[0].promoVersionId);
+    assert.equal(shared.channelId, ids.channel);
+    assert.equal(shared.scheduleItemId, edgeIntent.scheduleItemId);
+    assert.equal(shared.programmingSource, row.payload.programmingSource);
+    assert.equal(shared.occurredAt.getTime(), row.occurredAt.getTime());
+    assert.equal(shared.positionSeconds, row.payload.positionSeconds);
+    previousHash = row.eventHash;
+  }
+  assert.deepEqual(raw.map((row) => row.payload.eventType), ["STARTED", "INTERRUPTED"]);
+  assert.equal(nodeA.lastProofSequence, 2); assert.equal(nodeA.lastProofHash, previousHash);
+  assert.equal(edgeIntent.organisationId, nodeA.organisationId);
+  assert.equal(edgeIntent.locationId, nodeA.facilityId);
+  assert.equal(edgeIntent.correctionsRequestId, null, "An interrupted Edge session cannot complete a C5 request.");
+  assert.equal(await db.proofOfPlayEvent.count({ where: { playoutIntentId: edgeIntent.id, eventType: "COMPLETED" } }), 0);
   return { passed: true, checks: expected.checks, rowCount: Object.values(expected.rowDigests).reduce((sum, rows) => sum + rows.length, 0), mediaCount: expected.media.length };
 }

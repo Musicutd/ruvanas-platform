@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, createPrivateKey, createPublicKey, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import test from "node:test";
 import bcrypt from "bcryptjs";
@@ -7,10 +7,13 @@ import { PrismaClient } from "@prisma/client";
 import { hashPlayerToken } from "../../lib/player-tokens.mjs";
 import { localDateTimeParts } from "../../lib/opening-hours.mjs";
 import { assertStudioRenderReady } from "../../lib/studio-product-handoff.mjs";
+import { verifyEdgeManifest } from "../../lib/corrections-edge-manifest.mjs";
 
 // This is a disposable HTTP compatibility fixture, not an audible validation.
 // Only the immutable Studio output is simulated; submission, Guard review,
 // syndication, targeting, private media, and signed proof use real app routes.
+// The C8 bridge below verifies software signing/authorisation, not a physical
+// Edge, browser playback, human audibility, or the recording/render worker.
 const ciUrl = "postgresql://postgres:postgres@localhost:5432/ruvanas";
 const localUrl = "postgresql://c9networklab@127.0.0.1:5550/ruvanas_c9_network_20261006";
 const ciBase = "http://127.0.0.1:3100";
@@ -22,6 +25,14 @@ const local = process.env.C9_LOCAL_NETWORK_INTEGRATION === "fictional-20261006" 
   databaseUrl === localUrl && baseUrl === localBase;
 const mediaPort = local ? 9188 : 9107;
 const bucket = local ? "c9-local-test" : "c7-test";
+const cloudTestKey = createPrivateKey({ key: Buffer.concat([
+  Buffer.from("302e020100300506032b657004220420", "hex"), Buffer.alloc(32, 7)
+]), format: "der", type: "pkcs8" });
+const cloudTestPublicKey = createPublicKey(cloudTestKey).export({ type: "spki", format: "pem" });
+const deviceTestKey = createPrivateKey({ key: Buffer.concat([
+  Buffer.from("302e020100300506032b657004220420", "hex"), Buffer.alloc(32, 8)
+]), format: "der", type: "pkcs8" });
+const deviceTestPublicKey = createPublicKey(deviceTestKey).export({ type: "spki", format: "pem" });
 
 function wavTone() {
   const samples = 8000 * 30;
@@ -36,9 +47,10 @@ function wavTone() {
   return bytes;
 }
 
-async function api(path, { method = "GET", body, cookie, instanceId } = {}) {
-  const response = await fetch(`${baseUrl}${path}`, { method, headers: { origin: baseUrl,
+async function api(path, { method = "GET", body, cookie, instanceId, machine, noOrigin = false } = {}) {
+  const response = await fetch(`${baseUrl}${path}`, { method, headers: { ...(noOrigin ? {} : { origin: baseUrl }),
     ...(body === undefined ? {} : { "content-type": "application/json" }),
+    ...(machine ? { authorization: `Bearer ${machine}` } : {}),
     ...(cookie ? { cookie } : {}), ...(instanceId ? { "x-ruvanas-player-instance": instanceId } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body) });
   return { status: response.status, body: await response.json(), cookie: response.headers.get("set-cookie")?.split(";")[0] };
@@ -49,7 +61,7 @@ function status(response, expected, context) {
   return response.body;
 }
 
-test("C4 pending supervised render requires Guard before C7 private syndication and playback", async () => {
+test("C4 Guard-supervised IN_REVIEW output reaches C7 player and C8 signed manifest only while authorised", async () => {
   if ((!ci && !local) || !process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 32) {
     throw new Error("C4-to-C7 HTTP integration requires the exact owned CI or local disposable database and loopback app.");
   }
@@ -104,6 +116,14 @@ test("C4 pending supervised render requires Guard before C7 private syndication 
     }
     const owner = await member("OWNER", "c9-central-owner");
     const manager = await member("MANAGER", "c9-origin-manager");
+    // A separate synthetic platform administrator creates the Edge identity;
+    // ordinary facility staff are not granted this platform-only capability.
+    const adminUser = await db.user.create({ data: { name: "Fictional Edge administrator",
+      email: `c9-edge-admin-${suffix}@example.invalid`, passwordHash: await bcrypt.hash(password, 4), role: "SUPER_ADMIN" } });
+    users.push(adminUser);
+    const adminLogin = await api("/api/auth/login", { method: "POST", body: { email: adminUser.email, password } });
+    status(adminLogin, 200, "separate Edge administrator login");
+    assert.ok(adminLogin.cookie);
     const facilities = [];
     for (const label of ["A", "B"]) facilities.push(await db.location.create({ data: {
       organisationId: organisation.id, name: `Fictional Facility ${label}`, slug: `c9-network-${label.toLowerCase()}-${suffix}`,
@@ -249,6 +269,47 @@ test("C4 pending supervised render requires Guard before C7 private syndication 
     const fetched = Buffer.from(await mediaResponse.arrayBuffer());
     assert.equal(fetched.toString("ascii", 0, 4), "RIFF");
     assert.deepEqual(fetched, wav.subarray(0, 16044));
+    // Exercise the real C8 adapter against the exact C4-supervised submission,
+    // without globally approving the ordinary Studio promo or starting an Edge.
+    const createdEdge = status(await api("/api/admin/corrections/edge", { method: "POST", cookie: adminLogin.cookie,
+      body: { organisationId: organisation.id, facilityId: target, name: "Fictional supervised-output Edge" } }),
+    201, "synthetic target Edge identity");
+    const enrolledEdge = status(await api("/api/corrections/edge/enrol", { method: "POST", noOrigin: true,
+      machine: createdEdge.enrolmentCredential, body: { enrolmentCredential: createdEdge.enrolmentCredential,
+        proofPublicKeyPem: deviceTestPublicKey } }), 200, "synthetic target Edge enrolment");
+    const edgeScope = { nodeId: createdEdge.nodeId, organisationId: organisation.id, facilityId: target };
+    async function edgeManifest(context) {
+      const signed = status(await api("/api/corrections/edge/manifest", { machine: enrolledEdge.machineCredential }),
+        200, context);
+      assert.equal(verifyEdgeManifest(signed, cloudTestPublicKey, edgeScope), true,
+        `${context}: real C8 signature and exact scope must verify`);
+      assert.equal(verifyEdgeManifest(signed, deviceTestPublicKey, edgeScope), false,
+        `${context}: the device proof identity cannot impersonate the cloud signer`);
+      return signed;
+    }
+    const signed = await edgeManifest("supervised C8 manifest");
+    assert.equal(signed.payload.content.length, 1);
+    assert.deepEqual(signed.payload.content[0], { mediaAssetId: output.id, promoVersionId: promoVersion.id,
+      sha256: checksum, sizeBytes: wav.length, mimeType: "audio/wav", durationSeconds: 30,
+      rightsUse: "CORRECTIONS_RADIO", sourceType: "PROGRAMME" });
+    assert.equal(signed.payload.windows.length, 1);
+    const signedWindow = signed.payload.windows[0];
+    assert.equal(signedWindow.facilityId, target);
+    assert.equal(signedWindow.distributionId, distributionId);
+    assert.equal(signedWindow.programmingSource, "CORRECTIONS_SYNDICATED");
+    assert.equal(signedWindow.contentKey, `${output.id}:${promoVersion.id}:${checksum}`);
+    assert.equal(signedWindow.sourceRevision,
+      `c7:${signedWindow.id}:${distributionId}:${submitted.id}:${pinned.sourceFingerprint}`);
+    assert.equal(verifyEdgeManifest(signed, cloudTestPublicKey, { ...edgeScope, facilityId: facilities[0].id }), false,
+      "the target B envelope cannot be relabelled as facility A");
+    assert.equal((await db.promoVersion.findUnique({ where: { id: promoVersion.id } })).status, "IN_REVIEW",
+      "C8 must use Guard approval, not silently grant an ordinary Studio approval");
+    const edgeMediaUrl = `${baseUrl}/api/corrections/edge/media/${output.id}`;
+    const edgeHeaders = { authorization: `Bearer ${enrolledEdge.machineCredential}` };
+    const edgeMedia = await fetch(edgeMediaUrl, { headers: edgeHeaders });
+    assert.equal(edgeMedia.status, 200, "the enrolled Edge can fetch only its authorised immutable output");
+    assert.deepEqual(Buffer.from(await edgeMedia.arrayBuffer()), wav);
+    assert.equal((await fetch(edgeMediaUrl)).status, 401, "Edge media is not public");
     const event = { eventId: randomUUID(), manifestVersion: current.version, proofToken: insertion.proofToken,
       programmingSourceProofToken: insertion.programmingSourceProofToken, scheduleItemId: insertion.scheduleItemId,
       itemType: "CORRECTIONS_AUDIO", programmingSource: "CORRECTIONS_SYNDICATED", eventType: "COMPLETED",
@@ -263,22 +324,37 @@ test("C4 pending supervised render requires Guard before C7 private syndication 
     // Source revocation and historical-binding tampering fail closed at
     // playback. Restore only this disposable fixture's own rows after each.
     await db.audioTake.update({ where: { id: take.id }, data: { trashedAt: new Date() } });
+    assert.equal((await fetch(edgeMediaUrl, { headers: edgeHeaders })).status, 403,
+      "C8 rechecks revoked source before a new manifest is requested");
+    assert.equal((await edgeManifest("trashed-source C8 manifest")).payload.content.length, 0);
     assert.ok(!(status(await manifest(), 200, "trashed-source manifest").insertions || []).some((item) =>
       item.programmingSource === "CORRECTIONS_SYNDICATED"));
     await db.audioTake.update({ where: { id: take.id }, data: { trashedAt: null } });
     await db.correctionsSubmission.update({ where: { id: submitted.id }, data: { sourceFingerprint: "f".repeat(64) } });
+    assert.equal((await edgeManifest("tampered-fingerprint C8 manifest")).payload.content.length, 0);
     assert.ok(!(status(await manifest(), 200, "tampered-fingerprint manifest").insertions || []).some((item) =>
       item.programmingSource === "CORRECTIONS_SYNDICATED"));
     await db.correctionsSubmission.update({ where: { id: submitted.id }, data: { sourceFingerprint: pinned.sourceFingerprint } });
     await db.correctionsSubmission.update({ where: { id: submitted.id }, data: { studioSessionId: null } });
+    assert.equal((await edgeManifest("lost-session-link C8 manifest")).payload.content.length, 0);
     assert.ok(!(status(await manifest(), 200, "lost-session-link manifest").insertions || []).some((item) =>
       item.programmingSource === "CORRECTIONS_SYNDICATED"));
     await db.correctionsSubmission.update({ where: { id: submitted.id }, data: { studioSessionId: session.id } });
+    const restoredEdge = await edgeManifest("restored supervised C8 manifest");
+    assert.deepEqual(restoredEdge.payload.content, signed.payload.content);
+    assert.ok(restoredEdge.payload.sequence > signed.payload.sequence, "revocation and restoration advance the signed sequence");
     assert.ok(status(await manifest(), 200, "restored private manifest").insertions.some((item) =>
       item.programmingSource === "CORRECTIONS_SYNDICATED"));
 
     status(await api(`/api/corrections/network/distribution/${distributionId}`, { method: "DELETE", cookie: owner.cookie }),
       200, "distribution withdrawal");
+    assert.equal((await fetch(edgeMediaUrl, { headers: edgeHeaders })).status, 403,
+      "withdrawal denies an old signed media entitlement before resync");
+    const withdrawnEdge = await edgeManifest("withdrawn supervised C8 manifest");
+    assert.deepEqual(withdrawnEdge.payload.content, []);
+    assert.deepEqual(withdrawnEdge.payload.windows, []);
+    assert.equal((await fetch(edgeMediaUrl, { headers: edgeHeaders })).status, 404,
+      "after resync the old media is absent from the current signed manifest");
     assert.ok(!(status(await manifest(), 200, "withdrawn private manifest").insertions || []).some((item) =>
       item.programmingSource === "CORRECTIONS_SYNDICATED"));
     assert.equal((await fetch(new URL(insertion.mediaUrl, baseUrl), { headers: { cookie: playerCookie } })).status, 404,
@@ -292,6 +368,8 @@ test("C4 pending supervised render requires Guard before C7 private syndication 
   } finally {
     if (store.listening) await new Promise((resolve) => store.close(resolve));
     if (organisation) {
+      await db.correctionsEdgeProofEvent.deleteMany({ where: { node: { organisationId: organisation.id } } });
+      await db.correctionsEdgeNode.deleteMany({ where: { organisationId: organisation.id } });
       await db.rightsUsageLedgerEvent.deleteMany({ where: { organisationId: organisation.id } });
       await db.proofOfPlayEvent.deleteMany({ where: { organisationId: organisation.id } });
       await db.playoutIntent.deleteMany({ where: { organisationId: organisation.id } });
