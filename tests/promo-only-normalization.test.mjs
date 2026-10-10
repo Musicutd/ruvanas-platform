@@ -84,6 +84,8 @@ test("metadata refresh preserves takedown, rights, tiers and playlist-linked Tra
     assert.deepEqual(result.track[field], existing[field]);
   }
   assert.equal(result.track.autoDjReady, false);
+  assert.equal(calls.updates[0].create.revision, undefined);
+  assert.deepEqual(calls.updates[0].update.revision, { increment: 1 });
   assert.equal(result.track.importState, "RECONCILIATION_REQUIRED");
   assert.equal(calls.quarantines[0].where.id, existing.trackId);
   assert.equal(calls.quarantines[0].where.catalogueProvider, "PROMO_ONLY");

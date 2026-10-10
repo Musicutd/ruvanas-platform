@@ -21,7 +21,9 @@ test("Promo Only identity, reviewed rights, customer ownership and playlist link
       assert.equal(await prisma.musicDistributorConnection.findUnique({
         where: { providerKey: "PROMO_ONLY" }
       }), null, "A fresh owned database is required.");
-      await assert.rejects(prisma.$transaction(async (db) => {
+      let rollbackObserved = false;
+      try {
+        await prisma.$transaction(async (db) => {
         const user = await db.user.create({ data: {
           name: "Synthetic Promo Only QA",
           email: "promo-only-" + suffix + "@example.invalid",
@@ -156,7 +158,12 @@ test("Promo Only identity, reviewed rights, customer ownership and playlist link
         } }), 1);
         // Roll back every owned synthetic row, including the genre mapping and playlist.
         throw rollback;
-      }, { maxWait: 10_000, timeout: 30_000 }), error => error === rollback);
+        }, { maxWait: 10_000, timeout: 30_000 });
+      } catch (error) {
+        if (error !== rollback) throw error;
+        rollbackObserved = true;
+      }
+      assert.equal(rollbackObserved, true, "The owned synthetic transaction must roll back.");
       assert.equal(await prisma.musicDistributorConnection.findUnique({
         where: { providerKey: "PROMO_ONLY" }
       }), null);
