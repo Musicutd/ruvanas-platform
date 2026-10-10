@@ -4,6 +4,7 @@ import { requirePlatformAdmin } from "@/lib/access-control";
 import { accessDenied } from "@/lib/api-response";
 import { parseCatalogueAudience } from "@/lib/catalogue-audience.mjs";
 import { catalogueTerritoriesWithinApprovedScope } from "@/lib/catalogue-territories.mjs";
+import { catalogueLevelAllows } from "@/lib/autodj-genre-entitlements.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -22,11 +23,15 @@ export async function PUT(request, { params }) {
   const track = await prisma.track.findFirst({
     where: { id: trackId, mediaAsset: { libraryType: "RUVANAS_CATALOGUE", organisationId: null } },
     select: { id: true, minimumCatalogueLevel: true, permittedUses: true, permittedTerritories: true,
-      catalogueProvider: true, distributorItems: { select: { permittedTerritories: true } } }
+      catalogueProvider: true, distributorItems: { select: { permittedTerritories: true, permittedUses: true, minimumCatalogueLevel: true } } }
   });
   if (!track) return NextResponse.json({ error: "Catalogue track not found." }, { status: 404 });
-  if (track.catalogueProvider && (!track.distributorItems.length || track.distributorItems.some((item) => !catalogueTerritoriesWithinApprovedScope(audience.data.permittedTerritories, item.permittedTerritories)))) {
-    return NextResponse.json({ error: "Choose territories within the provider-approved scope. Broader access needs a separate rights review." }, { status: 400 });
+  if (track.catalogueProvider && (!track.distributorItems.length || track.distributorItems.some((item) =>
+    !catalogueTerritoriesWithinApprovedScope(audience.data.permittedTerritories, item.permittedTerritories) ||
+    audience.data.permittedUses.some((use) => !item.permittedUses.includes(use)) ||
+    !catalogueLevelAllows(audience.data.minimumCatalogueLevel, item.minimumCatalogueLevel)
+  ))) {
+    return NextResponse.json({ error: "Choose territories, product uses and a tier within the provider-approved scope. Broader access needs a separate rights review." }, { status: 400 });
   }
 
   const updated = await prisma.$transaction(async (tx) => {

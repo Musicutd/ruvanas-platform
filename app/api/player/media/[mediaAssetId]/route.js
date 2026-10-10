@@ -5,6 +5,8 @@ import { resolvePlayerProgramming } from "@/lib/player-programming";
 import { protectedAudioResponse } from "@/lib/protected-audio-response";
 import { isCatalogueLicenceCurrent } from "@/lib/catalogue-upload.mjs";
 import { isPlayerListenerTokenActive } from "@/lib/player-listener-lease.mjs";
+import { promoOnlyPlaybackDecision, promoOnlyStreamDecision } from "@/lib/promo-only-playback.mjs";
+import { musicTrackEligibility } from "@/lib/media-library-pro.mjs";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -29,6 +31,7 @@ export async function GET(request, { params }) {
       track.mediaAsset.libraryType === "RUVANAS_CATALOGUE" &&
       track.mediaAsset.mediaType === "MUSIC" &&
       track.mediaAsset.organisationId === null &&
+      promoOnlyPlaybackDecision(track).allowed &&
       isCatalogueLicenceCurrent(track.licenceExpiresAt, instant)
     );
     const isCurrentPromo = (campaignPlayout.insertions || []).some((item) => item.mediaAssetId === mediaAssetId);
@@ -53,8 +56,24 @@ export async function GET(request, { params }) {
 
     const asset = await prisma.mediaAsset.findUnique({
       where: { id: mediaAssetId },
-      select: { storageKey: true, mimeType: true, sizeBytes: true }
+      select: {
+        storageKey: true, mimeType: true, sizeBytes: true,
+        track: { select: { catalogueProvider: true, distributorItems: { select: {
+          status: true, autoDjReady: true,
+          connection: { select: { providerKey: true, status: true } }
+        } } } }
+      }
     });
+    // A recently issued playout intent must not bypass a later provider pause or switch-off.
+    const supplierPlanEligible = asset?.track?.catalogueProvider === "PROMO_ONLY" && isEligibleMusic && (resolution.musicMode?.tracks || []).some(({ track }) => track.mediaAsset?.id === mediaAssetId && musicTrackEligibility(track, {
+        organisationId: player.organisationId,
+        requiredUse: resolution.requiredUse,
+        licensedCatalogueLevel: resolution.licensedCatalogueLevel,
+        instant
+      }).playable);
+    if (!promoOnlyStreamDecision(asset?.track, { currentPlanEligible: supplierPlanEligible }).allowed) {
+      return NextResponse.json({ error: "This audio is not in the player's current playback plan." }, { status: 404 });
+    }
     return protectedAudioResponse(request, asset);
   } catch (error) {
     console.error("Player media stream failed:", error);

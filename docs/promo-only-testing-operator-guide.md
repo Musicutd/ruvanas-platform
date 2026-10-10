@@ -2,7 +2,19 @@
 
 This is an additive testing integration for the existing Ruvanas Super Admin **Licensed Music Catalogue**. It does not create subscriber-owned libraries or replace playlists, scheduling, AutoDJ, rights review, media storage, or the generic distributor framework. It is **not a production licence or production rollout**.
 
-Subscribers can request a safe, tier-filtered catalogue list at `GET /api/catalogue/music` (optional `channelId`, `q`, `genre`, `limit`). This returns labels and track IDs only, not audio or provider details. Existing playlist and AutoDJ paths continue to apply their server-side music eligibility rules. A channel with a territory-specific licence needs its own configured territory; without one, provider tracks are limited to explicitly worldwide licences.
+Subscribers can request a safe, tier-filtered catalogue list at `GET /api/catalogue/music` (optional `channelId`, `q`, `genre`, `limit`). This returns labels and track IDs only, not audio or provider details. Existing playlist and AutoDJ paths continue to apply their server-side music eligibility rules. Promo Only requires an explicit country context; broad WORLDWIDE/EUROPE approval is not accepted. Germany remains excluded.
+
+## Development recovery checkpoint
+
+C8/C9 physical acceptance and external Pillar 7 approvals are deferred independently of this main-based development. No C8/C9 code, migration or deployment is needed for these supplier adapter corrections. Existing seven-family pricing and 127 main migrations are preserved.
+
+This adapter accepts documented supplier IDs, not same-title recording guesses. Release responses retain their own ID, title and date. Metadata updates preserve takedowns and reviewed rights; stale revisions cannot replace newer metadata. Imported global tracks may be quarantined, but customer-owned media and playlist identities are not overwritten. Artwork URLs and audio formats are retained as metadata, not fetched or treated as rights grants.
+
+Token expiry and positive download acknowledgement are checked. JSON is bounded to 2 MiB; metadata retries honor bounded Retry-After, and ambiguous queue/confirmation failures are not automatically replayed. Provider OFF or a paused/revoked connection denies existing imports at selection and final player delivery. An old playback intent is not sufficient authority.
+
+`node scripts/promo-only-connectivity.mjs --check` checks only environment prerequisites and makes no request. Explicit `--live` performs the documented authentication and token-validation calls only, with no catalogue import, audio download, database write or secret output. Use only approved server environment credentials; do not paste secrets into chat or browser fields. Connectivity success does not prove commercial rights.
+
+The [public API terms](https://api.promoonly.com/doc/tos) restrict commercial streaming and third-party webcasting integration. Before licensed playback, verify the separate written agreement, exact countries and expiry, supplier product-to-tier mapping, and storage/delivery rights. Empty approved connection scopes intentionally block ENABLE. Top 40, Audio Silver and Audio Gold are Ruvanas tier labels, not assumed supplier products. Offline supplier delivery remains unavailable without separate caching permission.
 
 ## Safe rollout
 
@@ -19,7 +31,7 @@ Subscribers can request a safe, tier-filtered catalogue list at `GET /api/catalo
 
 The dedicated worker uses the same server-only environment settings. A Super Admin is required for manual synchronisation, genre management, tier changes, metadata refresh and audio import. No subscriber route can invoke provider credentials or download operations. `PROMOONLY_DOWNLOAD_ROLE` is fixed to `SUPER_ADMIN`; an invalid value fails closed. `PROMOONLY_MAX_DOWNLOADS_PER_RUN` is reserved for a future bounded batch download; this build allows only one explicitly selected audio import per request and has **no automated audio batch**. RSS discovery and metadata run on the existing operations worker (no new paid service).
 
-The Promo Only documentation currently specifies an HTTP media-server download URL while its API endpoints are HTTPS. Ruvanas tries HTTPS first for the bare server hostname. It does **not** silently fall back to HTTP. If Promo Only confirms HTTPS is unavailable and you approve the transport risk for isolated testing, an operator can explicitly set `PROMOONLY_ALLOW_HTTP_MEDIA_TEST=true` on the server; doing so sends an API bearer value to the media host over unencrypted HTTP. Never enable this exception for a live or commercial rollout. The code restricts media hosts, blocks redirects, rejects literal IP/local hostnames and bounds the response, but those measures do **not** encrypt HTTP traffic or prove DNS results cannot change.
+The Promo Only documentation specifies an HTTP media-server download URL while its API endpoints are HTTPS. Ruvanas requires HTTPS by default and does not silently fall back. Verify supplier HTTPS delivery before audio testing. The legacy server-only HTTP testing flag is preserved for compatibility, but enabling it is not authorised by this recovery scope; never use it for live or commercial rollout. Host and redirect checks do not encrypt HTTP traffic or prove DNS results cannot change.
 
 The first available server hostname from the queue response must match the provider's separate available-server list with a positive server ID. An acknowledgement failure leaves the item for reconciliation, not another blind download. Provider responses are kept in the admin-only integration records, never in subscriber DTOs. A rejected rights/genre record is not AutoDJ-ready.
 

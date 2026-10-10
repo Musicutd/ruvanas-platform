@@ -7,7 +7,7 @@ import { readPromoOnlyConfig } from "@/lib/promo-only.mjs";
 import { PromoOnlyApiClient } from "@/lib/promo-only-client.mjs";
 import { promoOnlyPayloadHash } from "@/lib/promo-only.mjs";
 import { syncPromoOnlyGenre } from "@/lib/provider-genre-service";
-import { parseCatalogueTerritories } from "@/lib/catalogue-territories.mjs";
+import { promoOnlyApprovalScopeDecision, updatePromoOnlyOwnedTrack } from "@/lib/promo-only-playback.mjs";
 
 const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("SET_TIER"), minimumCatalogueLevel: z.enum(["FOCUSED", "PROFESSIONAL", "PREMIUM"]) }).strict(),
@@ -23,7 +23,10 @@ export async function PATCH(request, { params }) {
   if (access.user.role !== "SUPER_ADMIN") return NextResponse.json({ error: "Only a Ruvanas Super Admin may manage Promo Only catalogue records." }, { status: 403 });
   const parsed = actionSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Choose a valid Promo Only catalogue action." }, { status: 400 });
-  const item = await prisma.musicDistributorTrack.findFirst({ where: { id: params.trackId, connection: { providerKey: "PROMO_ONLY" } }, include: { canonicalGenre: true } });
+  const item = await prisma.musicDistributorTrack.findFirst({ where: { id: params.trackId, connection: { providerKey: "PROMO_ONLY" } }, include: {
+    canonicalGenre: true,
+    connection: { select: { status: true, defaultPermittedTerritories: true, defaultPermittedUses: true } }
+  } });
   if (!item) return NextResponse.json({ error: "Promo Only track not found." }, { status: 404 });
   const { action } = parsed.data;
   try {
@@ -37,7 +40,7 @@ export async function PATCH(request, { params }) {
       const genre = await syncPromoOnlyGenre(prisma, metadata.sourceGenre, config);
       const checksum = promoOnlyPayloadHash(metadata.providerMetadata);
       const needsReconciliation = Boolean(item.trackId && item.metadataChecksum !== checksum);
-      await prisma.musicDistributorTrack.update({ where: { id: item.id }, data: {
+      const update = {
         title: metadata.title, artist: metadata.artist, album: metadata.album, label: metadata.label,
         mixName: metadata.mixName, bpm: metadata.bpm, durationSeconds: metadata.durationSeconds,
         sourceGenre: metadata.sourceGenre, canonicalGenreId: genre.genre?.id || null, genreCodes: genre.genre ? [genre.genre.slug] : [], releaseDate: metadata.releaseDate, contentWarning: metadata.contentWarning,
@@ -45,25 +48,51 @@ export async function PATCH(request, { params }) {
         providerMetadata: metadata.providerMetadata, metadataChecksum: checksum, sourceModifiedAt: metadata.sourceModifiedAt,
         ...(needsReconciliation ? { importState: "RECONCILIATION_REQUIRED", autoDjReady: false } : {}),
         revision: { increment: 1 }
-      } });
-      if (needsReconciliation) await prisma.track.update({ where: { id: item.trackId }, data: { status: "DRAFT", rightsReviewStatus: "DRAFT" } });
+      };
+      if (needsReconciliation) {
+        await prisma.$transaction(async (tx) => {
+          await updatePromoOnlyOwnedTrack(tx, item.trackId, { status: "DRAFT", rightsReviewStatus: "DRAFT" });
+          await tx.musicDistributorTrack.update({ where: { id: item.id }, data: update });
+        });
+      } else {
+        await prisma.musicDistributorTrack.update({ where: { id: item.id }, data: update });
+      }
     } else if (action === "SET_TIER") {
       await prisma.$transaction(async (tx) => {
+        if (item.trackId) await updatePromoOnlyOwnedTrack(tx, item.trackId, { minimumCatalogueLevel: parsed.data.minimumCatalogueLevel });
         await tx.musicDistributorTrack.update({ where: { id: item.id }, data: { minimumCatalogueLevel: parsed.data.minimumCatalogueLevel } });
-        if (item.trackId) await tx.track.update({ where: { id: item.trackId }, data: { minimumCatalogueLevel: parsed.data.minimumCatalogueLevel } });
       });
     } else if (action === "QUARANTINE") {
       await prisma.$transaction(async (tx) => {
+        if (item.trackId) await updatePromoOnlyOwnedTrack(tx, item.trackId, { status: "ARCHIVED" });
         await tx.musicDistributorTrack.update({ where: { id: item.id }, data: { status: "UNAVAILABLE", autoDjReady: false, importState: "CATALOGUED" } });
-        if (item.trackId) await tx.track.update({ where: { id: item.trackId }, data: { status: "ARCHIVED" } });
       });
     } else if (action === "ENABLE") {
+      let config;
+      try { config = readPromoOnlyConfig(); } catch { return NextResponse.json({ error: "Promo Only audio testing is not enabled." }, { status: 409 }); }
+      if (!config.enabled || config.mode !== "AUDIO_TEST" || item.connection?.status !== "ACTIVE") {
+        return NextResponse.json({ error: "Promo Only audio testing and its provider connection must be active." }, { status: 409 });
+      }
       if (!item.trackId || item.status !== "ACTIVE" || !item.canonicalGenre?.active || item.canonicalGenre.providerReviewStatus !== "APPROVED") return NextResponse.json({ error: "Import audio, approve the genre and confirm the provider is active first." }, { status: 409 });
-      const territories = parseCatalogueTerritories(parsed.data.permittedTerritories, { allowWorldwide: false });
-      if (!territories.ok) return NextResponse.json({ error: territories.error }, { status: 400 });
+      const scope = promoOnlyApprovalScopeDecision({
+        territories: parsed.data.permittedTerritories,
+        uses: parsed.data.permittedUses,
+        approvedTerritories: item.connection.defaultPermittedTerritories,
+        approvedUses: item.connection.defaultPermittedUses
+      });
+      if (!scope.allowed) {
+        return NextResponse.json({ error: "Choose only contract-approved countries and product uses for this supplier." }, { status: 409 });
+      }
       await prisma.$transaction(async (tx) => {
-        await tx.track.update({ where: { id: item.trackId }, data: { status: "READY", rightsReference: parsed.data.rightsReference, permittedUses: parsed.data.permittedUses, permittedTerritories: territories.codes.join(", "), rightsReviewStatus: "APPROVED", rightsReviewedAt: new Date(), rightsReviewedById: access.user.id, rightsConfirmedAt: new Date(), rightsConfirmedById: access.user.id } });
-        await tx.musicDistributorTrack.update({ where: { id: item.id }, data: { permittedUses: parsed.data.permittedUses, permittedTerritories: territories.codes, autoDjReady: true, importState: "AUTODJ_READY", audioStatus: "READY" } });
+        const connection = await tx.musicDistributorConnection.findUnique({ where: { id: item.connectionId }, select: { status: true, defaultPermittedTerritories: true, defaultPermittedUses: true } });
+        if (connection?.status !== "ACTIVE" || !promoOnlyApprovalScopeDecision({
+          territories: scope.territoryCodes,
+          uses: parsed.data.permittedUses,
+          approvedTerritories: connection.defaultPermittedTerritories,
+          approvedUses: connection.defaultPermittedUses
+        }).allowed) throw new Error("Promo Only rights scope changed during approval.");
+        await updatePromoOnlyOwnedTrack(tx, item.trackId, { status: "READY", rightsReference: parsed.data.rightsReference, permittedUses: parsed.data.permittedUses, permittedTerritories: scope.territoryCodes.join(", "), rightsReviewStatus: "APPROVED", rightsReviewedAt: new Date(), rightsReviewedById: access.user.id, rightsConfirmedAt: new Date(), rightsConfirmedById: access.user.id });
+        await tx.musicDistributorTrack.update({ where: { id: item.id }, data: { permittedUses: parsed.data.permittedUses, permittedTerritories: scope.territoryCodes, autoDjReady: true, importState: "AUTODJ_READY", audioStatus: "READY" } });
       });
     } else if (action === "RETRY_DOWNLOAD") {
       if (item.trackId || !["FAILED_RETRYABLE", "FAILED_PERMANENT"].includes(item.audioStatus)) return NextResponse.json({ error: "Only failed, unlinked audio can be retried." }, { status: 409 });
