@@ -2,6 +2,27 @@
 
 **Decision: BLOCKED for real facility use.** This document is an evidence ledger, not approval to merge, migrate, deploy, enable customers, or change Render settings. Historical C9 entries refer to the branch based on C7 `main` commit `0e1deb3f8a36d18bd19574e17c4b6045b534169e`; Draft C8 PR #217 was outside that C9 branch. The dated local combined C8/C9 update below has its own explicit scope. The plain-language [launch checklist and proposed first-facility pilot plan](corrections-c9-launch-checklist.md) separates the fictional demo from customer release requirements. Green CI alone does not satisfy those requirements.
 
+## 10 October 2026 local integration history repair
+
+The approved WP1 repair brings audited C9
+`ab84090d149860ed0461306f812bcd63a02d0342` into the local integration
+candidate based on `846bb8fe402b4da909fa710c69fbed0c15c85fda` by an ordinary
+merge. It preserves the five unpublished integration commits and C8 ancestry;
+it is not a merge into `main`, a PR update or a deployment.
+
+The evidence conflict is consolidated in the historical combined-CI section
+below. The add/add supervised-network test retains the local version, including
+every C9 Guard-to-C7 assertion and the additive C8 signed-manifest, protected
+media, revocation and withdrawal checks. The extra explicit CI invocation of
+that same test is removed: `test:acceptance` already selects it through
+`test:integration`, so its assertions still run once in that path.
+
+Application code, schema, migration contents and the locked security patches
+are unchanged by this repair. Only conflict, syntax, ancestry and preservation
+checks are attributed to WP1. No full test suite, disposable database, physical
+Edge lab or new exact-head GitHub check is claimed. WP2 validation and physical
+acceptance remain separate; the code is not release-approved or pushed.
+
 ## 9 October 2026 local combined-branch regression update
 
 This dated update concerns the local combined C8/C9 checkout, not a new remote
@@ -244,7 +265,7 @@ C8 head `6e0c76c273d3c805657f5ca1fd75da8727cac056` adds a container startup smok
 
 The integration candidate adds tenant-scoped counts for cloud-stored Edge nodes, signed manifests and raw proof events, plus an explicit Edge-node veto in the shared generic retention-preview and trial-deletion evidence check. Its dedicated synthetic test uses an Edge-only organisation with no Corrections entitlement, facility marker, audit label or shared playback proof. It requires the privacy response to contain no record content, generic retention to create no preview, and trial deletion to return the exact Corrections-evidence error without deleting the node, manifest or proof. This test passed on disposable PostgreSQL in the combined CI runs above; no local database or physical Edge appliance was used. Proof still queued solely on an offline appliance cannot appear in a cloud inventory before reconciliation. The physical C8 acceptance, legal retention, security review and production release gates remain open.
 
-C8 and C9 remain separate Draft branches. C9 alone does not include C8's schema or the Edge-only inventory and veto. The separate combined [Draft PR #221](https://github.com/Musicutd/ruvanas-platform/pull/221) includes both test suites and additive migrations, tenant-scoped Edge counts, the generic deletion/retention veto and the synthetic container startup check. Earlier combined head `1b1e132121fd32cffbc373519783a1f72db9babe` passed three jobs in [CI run 37324046057](https://github.com/Musicutd/ruvanas-platform/actions/runs/37324046057). On 5 October, then-current combined head `c4dc840c68b38760ae79c62d772ae344762aeb2a` passed `validate`, `edge-image`, `encoder-image` and `c9-recovery-rehearsal` in [exact-head CI run 37349168128](https://github.com/Musicutd/ruvanas-platform/actions/runs/37349168128), including disposable-PostgreSQL coverage for an Edge-only synthetic organisation. Offline proof still queued solely on an appliance cannot appear in the cloud inventory. Physical C8 acceptance and the remaining release gates are still open; no combined branch was merged or deployed.
+On 5 October, then-published combined head `c4dc840c68b38760ae79c62d772ae344762aeb2a` passed `validate`, `edge-image`, `encoder-image` and `c9-recovery-rehearsal` in [exact-head CI run 37349168128](https://github.com/Musicutd/ruvanas-platform/actions/runs/37349168128), including the Edge-only synthetic organisation regression. C9 alone does not include the C8 schema or this Edge-only inventory and veto. These historical results do not validate a later local integration head, close physical C8 acceptance, or authorise a merge into `main` or production deployment.
 
 | Gate | What is still required | Status |
 | --- | --- | --- |
