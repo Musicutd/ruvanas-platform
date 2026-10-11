@@ -23,3 +23,11 @@ test("static cover never invites an undeliverable submission or exposes secrets"
   assert.doesNotMatch(page, /<form\b|<input\b|<script\b|\/api\/interest|mailto:/i);
   assert.doesNotMatch(page, /RUVANAS_INTEREST_RECIPIENT|NOTIFICATION_EMAIL_TOKEN|Promo Only|frequency/i);
 });
+
+test("header login links only to the approved private preview, without signup", () => {
+  const headerNav = page.match(/<nav class="header-nav" aria-label="Main navigation">([\s\S]*?)<\/nav>/)?.[1];
+  assert.ok(headerNav);
+  assert.match(headerNav, /<a class="nav-action" href="https:\/\/ruvanas-private-preview-20261011\.onrender\.com\/login">Log in<\/a>/);
+  assert.doesNotMatch(page, /href=["'][^"']*(?:sign-?up|register|registration)/i);
+  assert.match(page, /<a class="button" href="#interest">Interest opens soon/);
+});
