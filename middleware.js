@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { publicRequestOrigin } from "@/lib/origin-policy.mjs";
-import { readPrivatePreviewPolicy, isPrivatePreviewUserAllowed } from "@/lib/private-preview-policy.mjs";
+import { readPrivatePreviewPolicy, isPrivatePreviewUserAllowed, isPrivatePreviewRegistrationPath } from "@/lib/private-preview-policy.mjs";
 import { getSessionFromToken, SESSION_COOKIE } from "@/lib/session-lookup.js";
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
@@ -24,7 +24,7 @@ function previewBootstrap(request) {
   const method = request.method;
   return ((method === "GET" || method === "HEAD") &&
     (path === "/preview-login" || path === "/login" || path === "/api/private-preview/health")) ||
-    (method === "POST" && (path === "/api/auth/login" || path === "/api/auth/logout"));
+    (method === "POST" && (path === "/api/auth/preview-code" || path === "/api/auth/logout"));
 }
 
 function previewDenied(request, policy, requestId) {
@@ -94,6 +94,11 @@ export async function middleware(request) {
     if (!preview.valid) {
       return previewResponse(NextResponse.json({ error: "Private preview is unavailable." }, { status: 503 }), requestId);
     }
+    if (isPrivatePreviewRegistrationPath(request.nextUrl.pathname)) {
+      return previewResponse(new NextResponse(null, {
+        status: request.nextUrl.pathname.startsWith("/api/") ? 403 : 404
+      }), requestId);
+    }
     if (request.nextUrl.pathname === "/login" && (request.method === "GET" || request.method === "HEAD")) {
       return previewResponse(NextResponse.rewrite(new URL("/preview-login", request.url),
         { request: { headers: requestHeaders } }), requestId);
@@ -109,7 +114,7 @@ export async function middleware(request) {
           return previewResponse(NextResponse.json({ error: "Private preview is unavailable." }, { status: 503 }), requestId);
         }
       }
-      if (!session || !isPrivatePreviewUserAllowed(session.user, preview)) {
+      if (!session || session.authMethod !== "PREVIEW_CODE" || !isPrivatePreviewUserAllowed(session.user, preview)) {
         return previewDenied(request, preview, requestId);
       }
     }

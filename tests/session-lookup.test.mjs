@@ -55,6 +55,8 @@ test("revocation, expiry, enterprise idle/absolute age and SSO policy remain enf
   for (const invalid of [
     null,
     session({ revokedAt: now }),
+    session({ authMethod: "PREVIEW_LOGIN_CODE" }),
+    session({ expiresAt: now }),
     session({ expiresAt: new Date("2026-10-11T11:59:00.000Z") }),
     session({ createdAt: new Date("2026-10-11T08:00:00.000Z"), activeOrganisation: organisation }),
     session({ lastSeenAt: new Date("2026-10-11T11:00:00.000Z"), activeOrganisation: organisation }),

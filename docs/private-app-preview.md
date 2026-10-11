@@ -1,48 +1,57 @@
 # Private Ruvanas app preview
 
-The public website at https://www.ruvanas.com/ must continue to show Coming Soon. The owner and invited testers will enter the working Ruvanas app through a separately approved preview origin, using individual Ruvanas email addresses and passwords. Promo Only passwords and API credentials are not preview credentials.
+The public website at https://www.ruvanas.com/ must retain Coming Soon with a Log in button pointing to a separately approved private preview. The preview uses personal codes issued only by the designated owner. It has no username/password form or self-registration. Promo Only credentials are unrelated to preview access.
 
-This change is prepared in an isolated development branch. It has not been merged, published or deployed, and no live account, DNS or Render setting has changed. The public cover was observed on 11 October 2026 with its Coming Soon title and HTTP 503 status; that observation is not a verification of its underlying hosting configuration.
+The code-only version is implemented and validated locally, not published or deployed. No real account, supplier credential, public domain or hosting configuration changed. Existing C8/C9 work remains separate and preserved.
 
-## Access behavior
+## Code sign in and owner controls
 
-Preview mode is off by default. When enabled, every app page, API and asset requires both a valid database-backed Ruvanas session and an explicitly approved email address. Existing roles and organisation permissions still apply; being invited does not grant administrator privileges.
+Each code is random, single-use and valid for 24 hours. It identifies an existing individually approved Ruvanas user. Redemption cannot create an account, organisation or subscription, change a password or grant a role. Only a keyed, purpose-separated digest is stored. Successful transactional redemption creates a normal database-backed session marked PREVIEW_CODE and sets the HTTP-only cookie after commit. The session has the existing 30-day maximum, subject to enterprise idle, absolute-age and sign-in policy controls. After logout the user needs a new code.
 
-Only the no-JavaScript sign-in page, login/logout endpoints and a minimal health endpoint are available before sign-in. Anonymous requests to the preview root return to the public Coming Soon site. Direct links to app pages go to preview sign-in; APIs return 401 and assets return 404. Public registration, password-recovery and demo routes do not become alternative entry points.
+The designated owner opens /admin/private-preview to issue a code for an existing approved account or revoke that account's pending codes and active code-based sessions. Issuing another code invalidates the previous unused code. The fresh code is shown once in the owner-only interface and must be sent privately; no automatic email is sent. Other administrators cannot issue or revoke preview codes. Revocation remains possible after an email is removed from the allowlist.
 
-The form posts email and password to the existing login handler. It retains password hashing, login rate limiting, secure HTTP-only session cookies, session expiry and revocation. Error redirects contain fixed error codes, never email addresses, passwords or session tokens. Preview responses are not cacheable and request no search indexing.
+Every app page, API and asset requires a valid PREVIEW_CODE session and an approved email. Existing roles and organisation permissions still apply. A password or SSO session cannot independently bypass this preview gate. SSO-only organisations that prohibit fallback cannot use a code as a substitute for SSO.
 
-Invalid preview configuration or a failed session lookup denies access. A cookie, role header, service-account token, RSC query or hidden homepage control does not independently authorize preview access.
+Only the no-JavaScript code form, code-redemption/logout endpoints and minimal health endpoint are available before sign-in. Anonymous preview-root requests return to the public cover; direct app links go to preview sign-in, APIs return 401 and assets return 404. Registration, free-access registration and account-creating student/team invitation paths stay blocked even for signed-in testers. These restrictions apply only while private-preview mode is enabled; normal app behavior is preserved when disabled.
 
-## Server configuration
+Redemption is size-bounded and database-rate-limited. Redemption and owner-control endpoints require the configured preview Origin. Error redirects use fixed reasons, never codes, emails or session tokens. Pending codes cannot authorize app requests. Preview responses use no-store/noindex controls; malformed configuration or failed session lookup denies access.
+
+## Isolated server configuration
 
 Set these values only on the isolated preview service, not the public Coming Soon service:
 
-```text
-RUVANAS_PRIVATE_PREVIEW_ENABLED=1
-RUVANAS_PRIVATE_PREVIEW_ALLOWED_EMAILS=approved individual Ruvanas account emails separated by commas
-RUVANAS_PUBLIC_URL=the verified HTTPS origin of the private preview service
-RUVANAS_PUBLIC_COMING_SOON_URL=https://www.ruvanas.com/
-```
+    RUVANAS_PRIVATE_PREVIEW_ENABLED=1
+    RUVANAS_PRIVATE_PREVIEW_ALLOWED_EMAILS=approved individual account emails separated by commas
+    RUVANAS_PRIVATE_PREVIEW_ADMIN_EMAIL=the designated owner's approved account email
+    RUVANAS_PUBLIC_URL=the verified HTTPS origin of the private preview
+    RUVANAS_PUBLIC_COMING_SOON_URL=https://www.ruvanas.com/
 
-The values describing emails and the preview origin above must be replaced with the approved real values before enabling the service. The preview flag accepts exactly `1` to enable and `0` or unset to disable. Other nonempty values fail closed. An enabled preview requires a nonempty, valid, duplicate-free email list, the verified HTTPS browser-facing preview origin in `RUVANAS_PUBLIC_URL`, and a valid HTTPS public return URL. The preview origin must differ from the Coming Soon origin. Protected-page redirects use that configured preview origin, not request headers or the server's internal localhost address. The allowlist belongs in server-side configuration, not in browser JavaScript or the public cover.
+Replace the descriptive values before enabling the service. The owner must be an existing SUPER_ADMIN whose email is also allowlisted. Tester accounts and least-privilege roles must be separately provisioned by the approved operator; issuing codes does not provision them.
 
-Use a separate development database containing approved test accounts and synthetic organisations. Do not reuse a production database or copy production secrets, supplier credentials, storage, billing, broadcasting or notification integrations. Generate fresh preview session and encryption secrets through the hosting secret mechanism; never place passwords or secret values in Git or chat.
+The flag accepts exactly 1 to enable and 0 or unset to disable; other values fail closed. Enabled preview requires a valid duplicate-free email list, an approved designated owner and a distinct configured HTTPS preview origin. Redirects use this configuration, not client-supplied hosts or internal localhost addresses.
 
-Start only the Next web process with the existing `start:web` command and the hosting port. Do not use the production supervisor: it can start operations and audio workers when their environment is present. The preview health path is `/api/private-preview/health`; it returns only `OK` for valid enabled configuration, 503 for invalid configuration and 404 when preview is disabled.
+Use a separate development database with approved test accounts and synthetic organisations. Do not copy production databases or supplier, storage, billing, broadcast or notification secrets. Generate fresh preview session and encryption secrets through the hosting secret mechanism. Start only the existing start:web process, not the production supervisor or audio/operations workers. Health at /api/private-preview/health returns only OK for valid enabled configuration, 503 for invalid configuration and 404 when disabled.
 
-## Validation
+## First owner code and recovery
 
-Eleven focused local tests pass for preview policy, shared session lookup and sign-in source checks. The final targeted disposable PostgreSQL and real HTTP run passes all 13 cases, including owner/tester login, outsiders with otherwise valid passwords, direct page/API/asset access, RSC/prefetch and middleware-header attempts, bad Origin, logout, revoked/expired sessions, invalid configuration and normal preview-off behavior. The build passed with the unchanged 127 migration set. All owned services stopped, test users were removed and both loopback ports were verified free.
+The first code is required before the owner can reach the online issue controls. There is no public bootstrap endpoint or password-login bypass.
 
-The original failed runs remain retained. They exposed a first cold-request timeout, an unsafe internal-origin assumption and a rejected relative middleware redirect. The corrected implementation uses a validated configured private origin. A later constructor-only check established that NextURL normalizes loopback IP redirects to localhost; the local fixture was corrected without weakening production validation or rebuilding unchanged code. The final passing run is `preview-2026-10-11-8d8072446a74a397`, with build `4XoPI7QAIeyiHlYxsyMK6`. This is synthetic local HTTP evidence; hosted TLS, browser behavior and real account setup remain publication gates. Only this documentation was updated after the final tested source snapshot; implementation files were unchanged.
+A trusted server operator can invoke node scripts/private-preview-owner-code.mjs --issue-owner-code in a private interactive terminal with the approved preview server environment and the separate one-run flag RUVANAS_PRIVATE_PREVIEW_BOOTSTRAP_APPROVED=1. First verify the database is the approved isolated preview database; the flag and typed confirmation attest that check, not prove it automatically. The helper loads no dotenv file and credentials must not appear in command arguments.
 
-Required HTTP cases include anonymous root/page/API/assets, native sign-in with a valid invitation, denied outsiders despite correct passwords, bad Origin, logout, revoked/expired sessions, direct-link and middleware-header bypass attempts, invalid configuration and normal preview-off behavior. Browser and HTTPS hosting checks remain required on the approved preview origin.
+The helper refuses piped or redirected input/output before database access. After typed confirmation it checks the existing owner, issues a self-code and displays it once only in the human terminal. It neither creates accounts nor writes a code file. Disable transcript/screen recording, do not run it through captured tool output, and never paste real codes into chat. Clear the terminal after securely recording or redeeming the code and remove the one-run flag. The same controlled process can recover owner access when no valid owner session remains.
+
+## Local acceptance evidence
+
+On 11 October 2026 all 25 focused tests and all 20 synthetic real-HTTP cases passed with a fresh production-mode build. The disposable loopback database applied the existing 127 migrations; no schema or dependency change was introduced.
+
+Coverage includes owner bootstrap through the trusted core helper, native form redemption and cookie issuance, owner/tester access, nonowner administrator denial, concurrent single-use redemption, replay/expiry/supersession/revocation, password-session bypass denial, logout, rate limiting, anonymous page/API/asset/RSC/subrequest denial, authenticated registration denial, invalid configuration and ordinary preview-off password login. Account, organisation and subscription counts and password hashes were unchanged by the code journeys.
+
+The passing record is preview-2026-10-11-67f05cad23059b7d, build QeVHNS2ppy4uHnYR_o7JK, tested on local parent 7715549fd19e661cd86ac7895ab6575ea589f580 with source digest 8104cabbbb6cc44471842e9183bba1ad4127e20d5dbbb584cdf8c5cb3daea109. All owned services stopped, synthetic users were removed and ports were verified free. Only documentation changed after this implementation snapshot.
+
+Earlier password-preview results remain historical, not acceptance evidence for code-only login. Manual terminal delivery has safe preflight tests; real owner-code delivery, hosted HTTPS, browser cookies and trusted proxy/rate-limit headers still require checks on approved preview infrastructure.
 
 ## Publication boundary
 
-Before publishing, confirm the preview service, isolated database, cost and hostname; approve their creation or reuse; select individual owner/tester accounts and their least-privilege roles; and verify the hosted access checks. Keep automatic production deployments disabled. Do not merge main, execute production migrations or change the public domain routing as part of preview setup.
+Before making this online, approve the hosting service, isolated database, hostname and any cost; provision owner/tester accounts; configure fresh secrets; and verify hosted access. Keep automatic production deployment disabled. Do not merge main, run production migrations or change public-domain routing as part of setup.
 
-After the preview origin passes its checks, add a small Private preview sign in link to the existing Coming Soon cover, pointing to that verified origin's `/login` page. Do not add a browser-only password, cross-origin password-posting form or a placeholder preview URL to the live cover. Publishing that link requires its own approved cover update.
-
-To revoke a tester, remove the approved email from preview configuration and revoke their Ruvanas sessions through the normal account controls. The preview gate checks the current database user and allowlist on each protected request. Existing application permissions remain authoritative underneath the gate.
+After hosted checks pass, publish only a Log in link on the existing Coming Soon cover to the verified preview origin's /login. No link, real code or live preview URL has been created yet. Public registration stays closed until the owner explicitly approves a later launch change.

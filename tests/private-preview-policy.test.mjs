@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { isPrivatePreviewUserAllowed, readPrivatePreviewPolicy } from "../lib/private-preview-policy.mjs";
+import { isPrivatePreviewAdmin, isPrivatePreviewUserAllowed, isPrivatePreviewRegistrationPath, readPrivatePreviewPolicy } from "../lib/private-preview-policy.mjs";
 
 const PREVIEW_ORIGIN = "https://preview.ruvanas.test";
 
@@ -24,6 +24,7 @@ test("enabled preview requires a strict individual-email allowlist", () => {
   const enabled = readPrivatePreviewPolicy({
     RUVANAS_PRIVATE_PREVIEW_ENABLED: "1",
     RUVANAS_PRIVATE_PREVIEW_ALLOWED_EMAILS: " Owner@Example.com , invited@example.org ",
+    RUVANAS_PRIVATE_PREVIEW_ADMIN_EMAIL: "Owner@Example.com",
     RUVANAS_PUBLIC_URL: PREVIEW_ORIGIN
   });
   assert.equal(enabled.valid, true);
@@ -39,6 +40,7 @@ test("enabled preview requires a strict individual-email allowlist", () => {
     assert.equal(readPrivatePreviewPolicy({
       RUVANAS_PRIVATE_PREVIEW_ENABLED: "1",
       RUVANAS_PRIVATE_PREVIEW_ALLOWED_EMAILS: csv,
+      RUVANAS_PRIVATE_PREVIEW_ADMIN_EMAIL: "owner@example.com",
       RUVANAS_PUBLIC_URL: PREVIEW_ORIGIN
     }).valid, false);
   }
@@ -48,6 +50,7 @@ test("the public cover URL is fixed configuration, not request-supplied input", 
   const base = {
     RUVANAS_PRIVATE_PREVIEW_ENABLED: "1",
     RUVANAS_PRIVATE_PREVIEW_ALLOWED_EMAILS: "owner@example.com",
+    RUVANAS_PRIVATE_PREVIEW_ADMIN_EMAIL: "owner@example.com",
     RUVANAS_PUBLIC_URL: PREVIEW_ORIGIN
   };
   assert.equal(readPrivatePreviewPolicy({ ...base,
@@ -80,6 +83,7 @@ test("preview redirects require a configured absolute origin independent of requ
   const base = {
     RUVANAS_PRIVATE_PREVIEW_ENABLED: "1",
     RUVANAS_PRIVATE_PREVIEW_ALLOWED_EMAILS: "owner@example.com",
+    RUVANAS_PRIVATE_PREVIEW_ADMIN_EMAIL: "owner@example.com",
     NODE_ENV: "production"
   };
   assert.equal(readPrivatePreviewPolicy(base).valid, false);
@@ -113,4 +117,35 @@ test("preview redirects require a configured absolute origin independent of requ
   assert.equal(readPrivatePreviewPolicy({ ...base,
     RUVANAS_ENVIRONMENT: "LOCAL_SYNTHETIC_PRIVATE_PREVIEW",
     RUVANAS_PUBLIC_URL: "http://preview.ruvanas.test" }).valid, false);
+});
+
+test("only the configured, approved admin may issue private preview access", () => {
+  const base = {
+    RUVANAS_PRIVATE_PREVIEW_ENABLED: "1",
+    RUVANAS_PRIVATE_PREVIEW_ALLOWED_EMAILS: "owner@example.com,other@example.com",
+    RUVANAS_PRIVATE_PREVIEW_ADMIN_EMAIL: "OWNER@example.com",
+    RUVANAS_PUBLIC_URL: PREVIEW_ORIGIN
+  };
+  const policy = readPrivatePreviewPolicy(base);
+  assert.equal(policy.valid, true);
+  assert.equal(policy.adminEmail, "owner@example.com");
+  assert.equal(isPrivatePreviewAdmin({ email: "owner@example.com", role: "SUPER_ADMIN" }, policy), true);
+  assert.equal(isPrivatePreviewAdmin({ email: "other@example.com", role: "SUPER_ADMIN" }, policy), false);
+  assert.equal(isPrivatePreviewAdmin({ email: "owner@example.com", role: "SUPPORT" }, policy), false);
+  assert.equal(isPrivatePreviewAdmin({ email: "owner@example.com", role: "SUPER_ADMIN" }, readPrivatePreviewPolicy({})), false);
+  for (const admin of [undefined, "", "bad-address", "outsider@example.com", "owner@example.com,other@example.com"]) {
+    assert.equal(readPrivatePreviewPolicy({ ...base, RUVANAS_PRIVATE_PREVIEW_ADMIN_EMAIL: admin }).valid, false);
+  }
+});
+
+test("all self-registration and account-creating invitation paths are closed in preview", () => {
+  for (const path of ["/register", "/register/free-access", "/api/auth/register",
+    "/api/complimentary-access/redeem", "/team-invitation/accept", "/api/organisation/team/accept",
+    "/school-student/accept", "/api/school-student/accept"]) {
+    assert.equal(isPrivatePreviewRegistrationPath(path), true);
+    assert.equal(isPrivatePreviewRegistrationPath(`${path}/`), true);
+  }
+  for (const path of ["/preview-login", "/api/auth/preview-code", "/dashboard", "/admin/private-preview"]) {
+    assert.equal(isPrivatePreviewRegistrationPath(path), false);
+  }
 });

@@ -13,9 +13,9 @@ const SECURITY_HEADERS = Object.freeze({
 });
 
 const ERROR_MESSAGES = Object.freeze({
-  credentials: "That email address or password could not be verified.",
-  "rate-limited": "Too many sign-in attempts. Please wait and try again.",
-  unavailable: "Sign-in is temporarily unavailable. Please try again later."
+  invalid: "That access code is invalid, expired, or already used.",
+  "rate-limited": "Too many attempts. Please wait and try again.",
+  unavailable: "Private preview access is temporarily unavailable. Please try again later."
 });
 
 function page(errorCode) {
@@ -44,16 +44,14 @@ function page(errorCode) {
   <main>
     <div class="brand">RUVANAS</div>
     <h1>Private app preview</h1>
-    <p>Sign in with your existing Ruvanas account to view the current development preview.</p>
+    <p>Enter the one-use code privately provided by the Ruvanas owner to view the current app preview. Codes expire after 24 hours.</p>
     ${feedback}
-    <form method="post" action="/api/auth/login" autocomplete="on">
-      <label for="email">Email address</label>
-      <input id="email" name="email" type="email" autocomplete="username" maxlength="254" required>
-      <label for="password">Password</label>
-      <input id="password" name="password" type="password" autocomplete="current-password" required>
-      <button type="submit">Sign in</button>
+    <form method="post" action="/api/auth/preview-code" autocomplete="on">
+      <label for="code">Private access code</label>
+      <input id="code" name="code" type="password" autocomplete="one-time-code" maxlength="52" autocapitalize="off" spellcheck="false" required>
+      <button type="submit">Open preview</button>
     </form>
-    <p class="foot">Access is limited to the owner and invited testers.</p>
+    <p class="foot">Access is limited to the owner and invited testers. Ask the owner for a new code if yours has expired.</p>
   </main>
 </body>
 </html>`;
