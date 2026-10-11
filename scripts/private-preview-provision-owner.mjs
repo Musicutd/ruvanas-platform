@@ -8,6 +8,7 @@ import { runSerializableTransaction } from "../lib/transaction-retry.mjs";
 
 const INVOCATION = "--provision-owner";
 const CONFIRMATION = "PROVISION OWNER WITH EMPTY OWNER AND TENANT TABLES";
+const TEMPLATE_CONFIRMATION = "PROVISION OWNER WITH EXACT THREE QA TEMPLATE TENANTS";
 const DATABASE_NAME = /^ruvanas_private_preview_[0-9]{8}$/;
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "0.0.0.0"]);
 const ALLOWED_DATABASE_PARAMETERS = new Set([
@@ -21,6 +22,60 @@ const EMPTY_TABLES = [
   "billingAccount", "billingContract", "billingInvoice",
   "billingUsageReconciliation", "auditLog"
 ];
+const TEMPLATE_SEEDS = [
+  { organisationId: "qa-health-organisation", name: "Ruvanas Health QA",
+    slug: "ruvanas-health-qa", subscriptionId: "qa-health-subscription",
+    planId: "public-plan-health-pro", planCode: "HEALTH_PRO" },
+  { organisationId: "qa-faith-organisation", name: "Ruvanas Faith QA",
+    slug: "ruvanas-faith-qa", subscriptionId: "qa-faith-subscription",
+    planId: "public-plan-faith-pro", planCode: "FAITH_PRO" },
+  { organisationId: "qa-organisations-organisation", name: "Ruvanas Organisations QA",
+    slug: "ruvanas-organisations-qa", subscriptionId: "qa-organisations-subscription",
+    planId: "public-plan-organisations-pro", planCode: "ORGANISATIONS_PRO" }
+];
+
+function timestampMatches(left, right) {
+  return left instanceof Date && right instanceof Date &&
+    Number.isFinite(left.getTime()) && left.getTime() === right.getTime();
+}
+
+function tenYearPeriodMatches(createdAt, periodEnd) {
+  if (!(createdAt instanceof Date) || !(periodEnd instanceof Date) ||
+      !Number.isFinite(createdAt.getTime()) || !Number.isFinite(periodEnd.getTime())) return false;
+  const year = createdAt.getUTCFullYear() + 10;
+  const month = createdAt.getUTCMonth();
+  const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  const expected = new Date(createdAt);
+  expected.setUTCFullYear(year, month, Math.min(createdAt.getUTCDate(), lastDay));
+  return periodEnd.getTime() === expected.getTime();
+}
+
+function exactTemplateSeeds(organisations, subscriptions) {
+  if (organisations.length !== TEMPLATE_SEEDS.length ||
+      subscriptions.length !== TEMPLATE_SEEDS.length) return false;
+  const organisationById = new Map(organisations.map((row) => [row.id, row]));
+  const subscriptionById = new Map(subscriptions.map((row) => [row.id, row]));
+  if (organisationById.size !== TEMPLATE_SEEDS.length ||
+      subscriptionById.size !== TEMPLATE_SEEDS.length) return false;
+  for (const seed of TEMPLATE_SEEDS) {
+    const organisation = organisationById.get(seed.organisationId);
+    if (!organisation || organisation.name !== seed.name || organisation.slug !== seed.slug ||
+        Object.keys(organisation).sort().join(",") !== "createdAt,id,name,slug,updatedAt" ||
+        !timestampMatches(organisation.createdAt, organisation.updatedAt)) return false;
+    const subscription = subscriptionById.get(seed.subscriptionId);
+    if (!subscription || subscription.organisationId !== seed.organisationId ||
+        subscription.planId !== seed.planId || subscription.plan?.code !== seed.planCode ||
+        subscription.status !== "TRIAL" || subscription.complimentaryAccessActive !== false ||
+        !timestampMatches(subscription.createdAt, subscription.updatedAt) ||
+        !tenYearPeriodMatches(subscription.createdAt, subscription.currentPeriodEnd)) return false;
+    const known = new Set(["id", "organisationId", "planId", "status", "currentPeriodEnd",
+      "complimentaryAccessActive", "createdAt", "updatedAt", "plan"]);
+    for (const [key, value] of Object.entries(subscription)) {
+      if (!known.has(key) && value !== null) return false;
+    }
+  }
+  return true;
+}
 
 function refusal(code) {
   const error = new Error(code);
@@ -75,7 +130,11 @@ export function privatePreviewOwnerProvisionPreflight(env = {}) {
   if (typeof env.SESSION_SECRET !== "string" || env.SESSION_SECRET.length < 32) {
     return { ok: false, code: "SESSION_CONFIG_UNAVAILABLE" };
   }
-  return { ok: true, policy, ...identity };
+  const templateApproval = env.RUVANAS_PRIVATE_PREVIEW_TEMPLATE_SEEDS_APPROVED;
+  if (templateApproval !== undefined && templateApproval !== "0" && templateApproval !== "1") {
+    return { ok: false, code: "TEMPLATE_SEED_APPROVAL_INVALID" };
+  }
+  return { ok: true, policy, ...identity, allowTemplateSeeds: templateApproval === "1" };
 }
 
 export function privatePreviewOwnerProvisionCliPreflight({
@@ -130,9 +189,23 @@ export async function provisionPrivatePreviewOwner({
       }
 
       // All owner/tenant/account tables remain locked through the counts and
-      // inserts. A concurrent insert cannot pass the same empty-state check.
+      // inserts. Only the separately approved six migration QA rows are exempt.
       for (const table of EMPTY_TABLES) {
-        if (await tx[table].count() !== 0) throw refusal("DATABASE_NOT_EMPTY");
+        const templateTable = table === "organisation" || table === "subscription";
+        const expected = preflight.allowTemplateSeeds && templateTable ? 3 : 0;
+        if (await tx[table].count() !== expected) {
+          throw refusal(preflight.allowTemplateSeeds && templateTable
+            ? "TEMPLATE_SEEDS_MISMATCH" : "DATABASE_NOT_EMPTY");
+        }
+      }
+      if (preflight.allowTemplateSeeds) {
+        const organisations = await tx.organisation.findMany();
+        const subscriptions = await tx.subscription.findMany({
+          include: { plan: { select: { code: true } } }
+        });
+        if (!exactTemplateSeeds(organisations, subscriptions)) {
+          throw refusal("TEMPLATE_SEEDS_MISMATCH");
+        }
       }
 
       // This password is not displayed or retained. The only intended login
@@ -167,7 +240,7 @@ export async function provisionPrivatePreviewOwner({
     });
   } catch (error) {
     failure = typeof error?.code === "string" &&
-      ["DATABASE_IDENTITY_MISMATCH", "DATABASE_NOT_EMPTY"].includes(error.code)
+      ["DATABASE_IDENTITY_MISMATCH", "DATABASE_NOT_EMPTY", "TEMPLATE_SEEDS_MISMATCH"].includes(error.code)
       ? error : refusal("OWNER_PROVISION_FAILED");
   } finally {
     if (database) {
@@ -198,11 +271,12 @@ async function run() {
   const prompt = createInterface({ input: process.stdin, output: process.stdout, terminal: true });
   let confirmed = false;
   try {
+    const phrase = preflight.allowTemplateSeeds ? TEMPLATE_CONFIRMATION : CONFIRMATION;
     const answer = await prompt.question(
       `Expected database: ${preflight.databaseName} on ${preflight.databaseHost}.\n` +
-      `Type exactly '${CONFIRMATION}' to create only the owner account: `
+      `Type exactly '${phrase}' to create only the owner account: `
     );
-    confirmed = answer === CONFIRMATION;
+    confirmed = answer === phrase;
   } finally {
     prompt.close();
   }

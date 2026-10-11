@@ -24,7 +24,8 @@ const VALID_ENV = {
 };
 
 function syntheticDatabase({ databaseName = VALID_ENV.RUVANAS_PRIVATE_PREVIEW_EXPECTED_DB_NAME,
-  schemaName = "public", nonempty = null, disconnectFails = false } = {}) {
+  schemaName = "public", nonempty = null, disconnectFails = false,
+  templateRows = null, countOverrides = {} } = {}) {
   const events = [];
   const counts = ["user", "organisation", "subscription", "organisationMember",
     "organisationInvitation", "session", "passwordResetToken", "complimentaryAccessCode",
@@ -46,10 +47,21 @@ function syntheticDatabase({ databaseName = VALID_ENV.RUVANAS_PRIVATE_PREVIEW_EX
     tx[table] = {
       count: async () => {
         events.push(`count:${table}`);
-        return table === nonempty ? 1 : 0;
+        if (Object.hasOwn(countOverrides, table)) return countOverrides[table];
+        if (table === nonempty) return 1;
+        return templateRows && ["organisation", "subscription"].includes(table) ? 3 : 0;
       }
     };
   }
+  tx.organisation.findMany = async () => {
+    events.push("findMany:organisation");
+    return templateRows.organisations;
+  };
+  tx.subscription.findMany = async (args) => {
+    events.push("findMany:subscription");
+    assert.deepEqual(args, { include: { plan: { select: { code: true } } } });
+    return templateRows.subscriptions;
+  };
   tx.user.create = async ({ data, select }) => {
     events.push("create:user");
     assert.equal(data.email, "owner@ruvanas.test");
@@ -79,6 +91,28 @@ function syntheticDatabase({ databaseName = VALID_ENV.RUVANAS_PRIVATE_PREVIEW_EX
     }
   };
   return { database, events, counts };
+}
+
+function exactTemplateRows() {
+  const createdAt = new Date("2026-10-11T10:00:00.000Z");
+  const currentPeriodEnd = new Date("2036-10-11T10:00:00.000Z");
+  const seeds = [
+    ["health", "Health", "HEALTH_PRO", "public-plan-health-pro"],
+    ["faith", "Faith", "FAITH_PRO", "public-plan-faith-pro"],
+    ["organisations", "Organisations", "ORGANISATIONS_PRO", "public-plan-organisations-pro"]
+  ];
+  return {
+    organisations: seeds.map(([key, label]) => ({
+      id: `qa-${key}-organisation`, name: `Ruvanas ${label} QA`,
+      slug: `ruvanas-${key}-qa`, createdAt, updatedAt: createdAt
+    })),
+    subscriptions: seeds.map(([key, , code, planId]) => ({
+      id: `qa-${key}-subscription`, organisationId: `qa-${key}-organisation`,
+      planId, plan: { code }, status: "TRIAL", currentPeriodEnd,
+      createdAt, updatedAt: createdAt, complimentaryAccessActive: false,
+      retailRadioEnabled: null, complimentaryAccessCodeId: null
+    }))
+  };
 }
 
 test("CLI refuses pipes before reading configuration or importing Prisma", () => {
@@ -144,6 +178,12 @@ test("preflight requires explicit owner-only, preview-only identity and secret g
       DATABASE_URL: `${externalUrl}${query}`
     }).code, "DATABASE_IDENTITY_CONFIG_UNAVAILABLE", query);
   }
+  assert.equal(privatePreviewOwnerProvisionPreflight({ ...VALID_ENV,
+    RUVANAS_PRIVATE_PREVIEW_TEMPLATE_SEEDS_APPROVED: "1"
+  }).allowTemplateSeeds, true);
+  assert.equal(privatePreviewOwnerProvisionPreflight({ ...VALID_ENV,
+    RUVANAS_PRIVATE_PREVIEW_TEMPLATE_SEEDS_APPROVED: "yes"
+  }).code, "TEMPLATE_SEED_APPROVAL_INVALID");
 });
 
 test("invalid preflight cannot call the database factory", async () => {
@@ -192,4 +232,52 @@ test("cleanup ambiguity never reports a successful provisioning result", async (
   await assert.rejects(provisionPrivatePreviewOwner({
     env: VALID_ENV, databaseFactory: async () => database
   }), { code: "DATABASE_CLEANUP_UNVERIFIED" });
+});
+
+test("explicitly approved exact migration QA templates permit only owner and audit inserts", async () => {
+  const rows = exactTemplateRows();
+  const { database, events, counts } = syntheticDatabase({ templateRows: rows });
+  const env = { ...VALID_ENV, RUVANAS_PRIVATE_PREVIEW_TEMPLATE_SEEDS_APPROVED: "1" };
+  const result = await provisionPrivatePreviewOwner({
+    env, databaseFactory: async () => database
+  });
+  assert.deepEqual(result, { ownerId: "owner-1", role: "SUPER_ADMIN" });
+  assert.deepEqual(events, ["transaction", "lock", "identity",
+    ...counts.map((table) => `count:${table}`),
+    "findMany:organisation", "findMany:subscription",
+    "create:user", "create:auditLog", "disconnect"]);
+
+  const defaultMode = syntheticDatabase({ templateRows: rows });
+  await assert.rejects(provisionPrivatePreviewOwner({
+    env: VALID_ENV, databaseFactory: async () => defaultMode.database
+  }), { code: "DATABASE_NOT_EMPTY" });
+  assert.equal(defaultMode.events.includes("create:user"), false);
+});
+
+test("seed approval refuses extra, missing, modified, or privileged QA records", async () => {
+  const env = { ...VALID_ENV, RUVANAS_PRIVATE_PREVIEW_TEMPLATE_SEEDS_APPROVED: "1" };
+  const mutations = [
+    { countOverrides: { organisation: 4 }, code: "TEMPLATE_SEEDS_MISMATCH" },
+    { countOverrides: { subscription: 2 }, code: "TEMPLATE_SEEDS_MISMATCH" },
+    { nonempty: "user", code: "DATABASE_NOT_EMPTY" },
+    { mutate: (rows) => { rows.organisations[0].name = "Edited Health"; } },
+    { mutate: (rows) => { rows.subscriptions[0].organisationId = "qa-faith-organisation"; } },
+    { mutate: (rows) => { rows.subscriptions[0].plan.code = "HEALTH_ENTERPRISE"; } },
+    { mutate: (rows) => { rows.subscriptions[0].status = "ACTIVE"; } },
+    { mutate: (rows) => { rows.subscriptions[0].currentPeriodEnd = new Date("2040-01-01T00:00:00Z"); } },
+    { mutate: (rows) => { rows.subscriptions[0].complimentaryAccessActive = true; } },
+    { mutate: (rows) => { rows.subscriptions[0].retailRadioEnabled = true; } }
+  ];
+  for (const mutation of mutations) {
+    const rows = exactTemplateRows();
+    mutation.mutate?.(rows);
+    const { database, events } = syntheticDatabase({ templateRows: rows,
+      countOverrides: mutation.countOverrides, nonempty: mutation.nonempty });
+    await assert.rejects(provisionPrivatePreviewOwner({
+      env, databaseFactory: async () => database
+    }), { code: mutation.code ?? "TEMPLATE_SEEDS_MISMATCH" });
+    assert.equal(events.includes("create:user"), false);
+    assert.equal(events.includes("create:auditLog"), false);
+    assert.equal(events.at(-1), "disconnect");
+  }
 });
