@@ -113,6 +113,8 @@ test("preflight requires explicit owner-only, preview-only identity and secret g
     ["DATABASE_URL", "postgresql://synthetic:synthetic@dpg-synthetic-preview.render.test/ruvanas_private_preview_20261011?schema=public&schema=other", "DATABASE_IDENTITY_CONFIG_UNAVAILABLE"],
     ["DATABASE_URL", "postgresql://synthetic:synthetic@dpg-synthetic-preview.render.test/ruvanas_private_preview_20261011?host=%2Ftmp%2Fpg", "DATABASE_IDENTITY_CONFIG_UNAVAILABLE"],
     ["DATABASE_URL", "postgresql://synthetic:synthetic@dpg-synthetic-preview.render.test/ruvanas_private_preview_20261011?target_session_attrs=read-write", "DATABASE_IDENTITY_CONFIG_UNAVAILABLE"],
+    ["DATABASE_URL", "postgresql://synthetic:synthetic@dpg-synthetic-preview.render.test/ruvanas_private_preview_20261011?sslmode=require&sslaccept=accept_invalid_certs", "DATABASE_IDENTITY_CONFIG_UNAVAILABLE"],
+    ["DATABASE_URL", "postgresql://synthetic:synthetic@dpg-synthetic-preview.render.test/ruvanas_private_preview_20261011?sslmode=require&sslaccept=other", "DATABASE_IDENTITY_CONFIG_UNAVAILABLE"],
     ["SESSION_SECRET", "short", "SESSION_CONFIG_UNAVAILABLE"]
   ];
   for (const [key, value, code] of invalid) {
@@ -125,6 +127,23 @@ test("preflight requires explicit owner-only, preview-only identity and secret g
   assert.equal(valid.databaseHost, "dpg-synthetic-preview.render.test");
   assert.equal(Object.hasOwn(valid, "DATABASE_URL"), false);
   assert.equal(Object.hasOwn(valid, "SESSION_SECRET"), false);
+  assert.equal(privatePreviewOwnerProvisionPreflight({ ...VALID_ENV,
+    DATABASE_URL: `${VALID_ENV.DATABASE_URL}&sslmode=require&sslaccept=strict`
+  }).ok, true);
+  const externalHost = "dpg-synthetic.frankfurt-postgres.render.com";
+  const externalUrl = `postgresql://synthetic:synthetic@${externalHost}/ruvanas_private_preview_20261011`;
+  const externalEnv = { ...VALID_ENV,
+    RUVANAS_PRIVATE_PREVIEW_EXPECTED_DB_HOST: externalHost
+  };
+  assert.equal(privatePreviewOwnerProvisionPreflight({ ...externalEnv,
+    DATABASE_URL: `${externalUrl}?sslmode=require&sslaccept=strict`
+  }).ok, true);
+  for (const query of ["", "?sslmode=require", "?sslaccept=strict",
+    "?sslmode=prefer&sslaccept=strict", "?sslmode=require&sslaccept=accept_invalid_certs"]) {
+    assert.equal(privatePreviewOwnerProvisionPreflight({ ...externalEnv,
+      DATABASE_URL: `${externalUrl}${query}`
+    }).code, "DATABASE_IDENTITY_CONFIG_UNAVAILABLE", query);
+  }
 });
 
 test("invalid preflight cannot call the database factory", async () => {

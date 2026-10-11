@@ -11,7 +11,7 @@ const CONFIRMATION = "PROVISION OWNER WITH EMPTY OWNER AND TENANT TABLES";
 const DATABASE_NAME = /^ruvanas_private_preview_[0-9]{8}$/;
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "0.0.0.0"]);
 const ALLOWED_DATABASE_PARAMETERS = new Set([
-  "schema", "sslmode", "connection_limit", "pool_timeout", "connect_timeout"
+  "schema", "sslmode", "sslaccept", "connection_limit", "pool_timeout", "connect_timeout"
 ]);
 const EMPTY_TABLES = [
   "user", "organisation", "subscription", "organisationMember",
@@ -39,13 +39,18 @@ function databaseIdentity(env) {
   try {
     const url = new URL(rawUrl);
     const schemas = url.searchParams.getAll("schema");
+    const sslMode = url.searchParams.get("sslmode");
+    const sslAccept = url.searchParams.get("sslaccept");
     const parameters = [...url.searchParams.keys()];
+    const externalRenderHost = url.hostname.endsWith(".render.com");
     if (!["postgresql:", "postgres:"].includes(url.protocol) || url.hash ||
-        !url.hostname || LOOPBACK_HOSTS.has(url.hostname) ||
+        !url.hostname || url.hostname.endsWith(".") || LOOPBACK_HOSTS.has(url.hostname) ||
         url.hostname !== expectedHost ||
         decodeURIComponent(url.pathname.slice(1)) !== expectedName ||
         parameters.length !== new Set(parameters).size ||
         parameters.some((key) => !ALLOWED_DATABASE_PARAMETERS.has(key)) ||
+        (sslAccept !== null && sslAccept !== "strict") ||
+        (externalRenderHost && (sslMode !== "require" || sslAccept !== "strict")) ||
         schemas.length > 1 || (schemas.length === 1 && schemas[0] !== "public")) return null;
     return { databaseName: expectedName, databaseHost: expectedHost };
   } catch {
