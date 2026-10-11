@@ -92,18 +92,18 @@ test("queued audio requires a matching server ID before fetching and reporting s
   const calls = [];
   const fetchImpl = async (url, options) => {
     calls.push({ url: String(url), options });
-    if (String(url).includes("/download/server/91")) return new Response(JSON.stringify([{ host: "dc03.promoonly.com", id: 7 }]), { headers: { "content-type": "application/json" } });
+    if (String(url).includes("/download/server/91")) return new Response(JSON.stringify([{ host: "dc03.promoonly.com", id: 0 }]), { headers: { "content-type": "application/json" } });
     if (String(url).includes("/pool/v5/download/")) return new Response(new Uint8Array([0x49, 0x44, 0x33, 0, 0]), { headers: { "content-type": "audio/mpeg", "content-disposition": 'attachment; filename="sample.mp3"' } });
     return new Response(JSON.stringify({ result: "success" }), { headers: { "content-type": "application/json" } });
   };
   const client = new PromoOnlyApiClient(config, { fetchImpl, tokenManager: { getToken: async () => "test-token" } });
   const audio = await client.downloadQueuedMedia({ trackid: 91, dl_token: "grant", servers: ["dc03.promoonly.com"] });
-  assert.equal(audio.serverId, 7);
+  assert.equal(audio.serverId, 0);
   assert.equal(audio.fileName, "sample.mp3");
   assert.equal(calls[1].url, "https://dc03.promoonly.com/pool/v5/download/grant");
   await client.confirmDownload({ trackid: 91, serverid: audio.serverId, dl_token: "grant" });
   assert.equal(calls[2].url, "https://api.promoonly.com/download/success");
-  assert.equal(String(calls[2].options.body), "trackid=91&serverid=7&dl_token=grant");
+  assert.equal(String(calls[2].options.body), "trackid=91&serverid=0&dl_token=grant");
 });
 
 test("plain HTTP media is rejected by default before a provider-server request", async () => {

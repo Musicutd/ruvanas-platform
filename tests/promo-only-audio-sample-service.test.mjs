@@ -5,7 +5,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
   getPromoOnlyAudioSampleState, importPromoOnlyAudioSample,
-  resolvePromoOnlyAudioSampleAsset
+  repairPromoOnlyAudioSamplePreflight, resolvePromoOnlyAudioSampleAsset
 } from "../lib/promo-only-audio-sample-service.js";
 
 const ACTOR = "private-preview-owner";
@@ -72,9 +72,26 @@ function makeDb() {
     },
     track: { findUnique: async ({ where }) =>
       where.id === state.stored?.id ? state.stored : null },
-    auditLog: { create: async ({ data }) => { state.audit.push(data); return data; } },
+    auditLog: {
+      create: async ({ data }) => { state.audit.push(data); return data; },
+      findMany: async ({ where }) => state.audit.filter((row) =>
+        row.entityType === where.entityType && row.entityId === where.entityId &&
+        row.action.startsWith(where.action.startsWith))
+        .map(({ action, actorUserId }) => ({ action, actorUserId }))
+    },
     $transaction: async (operation) => operation(db)
   };
+  return db;
+}
+
+function preflightLockedDb() {
+  const db = makeDb();
+  Object.assign(db.state.item, { importState: "RECONCILIATION_REQUIRED",
+    audioStatus: "SAMPLE_CLAIMED",
+    lastImportErrorCode: "PROMOONLY_AUDIO_SAMPLE_SERVERS_INVALID" });
+  db.state.audit.push({ actorUserId: ACTOR,
+    action: "PROMOONLY_AUDIO_SAMPLE_CLAIMED",
+    entityType: "MusicDistributorTrack", entityId: db.state.item.id });
   return db;
 }
 
@@ -279,6 +296,103 @@ test("bounded storage timeout never acknowledges, retries, or plays; late draft 
   assert.ok(spy.bytes.every((byte) => byte === 0));
 });
 
+test("one exact pre-queue server-ID lock can be repaired after fresh three-call hosted verification", async () => {
+  const db = preflightLockedDb();
+  const { runtime } = options(db);
+  let checks = 0;
+  const result = await repairPromoOnlyAudioSamplePreflight(db, { ...runtime,
+    checkPreflight: async () => {
+      checks++;
+      assert.equal(db.state.item.importState, "RECONCILIATION_REQUIRED");
+      return { verified: true, hasZeroServerId: true, serverCount: 1,
+        supplierRequestCount: 3 };
+    }
+  });
+  assert.deepEqual(result, { repaired: true, canImport: true,
+    playbackAvailable: false, reconciliationRequired: false, safeErrorCode: null });
+  assert.equal(checks, 1);
+  assert.equal(db.state.item.importState, "METADATA_READY");
+  assert.equal(db.state.item.audioStatus, "NOT_REQUESTED");
+  assert.equal(db.state.item.lastImportErrorCode, null);
+  assert.equal(db.state.item.trackId, null);
+  assert.equal(db.state.audit[0].action, "PROMOONLY_AUDIO_SAMPLE_CLAIMED");
+  assert.equal(db.state.audit[1].action, "PROMOONLY_AUDIO_SAMPLE_PREFLIGHT_REPAIRED");
+  await assert.rejects(repairPromoOnlyAudioSamplePreflight(db, { ...runtime,
+    checkPreflight: async () => { checks++; }
+  }), { code: "PROMOONLY_AUDIO_SAMPLE_PREFLIGHT_REPAIR_NOT_ALLOWED" });
+  assert.equal(checks, 1);
+  Object.assign(db.state.item, { importState: "RECONCILIATION_REQUIRED",
+    audioStatus: "SAMPLE_CLAIMED",
+    lastImportErrorCode: "PROMOONLY_AUDIO_SAMPLE_SERVERS_INVALID" });
+  db.state.audit.push({ actorUserId: ACTOR,
+    action: "PROMOONLY_AUDIO_SAMPLE_CLAIMED",
+    entityType: "MusicDistributorTrack", entityId: db.state.item.id });
+  await assert.rejects(repairPromoOnlyAudioSamplePreflight(db, { ...runtime,
+    checkPreflight: async () => { checks++; }
+  }), { code: "PROMOONLY_AUDIO_SAMPLE_PREFLIGHT_REPAIR_NOT_ALLOWED" });
+  assert.equal(checks, 1, "no second hosted check or repair after a later failed claim");
+});
+
+test("preflight repair rejects wrong failure, media evidence, owner, or altered audit before supplier check", async () => {
+  for (const mutate of [
+    (db) => { db.state.item.lastImportErrorCode = "PROMOONLY_AUDIO_SAMPLE_NETWORK"; },
+    (db) => { db.state.item.audioStatus = "STORED_PENDING_RIGHTS"; },
+    (db) => { db.state.item.sourceChecksumSha256 = CHECKSUM; },
+    (db) => { db.state.item.sourceMimeType = "audio/mpeg"; },
+    (db) => { db.state.item.sourceSizeBytes = 123n; },
+    (db) => { db.state.item.trackId = "draft-track"; },
+    (db) => { db.state.item.downloadRetryCount = 1; },
+    (db) => { db.state.item.autoDjReady = true; },
+    (db) => { db.state.connection.createdByUserId = "another-owner"; },
+    (db) => { db.state.audit[0].actorUserId = "another-owner"; },
+    (db) => { db.state.audit.push({ actorUserId: ACTOR,
+      action: "PROMOONLY_AUDIO_SAMPLE_STORAGE_KEYS_IDENTIFIED",
+      entityType: "MusicDistributorTrack", entityId: db.state.item.id }); },
+    (db) => { db.state.audit.push({ actorUserId: ACTOR,
+      action: "PROMOONLY_AUDIO_SAMPLE_PREFLIGHT_REPAIRED",
+      entityType: "MusicDistributorTrack", entityId: db.state.item.id }); }
+  ]) {
+    const db = preflightLockedDb();
+    const { runtime } = options(db);
+    mutate(db);
+    let checks = 0;
+    await assert.rejects(repairPromoOnlyAudioSamplePreflight(db, { ...runtime,
+      checkPreflight: async () => { checks++; return { verified: true,
+        hasZeroServerId: true, serverCount: 1, supplierRequestCount: 3 }; }
+    }), { code: /PROMOONLY_AUDIO_SAMPLE_(PREFLIGHT_REPAIR_NOT_ALLOWED|SOURCE_UNAVAILABLE)/ });
+    assert.equal(checks, 0);
+  }
+});
+
+test("unverified hosted preflight and CAS race retain the permanent lock", async () => {
+  for (const proof of [
+    { verified: false, hasZeroServerId: true, serverCount: 1, supplierRequestCount: 3 },
+    { verified: true, hasZeroServerId: false, serverCount: 1, supplierRequestCount: 3 },
+    { verified: true, hasZeroServerId: true, serverCount: 0, supplierRequestCount: 3 },
+    { verified: true, hasZeroServerId: true, serverCount: 1, supplierRequestCount: 4 }
+  ]) {
+    const db = preflightLockedDb();
+    const { runtime } = options(db);
+    await assert.rejects(repairPromoOnlyAudioSamplePreflight(db, { ...runtime,
+      checkPreflight: async () => proof
+    }), { code: "PROMOONLY_AUDIO_SAMPLE_PREFLIGHT_REPAIR_NOT_VERIFIED" });
+    assert.equal(db.state.item.importState, "RECONCILIATION_REQUIRED");
+    assert.equal(db.state.audit.length, 1);
+  }
+  const db = preflightLockedDb();
+  const { runtime } = options(db);
+  const originalUpdate = db.musicDistributorTrack.updateMany;
+  db.musicDistributorTrack.updateMany = async (args) =>
+    args.where.lastImportErrorCode === "PROMOONLY_AUDIO_SAMPLE_SERVERS_INVALID"
+      ? { count: 0 } : originalUpdate(args);
+  await assert.rejects(repairPromoOnlyAudioSamplePreflight(db, { ...runtime,
+    checkPreflight: async () => ({ verified: true, hasZeroServerId: true,
+      serverCount: 1, supplierRequestCount: 3 })
+  }), { code: "PROMOONLY_AUDIO_SAMPLE_PREFLIGHT_REPAIR_NOT_ALLOWED" });
+  assert.equal(db.state.item.importState, "RECONCILIATION_REQUIRED");
+  assert.equal(db.state.audit.length, 1);
+});
+
 test("private stream rechecks exact unapproved asset identity and withdrawal", async () => {
   const db = makeDb();
   const { runtime } = options(db);
@@ -325,4 +439,14 @@ test("private routes require preview-code owner, exact write origin and static n
   assert.match(storage, /copyAttempted && !transactionAttempted && needsStorageWrite &&/);
   assert.match(storage, /!preexistingReadyAsset && finalStorageKey/);
   assert.match(storage, /AbortSignal\.timeout\(privateSampleStorage\.cleanupTimeoutMs\)/);
+  const repair = readFileSync(resolve(root,
+    "app/api/admin/promo-only/audio-sample/preflight-repair/route.js"), "utf8");
+  assert.match(repair, /session\?\.authMethod !== "PREVIEW_CODE"/);
+  assert.match(repair, /isPrivatePreviewAdmin\(session\.user, policy\)/);
+  assert.match(repair, /request\.headers\.get\("origin"\) !== policy\.previewOrigin/);
+  assert.match(repair, /new URL\(request\.url\)\.search/);
+  assert.match(repair, /sampleRequestBodyIsEmpty\(request\)/);
+  assert.match(repair, /promo-only-audio-preflight-repair:/);
+  assert.match(repair, /limit: 2/);
+  assert.doesNotMatch(repair, /export async function GET/);
 });

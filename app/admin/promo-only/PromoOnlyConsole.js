@@ -33,13 +33,22 @@ export default function PromoOnlyConsole({ initial }) {
       if (!response.ok) throw new Error(`${payload.error || "Action failed."}${payload.code ? ` (${payload.code})` : ""}`);
       setNotice(path === "/api/admin/promo-only/metadata-sample"
         ? "One metadata sample saved. No audio was downloaded or made playable; this is not a full library sync."
+        : path === "/api/admin/promo-only/audio-sample/preflight-repair"
+          ? payload.result?.repaired === true
+            ? "Pre-download check repaired. No audio was downloaded. The one-track import is ready."
+            : "Pre-download repair was not confirmed. No download was requested."
         : path === "/api/admin/promo-only/audio-sample"
           ? payload.result?.reconciliationRequired || payload.result?.playbackAvailable !== true
             ? "Private test audio is stored but playback is blocked pending reconciliation. Do not repeat the download."
             : "Private test audio stored. Use the owner-only player below; public playback and rights approval remain off."
         : "Saved. The master catalogue and testing status have been refreshed.");
       router.refresh();
-    } catch (error) { setNotice(error.message); }
+    } catch (error) {
+      setNotice(error.message);
+      // The one-shot server claim may have changed even when the request
+      // failed. Refresh that state so a stale import button cannot mislead.
+      if (path === "/api/admin/promo-only/audio-sample" || path === "/api/admin/promo-only/audio-sample/preflight-repair") router.refresh();
+    }
     finally { setBusy(""); }
   }
 
@@ -71,7 +80,11 @@ export default function PromoOnlyConsole({ initial }) {
       {!audioSampleState.ready ? <p>The private audio test is not ready. Server settings need review.</p> : null}
       {audioSampleState.canImport ? <button style={button} disabled={Boolean(busy)} onClick={() => post("/api/admin/promo-only/audio-sample")}>{busy === "/api/admin/promo-only/audio-sample" ? "Importing one private sample…" : "Download one private test sample"}</button> : null}
       {audioSampleState.safeErrorCode ? <p role="status">The test stopped safely: {audioSampleState.safeErrorCode}. Do not repeat the download; this attempt needs review.</p> : null}
-      {audioSampleState.reconciliationRequired ? <p>The stored sample needs supplier acknowledgement or record reconciliation. It will not be downloaded again automatically.</p> : null}
+      {audioSampleState.reconciliationRequired ? <p>The stopped test needs review before any further action. No download will be repeated automatically.</p> : null}
+      {audioSampleState.ready && audioSampleState.reconciliationRequired && audioSampleState.safeErrorCode === "PROMOONLY_AUDIO_SAMPLE_SERVERS_INVALID" ? <>
+        <p>This specific pre-download validation failure can be checked once against the supplier. This check cannot queue or download audio.</p>
+        <button style={button} disabled={Boolean(busy)} onClick={() => post("/api/admin/promo-only/audio-sample/preflight-repair")}>{busy === "/api/admin/promo-only/audio-sample/preflight-repair" ? "Checking pre-download validation…" : "Check and repair pre-download validation"}</button>
+      </> : null}
       {audioSampleState.playbackAvailable ? <>
         <p>Private draft ready for the owner to listen. This does not approve public or commercial use.</p>
         <audio aria-label="Owner-only Promo Only test sample" controls preload="none" controlsList="nodownload" src="/api/admin/promo-only/audio-sample/stream" style={{ width: "100%", maxWidth: 620 }} />

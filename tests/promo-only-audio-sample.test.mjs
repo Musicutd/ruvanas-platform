@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  fetchPromoOnlyAudioSample, getPromoOnlyAudioSampleReadiness,
+  checkPromoOnlyAudioSamplePreflight, fetchPromoOnlyAudioSample, getPromoOnlyAudioSampleReadiness,
   readPromoOnlyAudioSampleConfig
 } from "../lib/promo-only-audio-sample.mjs";
 
@@ -128,6 +128,41 @@ test("exact one auth/read-only preflight/queue/HTTPS media and one-shot acknowle
   await assert.rejects(result.acknowledge(), { code: "PROMOONLY_AUDIO_SAMPLE_ACK_ALREADY_ATTEMPTED" });
   assert.equal(f.calls.length, 6);
   result.dispose();
+});
+
+test("server ID zero is valid for queue media selection and acknowledgement", async () => {
+  const f = supplierFixture(payloads({ 2: [{ id: 0, host: "uk01.promoonly.com" }] }));
+  const result = await fetchPromoOnlyAudioSample(readyConfig(), { fetchImpl: f.fetchImpl, now: () => NOW });
+  assert.equal(result.audio.serverId, 0);
+  const receipt = await result.acknowledge();
+  assert.equal(receipt.status, "ACKNOWLEDGED");
+  assert.equal(Object.fromEntries(f.calls.at(-1).body).serverid, "0");
+  assert.equal(f.calls.length, 6);
+});
+
+test("hosted preflight stops after three read-only requests and summarizes server ID zero", async () => {
+  const f = supplierFixture(payloads({ 2: [{ id: 0, host: "uk01.promoonly.com" }] }));
+  const result = await checkPromoOnlyAudioSamplePreflight(readyConfig(), {
+    fetchImpl: f.fetchImpl, now: () => NOW
+  });
+  assert.deepEqual(result, { verified: true, hasZeroServerId: true,
+    serverCount: 1, supplierRequestCount: 3 });
+  assert.deepEqual(f.calls.map((call) => call.url), [
+    "https://api.promoonly.com/user/authenticate",
+    "https://api.promoonly.com/track/713637",
+    "https://api.promoonly.com/download/server/713637"
+  ]);
+  assert.equal(JSON.stringify(result).includes("uk01.promoonly.com"), false);
+});
+
+test("preflight server ID zero does not admit malformed negative or coerced IDs", async () => {
+  for (const id of [-1, null, true, "00", Number.MAX_SAFE_INTEGER + 1]) {
+    const f = supplierFixture(payloads({ 2: [{ id, host: "uk01.promoonly.com" }] }));
+    await assert.rejects(checkPromoOnlyAudioSamplePreflight(readyConfig(), {
+      fetchImpl: f.fetchImpl, now: () => NOW
+    }), { code: "PROMOONLY_AUDIO_SAMPLE_SERVERS_INVALID", supplierRequestCount: 3 });
+    assert.equal(f.calls.length, 3);
+  }
 });
 
 test("wrong track identity and too-short token stop before queue", async () => {

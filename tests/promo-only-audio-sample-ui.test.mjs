@@ -23,3 +23,13 @@ test("one named sample uses a separate no-input action and authenticated lazy pl
   assert.match(consolePage, /public access and AutoDJ remain off/);
   assert.match(consolePage, /Do not repeat the download/);
 });
+
+test("pre-download repair is a separate explicit no-input action for the named failure only", () => {
+  assert.match(consolePage, /audioSampleState\.ready && audioSampleState\.reconciliationRequired && audioSampleState\.safeErrorCode === "PROMOONLY_AUDIO_SAMPLE_SERVERS_INVALID"/);
+  assert.match(consolePage, /post\("\/api\/admin\/promo-only\/audio-sample\/preflight-repair"\)/);
+  assert.match(consolePage, /This check cannot queue or download audio/);
+  assert.match(consolePage, /payload\.result\?\.repaired === true/);
+  assert.match(consolePage, /Pre-download check repaired\. No audio was downloaded/);
+  assert.match(consolePage, /if \(path === "\/api\/admin\/promo-only\/audio-sample" \|\| path === "\/api\/admin\/promo-only\/audio-sample\/preflight-repair"\) router\.refresh\(\)/);
+  assert.doesNotMatch(consolePage, /useEffect|setInterval|setTimeout/);
+});
