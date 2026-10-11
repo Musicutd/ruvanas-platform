@@ -13,7 +13,7 @@ const formatDate = (value) => value ? new Date(value).toLocaleString() : "—";
 
 export default function PromoOnlyConsole({ initial }) {
   const router = useRouter();
-  const { config, connection, runs, feedItems, tracks, mappings, genres, configError, metadataSampleReady = false } = initial;
+  const { config, connection, runs, feedItems, tracks, mappings, genres, configError, metadataSampleReady = false, audioSampleState = null } = initial;
   const [busy, setBusy] = useState("");
   const [notice, setNotice] = useState("");
   const [trackTerritories, setTrackTerritories] = useState({});
@@ -33,6 +33,10 @@ export default function PromoOnlyConsole({ initial }) {
       if (!response.ok) throw new Error(`${payload.error || "Action failed."}${payload.code ? ` (${payload.code})` : ""}`);
       setNotice(path === "/api/admin/promo-only/metadata-sample"
         ? "One metadata sample saved. No audio was downloaded or made playable; this is not a full library sync."
+        : path === "/api/admin/promo-only/audio-sample"
+          ? payload.result?.reconciliationRequired || payload.result?.playbackAvailable !== true
+            ? "Private test audio is stored but playback is blocked pending reconciliation. Do not repeat the download."
+            : "Private test audio stored. Use the owner-only player below; public playback and rights approval remain off."
         : "Saved. The master catalogue and testing status have been refreshed.");
       router.refresh();
     } catch (error) { setNotice(error.message); }
@@ -55,11 +59,24 @@ export default function PromoOnlyConsole({ initial }) {
       <p>Change modes and secrets through server environment settings, never this page. AUDIO_TEST never downloads automatically from a feed poll; select each test track below.</p>
       <button style={button} disabled={Boolean(busy) || !config.enabled || !config.rssConfigured} onClick={() => post("/api/admin/promo-only/sync")}>{busy ? "Working…" : "Run Sync Now"}</button>
       {metadataSampleReady ? <>
-        <p>Manual one-track API metadata test is ready. Regular feed sync, scheduled polling and audio remain off.</p>
+        <p>Manual one-track API metadata test is ready. Regular feed sync, scheduled polling and general audio imports remain off.</p>
         <button style={button} disabled={Boolean(busy)} onClick={() => post("/api/admin/promo-only/metadata-sample")}>Import one metadata sample</button>
       </> : null}
       {notice ? <p role="status" style={{ color: "#164e75", fontWeight: 800 }}>{notice}</p> : null}
     </section>
+    {audioSampleState?.enabled ? <section style={panel}>
+      <h2>Private one-track audio test</h2>
+      <p>The Kid LAROI f./GIVEON — GET EVEN · track 713637 · release 122500.</p>
+      <p>This is one owner-only trial sample, not a full library import. The file remains a draft in separate private storage. Catalogue rights approval, ordinary playback, public access and AutoDJ remain off.</p>
+      {!audioSampleState.ready ? <p>The private audio test is not ready. Server settings need review.</p> : null}
+      {audioSampleState.canImport ? <button style={button} disabled={Boolean(busy)} onClick={() => post("/api/admin/promo-only/audio-sample")}>{busy === "/api/admin/promo-only/audio-sample" ? "Importing one private sample…" : "Download one private test sample"}</button> : null}
+      {audioSampleState.safeErrorCode ? <p role="status">The test stopped safely: {audioSampleState.safeErrorCode}. Do not repeat the download; this attempt needs review.</p> : null}
+      {audioSampleState.reconciliationRequired ? <p>The stored sample needs supplier acknowledgement or record reconciliation. It will not be downloaded again automatically.</p> : null}
+      {audioSampleState.playbackAvailable ? <>
+        <p>Private draft ready for the owner to listen. This does not approve public or commercial use.</p>
+        <audio aria-label="Owner-only Promo Only test sample" controls preload="none" controlsList="nodownload" src="/api/admin/promo-only/audio-sample/stream" style={{ width: "100%", maxWidth: 620 }} />
+      </> : null}
+    </section> : null}
     <section style={panel}><h2>Recent sync history</h2><div style={wrap}><table style={table}><thead><tr>{["Time", "Trigger / mode", "Status", "Fetched", "Enriched", "Rejected", "Safe error"].map((x) => <th key={x} style={cell}>{x}</th>)}</tr></thead><tbody>{runs.map((run) => <tr key={run.id}><td style={cell}>{formatDate(run.createdAt)}</td><td style={cell}>{run.trigger} / {run.mode}</td><td style={cell}>{run.status}</td><td style={cell}>{run.fetchedCount}</td><td style={cell}>{run.enrichedCount}</td><td style={cell}>{run.rejectedCount}</td><td style={cell}>{run.safeErrorCode || "—"}</td></tr>)}</tbody></table></div>{!runs.length ? <p>No sync has run yet.</p> : null}</section>
     <section style={panel}><h2>Discovered RSS items</h2><div style={wrap}><table style={table}><thead><tr>{["Title", "Provider identity", "Status", "First seen", "Error"].map((x) => <th key={x} style={cell}>{x}</th>)}</tr></thead><tbody>{feedItems.map((item) => <tr key={item.id}><td style={cell}>{item.normalizedPayload?.title || "Untitled"}</td><td style={cell}>Track {item.externalTrackId || "—"} / release {item.externalReleaseId || "—"}</td><td style={cell}>{item.status}</td><td style={cell}>{formatDate(item.firstSeenAt)}</td><td style={cell}>{item.lastErrorCode || "—"}</td></tr>)}</tbody></table></div>{!feedItems.length ? <p>No feed items discovered.</p> : null}</section>
     <section style={panel}><h2>Master catalogue provider records</h2><p>Only Super Admin can request a test import. Storage alone does not publish the track; rights evidence and availability still require review.</p><div style={wrap}><table style={{ ...table, minWidth: 1100 }}><thead><tr>{["Track", "Metadata", "Genre", "Provider IDs", "Import", "Tier", "Controls"].map((x) => <th key={x} style={cell}>{x}</th>)}</tr></thead><tbody>{tracks.map((track) => <tr key={track.id}>
@@ -70,7 +87,7 @@ export default function PromoOnlyConsole({ initial }) {
       <td style={cell}>{track.importState}<br />{track.audioStatus}<br />{track.track?.rightsReviewStatus || "No audio"}<br />Territories: {track.permittedTerritories?.join(", ") || "not approved"}<br />AutoDJ {track.autoDjReady ? "eligible" : "off"}</td>
       <td style={cell}><select aria-label={`Tier for ${track.title}`} defaultValue={track.minimumCatalogueLevel} onChange={(e) => trackAction(track, "SET_TIER", { minimumCatalogueLevel: e.target.value })} disabled={Boolean(busy) || metadataSampleReady}>{["FOCUSED", "PROFESSIONAL", "PREMIUM"].map((level) => <option key={level}>{level}</option>)}</select></td>
       <td style={cell}><div style={{ display: "grid", gap: 6 }}>
-        {metadataSampleReady ? <small>Metadata inspection only. No audio or playback rights are granted.</small> : <>
+        {metadataSampleReady ? <small>Metadata inspection only. No public audio or playback rights are granted.</small> : <>
         <button style={button} disabled={Boolean(busy) || !config.credentialsConfigured} onClick={() => trackAction(track, "REFRESH_METADATA")}>Refresh metadata</button>
         {!track.trackId && config.mode === "AUDIO_TEST" && config.audioDownloadEnabled ? <button style={button} disabled={Boolean(busy) || track.status !== "ACTIVE" || !track.canonicalGenre?.active} onClick={() => post(`/api/admin/promo-only/tracks/${track.id}/download`)}>Import test audio</button> : null}
         {!track.trackId && track.audioStatus.startsWith("FAILED") ? <button style={button} disabled={Boolean(busy)} onClick={() => trackAction(track, "RETRY_DOWNLOAD")}>Retry failed import</button> : null}

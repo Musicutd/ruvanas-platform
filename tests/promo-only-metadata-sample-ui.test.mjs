@@ -19,7 +19,7 @@ test("one-sample control is gated and cannot silently become a full sync or audi
   assert.match(consolePage, /post\("\/api\/admin\/promo-only\/metadata-sample"\)/);
   assert.match(consolePage, /Import one metadata sample/);
   assert.match(consolePage, /No audio was downloaded or made playable; this is not a full library sync/);
-  assert.match(consolePage, /Metadata inspection only\. No audio or playback rights are granted/);
+  assert.match(consolePage, /Metadata inspection only\. No public audio or playback rights are granted/);
   assert.match(consolePage, /disabled=\{Boolean\(busy\) \|\| metadataSampleReady\}/);
   assert.match(consolePage, /disabled=\{Boolean\(busy\) \|\| !config\.enabled \|\| !config\.rssConfigured\}/);
 });

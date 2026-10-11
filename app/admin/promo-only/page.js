@@ -4,6 +4,10 @@ import { prisma } from "@/lib/prisma";
 import { getAdminUser } from "@/lib/requireAdmin";
 import { readPromoOnlyConfig, safePromoOnlyConfig } from "@/lib/promo-only.mjs";
 import { readPromoOnlyMetadataSampleConfig } from "@/lib/promo-only-metadata-sample.mjs";
+import { getCurrentSession } from "@/lib/auth";
+import { isPrivatePreviewAdmin, readPrivatePreviewPolicy } from "@/lib/private-preview-policy.mjs";
+import { readPromoOnlyAudioSampleConfig } from "@/lib/promo-only-audio-sample.mjs";
+import { getPromoOnlyAudioSampleState } from "@/lib/promo-only-audio-sample-service";
 import PromoOnlyConsole from "./PromoOnlyConsole";
 
 export const dynamic = "force-dynamic";
@@ -21,6 +25,17 @@ export default async function PromoOnlyPage() {
   let metadataSampleReady = false;
   try { metadataSampleReady = readPromoOnlyMetadataSampleConfig().ready === true; }
   catch { metadataSampleReady = false; }
+  // The single private audio test has a separate owner-code-only gate. Only
+  // its safe status crosses this boundary, never supplier/storage credentials.
+  let audioSampleState = null;
+  try {
+    const session = await getCurrentSession();
+    const policy = readPrivatePreviewPolicy(process.env);
+    const audioConfig = readPromoOnlyAudioSampleConfig(process.env);
+    if (audioConfig.enabled && session?.authMethod === "PREVIEW_CODE" && isPrivatePreviewAdmin(session.user, policy)) {
+      audioSampleState = await getPromoOnlyAudioSampleState(prisma, { actorUserId: session.userId, config: audioConfig });
+    }
+  } catch { audioSampleState = null; }
   const connection = await prisma.musicDistributorConnection.findUnique({ where: { providerKey: "PROMO_ONLY" }, select: { id: true, status: true, lastSuccessfulSyncAt: true, lastErrorCode: true, nextSyncAt: true, _count: { select: { tracks: true, feedItems: true, syncRuns: true } } } });
   const [runs, feedItems, tracks, mappings, genres] = await Promise.all([
     connection ? prisma.musicDistributorSyncRun.findMany({ where: { connectionId: connection.id }, orderBy: { createdAt: "desc" }, take: 20, select: { id: true, trigger: true, mode: true, status: true, fetchedCount: true, enrichedCount: true, downloadedCount: true, rejectedCount: true, createdAt: true, completedAt: true, safeErrorCode: true } }) : [],
@@ -35,6 +50,6 @@ export default async function PromoOnlyPage() {
     <h1>Promo Only catalogue sync</h1>
     <p>RSS discovery and authenticated metadata feed the existing Super Admin Licensed Music Catalogue. Audio testing requires separate server permission, a Promo Only download grant and a Super Admin; imported media remains unapproved until rights review.</p>
     <p><Link href="/admin/catalogue">Open the master Music Catalogue</Link> · <Link href="/admin/music-distributors">Other music distributors</Link></p>
-    <PromoOnlyConsole initial={serializable({ config, configError, metadataSampleReady, connection, runs, feedItems, tracks, mappings, genres })} />
+    <PromoOnlyConsole initial={serializable({ config, configError, metadataSampleReady, audioSampleState, connection, runs, feedItems, tracks, mappings, genres })} />
   </main>;
 }
