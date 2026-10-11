@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getAdminUser } from "@/lib/requireAdmin";
 import { readPromoOnlyConfig, safePromoOnlyConfig } from "@/lib/promo-only.mjs";
+import { readPromoOnlyMetadataSampleConfig } from "@/lib/promo-only-metadata-sample.mjs";
 import PromoOnlyConsole from "./PromoOnlyConsole";
 
 export const dynamic = "force-dynamic";
@@ -16,6 +17,10 @@ export default async function PromoOnlyPage() {
   let configError = null;
   try { config = safePromoOnlyConfig(readPromoOnlyConfig()); }
   catch (error) { config = safePromoOnlyConfig({ mode: "OFF" }); configError = error.code || "PROMOONLY_CONFIG_INVALID"; }
+  // Pass only readiness to the browser, never the sample's server credentials.
+  let metadataSampleReady = false;
+  try { metadataSampleReady = readPromoOnlyMetadataSampleConfig().ready === true; }
+  catch { metadataSampleReady = false; }
   const connection = await prisma.musicDistributorConnection.findUnique({ where: { providerKey: "PROMO_ONLY" }, select: { id: true, status: true, lastSuccessfulSyncAt: true, lastErrorCode: true, nextSyncAt: true, _count: { select: { tracks: true, feedItems: true, syncRuns: true } } } });
   const [runs, feedItems, tracks, mappings, genres] = await Promise.all([
     connection ? prisma.musicDistributorSyncRun.findMany({ where: { connectionId: connection.id }, orderBy: { createdAt: "desc" }, take: 20, select: { id: true, trigger: true, mode: true, status: true, fetchedCount: true, enrichedCount: true, downloadedCount: true, rejectedCount: true, createdAt: true, completedAt: true, safeErrorCode: true } }) : [],
@@ -30,6 +35,6 @@ export default async function PromoOnlyPage() {
     <h1>Promo Only catalogue sync</h1>
     <p>RSS discovery and authenticated metadata feed the existing Super Admin Licensed Music Catalogue. Audio testing requires separate server permission, a Promo Only download grant and a Super Admin; imported media remains unapproved until rights review.</p>
     <p><Link href="/admin/catalogue">Open the master Music Catalogue</Link> · <Link href="/admin/music-distributors">Other music distributors</Link></p>
-    <PromoOnlyConsole initial={serializable({ config, configError, connection, runs, feedItems, tracks, mappings, genres })} />
+    <PromoOnlyConsole initial={serializable({ config, configError, metadataSampleReady, connection, runs, feedItems, tracks, mappings, genres })} />
   </main>;
 }

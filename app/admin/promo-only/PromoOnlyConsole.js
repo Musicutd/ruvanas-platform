@@ -13,7 +13,7 @@ const formatDate = (value) => value ? new Date(value).toLocaleString() : "—";
 
 export default function PromoOnlyConsole({ initial }) {
   const router = useRouter();
-  const { config, connection, runs, feedItems, tracks, mappings, genres, configError } = initial;
+  const { config, connection, runs, feedItems, tracks, mappings, genres, configError, metadataSampleReady = false } = initial;
   const [busy, setBusy] = useState("");
   const [notice, setNotice] = useState("");
   const [trackTerritories, setTrackTerritories] = useState({});
@@ -31,7 +31,9 @@ export default function PromoOnlyConsole({ initial }) {
       const response = await fetch(path, { method, headers: { "content-type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(`${payload.error || "Action failed."}${payload.code ? ` (${payload.code})` : ""}`);
-      setNotice("Saved. The master catalogue and testing status have been refreshed.");
+      setNotice(path === "/api/admin/promo-only/metadata-sample"
+        ? "One metadata sample saved. No audio was downloaded or made playable; this is not a full library sync."
+        : "Saved. The master catalogue and testing status have been refreshed.");
       router.refresh();
     } catch (error) { setNotice(error.message); }
     finally { setBusy(""); }
@@ -52,6 +54,10 @@ export default function PromoOnlyConsole({ initial }) {
       <p>Polling: every {config.pollMinutes} minutes · last successful: {formatDate(connection?.lastSuccessfulSyncAt)} · next: {formatDate(connection?.nextSyncAt)} · {connection?._count?.feedItems || 0} feed items · {connection?._count?.tracks || 0} provider tracks.</p>
       <p>Change modes and secrets through server environment settings, never this page. AUDIO_TEST never downloads automatically from a feed poll; select each test track below.</p>
       <button style={button} disabled={Boolean(busy) || !config.enabled || !config.rssConfigured} onClick={() => post("/api/admin/promo-only/sync")}>{busy ? "Working…" : "Run Sync Now"}</button>
+      {metadataSampleReady ? <>
+        <p>Manual one-track API metadata test is ready. Regular feed sync, scheduled polling and audio remain off.</p>
+        <button style={button} disabled={Boolean(busy)} onClick={() => post("/api/admin/promo-only/metadata-sample")}>Import one metadata sample</button>
+      </> : null}
       {notice ? <p role="status" style={{ color: "#164e75", fontWeight: 800 }}>{notice}</p> : null}
     </section>
     <section style={panel}><h2>Recent sync history</h2><div style={wrap}><table style={table}><thead><tr>{["Time", "Trigger / mode", "Status", "Fetched", "Enriched", "Rejected", "Safe error"].map((x) => <th key={x} style={cell}>{x}</th>)}</tr></thead><tbody>{runs.map((run) => <tr key={run.id}><td style={cell}>{formatDate(run.createdAt)}</td><td style={cell}>{run.trigger} / {run.mode}</td><td style={cell}>{run.status}</td><td style={cell}>{run.fetchedCount}</td><td style={cell}>{run.enrichedCount}</td><td style={cell}>{run.rejectedCount}</td><td style={cell}>{run.safeErrorCode || "—"}</td></tr>)}</tbody></table></div>{!runs.length ? <p>No sync has run yet.</p> : null}</section>
@@ -62,8 +68,9 @@ export default function PromoOnlyConsole({ initial }) {
       <td style={cell}>{track.canonicalGenre?.name || "Unmapped"}<br />Original: {track.sourceGenre || "—"}</td>
       <td style={cell}>Track {track.externalTrackId}<br />Title {track.externalTitleId || "—"}<br />Release {track.release?.externalReleaseId || "—"}</td>
       <td style={cell}>{track.importState}<br />{track.audioStatus}<br />{track.track?.rightsReviewStatus || "No audio"}<br />Territories: {track.permittedTerritories?.join(", ") || "not approved"}<br />AutoDJ {track.autoDjReady ? "eligible" : "off"}</td>
-      <td style={cell}><select aria-label={`Tier for ${track.title}`} defaultValue={track.minimumCatalogueLevel} onChange={(e) => trackAction(track, "SET_TIER", { minimumCatalogueLevel: e.target.value })} disabled={Boolean(busy)}>{["FOCUSED", "PROFESSIONAL", "PREMIUM"].map((level) => <option key={level}>{level}</option>)}</select></td>
+      <td style={cell}><select aria-label={`Tier for ${track.title}`} defaultValue={track.minimumCatalogueLevel} onChange={(e) => trackAction(track, "SET_TIER", { minimumCatalogueLevel: e.target.value })} disabled={Boolean(busy) || metadataSampleReady}>{["FOCUSED", "PROFESSIONAL", "PREMIUM"].map((level) => <option key={level}>{level}</option>)}</select></td>
       <td style={cell}><div style={{ display: "grid", gap: 6 }}>
+        {metadataSampleReady ? <small>Metadata inspection only. No audio or playback rights are granted.</small> : <>
         <button style={button} disabled={Boolean(busy) || !config.credentialsConfigured} onClick={() => trackAction(track, "REFRESH_METADATA")}>Refresh metadata</button>
         {!track.trackId && config.mode === "AUDIO_TEST" && config.audioDownloadEnabled ? <button style={button} disabled={Boolean(busy) || track.status !== "ACTIVE" || !track.canonicalGenre?.active} onClick={() => post(`/api/admin/promo-only/tracks/${track.id}/download`)}>Import test audio</button> : null}
         {!track.trackId && track.audioStatus.startsWith("FAILED") ? <button style={button} disabled={Boolean(busy)} onClick={() => trackAction(track, "RETRY_DOWNLOAD")}>Retry failed import</button> : null}
@@ -77,8 +84,9 @@ export default function PromoOnlyConsole({ initial }) {
           if (window.confirm(`Approve ${track.title} for ${permittedUses.join(", ")} in ${permittedTerritories}? Confirm this is covered by the signed licence.`)) trackAction(track, "ENABLE", { rightsReference, permittedUses, permittedTerritories });
         }}>Approve rights and enable</button><small>Europe means EU/EEA, UK and Switzerland. Select only signed-agreement territories.</small></div> : null}
         {track.status === "ACTIVE" ? <button style={button} disabled={Boolean(busy)} onClick={() => window.confirm("Quarantine this track and remove it from playback eligibility?") && trackAction(track, "QUARANTINE")}>Quarantine</button> : null}
+        </>}
       </div></td>
-    </tr>)}</tbody></table></div>{!tracks.length ? <p>No provider metadata yet. Start with DISCOVERY and then METADATA.</p> : null}</section>
+    </tr>)}</tbody></table></div>{!tracks.length ? <p>{metadataSampleReady ? "No metadata sample yet. Use Import one metadata sample above; no audio will be imported." : "No provider metadata yet. Start with DISCOVERY and then METADATA."}</p> : null}</section>
     <section style={panel}><h2>Super Admin genres · Promo Only mapping</h2><p>The original API genre is retained even when its Ruvanas classification is renamed, aliased, merged or remapped.</p><div style={wrap}><table style={table}><thead><tr>{["Original provider genre", "Canonical Ruvanas genre", "Mapping", "Auto-created", "Status", "Manage"].map((x) => <th key={x} style={cell}>{x}</th>)}</tr></thead><tbody>{mappings.map((mapping) => <tr key={mapping.id}>
       <td style={cell}>{mapping.sourceGenre}</td><td style={cell}>{mapping.catalogGenre?.name}</td><td style={cell}>{mapping.mappingType}</td><td style={cell}>{mapping.autoCreated ? "Yes" : "No"}</td><td style={cell}>{mapping.reviewStatus} · {mapping.active ? "Active" : "Inactive"}</td>
       <td style={cell}><div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
