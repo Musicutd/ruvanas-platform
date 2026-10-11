@@ -1,7 +1,50 @@
 import { NextResponse } from "next/server";
 import { publicRequestOrigin } from "@/lib/origin-policy.mjs";
+import { readPrivatePreviewPolicy, isPrivatePreviewUserAllowed } from "@/lib/private-preview-policy.mjs";
+import { getSessionFromToken, SESSION_COOKIE } from "@/lib/session-lookup.js";
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+const LEGACY_MATCHER = (path) => path === "/" || path === "/api" || path.startsWith("/api/");
+const PREVIEW_ASSET_PREFIXES = ["/_next/", "/assets/", "/fonts/", "/images/", "/static/"];
+
+function previewResponse(response, requestId) {
+  response.headers.set("x-request-id", requestId);
+  response.headers.set("Cache-Control", "private, no-store, max-age=0");
+  response.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive");
+  return response;
+}
+
+function previewAsset(path) {
+  return PREVIEW_ASSET_PREFIXES.some((prefix) => path.startsWith(prefix)) ||
+    path.split("/").at(-1).includes(".");
+}
+
+function previewBootstrap(request) {
+  const path = request.nextUrl.pathname;
+  const method = request.method;
+  return ((method === "GET" || method === "HEAD") &&
+    (path === "/preview-login" || path === "/login" || path === "/api/private-preview/health")) ||
+    (method === "POST" && (path === "/api/auth/login" || path === "/api/auth/logout"));
+}
+
+function previewDenied(request, policy, requestId) {
+  const path = request.nextUrl.pathname;
+  if ((request.method === "GET" || request.method === "HEAD") && path === "/") {
+    return previewResponse(NextResponse.redirect(policy.publicUrl), requestId);
+  }
+  if (path === "/api" || path.startsWith("/api/")) {
+    return previewResponse(NextResponse.json({ error: "Private preview sign-in required." }, { status: 401 }), requestId);
+  }
+  if (previewAsset(path)) {
+    return previewResponse(new NextResponse(null, { status: 404 }), requestId);
+  }
+  if (request.method === "GET" || request.method === "HEAD") {
+    // Keep browser navigation on the configured preview origin, not an
+    // internal or client-supplied host from a reverse-proxy request.
+    return previewResponse(NextResponse.redirect(new URL("/preview-login", policy.previewOrigin)), requestId);
+  }
+  return previewResponse(new NextResponse(null, { status: 401 }), requestId);
+}
 
 function isServiceAccountApiRequest(request) {
   return request.nextUrl.pathname.startsWith("/api/v1/") &&
@@ -36,18 +79,51 @@ function mayBeStationDomain(hostname) {
 }
 
 export async function middleware(request) {
+  const preview = readPrivatePreviewPolicy(process.env);
+  // The expanded matcher must not change how non-root, non-API requests behave
+  // when private preview is disabled.
+  if (!preview.enabled && !LEGACY_MATCHER(request.nextUrl.pathname)) {
+    return NextResponse.next();
+  }
+
   const requestId = request.headers.get("x-request-id") || crypto.randomUUID();
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-request-id", requestId);
+
+  if (preview.enabled) {
+    if (!preview.valid) {
+      return previewResponse(NextResponse.json({ error: "Private preview is unavailable." }, { status: 503 }), requestId);
+    }
+    if (request.nextUrl.pathname === "/login" && (request.method === "GET" || request.method === "HEAD")) {
+      return previewResponse(NextResponse.rewrite(new URL("/preview-login", request.url),
+        { request: { headers: requestHeaders } }), requestId);
+    }
+    if (!previewBootstrap(request)) {
+      const rawToken = request.cookies.get(SESSION_COOKIE)?.value;
+      let session = null;
+      if (rawToken && /^[a-f0-9]{64}$/.test(rawToken)) {
+        try {
+          const { prisma } = await import("@/lib/prisma");
+          session = await getSessionFromToken(rawToken, { db: prisma });
+        } catch {
+          return previewResponse(NextResponse.json({ error: "Private preview is unavailable." }, { status: 503 }), requestId);
+        }
+      }
+      if (!session || !isPrivatePreviewUserAllowed(session.user, preview)) {
+        return previewDenied(request, preview, requestId);
+      }
+    }
+  }
 
   const contentLength = Number(request.headers.get("content-length") || 0);
   const singleCatalogueUpload = request.nextUrl.pathname === "/api/admin/catalogue/upload";
   const maxRequestBytes = singleCatalogueUpload ? 55 * 1024 * 1024 : 10 * 1024 * 1024;
   if (Number.isFinite(contentLength) && contentLength > maxRequestBytes) {
-    return NextResponse.json(
+    const response = NextResponse.json(
       { error: singleCatalogueUpload ? "The single-track upload exceeds the 50 MB audio limit." : "This request exceeds the 10 MB request limit." },
       { status: 413, headers: { "x-request-id": requestId } }
     );
+    return preview.enabled ? previewResponse(response, requestId) : response;
   }
 
   if (!SAFE_METHODS.has(request.method) && !isServiceAccountApiRequest(request)) {
@@ -64,10 +140,11 @@ export async function middleware(request) {
         })
       );
 
-      return NextResponse.json(
+      const response = NextResponse.json(
         { error: "This request did not originate from an approved Ruvanas site." },
         { status: 403, headers: { "x-request-id": requestId } }
       );
+      return preview.enabled ? previewResponse(response, requestId) : response;
     }
   }
 
@@ -76,7 +153,9 @@ export async function middleware(request) {
     if (mayBeStationDomain(hostname)) {
       try {
         const lookup = new URL(`/api/public/station-websites/domains/${encodeURIComponent(hostname)}`, request.nextUrl.origin);
-        const result = await fetch(lookup, { headers: { "x-ruvanas-domain-resolution": "1" } });
+        const headers = { "x-ruvanas-domain-resolution": "1" };
+        if (preview.enabled && request.headers.get("cookie")) headers.cookie = request.headers.get("cookie");
+        const result = await fetch(lookup, { headers });
         if (result.ok) {
           const body = await result.json();
           if (/^[a-z0-9-]{1,120}$/i.test(body.slug || "")) {
@@ -84,7 +163,7 @@ export async function middleware(request) {
             destination.pathname = `/radio/${body.slug}`;
             const rewritten = NextResponse.rewrite(destination, { request: { headers: requestHeaders } });
             rewritten.headers.set("x-request-id", requestId);
-            return rewritten;
+            return preview.enabled ? previewResponse(rewritten, requestId) : rewritten;
           }
         }
       } catch {
@@ -97,10 +176,11 @@ export async function middleware(request) {
     request: { headers: requestHeaders }
   });
   response.headers.set("x-request-id", requestId);
-  return response;
+  return preview.enabled ? previewResponse(response, requestId) : response;
 }
 
 export const config = {
-  matcher: ["/", "/api/:path*"]
+  runtime: "nodejs",
+  matcher: ["/:path*"]
 };
 
