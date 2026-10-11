@@ -6,7 +6,10 @@ const SECURITY_HEADERS = Object.freeze({
   "cache-control": "no-store, max-age=0",
   "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
   "content-type": "text/html; charset=utf-8",
-  "referrer-policy": "no-referrer",
+  // Native same-origin form POSTs need their real Origin for the strict CSRF
+  // check. no-referrer makes browsers send Origin: null for this navigation.
+  // same-origin still suppresses referrers to other sites; codes stay in POST.
+  "referrer-policy": "same-origin",
   "x-content-type-options": "nosniff",
   "x-frame-options": "DENY",
   "x-robots-tag": "noindex, nofollow, noarchive"

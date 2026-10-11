@@ -6,6 +6,7 @@ const source = async (path) => readFile(new URL(path, import.meta.url), "utf8");
 const loginPage = await source("../app/preview-login/route.js");
 const passwordApi = await source("../app/api/auth/login/route.js");
 const codeApi = await source("../app/api/auth/preview-code/route.js");
+const middleware = await source("../middleware.js");
 const ownerPage = await source("../app/admin/private-preview/page.js");
 const ownerControls = await source("../app/admin/private-preview/CodeControls.js");
 const ownerApi = await source("../app/api/admin/private-preview/codes/route.js");
@@ -21,6 +22,16 @@ test("public preview entry is a raw no-JavaScript one-use-code form", () => {
   assert.match(loginPage, /"x-robots-tag": "noindex, nofollow, noarchive"/);
   assert.match(loginPage, /frame-ancestors 'none'; base-uri 'none'/);
   assert.match(loginPage, /form-action 'self'/);
+});
+
+test("native code form uses same-origin referrer policy without relaxing POST origin gates", () => {
+  assert.match(loginPage, /"referrer-policy": "same-origin"/);
+  assert.doesNotMatch(loginPage, /"referrer-policy": "no-referrer"/);
+  assert.match(middleware, /const origin = request\.headers\.get\("origin"\)/);
+  assert.match(middleware, /if \(!origin \|\| !allowedOrigins\(request\)\.has\(origin\)\)/);
+  assert.match(middleware, /This request did not originate from an approved Ruvanas site\./);
+  assert.match(codeApi, /request\.headers\.get\("origin"\) !== policy\.previewOrigin/);
+  assert.match(codeApi, /return json\(\{ error: "Request not permitted\." \}, 403\)/);
 });
 
 test("password login is closed in preview mode without changing ordinary JSON login", () => {
