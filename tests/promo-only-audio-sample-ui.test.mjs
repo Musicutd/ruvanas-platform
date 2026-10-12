@@ -30,6 +30,15 @@ test("pre-download repair is a separate explicit no-input action for the named f
   assert.match(consolePage, /This check cannot queue or download audio/);
   assert.match(consolePage, /payload\.result\?\.repaired === true/);
   assert.match(consolePage, /Pre-download check repaired\. No audio was downloaded/);
-  assert.match(consolePage, /if \(path === "\/api\/admin\/promo-only\/audio-sample" \|\| path === "\/api\/admin\/promo-only\/audio-sample\/preflight-repair"\) router\.refresh\(\)/);
+  assert.match(consolePage, /if \(path === "\/api\/admin\/promo-only\/audio-sample" \|\| path === "\/api\/admin\/promo-only\/audio-sample\/preflight-repair" \|\| path === "\/api\/admin\/promo-only\/audio-sample\/recover"\) router\.refresh\(\)/);
   assert.doesNotMatch(consolePage, /useEffect|setInterval|setTimeout/);
+});
+
+test("existing queue recovery needs server-authorised state and explicit separate no-input action", () => {
+  assert.match(consolePage, /audioSampleState\.canRecover === true \? <>/);
+  assert.match(consolePage, /post\("\/api\/admin\/promo-only\/audio-sample\/recover"\)/);
+  assert.match(consolePage, /This action cannot queue a track again/);
+  assert.match(consolePage, /A failed recovery stays locked/);
+  assert.match(consolePage, /No new queue request was made/);
+  assert.doesNotMatch(consolePage, /useEffect|setInterval|setTimeout|autoPlay/);
 });

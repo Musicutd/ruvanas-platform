@@ -5,7 +5,8 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
   getPromoOnlyAudioSampleState, importPromoOnlyAudioSample,
-  repairPromoOnlyAudioSamplePreflight, resolvePromoOnlyAudioSampleAsset
+  recoverPromoOnlyAudioSample, repairPromoOnlyAudioSamplePreflight,
+  resolvePromoOnlyAudioSampleAsset
 } from "../lib/promo-only-audio-sample-service.js";
 
 const ACTOR = "private-preview-owner";
@@ -74,10 +75,16 @@ function makeDb() {
       where.id === state.stored?.id ? state.stored : null },
     auditLog: {
       create: async ({ data }) => { state.audit.push(data); return data; },
-      findMany: async ({ where }) => state.audit.filter((row) =>
-        row.entityType === where.entityType && row.entityId === where.entityId &&
-        row.action.startsWith(where.action.startsWith))
-        .map(({ action, actorUserId }) => ({ action, actorUserId }))
+      findMany: async ({ where, orderBy, take }) => {
+        const rows = state.audit.filter((row) =>
+          row.entityType === where.entityType && row.entityId === where.entityId &&
+          row.action.startsWith(where.action.startsWith));
+        if (orderBy) rows.sort((a, b) =>
+          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+        return (take ? rows.slice(0, take) : rows).map(
+          ({ action, actorUserId, details, createdAt }) =>
+            ({ action, actorUserId, details, createdAt }));
+      }
     },
     $transaction: async (operation) => operation(db)
   };
@@ -92,6 +99,26 @@ function preflightLockedDb() {
   db.state.audit.push({ actorUserId: ACTOR,
     action: "PROMOONLY_AUDIO_SAMPLE_CLAIMED",
     entityType: "MusicDistributorTrack", entityId: db.state.item.id });
+  return db;
+}
+
+function queuedRecoveryLockedDb() {
+  const db = makeDb();
+  Object.assign(db.state.item, { importState: "RECONCILIATION_REQUIRED",
+    audioStatus: "SAMPLE_CLAIMED",
+    lastImportErrorCode: "PROMOONLY_AUDIO_SAMPLE_REQUEST_FAILED" });
+  const claim = (createdAt) => ({ actorUserId: ACTOR,
+    action: "PROMOONLY_AUDIO_SAMPLE_CLAIMED",
+    entityType: "MusicDistributorTrack", entityId: db.state.item.id,
+    createdAt, details: { externalTrackId: "713637", externalReleaseId: "122500",
+      rightsGranted: false } });
+  db.state.audit.push(claim(new Date("2026-10-11T17:00:00.000Z")),
+    { actorUserId: ACTOR, action: "PROMOONLY_AUDIO_SAMPLE_PREFLIGHT_REPAIRED",
+      entityType: "MusicDistributorTrack", entityId: db.state.item.id,
+      createdAt: new Date("2026-10-11T17:30:00.000Z"),
+      details: { originalFailureCode: "PROMOONLY_AUDIO_SAMPLE_SERVERS_INVALID",
+        mediaRequested: false, rightsGranted: false } },
+    claim(new Date("2026-10-11T18:06:00.000Z")));
   return db;
 }
 
@@ -152,11 +179,25 @@ function options(db, { acknowledgementFails = false, storageFails = false } = {}
   return { runtime, spy };
 }
 
+function recoveryOptions(db, testOptions = {}) {
+  const { runtime, spy } = options(db, testOptions);
+  const syntheticFetch = runtime.fetchSample;
+  delete runtime.fetchSample;
+  runtime.recoverSample = async () => {
+    const sample = await syntheticFetch();
+    const acknowledge = sample.acknowledge;
+    return { ...sample, existingQueueOnly: true, supplierRequestCount: 4,
+      acknowledge: async () => ({ ...await acknowledge(),
+        existingQueueOnly: true, supplierRequestCount: 5 }) };
+  };
+  return { runtime, spy };
+}
+
 test("exact owned metadata sample imports one private, unapproved audio item and acknowledges after linking", async () => {
   const db = makeDb();
   const { runtime, spy } = options(db);
   assert.deepEqual(await getPromoOnlyAudioSampleState(db, runtime), {
-    enabled: true, ready: true, canImport: true, playbackAvailable: false,
+    enabled: true, ready: true, canImport: true, canRecover: false, playbackAvailable: false,
     reconciliationRequired: false, safeErrorCode: null });
   const result = await importPromoOnlyAudioSample(db, runtime);
   assert.deepEqual(result, { imported: true, playbackAvailable: true,
@@ -333,6 +374,138 @@ test("one exact pre-queue server-ID lock can be repaired after fresh three-call 
   assert.equal(checks, 1, "no second hosted check or repair after a later failed claim");
 });
 
+test("one existing-queue recovery preserves old audits, claims durably, and stores only a draft", async () => {
+  const db = queuedRecoveryLockedDb();
+  const { runtime, spy } = recoveryOptions(db);
+  assert.deepEqual(await getPromoOnlyAudioSampleState(db, runtime), {
+    enabled: true, ready: true, canImport: false, canRecover: true,
+    playbackAvailable: false, reconciliationRequired: true,
+    safeErrorCode: "PROMOONLY_AUDIO_SAMPLE_REQUEST_FAILED" });
+  await assert.rejects(importPromoOnlyAudioSample(db, runtime),
+    { code: "PROMOONLY_AUDIO_SAMPLE_ALREADY_CLAIMED" });
+  const result = await recoverPromoOnlyAudioSample(db, runtime);
+  assert.deepEqual(result, { imported: true, playbackAvailable: true,
+    reconciliationRequired: false, safeErrorCode: null });
+  assert.equal(db.state.item.downloadRetryCount, 1);
+  assert.equal(spy.supplierCalls, 1);
+  assert.equal(spy.acknowledgeCalls, 1);
+  assert.equal(db.state.audit[0].action, "PROMOONLY_AUDIO_SAMPLE_CLAIMED");
+  assert.equal(db.state.audit[1].action, "PROMOONLY_AUDIO_SAMPLE_PREFLIGHT_REPAIRED");
+  assert.equal(db.state.audit[2].action, "PROMOONLY_AUDIO_SAMPLE_CLAIMED");
+  assert.equal(db.state.audit[3].action, "PROMOONLY_AUDIO_SAMPLE_RECOVERY_CLAIMED");
+  assert.equal(db.state.audit[3].details.originalFailureCode,
+    "PROMOONLY_AUDIO_SAMPLE_REQUEST_FAILED");
+  assert.equal(db.state.audit[3].details.queueMutated, false);
+  assert.equal(spy.storedInput.metadata.status, "DRAFT");
+  assert.equal(spy.storedInput.reviewApproved, false);
+  assert.equal(db.state.item.autoDjReady, false);
+  assert.equal((await getPromoOnlyAudioSampleState(db, runtime)).canRecover, false);
+  await assert.rejects(recoverPromoOnlyAudioSample(db, runtime),
+    { code: "PROMOONLY_AUDIO_SAMPLE_RECOVERY_NOT_ALLOWED" });
+  assert.equal(spy.supplierCalls, 1);
+});
+
+test("recovery failure after durable claim never retries, queues again, or enables playback", async () => {
+  const db = queuedRecoveryLockedDb();
+  const { runtime } = recoveryOptions(db);
+  let requests = 0;
+  runtime.recoverSample = async () => {
+    requests++;
+    throw Object.assign(new Error("synthetic supplier response not exposed"), {
+      code: "PROMOONLY_AUDIO_SAMPLE_REQUEST_FAILED", phase: "MEDIA",
+      supplierRequestCount: 4 });
+  };
+  await assert.rejects(recoverPromoOnlyAudioSample(db, runtime), (error) => {
+    assert.equal(error.code, "PROMOONLY_AUDIO_SAMPLE_REQUEST_FAILED");
+    assert.equal(error.phase, "MEDIA");
+    assert.equal(error.supplierRequestCount, 4);
+    assert.doesNotMatch(error.message, /synthetic supplier response/);
+    return true;
+  });
+  assert.equal(requests, 1);
+  assert.equal(db.state.item.downloadRetryCount, 1);
+  assert.equal(db.state.item.importState, "RECONCILIATION_REQUIRED");
+  assert.equal(db.state.audit.length, 4);
+  assert.equal(db.state.audit[3].action, "PROMOONLY_AUDIO_SAMPLE_RECOVERY_CLAIMED");
+  assert.equal(await resolvePromoOnlyAudioSampleAsset(db, runtime), null);
+  await assert.rejects(recoverPromoOnlyAudioSample(db, runtime),
+    { code: "PROMOONLY_AUDIO_SAMPLE_RECOVERY_NOT_ALLOWED" });
+  assert.equal(requests, 1);
+});
+
+test("fixed existing-queue identity and transport failures remain distinguishable after one claim", async () => {
+  for (const code of ["PROMOONLY_AUDIO_SAMPLE_EXISTING_QUEUE_INVALID",
+    "PROMOONLY_AUDIO_SAMPLE_QUEUED_RECOVERY_FAILED"]) {
+    const db = queuedRecoveryLockedDb();
+    const { runtime } = recoveryOptions(db);
+    runtime.recoverSample = async () => {
+      throw Object.assign(new Error("untrusted supplier detail"), {
+        code, phase: "QUEUE", supplierRequestCount: 2 });
+    };
+    await assert.rejects(recoverPromoOnlyAudioSample(db, runtime), { code });
+    assert.equal(db.state.item.lastImportErrorCode, code);
+    assert.equal(db.state.audit[3].action, "PROMOONLY_AUDIO_SAMPLE_RECOVERY_CLAIMED");
+  }
+});
+
+test("recovered bytes with unconfirmed ACK stay unplayable and never repeat supplier calls", async () => {
+  const db = queuedRecoveryLockedDb();
+  const { runtime, spy } = recoveryOptions(db, { acknowledgementFails: true });
+  const result = await recoverPromoOnlyAudioSample(db, runtime);
+  assert.deepEqual(result, { imported: true, playbackAvailable: false,
+    reconciliationRequired: true, safeErrorCode: "PROMOONLY_AUDIO_SAMPLE_ACK_UNCONFIRMED",
+    phase: "ACK", supplierRequestCount: 4 });
+  assert.equal(db.state.item.trackId, "draft-track-1");
+  assert.equal(db.state.item.importState, "RECONCILIATION_REQUIRED");
+  assert.equal(await resolvePromoOnlyAudioSampleAsset(db, runtime), null);
+  await assert.rejects(recoverPromoOnlyAudioSample(db, runtime),
+    { code: "PROMOONLY_AUDIO_SAMPLE_RECOVERY_NOT_ALLOWED" });
+  assert.equal(spy.supplierCalls, 1);
+  assert.equal(spy.acknowledgeCalls, 1);
+});
+
+test("queued recovery rejects changed source, wrong history, media evidence, and CAS races before supplier", async () => {
+  for (const mutate of [
+    (db) => { db.state.connection.status = "ACTIVE"; },
+    (db) => { db.state.connection.createdByUserId = "other"; },
+    (db) => { db.state.item.lastImportErrorCode = "PROMOONLY_AUDIO_SAMPLE_NETWORK"; },
+    (db) => { db.state.item.downloadRetryCount = 1; },
+    (db) => { db.state.item.sourceChecksumSha256 = CHECKSUM; },
+    (db) => { db.state.item.sourceMimeType = "audio/mpeg"; },
+    (db) => { db.state.item.sourceSizeBytes = 100n; },
+    (db) => { db.state.item.trackId = "draft-track"; },
+    (db) => { db.state.audit[0].actorUserId = "other"; },
+    (db) => { db.state.audit[0].details.externalTrackId = "other"; },
+    (db) => { db.state.audit[1].details.mediaRequested = true; },
+    (db) => { db.state.audit[1].createdAt = new Date("2026-10-11T19:00:00.000Z"); },
+    (db) => { db.state.audit[2].action = "PROMOONLY_AUDIO_SAMPLE_IMPORTED"; },
+    (db) => { db.state.audit.push({ actorUserId: ACTOR,
+      action: "PROMOONLY_AUDIO_SAMPLE_BYTES_IDENTIFIED",
+      entityType: "MusicDistributorTrack", entityId: db.state.item.id }); },
+    (db) => { db.state.audit.push({ actorUserId: ACTOR,
+      action: "PROMOONLY_AUDIO_SAMPLE_RECOVERY_CLAIMED",
+      entityType: "MusicDistributorTrack", entityId: db.state.item.id }); }
+  ]) {
+    const db = queuedRecoveryLockedDb();
+    const { runtime, spy } = recoveryOptions(db);
+    mutate(db);
+    await assert.rejects(recoverPromoOnlyAudioSample(db, runtime),
+      { code: /PROMOONLY_AUDIO_SAMPLE_(RECOVERY_NOT_ALLOWED|SOURCE_UNAVAILABLE)/ });
+    assert.equal(spy.supplierCalls, 0);
+    assert.equal(db.state.item.downloadRetryCount <= 1, true);
+  }
+  const db = queuedRecoveryLockedDb();
+  const { runtime, spy } = recoveryOptions(db);
+  const originalUpdate = db.musicDistributorTrack.updateMany;
+  db.musicDistributorTrack.updateMany = async (args) =>
+    args.where.lastImportErrorCode === "PROMOONLY_AUDIO_SAMPLE_REQUEST_FAILED"
+      ? { count: 0 } : originalUpdate(args);
+  await assert.rejects(recoverPromoOnlyAudioSample(db, runtime),
+    { code: "PROMOONLY_AUDIO_SAMPLE_RECOVERY_NOT_ALLOWED" });
+  assert.equal(spy.supplierCalls, 0);
+  assert.equal(db.state.audit.length, 3);
+});
+
 test("preflight repair rejects wrong failure, media evidence, owner, or altered audit before supplier check", async () => {
   for (const mutate of [
     (db) => { db.state.item.lastImportErrorCode = "PROMOONLY_AUDIO_SAMPLE_NETWORK"; },
@@ -449,4 +622,14 @@ test("private routes require preview-code owner, exact write origin and static n
   assert.match(repair, /promo-only-audio-preflight-repair:/);
   assert.match(repair, /limit: 2/);
   assert.doesNotMatch(repair, /export async function GET/);
+  const recover = readFileSync(resolve(root,
+    "app/api/admin/promo-only/audio-sample/recover/route.js"), "utf8");
+  assert.match(recover, /session\?\.authMethod !== "PREVIEW_CODE"/);
+  assert.match(recover, /isPrivatePreviewAdmin\(session\.user, policy\)/);
+  assert.match(recover, /request\.headers\.get\("origin"\) !== policy\.previewOrigin/);
+  assert.match(recover, /new URL\(request\.url\)\.search/);
+  assert.match(recover, /sampleRequestBodyIsEmpty\(request\)/);
+  assert.match(recover, /promo-only-audio-queue-recovery:/);
+  assert.match(recover, /limit: 2/);
+  assert.doesNotMatch(recover, /export async function GET|downloads\/queue/);
 });

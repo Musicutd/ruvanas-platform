@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   checkPromoOnlyAudioSamplePreflight, fetchPromoOnlyAudioSample, getPromoOnlyAudioSampleReadiness,
-  readPromoOnlyAudioSampleConfig
+  readPromoOnlyAudioSampleConfig, recoverQueuedPromoOnlyAudioSample
 } from "../lib/promo-only-audio-sample.mjs";
 
 const NOW = Date.parse("2026-10-11T12:00:00.000Z");
@@ -57,6 +57,34 @@ function supplierFixture(responses = payloads()) {
       : new Response(JSON.stringify(item), { headers: { "content-type": "application/json" } });
   };
   return { fetchImpl, calls };
+}
+function existingQueuePayload(overrides = {}) {
+  return { trackid: 713637, releaseid: 122500, media_type: 2,
+    file_type: "mp3", queue_time: "2026-10-11 18:06:01", queueid: 13,
+    dl_token: DL_TOKEN, servers: ["uk01.promoonly.com"], ...overrides };
+}
+function recoveryFixture(overrides = {}) {
+  const responses = [
+    { token: TOKEN, expires: Math.floor(NOW / 1000) + 300 },
+    [existingQueuePayload(), { trackid: 999999, releaseid: 999999 }],
+    [{ id: 0, host: "uk01.promoonly.com" }],
+    audioBytes,
+    { result: "success", releaseid: 122500, type: "mp3" }
+  ].map((item, index) => overrides[index] ?? item);
+  const calls = [];
+  const fetchImpl = async (input, options) => {
+    const index = calls.length;
+    calls.push({ url: String(input), method: options.method || "GET",
+      redirect: options.redirect, body: options.body });
+    const value = responses[index];
+    if (value instanceof Error) throw value;
+    if (value instanceof Response || value?.headers?.get && value?.body?.getReader) return value;
+    return index === 3
+      ? new Response(value, { headers: { "content-type": "audio/mpeg",
+        "content-length": String(value.length) } })
+      : new Response(JSON.stringify(value), { headers: { "content-type": "application/json" } });
+  };
+  return { calls, fetchImpl };
 }
 
 test("default-off, exact private preview and fixed R2 gates refuse before network", async () => {
@@ -302,4 +330,111 @@ test("acknowledgement identity mismatch remains one-shot reconciliation, never a
   });
   await assert.rejects(result.acknowledge(), { code: "PROMOONLY_AUDIO_SAMPLE_ACK_ALREADY_ATTEMPTED" });
   assert.equal(f.calls.length, 6);
+});
+
+test("existing queued sample uses only auth, queue read, server read, HTTPS media and one ACK", async () => {
+  const f = recoveryFixture();
+  const result = await recoverQueuedPromoOnlyAudioSample(readyConfig(), {
+    fetchImpl: f.fetchImpl, now: () => NOW
+  });
+  assert.equal(result.existingQueueOnly, true);
+  assert.equal(result.supplierRequestCount, 4);
+  assert.deepEqual(f.calls.map((call) => [call.method, call.url]), [
+    ["POST", "https://api.promoonly.com/user/authenticate"],
+    ["GET", "https://api.promoonly.com/queue"],
+    ["GET", "https://api.promoonly.com/download/server/713637"],
+    ["GET", `https://uk01.promoonly.com/pool/v5/download/${DL_TOKEN}`]
+  ]);
+  assert.equal(f.calls.every((call) => call.redirect === "error"), true);
+  assert.equal(result.audio.buffer.equals(audioBytes), true);
+  assert.equal(result.audio.serverId, 0);
+  assert.equal(result.audio.fileName, "promo-only-713637.mp3");
+  assert.equal(result.audio.contentType, "audio/mpeg");
+  assert.equal(JSON.stringify(result).includes(DL_TOKEN), false);
+  const receipt = await result.acknowledge();
+  assert.deepEqual(receipt, { status: "ACKNOWLEDGED", supplierRequestCount: 5,
+    existingQueueOnly: true });
+  assert.equal(f.calls.at(-1).url, "https://api.promoonly.com/download/success");
+  assert.deepEqual(Object.fromEntries(f.calls.at(-1).body), {
+    trackid: "713637", serverid: "0", dl_token: DL_TOKEN
+  });
+  await assert.rejects(result.acknowledge(), { code: "PROMOONLY_AUDIO_SAMPLE_ACK_ALREADY_ATTEMPTED",
+    supplierRequestCount: 5, phase: "ACK" });
+  assert.equal(f.calls.length, 5);
+});
+
+test("existing queue must have exactly one observed mp3 row for the exact track", async () => {
+  const row = existingQueuePayload();
+  for (const queue of [
+    [], [{ trackid: 999999, releaseid: 122500 }],
+    [{ ...row, releaseid: 122501 }],
+    [row, { ...row, queueid: 14 }],
+    [{ ...row, queue_time: "2026-10-11 18:06:02" }],
+    [{ ...row, file_type: "m4a" }],
+    [{ ...row, media_type: 1 }],
+    [{ ...row, dl_token: "stale" }],
+    [{ ...row, Result: "not queued" }],
+    [{ ...row, servers: ["http://uk01.promoonly.com"] }]
+  ]) {
+    const f = recoveryFixture({ 1: queue });
+    await assert.rejects(recoverQueuedPromoOnlyAudioSample(readyConfig(), {
+      fetchImpl: f.fetchImpl, now: () => NOW
+    }), { code: "PROMOONLY_AUDIO_SAMPLE_EXISTING_QUEUE_INVALID",
+      supplierRequestCount: 2, phase: "QUEUE" });
+    assert.equal(f.calls.length, 2);
+    assert.equal(f.calls.some((call) => call.url.includes("/downloads/queue/") ||
+      call.url.includes("/download/remove/") || call.url.includes("/download/clear_queue")), false);
+  }
+});
+
+test("unconfirmed queued server and short auth token stop before media", async () => {
+  const wrongHost = recoveryFixture({ 2: [{ id: 0, host: "other.promoonly.com" }] });
+  await assert.rejects(recoverQueuedPromoOnlyAudioSample(readyConfig(), {
+    fetchImpl: wrongHost.fetchImpl, now: () => NOW
+  }), { code: "PROMOONLY_AUDIO_SAMPLE_SERVER_UNCONFIRMED",
+    supplierRequestCount: 3, phase: "SERVERS" });
+  assert.equal(wrongHost.calls.length, 3);
+  const shortToken = recoveryFixture({ 0: { token: TOKEN,
+    expires: Math.floor(NOW / 1000) + 90 } });
+  await assert.rejects(recoverQueuedPromoOnlyAudioSample(readyConfig(), {
+    fetchImpl: shortToken.fetchImpl, now: () => NOW
+  }), { code: "PROMOONLY_AUDIO_SAMPLE_TOKEN_EXPIRY_TOO_SHORT",
+    supplierRequestCount: 1, phase: "AUTH" });
+  assert.equal(shortToken.calls.length, 1);
+});
+
+test("media TLS failure and partial, wrong-type, oversized, or truncated bodies never ACK", async () => {
+  const cases = [
+    [new Error("synthetic TLS failure"), "PROMOONLY_AUDIO_SAMPLE_QUEUED_RECOVERY_FAILED"],
+    [new Response(audioBytes, { status: 206, headers: { "content-type": "audio/mpeg" } }),
+      "PROMOONLY_AUDIO_SAMPLE_MEDIA_HTTP_STATUS_INVALID"],
+    [new Response(audioBytes, { headers: { "content-type": "audio/wav" } }),
+      "PROMOONLY_AUDIO_SAMPLE_MEDIA_INVALID"],
+    [new Response(audioBytes, { headers: { "content-type": "audio/mpeg",
+      "content-length": String(50 * 1024 * 1024 + 1) } }),
+      "PROMOONLY_AUDIO_SAMPLE_RESPONSE_TOO_LARGE"],
+    [new Response(audioBytes, { headers: { "content-type": "audio/mpeg",
+      "content-length": String(audioBytes.length + 1) } }),
+      "PROMOONLY_AUDIO_SAMPLE_MEDIA_LENGTH_MISMATCH"]
+  ];
+  for (const [response, code] of cases) {
+    const f = recoveryFixture({ 3: response });
+    await assert.rejects(recoverQueuedPromoOnlyAudioSample(readyConfig(), {
+      fetchImpl: f.fetchImpl, now: () => NOW
+    }), { code, supplierRequestCount: 4, phase: "MEDIA" });
+    assert.equal(f.calls.length, 4);
+    assert.ok(f.calls.every((call) => call.url.startsWith("https://")));
+  }
+});
+
+test("existing-queue acknowledgement mismatch is one-shot and phase-labelled", async () => {
+  const f = recoveryFixture({ 4: { result: "success", releaseid: 122501, type: "mp3" } });
+  const result = await recoverQueuedPromoOnlyAudioSample(readyConfig(), {
+    fetchImpl: f.fetchImpl, now: () => NOW
+  });
+  await assert.rejects(result.acknowledge(), { code: "PROMOONLY_AUDIO_SAMPLE_ACK_REJECTED",
+    supplierRequestCount: 5, phase: "ACK" });
+  await assert.rejects(result.acknowledge(), { code: "PROMOONLY_AUDIO_SAMPLE_ACK_ALREADY_ATTEMPTED",
+    supplierRequestCount: 5, phase: "ACK" });
+  assert.equal(f.calls.length, 5);
 });

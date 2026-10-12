@@ -37,17 +37,19 @@ export default function PromoOnlyConsole({ initial }) {
           ? payload.result?.repaired === true
             ? "Pre-download check repaired. No audio was downloaded. The one-track import is ready."
             : "Pre-download repair was not confirmed. No download was requested."
-        : path === "/api/admin/promo-only/audio-sample"
+        : path === "/api/admin/promo-only/audio-sample" || path === "/api/admin/promo-only/audio-sample/recover"
           ? payload.result?.reconciliationRequired || payload.result?.playbackAvailable !== true
             ? "Private test audio is stored but playback is blocked pending reconciliation. Do not repeat the download."
-            : "Private test audio stored. Use the owner-only player below; public playback and rights approval remain off."
+            : path === "/api/admin/promo-only/audio-sample/recover"
+              ? "Existing queued sample recovered into private draft storage. No new queue request was made. Use the owner-only player below."
+              : "Private test audio stored. Use the owner-only player below; public playback and rights approval remain off."
         : "Saved. The master catalogue and testing status have been refreshed.");
       router.refresh();
     } catch (error) {
       setNotice(error.message);
       // The one-shot server claim may have changed even when the request
       // failed. Refresh that state so a stale import button cannot mislead.
-      if (path === "/api/admin/promo-only/audio-sample" || path === "/api/admin/promo-only/audio-sample/preflight-repair") router.refresh();
+      if (path === "/api/admin/promo-only/audio-sample" || path === "/api/admin/promo-only/audio-sample/preflight-repair" || path === "/api/admin/promo-only/audio-sample/recover") router.refresh();
     }
     finally { setBusy(""); }
   }
@@ -84,6 +86,10 @@ export default function PromoOnlyConsole({ initial }) {
       {audioSampleState.ready && audioSampleState.reconciliationRequired && audioSampleState.safeErrorCode === "PROMOONLY_AUDIO_SAMPLE_SERVERS_INVALID" ? <>
         <p>This specific pre-download validation failure can be checked once against the supplier. This check cannot queue or download audio.</p>
         <button style={button} disabled={Boolean(busy)} onClick={() => post("/api/admin/promo-only/audio-sample/preflight-repair")}>{busy === "/api/admin/promo-only/audio-sample/preflight-repair" ? "Checking pre-download validation…" : "Check and repair pre-download validation"}</button>
+      </> : null}
+      {audioSampleState.canRecover === true ? <>
+        <p>One controlled recovery is available for the existing queued MP3. This action cannot queue a track again. A failed recovery stays locked; it will not retry automatically.</p>
+        <button style={button} disabled={Boolean(busy)} onClick={() => post("/api/admin/promo-only/audio-sample/recover")}>{busy === "/api/admin/promo-only/audio-sample/recover" ? "Recovering existing queued sample…" : "Recover existing queued sample once"}</button>
       </> : null}
       {audioSampleState.playbackAvailable ? <>
         <p>Private draft ready for the owner to listen. This does not approve public or commercial use.</p>
