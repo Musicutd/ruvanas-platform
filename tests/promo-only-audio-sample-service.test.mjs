@@ -4,6 +4,7 @@ import { dirname, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
+  checkLockedPromoOnlyAudioSampleTransport,
   getPromoOnlyAudioSampleState, importPromoOnlyAudioSample,
   recoverPromoOnlyAudioSample, repairPromoOnlyAudioSamplePreflight,
   resolvePromoOnlyAudioSampleAsset
@@ -119,6 +120,20 @@ function queuedRecoveryLockedDb() {
       details: { originalFailureCode: "PROMOONLY_AUDIO_SAMPLE_SERVERS_INVALID",
         mediaRequested: false, rightsGranted: false } },
     claim(new Date("2026-10-11T18:06:00.000Z")));
+  return db;
+}
+
+function failedRecoveryTransportDb() {
+  const db = queuedRecoveryLockedDb();
+  Object.assign(db.state.item, { downloadRetryCount: 1,
+    lastImportErrorCode: "PROMOONLY_AUDIO_SAMPLE_QUEUED_RECOVERY_FAILED" });
+  db.state.audit.push({ actorUserId: ACTOR,
+    action: "PROMOONLY_AUDIO_SAMPLE_RECOVERY_CLAIMED",
+    entityType: "MusicDistributorTrack", entityId: db.state.item.id,
+    createdAt: new Date("2026-10-11T18:07:00.000Z"),
+    details: { externalTrackId: "713637", externalReleaseId: "122500",
+      originalFailureCode: "PROMOONLY_AUDIO_SAMPLE_REQUEST_FAILED",
+      existingQueueOnly: true, queueMutated: false, rightsGranted: false } });
   return db;
 }
 
@@ -506,6 +521,78 @@ test("queued recovery rejects changed source, wrong history, media evidence, and
   assert.equal(db.state.audit.length, 3);
 });
 
+test("locked-recovery transport check is read-only and returns only fixed safe fields", async () => {
+  const db = failedRecoveryTransportDb();
+  const { runtime } = options(db);
+  const before = structuredClone(db.state);
+  let checks = 0;
+  const result = await checkLockedPromoOnlyAudioSampleTransport(db, { ...runtime,
+    checkTransport: async () => {
+      checks++;
+      return { ready: true, reachable: false, httpStatus: null,
+        causeCode: "TLS_LEAF_UNVERIFIED", apiRequestCount: 2,
+        headRequestCount: 1, secretSupplierHost: "must-not-return" };
+    }
+  });
+  assert.deepEqual(result, { ready: true, reachable: false, httpStatus: null,
+    causeCode: "TLS_LEAF_UNVERIFIED", apiRequestCount: 2, headRequestCount: 1 });
+  assert.equal(checks, 1);
+  assert.deepEqual(db.state, before, "diagnostic may not alter provider item or audit history");
+});
+
+test("transport check denies wrong lock or history before any external request", async () => {
+  for (const mutate of [
+    (db) => { db.state.connection.status = "ACTIVE"; },
+    (db) => { db.state.connection.createdByUserId = "other"; },
+    (db) => { db.state.item.lastImportErrorCode = "PROMOONLY_AUDIO_SAMPLE_REQUEST_FAILED"; },
+    (db) => { db.state.item.downloadRetryCount = 0; },
+    (db) => { db.state.item.sourceChecksumSha256 = CHECKSUM; },
+    (db) => { db.state.item.sourceMimeType = "audio/mpeg"; },
+    (db) => { db.state.item.sourceSizeBytes = 100n; },
+    (db) => { db.state.item.trackId = "draft-track"; },
+    (db) => { db.state.audit[0].actorUserId = "other"; },
+    (db) => { db.state.audit[1].details.mediaRequested = true; },
+    (db) => { db.state.audit[3].details.existingQueueOnly = false; },
+    (db) => { db.state.audit[3].details.queueMutated = true; },
+    (db) => { db.state.audit[3].details.originalFailureCode = "other"; },
+    (db) => { db.state.audit.push({ actorUserId: ACTOR,
+      action: "PROMOONLY_AUDIO_SAMPLE_BYTES_IDENTIFIED",
+      entityType: "MusicDistributorTrack", entityId: db.state.item.id,
+      createdAt: new Date("2026-10-11T18:08:00.000Z") }); }
+  ]) {
+    const db = failedRecoveryTransportDb();
+    const { runtime } = options(db);
+    mutate(db);
+    let checks = 0;
+    await assert.rejects(checkLockedPromoOnlyAudioSampleTransport(db, { ...runtime,
+      checkTransport: async () => { checks++; }
+    }), { code: /PROMOONLY_AUDIO_SAMPLE_(TRANSPORT_NOT_ALLOWED|SOURCE_UNAVAILABLE)/ });
+    assert.equal(checks, 0);
+  }
+});
+
+test("transport result rejects unsafe cause, count, status, or extra-failure combinations", async () => {
+  for (const invalid of [
+    { ready: true, reachable: false, httpStatus: null, causeCode: "supplier-secret",
+      apiRequestCount: 2, headRequestCount: 1 },
+    { ready: true, reachable: true, httpStatus: null, causeCode: null,
+      apiRequestCount: 2, headRequestCount: 1 },
+    { ready: true, reachable: false, httpStatus: 200, causeCode: "DNS",
+      apiRequestCount: 2, headRequestCount: 1 },
+    { ready: true, reachable: true, httpStatus: 200, causeCode: "OTHER",
+      apiRequestCount: 2, headRequestCount: 1 },
+    { ready: true, reachable: true, httpStatus: 200, causeCode: null,
+      apiRequestCount: 3, headRequestCount: 1 }
+  ]) {
+    const db = failedRecoveryTransportDb();
+    const { runtime } = options(db);
+    await assert.rejects(checkLockedPromoOnlyAudioSampleTransport(db, { ...runtime,
+      checkTransport: async () => invalid
+    }), { code: "PROMOONLY_AUDIO_SAMPLE_TRANSPORT_RESPONSE_INVALID" });
+    assert.equal(db.state.audit.length, 4);
+  }
+});
+
 test("preflight repair rejects wrong failure, media evidence, owner, or altered audit before supplier check", async () => {
   for (const mutate of [
     (db) => { db.state.item.lastImportErrorCode = "PROMOONLY_AUDIO_SAMPLE_NETWORK"; },
@@ -632,4 +719,17 @@ test("private routes require preview-code owner, exact write origin and static n
   assert.match(recover, /promo-only-audio-queue-recovery:/);
   assert.match(recover, /limit: 2/);
   assert.doesNotMatch(recover, /export async function GET|downloads\/queue/);
+  const transport = readFileSync(resolve(root,
+    "app/api/admin/promo-only/audio-sample/transport-check/route.js"), "utf8");
+  assert.match(transport, /export async function GET\(request\)/);
+  assert.match(transport, /session\?\.authMethod !== "PREVIEW_CODE"/);
+  assert.match(transport, /isPrivatePreviewAdmin\(session\.user, policy\)/);
+  assert.match(transport, /origin && origin !== policy\.previewOrigin/);
+  assert.match(transport, /new URL\(request\.url\)\.search/);
+  assert.match(transport, /sampleRequestBodyIsEmpty\(request\)/);
+  assert.match(transport, /promo-only-audio-transport-check:/);
+  assert.match(transport, /limit: 1/);
+  assert.match(transport, /process\.env\.RENDER_SERVICE_ID !== HOSTED_SERVICE_ID/);
+  assert.match(transport, /"cache-control": "private, no-store"/);
+  assert.doesNotMatch(transport, /export async function POST|downloads\/queue|download\/success/);
 });
