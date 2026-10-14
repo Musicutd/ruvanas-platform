@@ -13,7 +13,7 @@ const formatDate = (value) => value ? new Date(value).toLocaleString() : "—";
 
 export default function PromoOnlyConsole({ initial }) {
   const router = useRouter();
-  const { config, connection, runs, feedItems, tracks, mappings, genres, configError, metadataSampleReady = false, audioSampleState = null } = initial;
+  const { config, connection, runs, feedItems, tracks, mappings, genres, configError, metadataSampleReady = false, metadataBatchReady = false, audioSampleState = null } = initial;
   const [busy, setBusy] = useState("");
   const [notice, setNotice] = useState("");
   const [trackTerritories, setTrackTerritories] = useState({});
@@ -37,7 +37,9 @@ export default function PromoOnlyConsole({ initial }) {
       const response = await fetch(path, { method, headers: { "content-type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(`${payload.error || "Action failed."}${payload.code ? ` (${payload.code})` : ""}`);
-      setNotice(path === "/api/admin/promo-only/metadata-sample"
+      setNotice(path === "/api/admin/promo-only/metadata-batch"
+        ? `Metadata only: ${payload.result.createdCount} new, ${payload.result.updatedCount} changed, ${payload.result.unchangedCount} unchanged; ${payload.result.skippedCount} protected tracks left untouched.${payload.result.truncatedCount ? ` ${payload.result.truncatedCount} tracks outside the 25-track cap were not imported.` : ""} No audio was downloaded or made playable. Automatic sync remains off.`
+        : path === "/api/admin/promo-only/metadata-sample"
         ? "One metadata sample saved. No audio was downloaded or made playable; this is not a full library sync."
         : path === "/api/admin/promo-only/audio-sample/preflight-repair"
           ? payload.result?.repaired === true
@@ -78,9 +80,13 @@ export default function PromoOnlyConsole({ initial }) {
       {syncUnavailable ? <div id="promo-only-sync-unavailable" role="note">
         <p><strong>Sync unavailable</strong></p>
         <ul>{syncUnavailableReasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>
-        <p>API credentials alone do not enable full catalogue sync. Downloads remain off.</p>
+        <p>API credentials alone do not enable full catalogue sync. RSS is required by this feed-sync button, not by the manual API metadata import. Downloads remain off.</p>
       </div> : null}
-      {metadataSampleReady ? <>
+      {metadataBatchReady ? <>
+        <p><strong>Manual API metadata import is ready.</strong> Import the latest available audio release, capped at 25 tracks. RSS is not needed for this action. Titles, artists and genres only; existing queued or imported audio is left untouched.</p>
+        <p>This is not a full library sync. Downloads, playback, scheduled polling and public music access remain off.</p>
+        <button style={button} disabled={Boolean(busy)} onClick={() => post("/api/admin/promo-only/metadata-batch")}>{busy === "/api/admin/promo-only/metadata-batch" ? "Importing metadata…" : "Import one release (max 25 tracks)"}</button>
+      </> : metadataSampleReady ? <>
         <p>Manual one-track API metadata test is ready. Regular feed sync, scheduled polling and general audio imports remain off.</p>
         <button style={button} disabled={Boolean(busy)} onClick={() => post("/api/admin/promo-only/metadata-sample")}>Import one metadata sample</button>
       </> : null}
@@ -107,7 +113,7 @@ export default function PromoOnlyConsole({ initial }) {
         <audio aria-label="Owner-only Promo Only test sample" controls preload="none" controlsList="nodownload" src="/api/admin/promo-only/audio-sample/stream" style={{ width: "100%", maxWidth: 620 }} />
       </> : null}
     </section> : null}
-    <section style={panel}><h2>Recent sync history</h2><div style={wrap}><table style={table}><thead><tr>{["Time", "Trigger / mode", "Status", "Fetched", "Enriched", "Rejected", "Safe error"].map((x) => <th key={x} style={cell}>{x}</th>)}</tr></thead><tbody>{runs.map((run) => <tr key={run.id}><td style={cell}>{formatDate(run.createdAt)}</td><td style={cell}>{run.trigger} / {run.mode}</td><td style={cell}>{run.status}</td><td style={cell}>{run.fetchedCount}</td><td style={cell}>{run.enrichedCount}</td><td style={cell}>{run.rejectedCount}</td><td style={cell}>{run.safeErrorCode || "—"}</td></tr>)}</tbody></table></div>{!runs.length ? <p>No sync has run yet.</p> : null}</section>
+    <section style={panel}><h2>Recent sync history</h2><div style={wrap}><table style={table}><thead><tr>{["Time", "Trigger / mode", "Status", "Fetched", "Enriched", "New", "Changed", "Unchanged", "Rejected / protected", "Safe error"].map((x) => <th key={x} style={cell}>{x}</th>)}</tr></thead><tbody>{runs.map((run) => <tr key={run.id}><td style={cell}>{formatDate(run.createdAt)}</td><td style={cell}>{run.trigger} / {run.mode}</td><td style={cell}>{run.status}</td><td style={cell}>{run.fetchedCount}</td><td style={cell}>{run.enrichedCount}</td><td style={cell}>{run.createdCount}</td><td style={cell}>{run.updatedCount}</td><td style={cell}>{run.unchangedCount}</td><td style={cell}>{run.rejectedCount}</td><td style={cell}>{run.safeErrorCode || "—"}</td></tr>)}</tbody></table></div>{!runs.length ? <p>No sync has run yet.</p> : null}</section>
     <section style={panel}><h2>Discovered RSS items</h2><div style={wrap}><table style={table}><thead><tr>{["Title", "Provider identity", "Status", "First seen", "Error"].map((x) => <th key={x} style={cell}>{x}</th>)}</tr></thead><tbody>{feedItems.map((item) => <tr key={item.id}><td style={cell}>{item.normalizedPayload?.title || "Untitled"}</td><td style={cell}>Track {item.externalTrackId || "—"} / release {item.externalReleaseId || "—"}</td><td style={cell}>{item.status}</td><td style={cell}>{formatDate(item.firstSeenAt)}</td><td style={cell}>{item.lastErrorCode || "—"}</td></tr>)}</tbody></table></div>{!feedItems.length ? <p>No feed items discovered.</p> : null}</section>
     <section style={panel}><h2>Master catalogue provider records</h2><p>Only Super Admin can request a test import. Storage alone does not publish the track; rights evidence and availability still require review.</p><div style={wrap}><table style={{ ...table, minWidth: 1100 }}><thead><tr>{["Track", "Metadata", "Genre", "Provider IDs", "Import", "Tier", "Controls"].map((x) => <th key={x} style={cell}>{x}</th>)}</tr></thead><tbody>{tracks.map((track) => <tr key={track.id}>
       <td style={cell}><strong>{track.artist} — {track.title}</strong><br />{track.mixName || "Original"} · {track.bpm || "—"} BPM</td>
