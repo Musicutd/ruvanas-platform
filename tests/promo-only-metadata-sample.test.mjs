@@ -4,6 +4,10 @@ import {
   fetchPromoOnlyMetadataSample,
   readPromoOnlyMetadataSampleConfig
 } from "../lib/promo-only-metadata-sample.mjs";
+import {
+  fetchPromoOnlyAudioSample,
+  readPromoOnlyAudioSampleConfig
+} from "../lib/promo-only-audio-sample.mjs";
 
 const NOW = Date.parse("2026-10-11T12:00:00.000Z");
 const DAY = "2026-10-10";
@@ -22,6 +26,11 @@ const env = Object.freeze({
   PROMOONLY_USER_ID: "42",
   PROMOONLY_API_KEY: "fixture-key",
   PROMOONLY_API_SECRET: "fixture-secret"
+});
+const paidEnv = Object.freeze({
+  ...env,
+  RUVANAS_PUBLIC_URL: "https://ruvanas-platform.onrender.com",
+  RENDER_SERVICE_ID: "srv-da03b5lbedkc739q74k0"
 });
 
 function fixtures() {
@@ -49,6 +58,63 @@ function readyConfig() {
   assert.equal(config.ready, true);
   return config;
 }
+
+test("metadata sampling accepts only the two pinned preview service/origin pairs", async () => {
+  assert.equal(readPromoOnlyMetadataSampleConfig(env).ready, true);
+  const paidConfig = readPromoOnlyMetadataSampleConfig(paidEnv);
+  assert.equal(paidConfig.ready, true);
+  const calls = [];
+  const result = await fetchPromoOnlyMetadataSample(paidConfig, {
+    fetchImpl: mockFetch(fixtures(), calls), now: NOW
+  });
+  assert.equal(result.requestCount, 4);
+  assert.equal(calls.length, 4);
+
+  for (const changed of [
+    { RUVANAS_PUBLIC_URL: env.RUVANAS_PUBLIC_URL },
+    { RENDER_SERVICE_ID: env.RENDER_SERVICE_ID },
+    { RUVANAS_PUBLIC_URL: "https://other.onrender.com" },
+    { RENDER_SERVICE_ID: "srv-other" },
+    { RUVANAS_PUBLIC_URL: `${paidEnv.RUVANAS_PUBLIC_URL}/` },
+    { DATABASE_URL: "postgresql://fixture:fixture@other/ruvanas_private_preview_20261011" },
+    { PROMOONLY_AUDIO_DOWNLOAD_ENABLED: "true" },
+    { PROMOONLY_ENABLED: "true" }
+  ]) {
+    const config = readPromoOnlyMetadataSampleConfig({ ...paidEnv, ...changed });
+    assert.equal(config.ready, false);
+    await assert.rejects(fetchPromoOnlyMetadataSample(config, {
+      fetchImpl: () => { throw Error("must not fetch"); }
+    }), { code: "PROMOONLY_SAMPLE_NOT_READY", requestCount: 0 });
+  }
+});
+
+test("paid metadata readiness does not enable audio when its separate switch stays off", async () => {
+  const metadata = readPromoOnlyMetadataSampleConfig(paidEnv);
+  assert.equal(metadata.ready, true);
+  const validSyntheticAudioEnvironment = {
+    ...paidEnv,
+    R2_ACCOUNT_ID: "8aac840009a163d4a099f06744cdf691",
+    R2_BUCKET_NAME: "ruvanas-preview-audio-20261011",
+    R2_ENDPOINT: "https://8aac840009a163d4a099f06744cdf691.r2.cloudflarestorage.com",
+    R2_ACCESS_KEY_ID: "a".repeat(32),
+    R2_SECRET_ACCESS_KEY: "b".repeat(64)
+  };
+  assert.equal(readPromoOnlyAudioSampleConfig({
+    ...validSyntheticAudioEnvironment,
+    PROMOONLY_AUDIO_SAMPLE_ENABLED: "true"
+  }).ready, true);
+  const audio = readPromoOnlyAudioSampleConfig({
+    ...validSyntheticAudioEnvironment,
+    PROMOONLY_AUDIO_SAMPLE_ENABLED: "false"
+  });
+  assert.equal(audio.enabled, false);
+  assert.equal(audio.ready, false);
+  let supplierCalls = 0;
+  await assert.rejects(fetchPromoOnlyAudioSample(audio, {
+    fetchImpl: () => { supplierCalls += 1; throw Error("must not fetch"); }
+  }), { code: "PROMOONLY_AUDIO_SAMPLE_NOT_READY", supplierRequestCount: 0 });
+  assert.equal(supplierCalls, 0);
+});
 
 test("disabled and wrong-preview configurations fail before fetch", async () => {
   const disabled = readPromoOnlyMetadataSampleConfig({ ...env, PROMOONLY_METADATA_SAMPLE_ENABLED: "TRUE" });

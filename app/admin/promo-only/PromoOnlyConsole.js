@@ -17,6 +17,12 @@ export default function PromoOnlyConsole({ initial }) {
   const [busy, setBusy] = useState("");
   const [notice, setNotice] = useState("");
   const [trackTerritories, setTrackTerritories] = useState({});
+  const syncUnavailableReasons = [
+    !config.enabled || config.mode === "OFF" ? "Catalogue sync is switched off for this private preview." : "",
+    !config.rssConfigured ? "No approved Promo Only catalogue feed (RSS) is configured." : ""
+  ].filter(Boolean);
+  const syncUnavailable = syncUnavailableReasons.length > 0;
+  const syncDisabled = Boolean(busy) || syncUnavailable;
 
   function toggleTrackTerritory(trackId, code) {
     setTrackTerritories((current) => {
@@ -66,9 +72,14 @@ export default function PromoOnlyConsole({ initial }) {
     <section style={panel}>
       <h2>Connection and safe mode</h2>
       <p><strong>{configError || config.mode}</strong> · RSS {config.rssConfigured ? `configured (${config.rssHost})` : "not configured"} · API credentials {config.credentialsConfigured ? "configured" : "not configured"} · audio gate {config.audioDownloadEnabled ? "enabled for AUDIO_TEST only" : "off"} · media transport {config.allowHttpMediaTest ? "HTTP test exception enabled" : "HTTPS only"} · PRODUCTION locked</p>
-      <p>Polling: every {config.pollMinutes} minutes · last successful: {formatDate(connection?.lastSuccessfulSyncAt)} · next: {formatDate(connection?.nextSyncAt)} · {connection?._count?.feedItems || 0} feed items · {connection?._count?.tracks || 0} provider tracks.</p>
+      <p>Polling: {syncUnavailable ? "paused — no automatic sync is running" : `configured interval ${config.pollMinutes} minutes`} · last successful: {formatDate(connection?.lastSuccessfulSyncAt)} · next: {formatDate(connection?.nextSyncAt)} · {connection?._count?.feedItems || 0} feed items · {connection?._count?.tracks || 0} provider tracks.</p>
       <p>Change modes and secrets through server environment settings, never this page. AUDIO_TEST never downloads automatically from a feed poll; select each test track below.</p>
-      <button style={button} disabled={Boolean(busy) || !config.enabled || !config.rssConfigured} onClick={() => post("/api/admin/promo-only/sync")}>{busy ? "Working…" : "Run Sync Now"}</button>
+      <button style={{ ...button, opacity: syncDisabled ? 0.55 : 1, cursor: syncDisabled ? "not-allowed" : "pointer" }} disabled={syncDisabled} aria-describedby={syncUnavailable ? "promo-only-sync-unavailable" : undefined} onClick={() => post("/api/admin/promo-only/sync")}>{busy === "/api/admin/promo-only/sync" ? "Syncing…" : "Run Sync Now"}</button>
+      {syncUnavailable ? <div id="promo-only-sync-unavailable" role="note">
+        <p><strong>Sync unavailable</strong></p>
+        <ul>{syncUnavailableReasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>
+        <p>API credentials alone do not enable full catalogue sync. Downloads remain off.</p>
+      </div> : null}
       {metadataSampleReady ? <>
         <p>Manual one-track API metadata test is ready. Regular feed sync, scheduled polling and general audio imports remain off.</p>
         <button style={button} disabled={Boolean(busy)} onClick={() => post("/api/admin/promo-only/metadata-sample")}>Import one metadata sample</button>
