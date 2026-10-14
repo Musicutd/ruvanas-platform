@@ -5,7 +5,7 @@ import { registrationProducts } from "../lib/registration-experience.mjs";
 
 const home = await readFile(new URL("../coming-soon/index.html", import.meta.url), "utf8");
 const guide = await readFile(new URL("../coming-soon/how-it-works/index.html", import.meta.url), "utf8");
-const login = "https://ruvanas-private-preview-20261011.onrender.com/login";
+const login = "https://ruvanas-platform.onrender.com/login";
 const guideUrl = "/how-it-works/";
 const homeUrl = "/";
 const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (character) => ({

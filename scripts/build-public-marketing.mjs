@@ -17,7 +17,7 @@ const moduleRoot = path.resolve(root, "../ruvanas-private-app-preview-20261011")
 const privateRequire = createRequire(path.join(moduleRoot, "package.json"));
 const swc = privateRequire("next/dist/build/swc");
 const { renderToStaticMarkup } = privateRequire("react-dom/server");
-const LOGIN = "https://ruvanas-private-preview-20261011.onrender.com/login";
+const LOGIN = "https://ruvanas-platform.onrender.com/login";
 const PUBLIC_GUIDE = "/how-it-works/";
 const PUBLIC_HOME = "/";
 
