@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { publicRequestOrigin } from "@/lib/origin-policy.mjs";
-import { readPrivatePreviewPolicy, isPrivatePreviewUserAllowed, isPrivatePreviewRegistrationPath } from "@/lib/private-preview-policy.mjs";
+import { readPrivatePreviewPolicy, isPrivatePreviewRegistrationPath, privatePreviewSessionLanding } from "@/lib/private-preview-policy.mjs";
 import { getSessionFromToken, SESSION_COOKIE } from "@/lib/session-lookup.js";
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
@@ -25,6 +25,13 @@ function previewBootstrap(request) {
   return ((method === "GET" || method === "HEAD") &&
     (path === "/preview-login" || path === "/login" || path === "/api/private-preview/health")) ||
     (method === "POST" && (path === "/api/auth/preview-code" || path === "/api/auth/logout"));
+}
+
+async function previewSessionFromRequest(request) {
+  const rawToken = request.cookies.get(SESSION_COOKIE)?.value;
+  if (!rawToken || !/^[a-f0-9]{64}$/.test(rawToken)) return null;
+  const { prisma } = await import("@/lib/prisma");
+  return getSessionFromToken(rawToken, { db: prisma });
 }
 
 function previewDenied(request, policy, requestId) {
@@ -99,22 +106,25 @@ export async function middleware(request) {
         status: request.nextUrl.pathname.startsWith("/api/") ? 403 : 404
       }), requestId);
     }
-    if (request.nextUrl.pathname === "/login" && (request.method === "GET" || request.method === "HEAD")) {
-      return previewResponse(NextResponse.rewrite(new URL("/preview-login", request.url),
-        { request: { headers: requestHeaders } }), requestId);
-    }
-    if (!previewBootstrap(request)) {
-      const rawToken = request.cookies.get(SESSION_COOKIE)?.value;
+    const loginEntry = (request.method === "GET" || request.method === "HEAD") &&
+      (request.nextUrl.pathname === "/login" || request.nextUrl.pathname === "/preview-login");
+    if (loginEntry || !previewBootstrap(request)) {
       let session = null;
-      if (rawToken && /^[a-f0-9]{64}$/.test(rawToken)) {
-        try {
-          const { prisma } = await import("@/lib/prisma");
-          session = await getSessionFromToken(rawToken, { db: prisma });
-        } catch {
-          return previewResponse(NextResponse.json({ error: "Private preview is unavailable." }, { status: 503 }), requestId);
-        }
+      try {
+        session = await previewSessionFromRequest(request);
+      } catch {
+        return previewResponse(NextResponse.json({ error: "Private preview is unavailable." }, { status: 503 }), requestId);
       }
-      if (!session || session.authMethod !== "PREVIEW_CODE" || !isPrivatePreviewUserAllowed(session.user, preview)) {
+      const destination = privatePreviewSessionLanding(session, preview);
+      if (loginEntry) {
+        if (destination) {
+          return previewResponse(NextResponse.redirect(new URL(destination, preview.previewOrigin)), requestId);
+        }
+        if (request.nextUrl.pathname === "/login") {
+          return previewResponse(NextResponse.rewrite(new URL("/preview-login", request.url),
+            { request: { headers: requestHeaders } }), requestId);
+        }
+      } else if (!destination) {
         return previewDenied(request, preview, requestId);
       }
     }

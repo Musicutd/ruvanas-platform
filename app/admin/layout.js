@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getAdminUser } from "@/lib/requireAdmin";
+import { isPrivatePreviewAdmin, readPrivatePreviewPolicy } from "@/lib/private-preview-policy.mjs";
 import { buildAdminNavigation } from "@/lib/user-experience-navigation.mjs";
 import AdminNavigationTabs from "./AdminNavigationTabs";
 import styles from "./admin-navigation.module.css";
@@ -10,6 +11,7 @@ export default async function AdminLayout({ children }) {
   if (!adminUser) redirect("/login");
 
   const navigation = buildAdminNavigation(adminUser.role);
+  const canManagePreviewCodes = isPrivatePreviewAdmin(adminUser, readPrivatePreviewPolicy());
 
   return (
     <div className={styles.page}>
@@ -23,6 +25,7 @@ export default async function AdminLayout({ children }) {
             </span>
           </div>
           <div className={styles.actions}>
+            {canManagePreviewCodes ? <Link href="/admin/private-preview" className={styles.clientLink}>Preview access codes</Link> : null}
             <Link href="/dashboard" className={styles.clientLink}>Client home</Link>
             <form action="/api/auth/logout" method="post">
               <button type="submit" className={styles.signOut}>Sign out</button>

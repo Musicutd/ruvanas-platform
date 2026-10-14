@@ -8,6 +8,7 @@ const passwordApi = await source("../app/api/auth/login/route.js");
 const codeApi = await source("../app/api/auth/preview-code/route.js");
 const middleware = await source("../middleware.js");
 const ownerPage = await source("../app/admin/private-preview/page.js");
+const adminLayout = await source("../app/admin/layout.js");
 const ownerControls = await source("../app/admin/private-preview/CodeControls.js");
 const ownerApi = await source("../app/api/admin/private-preview/codes/route.js");
 const health = await source("../app/api/private-preview/health/route.js");
@@ -52,14 +53,30 @@ test("one-use-code redemption is bounded, rate-limited and commits before cookie
   assert.ok(codeApi.indexOf("await readCode(request, form)") < codeApi.indexOf("await redeemPrivatePreviewCode("));
   assert.ok(codeApi.indexOf("await redeemPrivatePreviewCode(") < codeApi.indexOf("await setSessionCookie("));
   assert.match(codeApi, /location: `\/preview-login\?error=\$\{error\}`/);
-  assert.match(codeApi, /\? "\/admin\/private-preview" : "\/dashboard"/);
+  assert.match(codeApi, /privatePreviewDashboardRoute\(redeemed\.user, policy\)/);
+  assert.ok(codeApi.indexOf("privatePreviewDashboardRoute(redeemed.user, policy)") < codeApi.indexOf("await setSessionCookie("));
   assert.match(codeApi, /return json\(\{ success: true, recommendedDashboardRoute \}, 200\)/);
   assert.doesNotMatch(codeApi, /console\.|securityLog\([^\n]*code[,:]/i);
+});
+
+test("an existing valid preview session skips both code-entry URLs for a fixed role dashboard", () => {
+  assert.match(middleware, /const loginEntry = \(request\.method === "GET" \|\| request\.method === "HEAD"\)/);
+  assert.match(middleware, /request\.nextUrl\.pathname === "\/login" \|\| request\.nextUrl\.pathname === "\/preview-login"/);
+  assert.ok(middleware.indexOf("session = await previewSessionFromRequest(request)") <
+    middleware.indexOf("NextResponse.rewrite(new URL(\"/preview-login\""));
+  assert.match(middleware, /const destination = privatePreviewSessionLanding\(session, preview\)/);
+  assert.match(middleware, /NextResponse\.redirect\(new URL\(destination, preview\.previewOrigin\)\)/);
+  assert.match(middleware, /NextResponse\.rewrite\(new URL\("\/preview-login", request\.url\)/);
+  assert.doesNotMatch(middleware, /NextResponse\.redirect\(new URL\(destination, request\.url\)/);
+  assert.match(middleware, /else if \(!destination\) \{\s*return previewDenied\(request, preview, requestId\)/);
+  assert.doesNotMatch(middleware, /searchParams\.get\(["'](?:next|returnTo|redirect)/);
 });
 
 test("owner controls require a code session and designated owner, never create accounts", () => {
   assert.match(ownerPage, /session\?\.authMethod !== "PREVIEW_CODE"/);
   assert.match(ownerPage, /isPrivatePreviewAdmin\(session\.user, policy\)/);
+  assert.match(adminLayout, /canManagePreviewCodes = isPrivatePreviewAdmin\(adminUser, readPrivatePreviewPolicy\(\)\)/);
+  assert.match(adminLayout, /canManagePreviewCodes \? <Link href="\/admin\/private-preview"/);
   assert.match(ownerApi, /session\?\.authMethod !== "PREVIEW_CODE"/);
   assert.match(ownerApi, /isPrivatePreviewAdmin\(session\.user, policy\)/);
   assert.match(ownerApi, /request\.headers\.get\("origin"\) !== policy\.previewOrigin/);

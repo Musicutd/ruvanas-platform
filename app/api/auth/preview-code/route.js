@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { setSessionCookie } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { PrivatePreviewCodeError, redeemPrivatePreviewCode } from "@/lib/private-preview-codes.mjs";
-import { isPrivatePreviewAdmin, readPrivatePreviewPolicy } from "@/lib/private-preview-policy.mjs";
+import { privatePreviewDashboardRoute, readPrivatePreviewPolicy } from "@/lib/private-preview-policy.mjs";
 import { consumeRateLimit, createRateLimitKey } from "@/lib/rate-limit";
 import { securityLog } from "@/lib/security-log";
 
@@ -95,10 +95,10 @@ export async function POST(request) {
     }
 
     const redeemed = await redeemPrivatePreviewCode(prisma, { code, policy });
+    const recommendedDashboardRoute = privatePreviewDashboardRoute(redeemed.user, policy);
+    if (!recommendedDashboardRoute) throw new Error("No permitted preview destination.");
     // The one-use code is committed as claimed before the normal session cookie is set.
     await setSessionCookie(redeemed.rawSessionToken, redeemed.expiresAt);
-    const recommendedDashboardRoute = isPrivatePreviewAdmin(redeemed.user, policy)
-      ? "/admin/private-preview" : "/dashboard";
     securityLog("info", "PRIVATE_PREVIEW_CODE_REDEEMED", request);
     if (form) {
       return new Response(null, {

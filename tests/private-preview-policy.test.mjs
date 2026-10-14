@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { isPrivatePreviewAdmin, isPrivatePreviewUserAllowed, isPrivatePreviewRegistrationPath, readPrivatePreviewPolicy } from "../lib/private-preview-policy.mjs";
+import { isPrivatePreviewAdmin, isPrivatePreviewUserAllowed, isPrivatePreviewRegistrationPath, privatePreviewDashboardRoute, privatePreviewSessionLanding, readPrivatePreviewPolicy } from "../lib/private-preview-policy.mjs";
 
 const PREVIEW_ORIGIN = "https://preview.ruvanas.test";
 
@@ -136,6 +136,32 @@ test("only the configured, approved admin may issue private preview access", () 
   for (const admin of [undefined, "", "bad-address", "outsider@example.com", "owner@example.com,other@example.com"]) {
     assert.equal(readPrivatePreviewPolicy({ ...base, RUVANAS_PRIVATE_PREVIEW_ADMIN_EMAIL: admin }).valid, false);
   }
+});
+
+test("preview code sessions use fixed role dashboards and never accept an unapproved identity or auth method", () => {
+  const policy = readPrivatePreviewPolicy({
+    RUVANAS_PRIVATE_PREVIEW_ENABLED: "1",
+    RUVANAS_PRIVATE_PREVIEW_ALLOWED_EMAILS: "owner@example.com,support@example.com,student@example.com,viewer@example.com",
+    RUVANAS_PRIVATE_PREVIEW_ADMIN_EMAIL: "owner@example.com",
+    RUVANAS_PUBLIC_URL: PREVIEW_ORIGIN
+  });
+  const cases = [
+    [{ email: "owner@example.com", role: "SUPER_ADMIN" }, "/admin"],
+    [{ email: "support@example.com", role: "SUPPORT" }, "/admin"],
+    [{ email: "student@example.com", role: "STUDENT" }, "/school-student"],
+    [{ email: "viewer@example.com", role: "VIEWER" }, "/dashboard"]
+  ];
+  for (const [user, destination] of cases) {
+    assert.equal(privatePreviewDashboardRoute(user, policy), destination);
+    assert.equal(privatePreviewSessionLanding({ user, authMethod: "PREVIEW_CODE" }, policy), destination);
+    for (const authMethod of ["PASSWORD", "SSO", "PREVIEW_LOGIN_CODE", null]) {
+      assert.equal(privatePreviewSessionLanding({ user, authMethod }, policy), null);
+    }
+  }
+  assert.equal(privatePreviewSessionLanding(null, policy), null);
+  assert.equal(privatePreviewDashboardRoute({ email: "removed@example.com", role: "SUPER_ADMIN" }, policy), null);
+  assert.equal(privatePreviewSessionLanding({ authMethod: "PREVIEW_CODE", user: { email: "removed@example.com", role: "OWNER" } }, policy), null);
+  assert.equal(privatePreviewDashboardRoute(cases[0][0], readPrivatePreviewPolicy({})), null);
 });
 
 test("all self-registration and account-creating invitation paths are closed in preview", () => {
