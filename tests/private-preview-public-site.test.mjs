@@ -46,11 +46,21 @@ test("frozen content changes only the login URL and retains masked prices, no re
   assert.equal(loginLinks, 7);
 });
 
-test("GET and HEAD serve the exact integrity-checked frozen document with script-free security headers", async () => {
-  for (const [pathname, document] of Object.entries(PUBLIC_MARKETING_DOCUMENTS)) {
+test("GET and HEAD serve exact frozen bytes for public aliases and internal rewrites, ignoring forged routing headers", async () => {
+  const paths = [...Object.entries(PUBLIC_MARKETING_DOCUMENTS),
+    ["/", PUBLIC_MARKETING_DOCUMENTS["/public-marketing/index.html"]],
+    ["/how-it-works", PUBLIC_MARKETING_DOCUMENTS["/public-marketing/how-it-works/index.html"]],
+    ["/how-it-works/", PUBLIC_MARKETING_DOCUMENTS["/public-marketing/how-it-works/index.html"]]];
+  for (const [pathname, document] of paths) {
     for (const method of ["GET", "HEAD"]) {
+      for (const headers of [undefined, {
+        "x-forwarded-host": "unapproved.invalid", "x-forwarded-proto": "http",
+        "x-original-url": "/.env", "x-original-uri": "/api/admin/private-preview/password",
+        "x-rewrite-url": "/public-marketing/unreviewed.html", "x-forwarded-uri": "/public-marketing/index.html",
+        "x-middleware-rewrite": "https://unapproved.invalid/public-marketing/how-it-works/index.html"
+      }]) {
       const reads = [];
-      const response = await publicMarketingResponse(request(pathname, method), { policy,
+      const response = await publicMarketingResponse(new Request(origin + pathname, { method, headers }), { policy,
         read: async (file) => { reads.push(file); return readFile(file); } });
       assert.equal(response.status, 200);
       assert.deepEqual(reads, [join(root, document.file)]);
@@ -66,6 +76,7 @@ test("GET and HEAD serve the exact integrity-checked frozen document with script
       const bytes = Buffer.from(await response.arrayBuffer());
       assert.equal(bytes.length, method === "HEAD" ? 0 : document.bytes);
       if (method === "GET") assert.equal(hash(bytes), document.sha256);
+      }
     }
   }
 });
@@ -73,21 +84,28 @@ test("GET and HEAD serve the exact integrity-checked frozen document with script
 test("disabled, malformed and unapproved public modes never read a marketing document", async () => {
   for (const deniedPolicy of [undefined, {}, { ...policy, enabled: false }, { ...policy, valid: false },
     { ...policy, publicSite: false }, { ...policy, publicSite: "true" }]) {
+    for (const pathname of ["/", "/how-it-works", "/how-it-works/", "/public-marketing/index.html"]) {
     let read = false;
-    const response = await publicMarketingResponse(request("/public-marketing/index.html"), { policy: deniedPolicy,
+    const response = await publicMarketingResponse(request(pathname), { policy: deniedPolicy,
       read: () => { read = true; throw new Error("Must not read"); } });
     assert.equal(response.status, 404);
     assert.equal(read, false);
     assert.equal(response.headers.get("cache-control"), "no-store");
+    }
   }
 });
 
 test("unknown and traversing routes cannot select files, and non-read methods are not accepted", async () => {
   for (const pathname of ["/public-marketing", "/public-marketing/unknown.html", "/public-marketing/how-it-works",
     "/public-marketing/../../.env", "/public-marketing/%2Findex.html", "/public-marketing/index.html/extra",
-    "/public-marketing/how-it-works/index.html/", "/public-marketing/public/index.html"]) {
+    "/public-marketing/how-it-works/index.html/", "/public-marketing/public/index.html", "/how-it-works/extra",
+    "/how-it-works/index.html", "/index.html", "/login", "/api/admin/private-preview/password"]) {
     let read = false;
-    const response = await publicMarketingResponse(request(pathname), { policy,
+    const forgedRequest = new Request(origin + pathname, { headers: {
+      "x-original-url": "/", "x-forwarded-uri": "/how-it-works/",
+      "x-middleware-rewrite": origin + "/public-marketing/index.html"
+    } });
+    const response = await publicMarketingResponse(forgedRequest, { policy,
       read: () => { read = true; throw new Error("Must not read"); } });
     assert.equal(response.status, 404, pathname);
     assert.equal(read, false, pathname);
