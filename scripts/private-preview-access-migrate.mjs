@@ -19,6 +19,25 @@ const QUERY_PARAMETERS = new Set(["schema", "sslmode", "sslaccept", "connection_
 function refusal(code) { return { ok: false, code }; }
 function fail(code) { const error = new Error(code); error.code = code; throw error; }
 
+function sha256(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
+
+// The only historical alternatives are hashes derived from these exact file
+// bytes with consistent LF <-> CRLF substitution. No SQL, whitespace, encoding,
+// BOM, lone-CR or mixed-line-ending normalization is permitted.
+export function previewMigrationChecksumEvidence(name, input) {
+  const bytes = Buffer.from(input);
+  const evidence = { name, checksum: sha256(bytes) };
+  if (bytes.subarray(0, 3).equals(Buffer.from([0xef, 0xbb, 0xbf]))) return evidence;
+  let text;
+  try { text = new TextDecoder("utf-8", { fatal: true }).decode(bytes); } catch { return evidence; }
+  if (!Buffer.from(text, "utf8").equals(bytes)) return evidence;
+  const withoutCrlf = text.replace(/\r\n/g, "");
+  if (withoutCrlf.includes("\r") || (text.includes("\r\n") && withoutCrlf.includes("\n"))) return evidence;
+  const lf = text.replace(/\r\n/g, "\n");
+  return { ...evidence, checksumLF: sha256(Buffer.from(lf, "utf8")),
+    checksumCRLF: sha256(Buffer.from(lf.replace(/\n/g, "\r\n"), "utf8")) };
+}
+
 // No connection, Prisma import or child process is attempted before this exact
 // already-paid service / isolated database guard passes. URLs and credentials
 // are never returned by preflight or printed by the command.
@@ -67,14 +86,14 @@ export async function readPreviewMigrationCatalog(root = ROOT) {
       fail("MIGRATION_FILES_UNEXPECTED");
     }
     const bytes = await readFile(resolve(directory, entry.name, "migration.sql"));
-    catalog.push({ name: entry.name, checksum: createHash("sha256").update(bytes).digest("hex") });
+    catalog.push(previewMigrationChecksumEvidence(entry.name, bytes));
   }
   return catalog.sort((left, right) => left.name.localeCompare(right.name));
 }
 
-// Historical checksums are calculated from the exact local migration bytes,
-// not copied from the database. The sole pending file is pinned separately to
-// the reviewed CREATE TABLE / index / foreign-key-only SQL.
+// Historical checksums and their strictly derived EOL variants come from the
+// local file bytes, never database-provided alternatives. The sole new file and
+// its applied database row must still match the exact pinned LF bytes.
 export function decidePreviewAccessMigration(catalog, history) {
   if (!Array.isArray(catalog) || !catalog.length || !Array.isArray(history)) return refusal("MIGRATION_HISTORY_INVALID");
   const files = new Map();
@@ -82,22 +101,32 @@ export function decidePreviewAccessMigration(catalog, history) {
     if (!migration || typeof migration.name !== "string" ||
         !/^\d{14}_[a-z0-9_]+$/.test(migration.name) || !/^[a-f0-9]{64}$/.test(migration.checksum || "") ||
         files.has(migration.name)) return refusal("MIGRATION_FILES_UNEXPECTED");
-    files.set(migration.name, migration.checksum);
+    if ([migration.checksumLF, migration.checksumCRLF].some((checksum) =>
+      checksum !== undefined && !/^[a-f0-9]{64}$/.test(checksum))) return refusal("MIGRATION_FILES_UNEXPECTED");
+    files.set(migration.name, migration);
   }
-  if (files.get(PREVIEW_ACCESS_MIGRATION) !== PREVIEW_ACCESS_MIGRATION_CHECKSUM ||
+  if (files.get(PREVIEW_ACCESS_MIGRATION)?.checksum !== PREVIEW_ACCESS_MIGRATION_CHECKSUM ||
       [...files.keys()].sort().at(-1) !== PREVIEW_ACCESS_MIGRATION) return refusal("ADDITIVE_MIGRATION_CHANGED");
   const applied = new Set();
+  let historicalLineEndingVariantCount = 0;
   for (const row of history) {
     if (!row || !files.has(row.migration_name)) return refusal("UNKNOWN_DATABASE_MIGRATION");
     if (applied.has(row.migration_name)) return refusal("DUPLICATE_DATABASE_MIGRATION");
     if (!row.finished_at || row.rolled_back_at) return refusal("MIGRATION_HISTORY_NOT_CLEAN");
-    if (row.checksum !== files.get(row.migration_name)) return refusal("HISTORICAL_MIGRATION_CHANGED");
+    const file = files.get(row.migration_name);
+    if (row.checksum !== file.checksum) {
+      if (row.migration_name === PREVIEW_ACCESS_MIGRATION ||
+          ![file.checksumLF, file.checksumCRLF].filter(Boolean).includes(row.checksum)) {
+        return { ...refusal("HISTORICAL_MIGRATION_CHANGED"), migrationName: row.migration_name };
+      }
+      historicalLineEndingVariantCount++;
+    }
     applied.add(row.migration_name);
   }
   const pending = [...files.keys()].filter((name) => !applied.has(name));
-  if (!pending.length) return { ok: true, action: "ALREADY_APPLIED", migrationCount: files.size };
+  if (!pending.length) return { ok: true, action: "ALREADY_APPLIED", migrationCount: files.size, historicalLineEndingVariantCount };
   if (pending.length !== 1 || pending[0] !== PREVIEW_ACCESS_MIGRATION) return refusal("OTHER_PENDING_MIGRATION");
-  return { ok: true, action: "DEPLOY", migrationCount: files.size };
+  return { ok: true, action: "DEPLOY", migrationCount: files.size, historicalLineEndingVariantCount };
 }
 
 async function databaseFactory(url) {
@@ -141,8 +170,12 @@ export async function runGuardedPreviewAccessMigration({
   if (!preflight.ok) return preflight;
   let database;
   let result;
+  let changedMigrationName;
+  let historicalLineEndingVariantCount;
+  let knownMigrationNames = new Set();
   try {
     const catalog = await readPreviewMigrationCatalog(root);
+    knownMigrationNames = new Set(catalog.map((entry) => entry.name));
     // Check the pinned file before even connecting to the database.
     const fileCheck = decidePreviewAccessMigration(catalog,
       catalog.filter((entry) => entry.name !== PREVIEW_ACCESS_MIGRATION).map((entry) => ({
@@ -151,18 +184,24 @@ export async function runGuardedPreviewAccessMigration({
     if (!fileCheck.ok) return fileCheck;
     database = await connect(env.DATABASE_URL);
     const before = decidePreviewAccessMigration(catalog, await readHistory(database));
-    if (!before.ok) fail(before.code);
+    if (!before.ok) { changedMigrationName = before.migrationName; fail(before.code); }
+    historicalLineEndingVariantCount = before.historicalLineEndingVariantCount;
     if (before.action === "DEPLOY") {
       const rechecked = await readPreviewMigrationCatalog(root);
       if (JSON.stringify(rechecked) !== JSON.stringify(catalog)) fail("MIGRATION_FILES_CHANGED_DURING_GUARD");
       await deploy({ root, env });
       const verified = decidePreviewAccessMigration(catalog, await readHistory(database));
+      if (!verified.ok && verified.code === "HISTORICAL_MIGRATION_CHANGED") {
+        changedMigrationName = verified.migrationName;
+        fail(verified.code);
+      }
       if (!verified.ok || verified.action !== "ALREADY_APPLIED") fail("MIGRATION_POSTCHECK_FAILED");
     }
     const acceptanceResult = await acceptance(database, { env });
     if (!acceptanceResult?.ok || acceptanceResult.status !== "ROLLED_BACK_PASS") fail("DATABASE_ACCEPTANCE_FAILED");
     result = { ok: true, status: before.action === "DEPLOY" ? "APPLIED" : "ALREADY_APPLIED",
       migration: PREVIEW_ACCESS_MIGRATION, verifiedMigrationCount: before.migrationCount,
+      historicalLineEndingVariantCount,
       accountAcceptance: "ROLLED_BACK_PASS" };
   } catch (error) {
     const permitted = new Set(["MIGRATION_FILES_UNEXPECTED", "DATABASE_IDENTITY_MISMATCH", "MIGRATION_DEPLOY_FAILED",
@@ -172,6 +211,10 @@ export async function runGuardedPreviewAccessMigration({
       "DATABASE_ACCEPTANCE_FAILED"]);
     result = refusal(permitted.has(error?.code) ? error.code :
       error?.message === "MIGRATION_DEPLOY_FAILED" ? "MIGRATION_DEPLOY_FAILED" : "MIGRATION_GUARD_FAILED");
+    if (result.code === "HISTORICAL_MIGRATION_CHANGED" && knownMigrationNames.has(changedMigrationName)) {
+      result.migrationName = changedMigrationName;
+    }
+    if (Number.isSafeInteger(historicalLineEndingVariantCount)) result.historicalLineEndingVariantCount = historicalLineEndingVariantCount;
   } finally {
     if (database) {
       try { await database.$disconnect(); } catch { result = refusal("DATABASE_CLEANUP_UNVERIFIED"); }

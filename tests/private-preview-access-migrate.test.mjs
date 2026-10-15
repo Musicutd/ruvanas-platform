@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 import {
-  decidePreviewAccessMigration, PREVIEW_ACCESS_MIGRATION, PREVIEW_ACCESS_MIGRATION_CHECKSUM,
+  decidePreviewAccessMigration, PREVIEW_ACCESS_MIGRATION, PREVIEW_ACCESS_MIGRATION_CHECKSUM, previewMigrationChecksumEvidence,
   privatePreviewAccessMigrationPreflight, readPreviewMigrationCatalog, runGuardedPreviewAccessMigration as runGuardedMigration
 } from "../scripts/private-preview-access-migrate.mjs";
 import { runPreviewAccountDatabaseAcceptance } from "../scripts/private-preview-account-db-acceptance.mjs";
@@ -68,9 +68,9 @@ test("TLS and schema cannot be weakened through URL or process environment", () 
 
 test("only the pinned additive table may be pending; exact already-applied checksum is idempotent", () => {
   assert.deepEqual(decidePreviewAccessMigration([OLD, NEW], [row(OLD)]),
-    { ok: true, action: "DEPLOY", migrationCount: 2 });
+    { ok: true, action: "DEPLOY", migrationCount: 2, historicalLineEndingVariantCount: 0 });
   assert.deepEqual(decidePreviewAccessMigration([OLD, NEW], [row(OLD), row(NEW)]),
-    { ok: true, action: "ALREADY_APPLIED", migrationCount: 2 });
+    { ok: true, action: "ALREADY_APPLIED", migrationCount: 2, historicalLineEndingVariantCount: 0 });
   assert.equal(decidePreviewAccessMigration([OLD, NEW], []).code, "OTHER_PENDING_MIGRATION");
   assert.equal(decidePreviewAccessMigration([OLD], [row(OLD)]).code, "ADDITIVE_MIGRATION_CHANGED");
   assert.equal(decidePreviewAccessMigration([OLD, { ...NEW, checksum: "b".repeat(64) }], [row(OLD)]).code,
@@ -101,9 +101,16 @@ test("real local manifest derives every historical migration and pins only the r
   assert.equal(decision.migrationCount, catalog.length);
 });
 
-async function mockDatabase({ identity = true, includeNew = false, failDisconnect = false } = {}) {
+async function mockDatabase({ identity = true, includeNew = false, failDisconnect = false,
+  historicalEolVariants = false, corruptHistory = false } = {}) {
   const catalog = await readPreviewMigrationCatalog();
   let history = catalog.filter((entry) => includeNew || entry.name !== PREVIEW_ACCESS_MIGRATION).map((entry) => row(entry));
+  if (historicalEolVariants) history = history.map((record) => {
+    const file = catalog.find((entry) => entry.name === record.migration_name);
+    return record.migration_name !== PREVIEW_ACCESS_MIGRATION && file.checksumCRLF
+      ? { ...record, checksum: file.checksumCRLF } : record;
+  });
+  if (corruptHistory) history[0].checksum = "f".repeat(64);
   const calls = { reads: 0, disconnects: 0, readonly: 0 };
   return {
     calls,
@@ -126,6 +133,65 @@ test("refused preflight never opens a database or spawns a migration", async () 
     connect: () => { throw new Error("Unexpected connect"); }, deploy: () => { throw new Error("Unexpected deploy"); } });
   assert.equal(result.ok, false);
   assert.equal(result.code, "PREVIEW_HOST_REQUIRED");
+});
+
+test("historical byte-equivalent LF and CRLF checksums are derived and counted, not semantic SQL changes", () => {
+  const sql = 'CREATE TABLE "Historical" ("id" TEXT);\nCREATE INDEX "Historical_id" ON "Historical"("id");\n';
+  const lf = previewMigrationChecksumEvidence(OLD.name, Buffer.from(sql));
+  const crlf = previewMigrationChecksumEvidence(OLD.name, Buffer.from(sql.replace(/\n/g, "\r\n")));
+  assert.equal(lf.checksumLF, crlf.checksumLF);
+  assert.equal(lf.checksumCRLF, crlf.checksumCRLF);
+  assert.equal(decidePreviewAccessMigration([lf, NEW], [row(lf)]).historicalLineEndingVariantCount, 0);
+  assert.equal(decidePreviewAccessMigration([lf, NEW], [row(crlf)]).historicalLineEndingVariantCount, 1);
+  assert.equal(decidePreviewAccessMigration([crlf, NEW], [row(lf)]).historicalLineEndingVariantCount, 1);
+  const semanticChange = previewMigrationChecksumEvidence(OLD.name, Buffer.from(sql.replace("TEXT", "JSON")));
+  const rejected = decidePreviewAccessMigration([lf, NEW], [row(semanticChange)]);
+  assert.equal(rejected.code, "HISTORICAL_MIGRATION_CHANGED");
+  assert.equal(rejected.migrationName, OLD.name);
+  assert.doesNotMatch(JSON.stringify(rejected), /checksum|CREATE TABLE|[a-f0-9]{64}/);
+  const oneCharacter = previewMigrationChecksumEvidence(OLD.name, Buffer.from(sql.replace('"id"', '"ix"')));
+  assert.equal(decidePreviewAccessMigration([lf, NEW], [row(oneCharacter)]).code, "HISTORICAL_MIGRATION_CHANGED");
+});
+
+test("invalid UTF-8, BOM, mixed EOL and lone CR files receive no alternative checksums", () => {
+  for (const bytes of [Buffer.from([0xff, 0x0a]), Buffer.from("\ufeffSELECT 1;\n"),
+    Buffer.from("SELECT 1;\r\nSELECT 2;\n"), Buffer.from("SELECT 1;\rSELECT 2;")]) {
+    const evidence = previewMigrationChecksumEvidence(OLD.name, bytes);
+    assert.equal(evidence.checksumLF, undefined);
+    assert.equal(evidence.checksumCRLF, undefined);
+    assert.equal(decidePreviewAccessMigration([evidence, NEW], [row(evidence)]).ok, true);
+    assert.equal(decidePreviewAccessMigration([evidence, NEW], [row(evidence, { checksum: "c".repeat(64) })]).code,
+      "HISTORICAL_MIGRATION_CHANGED");
+  }
+});
+
+test("new additive migration never accepts a CRLF alternative in file or applied history", async () => {
+  const sql = await readFile(new URL(`../prisma/migrations/${PREVIEW_ACCESS_MIGRATION}/migration.sql`, import.meta.url));
+  const exact = previewMigrationChecksumEvidence(PREVIEW_ACCESS_MIGRATION, sql);
+  const crlf = previewMigrationChecksumEvidence(PREVIEW_ACCESS_MIGRATION, Buffer.from(sql.toString("utf8").replace(/\n/g, "\r\n")));
+  assert.equal(exact.checksum, PREVIEW_ACCESS_MIGRATION_CHECKSUM);
+  assert.notEqual(crlf.checksum, PREVIEW_ACCESS_MIGRATION_CHECKSUM);
+  assert.equal(decidePreviewAccessMigration([OLD, crlf], [row(OLD)]).code, "ADDITIVE_MIGRATION_CHANGED");
+  assert.equal(decidePreviewAccessMigration([OLD, exact], [row(OLD), row(crlf)]).code, "HISTORICAL_MIGRATION_CHANGED");
+});
+
+test("every historical row is checked before deploy and identified mismatches prevent any migration", async () => {
+  const db = await mockDatabase({ corruptHistory: true });
+  let deployed = false;
+  const result = await runGuardedPreviewAccessMigration({ env: ENV, connect: async () => db,
+    deploy: async () => { deployed = true; } });
+  assert.equal(result.code, "HISTORICAL_MIGRATION_CHANGED");
+  assert.match(result.migrationName, /^\d{14}_[a-z0-9_]+$/);
+  assert.equal(deployed, false);
+  assert.equal(db.calls.disconnects, 1);
+  const catalog = await readPreviewMigrationCatalog();
+  const variantDb = await mockDatabase({ historicalEolVariants: true });
+  const expected = catalog.filter((entry) => entry.name !== PREVIEW_ACCESS_MIGRATION &&
+    entry.checksumCRLF && entry.checksumCRLF !== entry.checksum).length;
+  const accepted = await runGuardedPreviewAccessMigration({ env: ENV, connect: async () => variantDb,
+    deploy: async () => { assert.equal(variantDb.calls.readonly, 1); variantDb.apply(); } });
+  assert.equal(accepted.ok, true);
+  assert.equal(accepted.historicalLineEndingVariantCount, expected);
 });
 
 test("guard checks SQL identity and history before deploy, then verifies the applied checksum", async () => {
