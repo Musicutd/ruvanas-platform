@@ -25,7 +25,7 @@ export default async function AdminLayout({ children }) {
             </span>
           </div>
           <div className={styles.actions}>
-            {canManagePreviewCodes ? <Link href="/admin/private-preview" className={styles.clientLink}>Preview access codes</Link> : null}
+            {canManagePreviewCodes ? <Link href="/admin/private-preview" className={styles.clientLink}>Private access & testers</Link> : null}
             <Link href="/dashboard" className={styles.clientLink}>Client home</Link>
             <form action="/api/auth/logout" method="post">
               <button type="submit" className={styles.signOut}>Sign out</button>

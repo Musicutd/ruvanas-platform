@@ -262,12 +262,11 @@ test("native empty POST streams are accepted but bytes, advertised data and a st
   }), { timeoutMs: 20 }), false);
 });
 
-test("route is preview-code owner only, exact-origin, no-body, actor-rate-limited and POST-only", () => {
+test("route is password-preview owner only, exact-origin, no-body, actor-rate-limited and POST-only", () => {
   const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
   const source = readFileSync(resolve(root, "app/api/admin/promo-only/metadata-sample/route.js"), "utf8");
   assert.match(source, /request\.headers\.get\("origin"\) !== policy\.previewOrigin/);
-  assert.match(source, /session\?\.authMethod !== "PREVIEW_CODE"/);
-  assert.match(source, /isPrivatePreviewAdmin\(session\.user, policy\)/);
+  assert.match(source, /if \(!isPrivatePreviewAdminSession\(session, policy\)\)/);
   assert.match(source, /sampleRequestBodyIsEmpty\(request\)/);
   assert.match(source, /limit: 2, windowMs: HOUR_MS/);
   assert.match(source, /"cache-control": "private, no-store"/);

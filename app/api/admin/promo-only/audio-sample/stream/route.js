@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { isPrivatePreviewAdmin, readPrivatePreviewPolicy } from "@/lib/private-preview-policy.mjs";
+import { isPrivatePreviewAdminSession, readPrivatePreviewPolicy } from "@/lib/private-preview-policy.mjs";
 import { readPromoOnlyAudioSampleConfig } from "@/lib/promo-only-audio-sample.mjs";
 import { resolvePromoOnlyAudioSampleAsset } from "@/lib/promo-only-audio-sample-service";
 import { protectedAudioResponse } from "@/lib/protected-audio-response";
@@ -29,7 +29,7 @@ export async function GET(request) {
   if (new URL(request.url).search) return json({ error: "This preview accepts no track selection." }, 400);
   try {
     const session = await getCurrentSession();
-    if (session?.authMethod !== "PREVIEW_CODE" || !isPrivatePreviewAdmin(session.user, policy)) {
+    if (!isPrivatePreviewAdminSession(session, policy)) {
       return json({ error: "Access denied." }, 403);
     }
     const config = readPromoOnlyAudioSampleConfig(process.env);

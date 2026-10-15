@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import { NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { isPrivatePreviewAdmin, readPrivatePreviewPolicy } from "@/lib/private-preview-policy.mjs";
+import { isPrivatePreviewAdminSession, readPrivatePreviewPolicy } from "@/lib/private-preview-policy.mjs";
 import { readPromoOnlyAudioSampleConfig } from "@/lib/promo-only-audio-sample.mjs";
 import { repairPromoOnlyAudioSamplePreflight,
   safePromoOnlyAudioSampleCode } from "@/lib/promo-only-audio-sample-service";
@@ -35,7 +35,7 @@ export async function POST(request) {
   let actorUserId = null;
   try {
     const session = await getCurrentSession();
-    if (session?.authMethod !== "PREVIEW_CODE" || !isPrivatePreviewAdmin(session.user, policy)) {
+    if (!isPrivatePreviewAdminSession(session, policy)) {
       return json({ error: "Access denied." }, 403);
     }
     actorUserId = session.userId;

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { publicRequestOrigin } from "@/lib/origin-policy.mjs";
-import { readPrivatePreviewPolicy, isPrivatePreviewRegistrationPath, privatePreviewSessionLanding } from "@/lib/private-preview-policy.mjs";
+import { readPrivatePreviewPolicy, isPrivatePreviewRegistrationPath, privatePreviewSessionLanding, isPrivatePreviewAdminSession, isPrivatePreviewOwnerBootstrapSession } from "@/lib/private-preview-policy.mjs";
+import { privatePreviewTesterRequestAllowed } from "@/lib/private-preview-tester-policy.mjs";
 import { getSessionFromToken, SESSION_COOKIE } from "@/lib/session-lookup.js";
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
@@ -24,7 +25,7 @@ function previewBootstrap(request) {
   const method = request.method;
   return ((method === "GET" || method === "HEAD") &&
     (path === "/preview-login" || path === "/login" || path === "/api/private-preview/health")) ||
-    (method === "POST" && (path === "/api/auth/preview-code" || path === "/api/auth/logout"));
+    (method === "POST" && ["/api/auth/preview-code", "/api/auth/preview-password", "/api/auth/login", "/api/auth/logout"].includes(path));
 }
 
 async function previewSessionFromRequest(request) {
@@ -126,6 +127,19 @@ export async function middleware(request) {
         }
       } else if (!destination) {
         return previewDenied(request, preview, requestId);
+      } else if (!isPrivatePreviewAdminSession(session, preview)) {
+        const path = request.nextUrl.pathname;
+        const staticAsset = (request.method === "GET" || request.method === "HEAD") &&
+          ["/_next/static/", "/fonts/", "/images/"].some((prefix) => path.startsWith(prefix));
+        const bootstrap = isPrivatePreviewOwnerBootstrapSession(session, preview);
+        const bootstrapAllowed = (path === "/admin/private-preview" && ["GET", "HEAD"].includes(request.method)) ||
+          (path === "/api/admin/private-preview/password" && request.method === "POST");
+        if (!staticAsset && !(bootstrap ? bootstrapAllowed :
+          privatePreviewTesterRequestAllowed({ session, pathname: path, method: request.method }))) {
+          return previewResponse(NextResponse.json({ error: bootstrap ?
+            "Set your admin password in Private access before continuing." : "This page is not included in your read-only tester access." },
+          { status: 403 }), requestId);
+        }
       }
     }
   }

@@ -674,13 +674,12 @@ test("private stream rechecks exact unapproved asset identity and withdrawal", a
   }
 });
 
-test("private routes require preview-code owner, exact write origin and static no-selection stream", () => {
+test("private routes require password-preview owner, exact write origin and static no-selection stream", () => {
   const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
   const post = readFileSync(resolve(root, "app/api/admin/promo-only/audio-sample/route.js"), "utf8");
   const stream = readFileSync(resolve(root, "app/api/admin/promo-only/audio-sample/stream/route.js"), "utf8");
   for (const source of [post, stream]) {
-    assert.match(source, /session\?\.authMethod !== "PREVIEW_CODE"/);
-    assert.match(source, /isPrivatePreviewAdmin\(session\.user, policy\)/);
+    assert.match(source, /if \(!isPrivatePreviewAdminSession\(session, policy\)\)/);
     assert.match(source, /"cache-control": "private, no-store"/);
     assert.match(source, /new URL\(request\.url\)\.search/);
   }
@@ -701,8 +700,7 @@ test("private routes require preview-code owner, exact write origin and static n
   assert.match(storage, /AbortSignal\.timeout\(privateSampleStorage\.cleanupTimeoutMs\)/);
   const repair = readFileSync(resolve(root,
     "app/api/admin/promo-only/audio-sample/preflight-repair/route.js"), "utf8");
-  assert.match(repair, /session\?\.authMethod !== "PREVIEW_CODE"/);
-  assert.match(repair, /isPrivatePreviewAdmin\(session\.user, policy\)/);
+  assert.match(repair, /if \(!isPrivatePreviewAdminSession\(session, policy\)\)/);
   assert.match(repair, /request\.headers\.get\("origin"\) !== policy\.previewOrigin/);
   assert.match(repair, /new URL\(request\.url\)\.search/);
   assert.match(repair, /sampleRequestBodyIsEmpty\(request\)/);
@@ -711,8 +709,7 @@ test("private routes require preview-code owner, exact write origin and static n
   assert.doesNotMatch(repair, /export async function GET/);
   const recover = readFileSync(resolve(root,
     "app/api/admin/promo-only/audio-sample/recover/route.js"), "utf8");
-  assert.match(recover, /session\?\.authMethod !== "PREVIEW_CODE"/);
-  assert.match(recover, /isPrivatePreviewAdmin\(session\.user, policy\)/);
+  assert.match(recover, /if \(!isPrivatePreviewAdminSession\(session, policy\)\)/);
   assert.match(recover, /request\.headers\.get\("origin"\) !== policy\.previewOrigin/);
   assert.match(recover, /new URL\(request\.url\)\.search/);
   assert.match(recover, /sampleRequestBodyIsEmpty\(request\)/);
@@ -722,8 +719,7 @@ test("private routes require preview-code owner, exact write origin and static n
   const transport = readFileSync(resolve(root,
     "app/api/admin/promo-only/audio-sample/transport-check/route.js"), "utf8");
   assert.match(transport, /export async function GET\(request\)/);
-  assert.match(transport, /session\?\.authMethod !== "PREVIEW_CODE"/);
-  assert.match(transport, /isPrivatePreviewAdmin\(session\.user, policy\)/);
+  assert.match(transport, /if \(!isPrivatePreviewAdminSession\(session, policy\)\)/);
   assert.match(transport, /origin && origin !== policy\.previewOrigin/);
   assert.match(transport, /new URL\(request\.url\)\.search/);
   assert.match(transport, /sampleRequestBodyIsEmpty\(request\)/);

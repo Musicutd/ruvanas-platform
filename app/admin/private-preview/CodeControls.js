@@ -46,7 +46,7 @@ export default function CodeControls() {
 
   return (
     <div style={{ border: "1px solid #42526b", borderRadius: 12, padding: 24, marginTop: 24 }}>
-      <label htmlFor="preview-target-email" style={{ display: "block", fontWeight: 700 }}>Existing allowed account email</label>
+      <label htmlFor="preview-target-email" style={{ display: "block", fontWeight: 700 }}>Existing tester account email</label>
       <input id="preview-target-email" type="email" autoComplete="email" required maxLength={254}
         value={email} onChange={(event) => setEmail(event.target.value)}
         style={{ display: "block", width: "100%", maxWidth: 440, marginTop: 8, padding: 10 }} />

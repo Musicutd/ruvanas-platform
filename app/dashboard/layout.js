@@ -6,6 +6,7 @@ import { firstListenableOnlineStation, onlineRadioListenHref } from "@/lib/onlin
 import { pillarListenHref } from "@/lib/pillar-audio.mjs";
 import { enabledSubscriberProducts } from "@/lib/product-access.mjs";
 import SubscriberPortalShell from "./SubscriberPortalShell";
+import { isPrivatePreviewTester, readPrivatePreviewPolicy } from "@/lib/private-preview-policy.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +26,7 @@ export default async function DashboardLayout({ children }) {
   if (!context.membership) redirect("/register");
 
   const organisation = context.membership.organisation;
+  const previewTester = isPrivatePreviewTester(context.user, readPrivatePreviewPolicy());
   const entitlements = resolveEntitlements(organisation.subscription);
   const firstStation = organisation.stations.find((station) => station.status === "ACTIVE")
     || organisation.stations[0]
@@ -50,6 +52,9 @@ export default async function DashboardLayout({ children }) {
       membershipRole={context.membership.role}
       listenHrefs={listenHrefs}
     >
+      {previewTester ? <aside style={{ padding: 16, background: "#fff5d6", color: "#172033", borderBottom: "1px solid #d5b66b" }}>
+        Read-only tester sandbox. Editing, downloads and publishing are unavailable. <a href="/preview-dashboard">Your assigned pillars</a>
+      </aside> : null}
       {children}
     </SubscriberPortalShell>
   );

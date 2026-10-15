@@ -5,8 +5,8 @@ import { test } from "node:test";
 const page = await readFile(new URL("../app/admin/promo-only/page.js", import.meta.url), "utf8");
 const consolePage = await readFile(new URL("../app/admin/promo-only/PromoOnlyConsole.js", import.meta.url), "utf8");
 
-test("private audio sample status is owner-code-only and contains no configuration object", () => {
-  assert.match(page, /session\?\.authMethod === "PREVIEW_CODE" && isPrivatePreviewAdmin\(session\.user, policy\)/);
+test("private audio sample status is password-preview-owner-only and contains no configuration object", () => {
+  assert.match(page, /audioConfig\.enabled && isPrivatePreviewAdminSession\(session, policy\)/);
   assert.match(page, /getPromoOnlyAudioSampleState\(prisma, \{ actorUserId: session\.userId, config: audioConfig \}\)/);
   assert.match(page, /metadataSampleReady, audioSampleState, connection/);
   assert.doesNotMatch(page, /serializable\([^\n]*(?:audioConfig|apiKey|apiSecret|R2_SECRET|downloadToken)/);

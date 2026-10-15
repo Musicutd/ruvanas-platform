@@ -6,7 +6,7 @@ import { readPromoOnlyConfig, safePromoOnlyConfig } from "@/lib/promo-only.mjs";
 import { readPromoOnlyMetadataSampleConfig } from "@/lib/promo-only-metadata-sample.mjs";
 import { readPromoOnlyMetadataBatchConfig } from "@/lib/promo-only-metadata-batch.mjs";
 import { getCurrentSession } from "@/lib/auth";
-import { isPrivatePreviewAdmin, readPrivatePreviewPolicy } from "@/lib/private-preview-policy.mjs";
+import { isPrivatePreviewAdminSession, readPrivatePreviewPolicy } from "@/lib/private-preview-policy.mjs";
 import { readPromoOnlyAudioSampleConfig } from "@/lib/promo-only-audio-sample.mjs";
 import { getPromoOnlyAudioSampleState } from "@/lib/promo-only-audio-sample-service";
 import PromoOnlyConsole from "./PromoOnlyConsole";
@@ -30,17 +30,17 @@ export default async function PromoOnlyPage() {
   try {
     const session = await getCurrentSession();
     const policy = readPrivatePreviewPolicy(process.env);
-    metadataBatchReady = session?.authMethod === "PREVIEW_CODE" && isPrivatePreviewAdmin(session.user, policy)
+    metadataBatchReady = isPrivatePreviewAdminSession(session, policy)
       && readPromoOnlyMetadataBatchConfig().ready === true;
   } catch { metadataBatchReady = false; }
-  // The single private audio test has a separate owner-code-only gate. Only
+  // The single private audio test has a separate designated-owner gate. Only
   // its safe status crosses this boundary, never supplier/storage credentials.
   let audioSampleState = null;
   try {
     const session = await getCurrentSession();
     const policy = readPrivatePreviewPolicy(process.env);
     const audioConfig = readPromoOnlyAudioSampleConfig(process.env);
-    if (audioConfig.enabled && session?.authMethod === "PREVIEW_CODE" && isPrivatePreviewAdmin(session.user, policy)) {
+    if (audioConfig.enabled && isPrivatePreviewAdminSession(session, policy)) {
       audioSampleState = await getPromoOnlyAudioSampleState(prisma, { actorUserId: session.userId, config: audioConfig });
     }
   } catch { audioSampleState = null; }

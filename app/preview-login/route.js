@@ -17,6 +17,7 @@ const SECURITY_HEADERS = Object.freeze({
 
 const ERROR_MESSAGES = Object.freeze({
   invalid: "That access code is invalid, expired, or already used.",
+  "password-invalid": "Incorrect email address or password. Only accounts created by the administrator can sign in.",
   "rate-limited": "Too many attempts. Please wait and try again.",
   unavailable: "Private preview access is temporarily unavailable. Please try again later."
 });
@@ -47,14 +48,24 @@ function page(errorCode) {
   <main>
     <div class="brand">RUVANAS</div>
     <h1>Private app preview</h1>
-    <p>Enter the one-use code privately provided by the Ruvanas owner to view the current app preview. Codes expire after 24 hours.</p>
+    <p>Sign in with your administrator-issued account. Registration is closed.</p>
     ${feedback}
+    <form method="post" action="/api/auth/preview-password" autocomplete="on">
+      <label for="email">Email address (username)</label>
+      <input id="email" name="email" type="email" autocomplete="username" maxlength="254" autocapitalize="off" spellcheck="false" required>
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" maxlength="72" required>
+      <button type="submit">Log in</button>
+    </form>
+    <details style="margin-top:1.8rem"><summary>Temporary tester access code</summary>
+    <p>Invited testers can use a one-use code from the administrator. Codes expire after 24 hours. Admin accounts use a password.</p>
     <form method="post" action="/api/auth/preview-code" autocomplete="on">
       <label for="code">Private access code</label>
       <input id="code" name="code" type="password" autocomplete="one-time-code" maxlength="52" autocapitalize="off" spellcheck="false" required>
-      <button type="submit">Open preview</button>
+      <button type="submit">Open tester preview</button>
     </form>
-    <p class="foot">Access is limited to the owner and invited testers. Ask the owner for a new code if yours has expired.</p>
+    </details>
+    <p class="foot">Access is limited to the owner and invited testers. Ask the administrator for an account or replacement tester code. No public sign-up is available.</p>
   </main>
 </body>
 </html>`;

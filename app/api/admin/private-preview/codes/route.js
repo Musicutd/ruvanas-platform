@@ -6,7 +6,7 @@ import {
   issuePrivatePreviewCode,
   revokePrivatePreviewCodes
 } from "@/lib/private-preview-codes.mjs";
-import { isPrivatePreviewAdmin, readPrivatePreviewPolicy } from "@/lib/private-preview-policy.mjs";
+import { isPrivatePreviewAdminSession, readPrivatePreviewPolicy } from "@/lib/private-preview-policy.mjs";
 import { securityLog } from "@/lib/security-log";
 
 export const dynamic = "force-dynamic";
@@ -61,18 +61,16 @@ async function handle(request, action) {
 
   try {
     const session = await getCurrentSession();
-    if (session?.authMethod !== "PREVIEW_CODE" || !isPrivatePreviewAdmin(session.user, policy)) {
+    if (!isPrivatePreviewAdminSession(session, policy)) {
       return json({ error: "Access denied." }, 403);
     }
     const email = await readTargetEmail(request);
     if (!email) return json({ error: "Invalid request." }, 400);
     // Issuance requires the current allowlist. Revocation must still work after
     // a recipient has been removed, so its pending and active sessions can be ended.
-    if (action === "issue" && !policy.allowedEmails.has(email)) {
-      return json({ error: "Account unavailable." }, 404);
-    }
-    const target = await prisma.user.findUnique({ where: { email }, select: { id: true } });
+    const target = await prisma.user.findUnique({ where: { email }, select: { id: true, role: true } });
     if (!target) return json({ error: "Account unavailable." }, 404);
+    if (["SUPER_ADMIN", "SUPPORT"].includes(target.role)) return json({ error: "Admin accounts use password sign-in, not tester codes." }, 403);
 
     if (action === "issue") {
       const issued = await issuePrivatePreviewCode(prisma, {

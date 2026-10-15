@@ -7,10 +7,9 @@ const route = await readFile(new URL("app/api/admin/promo-only/metadata-batch/ro
 const page = await readFile(new URL("app/admin/promo-only/page.js", root), "utf8");
 const ui = await readFile(new URL("app/admin/promo-only/PromoOnlyConsole.js", root), "utf8");
 
-test("batch route retains exact-origin, owner-code, no-input and persistent actor limit gates", () => {
+test("batch route retains exact-origin, password-preview owner, no-input and persistent actor limit gates", () => {
   assert.match(route, /request\.headers\.get\("origin"\) !== policy\.previewOrigin/);
-  assert.match(route, /session\?\.authMethod !== "PREVIEW_CODE"/);
-  assert.match(route, /isPrivatePreviewAdmin\(session\.user, policy\)/);
+  assert.match(route, /if \(!isPrivatePreviewAdminSession\(session, policy\)\)/);
   assert.match(route, /new URL\(request\.url\)\.search/);
   assert.match(route, /sampleRequestBodyIsEmpty\(request\)/);
   assert.match(route, /limit: 2, windowMs: HOUR_MS/);
@@ -23,7 +22,7 @@ test("batch route retains exact-origin, owner-code, no-input and persistent acto
 });
 
 test("only owner readiness and safe stored counts cross the page boundary", () => {
-  assert.match(page, /metadataBatchReady = session\?\.authMethod === "PREVIEW_CODE" && isPrivatePreviewAdmin\(session\.user, policy\)/);
+  assert.match(page, /metadataBatchReady = isPrivatePreviewAdminSession\(session, policy\)/);
   assert.match(page, /readPromoOnlyMetadataBatchConfig\(\)\.ready === true/);
   assert.match(page, /serializable\(\{ config, configError, metadataSampleReady, audioSampleState, connection,[^\n]+metadataBatchReady \}\)/);
   assert.doesNotMatch(page, /serializable\([^\n]*(?:batchConfig|apiKey|apiSecret)/);

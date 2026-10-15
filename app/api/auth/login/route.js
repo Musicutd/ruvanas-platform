@@ -7,16 +7,14 @@ import { loginLandingRoute } from "@/lib/login-routing.mjs";
 import { readPrivatePreviewPolicy } from "@/lib/private-preview-policy.mjs";
 import { clearRateLimit, consumeRateLimit, createRateLimitKey } from "@/lib/rate-limit";
 import { securityLog } from "@/lib/security-log";
+import { previewPasswordLogin } from "@/lib/private-preview-password-route";
 
 const LOGIN_LIMIT = 10;
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 export async function POST(request) {
   const previewPolicy = readPrivatePreviewPolicy(process.env);
   if (previewPolicy.enabled) {
-    return NextResponse.json(
-      { error: previewPolicy.valid ? "Password sign-in is unavailable for this preview." : "Private preview is unavailable." },
-      { status: previewPolicy.valid ? 403 : 503, headers: { "cache-control": "no-store" } }
-    );
+    return previewPasswordLogin(request);
   }
   try {
     const body = await request.json();
