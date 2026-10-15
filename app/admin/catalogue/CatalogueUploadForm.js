@@ -4,11 +4,14 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CATALOGUE_TERRITORY_PRESETS } from "@/lib/catalogue-territories.mjs";
 import { CATALOGUE_PILLARS, CATALOGUE_TIERS } from "@/lib/catalogue-audience.mjs";
+import { applyCatalogueMetadataAutofill, clearCatalogueMetadataAutofill } from "@/lib/catalogue-metadata-autofill.mjs";
 
 export default function CatalogueUploadForm({ genres }) {
   const router = useRouter();
   const formRef = useRef(null);
   const previewRequest = useRef(0);
+  const metadataPair = useRef({ audio: null, spreadsheet: null, matched: false, autofill: null });
+  const [metadataFilesReady, setMetadataFilesReady] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [metadataPreview, setMetadataPreview] = useState(null);
   const [metadataError, setMetadataError] = useState("");
@@ -21,6 +24,15 @@ export default function CatalogueUploadForm({ genres }) {
     const audio = form?.elements.namedItem("file")?.files?.[0];
     const spreadsheet = form?.elements.namedItem("metadataSpreadsheet")?.files?.[0];
     const requestNumber = ++previewRequest.current;
+    const previousPair = metadataPair.current;
+    const pairChanged = previousPair.audio !== audio || previousPair.spreadsheet !== spreadsheet;
+    if (pairChanged) clearCatalogueMetadataAutofill(form, previousPair.autofill);
+    const pair = { audio, spreadsheet, matched: false, autofill: pairChanged ? null : previousPair.autofill };
+    metadataPair.current = pair;
+    // Invalidate old responses and stop their pending state even if this new
+    // selection is incomplete or too large to send for matching.
+    setPreviewing(false);
+    setMetadataFilesReady(Boolean(audio && spreadsheet));
     setMetadataPreview(null);
     setMetadataError("");
     if (!audio || !spreadsheet) return;
@@ -37,13 +49,8 @@ export default function CatalogueUploadForm({ genres }) {
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || "The spreadsheet could not be matched.");
       if (requestNumber !== previewRequest.current) return;
-      for (const name of ["title", "artist", "album", "mixName", "bpm", "releaseYear", "durationSeconds"]) {
-        form.elements.namedItem(name).value = body.metadata[name] ?? "";
-      }
-      form.elements.namedItem("isExplicit").checked = body.metadata.isExplicit;
-      for (const box of form.querySelectorAll('input[name="genreIds"]')) {
-        box.checked = body.metadata.genreIds.includes(box.value);
-      }
+      pair.autofill = applyCatalogueMetadataAutofill(form, body.metadata);
+      pair.matched = true;
       setMetadataPreview(body.metadata);
     } catch (previewError) {
       if (requestNumber === previewRequest.current) setMetadataError(previewError instanceof Error ? previewError.message : "The spreadsheet could not be matched.");
@@ -58,8 +65,10 @@ export default function CatalogueUploadForm({ genres }) {
     setError("");
     setSuccess("");
 
+    const audio = formRef.current?.elements.namedItem("file")?.files?.[0];
     const spreadsheet = formRef.current?.elements.namedItem("metadataSpreadsheet")?.files?.[0];
-    if (spreadsheet && !metadataPreview) {
+    const pair = metadataPair.current;
+    if (spreadsheet && (!metadataPreview || !pair.matched || pair.audio !== audio || pair.spreadsheet !== spreadsheet)) {
       setUploading(false);
       setError("Match the metadata spreadsheet to the music file before uploading, or remove the spreadsheet.");
       return;
@@ -82,6 +91,10 @@ export default function CatalogueUploadForm({ genres }) {
         `${body.track.artist} — ${body.track.title} was uploaded as ${body.track.status.toLowerCase()}.`
       );
       formRef.current?.reset();
+      previewRequest.current += 1;
+      metadataPair.current = { audio: null, spreadsheet: null, matched: false, autofill: null };
+      setPreviewing(false);
+      setMetadataFilesReady(false);
       setMetadataPreview(null);
       setMetadataError("");
       router.refresh();
@@ -123,8 +136,26 @@ export default function CatalogueUploadForm({ genres }) {
             onChange={matchMetadata}
             style={styles.input}
           />
-          <span style={styles.hint}>CSV or XLSX, up to 10 MB. Choose the song file as well; we will match its row and fill the fields below.</span>
+          <span style={styles.hint}>CSV or XLSX, up to 10 MB.</span>
         </label>
+
+        <div style={{ display: "grid", gap: 10, gridColumn: "1 / -1" }}>
+          <p style={styles.hint}>Choose both the music file and its matching spreadsheet. Details fill automatically when both are selected. Use the button to match them again, then review the filled details before uploading.</p>
+          <button type="button" onClick={matchMetadata} disabled={uploading || previewing || !metadataFilesReady} style={styles.button}>
+            {previewing ? "Matching details…" : "Fill details from CSV"}
+          </button>
+          {previewing ? <p role="status" style={styles.hint}>Matching the song to the spreadsheet…</p> : null}
+          {metadataError ? <div role="alert" style={styles.error}>{metadataError}</div> : null}
+          {metadataPreview ? (
+            <div role="status" style={styles.metadataStatus}>
+              Matched spreadsheet row {metadataPreview.sheetRow}. Check the filled details before uploading.
+              {metadataPreview.newGenreNames.length ? (
+                <span> New genre{metadataPreview.newGenreNames.length > 1 ? "s" : ""}: {metadataPreview.newGenreNames.join(", ")}. These will be added to the catalogue at the Premium level when you upload; this track will stay in Draft for review.</span>
+              ) : null}
+              <span> Rights, territories and licensed product use are not taken from the spreadsheet. Confirm those yourself.</span>
+            </div>
+          ) : null}
+        </div>
 
         <input type="hidden" name="newGenres" value={JSON.stringify(metadataPreview?.newGenreNames || [])} />
 
@@ -194,18 +225,6 @@ export default function CatalogueUploadForm({ genres }) {
         </label>
         <p style={{ ...styles.hint, marginTop: 8 }}>Europe currently means EU/EEA countries, the UK and Switzerland. Select only what the signed agreement actually covers; API or spreadsheet metadata is not a licence.</p>
       </fieldset>
-
-      {previewing ? <p role="status" style={styles.hint}>Matching the song to the spreadsheet…</p> : null}
-      {metadataError ? <div role="alert" style={styles.error}>{metadataError} <button type="button" onClick={matchMetadata}>Try again</button></div> : null}
-      {metadataPreview ? (
-        <div role="status" style={styles.metadataStatus}>
-          Matched spreadsheet row {metadataPreview.sheetRow}. Check the filled details before uploading.
-          {metadataPreview.newGenreNames.length ? (
-            <span> New genre{metadataPreview.newGenreNames.length > 1 ? "s" : ""}: {metadataPreview.newGenreNames.join(", ")}. These will be added to the catalogue at the Premium level when you upload; this track will stay in Draft for review.</span>
-          ) : null}
-          <span> Rights, territories and licensed product use are not taken from the spreadsheet. Confirm those yourself.</span>
-        </div>
-      ) : null}
 
       {genres.length > 0 ? (
         <fieldset style={styles.fieldset} disabled={uploading}>
