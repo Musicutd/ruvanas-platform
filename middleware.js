@@ -3,6 +3,7 @@ import { publicRequestOrigin } from "@/lib/origin-policy.mjs";
 import { readPrivatePreviewPolicy, isPrivatePreviewPublicPath, isPrivatePreviewRegistrationPath, privatePreviewSessionLanding, isPrivatePreviewAdminSession, isPrivatePreviewOwnerBootstrapSession } from "@/lib/private-preview-policy.mjs";
 import { privatePreviewTesterRequestAllowed } from "@/lib/private-preview-tester-policy.mjs";
 import { getSessionFromToken, SESSION_COOKIE } from "@/lib/session-lookup.js";
+import { catalogueRequestSizePolicy } from "@/lib/catalogue-request-limits.mjs";
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 const LEGACY_MATCHER = (path) => path === "/" || path === "/api" || path.startsWith("/api/");
@@ -195,11 +196,10 @@ export async function middleware(request) {
   }
 
   const contentLength = Number(request.headers.get("content-length") || 0);
-  const singleCatalogueUpload = request.nextUrl.pathname === "/api/admin/catalogue/upload";
-  const maxRequestBytes = singleCatalogueUpload ? 55 * 1024 * 1024 : 10 * 1024 * 1024;
-  if (Number.isFinite(contentLength) && contentLength > maxRequestBytes) {
+  const requestSizePolicy = catalogueRequestSizePolicy(request.nextUrl.pathname, request.method);
+  if (Number.isFinite(contentLength) && contentLength > requestSizePolicy.maxBytes) {
     const response = NextResponse.json(
-      { error: singleCatalogueUpload ? "The single-track upload exceeds the 50 MB audio limit." : "This request exceeds the 10 MB request limit." },
+      { error: requestSizePolicy.error },
       { status: 413, headers: { "x-request-id": requestId } }
     );
     return preview.enabled ? previewResponse(response, requestId) : response;

@@ -19,6 +19,8 @@ import {
   storeCatalogueTrack
 } from "@/lib/catalogue-track-storage";
 import { securityLog } from "@/lib/security-log";
+import { catalogueBulkFileSizeError } from "@/lib/catalogue-request-limits.mjs";
+import { acquireCatalogueBulkRequest, CatalogueBulkRequestError, readCatalogueBulkFormData } from "@/lib/catalogue-bulk-request.mjs";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -50,12 +52,16 @@ function rowResponse(row) {
 }
 
 export async function POST(request) {
+  let release;
   try {
     const access = await requirePlatformAdmin();
     const denied = superAdminOnly(access);
     if (denied) return denied;
 
-    const formData = await request.formData();
+    release = acquireCatalogueBulkRequest();
+    if (!release) return NextResponse.json({ error: "Another catalogue batch is being checked or imported. Wait for it to finish, then try again." },
+      { status: 429, headers: { "Retry-After": "5" } });
+    const formData = await readCatalogueBulkFormData(request);
     const archive = formData.get("archive");
     const manifest = formData.get("manifest");
     const mode = String(formData.get("mode") || "validate");
@@ -65,6 +71,8 @@ export async function POST(request) {
     if (!manifest || !(manifest instanceof File) || manifest.size === 0) {
       return NextResponse.json({ error: "Choose the CSV or XLSX catalogue spreadsheet." }, { status: 400 });
     }
+    const fileSizeError = catalogueBulkFileSizeError(archive, manifest);
+    if (fileSizeError) return NextResponse.json({ error: fileSizeError }, { status: 413 });
     if (!['validate', 'import'].includes(mode)) {
       return NextResponse.json({ error: "Choose whether to check or import the batch." }, { status: 400 });
     }
@@ -173,11 +181,13 @@ export async function POST(request) {
     });
     return NextResponse.json({ ok: failures.length === 0, batchId, imported, failures }, { status: failures.length ? 207 : 201 });
   } catch (error) {
-    const expected = error instanceof CatalogueBulkImportError || error instanceof CatalogueTrackStorageError;
+    const expected = error instanceof CatalogueBulkImportError || error instanceof CatalogueTrackStorageError || error instanceof CatalogueBulkRequestError;
     const status = expected ? error.status : 500;
     securityLog(status >= 500 ? "error" : "warn", "CATALOGUE_BULK_IMPORT_ERROR", request, {
       error: error instanceof Error ? error.message : "unknown"
     });
     return NextResponse.json({ error: expected ? error.message : "The catalogue batch could not be processed. Please try again." }, { status });
+  } finally {
+    release?.();
   }
 }

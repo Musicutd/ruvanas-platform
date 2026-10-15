@@ -1,6 +1,7 @@
 "use client";
 import { CATALOGUE_TERRITORY_PRESETS } from "@/lib/catalogue-territories.mjs";
 import { CATALOGUE_PILLARS, CATALOGUE_TIERS } from "@/lib/catalogue-audience.mjs";
+import { catalogueBulkFileSizeError, catalogueRequestSizePolicy } from "@/lib/catalogue-request-limits.mjs";
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -34,9 +35,19 @@ export default function CatalogueBulkUploadForm() {
     setResult(null);
     try {
       const data = new FormData(form);
+      const fileSizeError = catalogueBulkFileSizeError(data.get("archive"), data.get("manifest"));
+      if (fileSizeError) { setPreview(null); throw new Error(fileSizeError); }
       data.set("mode", mode);
       const response = await fetch("/api/admin/catalogue/bulk-upload", { method: "POST", body: data });
-      const body = await response.json();
+      let body;
+      try { body = await response.json(); }
+      catch {
+        if (response.status === 413) throw new Error(catalogueRequestSizePolicy("/api/admin/catalogue/bulk-upload", "POST").error);
+        if (response.status === 502 || response.status === 503) {
+          throw new Error("The service is temporarily unavailable. Wait a short while, then check the catalogue before retrying.");
+        }
+        throw new Error("The server did not return a readable result. Check the catalogue before trying again.");
+      }
       if (!response.ok) {
         if (body.preview) setPreview(body.preview);
         throw new Error(body.error || "The catalogue batch could not be processed.");
@@ -69,11 +80,11 @@ export default function CatalogueBulkUploadForm() {
       <div style={styles.grid}>
         <label style={styles.label}>Music ZIP
           <input name="archive" type="file" accept=".zip,application/zip" required disabled={Boolean(working)} style={styles.input} onChange={() => setPreview(null)} />
-          <span style={styles.hint}>Up to 100 MP3, WAV, OGG or M4A files; ZIP maximum 150 MB.</span>
+          <span style={styles.hint}>Up to 100 MP3, WAV, OGG or M4A files; ZIP maximum 150 MB, each audio file maximum 50 MB, uncompressed total maximum 200 MB.</span>
         </label>
         <label style={styles.label}>Metadata spreadsheet
           <input name="manifest" type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required disabled={Boolean(working)} style={styles.input} onChange={() => setPreview(null)} />
-          <span style={styles.hint}>Your current Artist, Title, Mix, Time, BPM, Genre and Content Warning columns are supported.</span>
+          <span style={styles.hint}>CSV or XLSX maximum 10 MB. Your current Artist, Title, Mix, Time, BPM, Genre and Content Warning columns are supported.</span>
         </label>
       </div>
 

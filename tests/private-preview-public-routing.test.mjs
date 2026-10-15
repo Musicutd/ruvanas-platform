@@ -4,6 +4,7 @@ import { test } from "node:test";
 import { publicRequestOrigin } from "../lib/origin-policy.mjs";
 import * as policy from "../lib/private-preview-policy.mjs";
 import { privatePreviewTesterRequestAllowed } from "../lib/private-preview-tester-policy.mjs";
+import { catalogueRequestSizePolicy } from "../lib/catalogue-request-limits.mjs";
 
 const source = await readFile(new URL("../middleware.js", import.meta.url), "utf8");
 const BASE_ENV = {
@@ -35,12 +36,12 @@ function middlewareHarness({ session = null, lookupThrows = false } = {}) {
     .replace("export const config", "const config");
   const names = ["NextResponse", "publicRequestOrigin", "privatePreviewTesterRequestAllowed", "getSessionFromToken", "SESSION_COOKIE",
     "readPrivatePreviewPolicy", "isPrivatePreviewPublicPath", "isPrivatePreviewRegistrationPath", "privatePreviewSessionLanding",
-    "isPrivatePreviewAdminSession", "isPrivatePreviewOwnerBootstrapSession", "loadPrisma", "crypto"];
+    "isPrivatePreviewAdminSession", "isPrivatePreviewOwnerBootstrapSession", "loadPrisma", "crypto", "catalogueRequestSizePolicy"];
   const values = [TestResponse, publicRequestOrigin, privatePreviewTesterRequestAllowed,
     async () => { lookups += 1; if (lookupThrows) throw new Error("No public session query allowed"); return session; },
     "ruvanas_session", policy.readPrivatePreviewPolicy, policy.isPrivatePreviewPublicPath, policy.isPrivatePreviewRegistrationPath,
     policy.privatePreviewSessionLanding, policy.isPrivatePreviewAdminSession, policy.isPrivatePreviewOwnerBootstrapSession,
-    async () => { loads += 1; return {}; }, { randomUUID: () => "synthetic-request-id" }];
+    async () => { loads += 1; return {}; }, { randomUUID: () => "synthetic-request-id" }, catalogueRequestSizePolicy];
   const run = new Function(...names, `${body}\nreturn middleware;`)(...values);
   return { run, get loads() { return loads; }, get lookups() { return lookups; } };
 }
