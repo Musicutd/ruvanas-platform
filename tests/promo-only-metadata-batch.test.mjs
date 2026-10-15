@@ -87,6 +87,30 @@ test("exact old-preview pair and optional single DB connection limit remain vali
   assert.equal(readyConfig({ DATABASE_URL: `${env.DATABASE_URL}?connection_limit=3` }).ready, true);
 });
 
+test("www metadata batches inherit the explicit same-domain paid-host guard without enabling downloads", async () => {
+  const publicEnvironment = { ...env,
+    NODE_ENV: "production",
+    RUVANAS_PUBLIC_URL: "https://www.ruvanas.com", RUVANAS_PRIVATE_PREVIEW_PUBLIC_SITE: "1",
+    RUVANAS_PRIVATE_PREVIEW_ADMIN_EMAIL: "owner@example.test",
+    RUVANAS_PRIVATE_PREVIEW_ALLOWED_EMAILS: "owner@example.test"
+  };
+  const config = readPromoOnlyMetadataBatchConfig(publicEnvironment);
+  assert.equal(config.ready, true);
+  assert.equal(config.maxTracks, 25);
+  assert.equal(config.maxRequests, 28);
+  assert.equal(config.audioDownloadEnabled, false);
+  const calls = [];
+  await fetchPromoOnlyMetadataBatch(config, { fetchImpl: mockFetch(fixtures(2), calls), now: NOW });
+  assert.equal(calls.length, 5);
+  assert.ok(calls.every(({ url }) => !/queue|download|acknowledge/i.test(url)));
+  for (const changes of [{ RUVANAS_PRIVATE_PREVIEW_PUBLIC_SITE: undefined },
+    { RUVANAS_PRIVATE_PREVIEW_ADMIN_EMAIL: "outside@example.test" },
+    { RENDER_SERVICE_ID: "srv-other" }, { PROMOONLY_AUDIO_SAMPLE_ENABLED: "true" },
+    { PROMOONLY_AUDIO_DOWNLOAD_ENABLED: "true" }]) {
+    assert.equal(readPromoOnlyMetadataBatchConfig({ ...publicEnvironment, ...changes }).ready, false);
+  }
+});
+
 test("one audio release uses only auth, first date page, selected release and ordered track reads", async () => {
   const calls = [];
   const result = await fetchPromoOnlyMetadataBatch(readyConfig(), { fetchImpl: mockFetch(fixtures(), calls), now: () => NOW });

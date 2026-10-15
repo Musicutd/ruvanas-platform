@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { publicRequestOrigin } from "@/lib/origin-policy.mjs";
-import { readPrivatePreviewPolicy, isPrivatePreviewRegistrationPath, privatePreviewSessionLanding, isPrivatePreviewAdminSession, isPrivatePreviewOwnerBootstrapSession } from "@/lib/private-preview-policy.mjs";
+import { readPrivatePreviewPolicy, isPrivatePreviewPublicPath, isPrivatePreviewRegistrationPath, privatePreviewSessionLanding, isPrivatePreviewAdminSession, isPrivatePreviewOwnerBootstrapSession } from "@/lib/private-preview-policy.mjs";
 import { privatePreviewTesterRequestAllowed } from "@/lib/private-preview-tester-policy.mjs";
 import { getSessionFromToken, SESSION_COOKIE } from "@/lib/session-lookup.js";
 
@@ -49,7 +49,7 @@ function previewDenied(request, policy, requestId) {
   if (request.method === "GET" || request.method === "HEAD") {
     // Keep browser navigation on the configured preview origin, not an
     // internal or client-supplied host from a reverse-proxy request.
-    return previewResponse(NextResponse.redirect(new URL("/preview-login", policy.previewOrigin)), requestId);
+    return previewResponse(NextResponse.redirect(new URL(policy.publicSite ? "/login" : "/preview-login", policy.previewOrigin)), requestId);
   }
   return previewResponse(new NextResponse(null, { status: 401 }), requestId);
 }
@@ -59,7 +59,10 @@ function isServiceAccountApiRequest(request) {
     /^Bearer\s+rvsa_[a-f0-9]{12}_[a-f0-9]{64}$/i.test(request.headers.get("authorization") || "");
 }
 
-function allowedOrigins(request) {
+function allowedOrigins(request, preview) {
+  // In consolidated public-site mode, neither a client-supplied host header
+  // nor a stale Render origin in ALLOWED_ORIGINS can expand the CSRF boundary.
+  if (preview?.publicSite) return new Set([preview.previewOrigin]);
   const configured = (process.env.ALLOWED_ORIGINS || "")
     .split(",")
     .map((origin) => origin.trim())
@@ -106,6 +109,53 @@ export async function middleware(request) {
       return previewResponse(new NextResponse(null, {
         status: request.nextUrl.pathname.startsWith("/api/") ? 403 : 404
       }), requestId);
+    }
+    if (preview.publicSite) {
+      const path = request.nextUrl.pathname;
+      const readOnly = request.method === "GET" || request.method === "HEAD";
+      let incomingOrigin;
+      try {
+        incomingOrigin = publicRequestOrigin({ nextOrigin: request.nextUrl.origin,
+          host: request.headers.get("host"), forwardedHost: request.headers.get("x-forwarded-host"),
+          forwardedProto: request.headers.get("x-forwarded-proto") });
+      } catch { incomingOrigin = null; }
+      const knownOrigins = new Set([preview.previewOrigin]);
+      if (preview.previewOrigin === "https://www.ruvanas.com") {
+        knownOrigins.add("https://ruvanas-platform.onrender.com");
+        knownOrigins.add("https://ruvanas.com");
+      }
+      if (!knownOrigins.has(incomingOrigin)) {
+        return previewResponse(new NextResponse(null, { status: 404 }), requestId);
+      }
+      // Render health probes retain their explicit, non-session bootstrap path
+      // on the known service hostname as well as the canonical domain.
+      if (readOnly && path === "/api/private-preview/health") {
+        return previewResponse(NextResponse.next({ request: { headers: requestHeaders } }), requestId);
+      }
+      if (incomingOrigin !== preview.previewOrigin) {
+        if (!readOnly) return previewResponse(new NextResponse(null, { status: 403 }), requestId);
+        // The destination always comes from validated configuration, never
+        // request host/userinfo. Set pathname instead of resolving a supplied
+        // path; do not carry possible credentials or codes in query strings.
+        const canonical = new URL(preview.previewOrigin);
+        canonical.pathname = path;
+        return previewResponse(NextResponse.redirect(canonical), requestId);
+      }
+      if (isPrivatePreviewPublicPath(path, preview)) {
+        if (!readOnly) return previewResponse(new NextResponse(null, { status: 403 }), requestId);
+        const documentPath = path === "/" ? "/public-marketing/index.html" :
+          ["/how-it-works", "/how-it-works/"].includes(path) ? "/public-marketing/how-it-works/index.html" : path;
+        const documentUrl = new URL(request.url);
+        documentUrl.pathname = documentPath;
+        documentUrl.search = "";
+        const response = documentPath === path ? NextResponse.next({ request: { headers: requestHeaders } }) :
+          NextResponse.rewrite(documentUrl, { request: { headers: requestHeaders } });
+        response.headers.set("x-request-id", requestId);
+        response.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive");
+        // The raw public-document handler owns its cache/CSP headers. Return
+        // before session/database work; never render the ordinary app home.
+        return response;
+      }
     }
     const loginEntry = (request.method === "GET" || request.method === "HEAD") &&
       (request.nextUrl.pathname === "/login" || request.nextUrl.pathname === "/preview-login");
@@ -158,7 +208,7 @@ export async function middleware(request) {
   if (!SAFE_METHODS.has(request.method) && !isServiceAccountApiRequest(request)) {
     const origin = request.headers.get("origin");
 
-    if (!origin || !allowedOrigins(request).has(origin)) {
+    if (!origin || !allowedOrigins(request, preview).has(origin)) {
       console.warn(
         JSON.stringify({
           level: "warn",

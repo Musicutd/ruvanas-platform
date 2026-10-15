@@ -43,7 +43,7 @@ test("native sign-in forms use same-origin referrer policy without relaxing POST
   assert.match(loginPage, /"referrer-policy": "same-origin"/);
   assert.doesNotMatch(loginPage, /"referrer-policy": "no-referrer"/);
   assert.match(middleware, /const origin = request\.headers\.get\("origin"\)/);
-  assert.match(middleware, /if \(!origin \|\| !allowedOrigins\(request\)\.has\(origin\)\)/);
+  assert.match(middleware, /if \(!origin \|\| !allowedOrigins\(request, preview\)\.has\(origin\)\)/);
   assert.match(middleware, /This request did not originate from an approved Ruvanas site\./);
   assert.match(codeApi, /request\.headers\.get\("origin"\) !== policy\.previewOrigin/);
   assert.match(codeApi, /return json\(\{ error: "Request not permitted\." \}, 403\)/);

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { isPrivatePreviewAdmin, isPrivatePreviewAdminSession, isPrivatePreviewOwnerBootstrapSession, isPrivatePreviewTester, isPrivatePreviewUserAllowed, isPrivatePreviewRegistrationPath, privatePreviewDashboardRoute, privatePreviewSessionLanding, readPrivatePreviewPolicy } from "../lib/private-preview-policy.mjs";
+import { isPrivatePreviewAdmin, isPrivatePreviewAdminSession, isPrivatePreviewOwnerBootstrapSession, isPrivatePreviewTester, isPrivatePreviewUserAllowed, isPrivatePreviewPublicPath, isPrivatePreviewRegistrationPath, privatePreviewDashboardRoute, privatePreviewSessionLanding, readPrivatePreviewPolicy } from "../lib/private-preview-policy.mjs";
 
 const PREVIEW_ORIGIN = "https://preview.ruvanas.test";
 const FUTURE = new Date("2099-10-16T12:00:00.000Z");
@@ -257,4 +257,81 @@ test("all self-registration and account-creating invitation paths are closed in 
   for (const path of ["/preview-login", "/api/auth/preview-code", "/dashboard", "/admin/private-preview"]) {
     assert.equal(isPrivatePreviewRegistrationPath(path), false);
   }
+});
+
+const publicSiteEnv = {
+  NODE_ENV: "production", RUVANAS_ENVIRONMENT: "PRIVATE_PREVIEW",
+  RUVANAS_PRIVATE_PREVIEW_ENABLED: "1", RUVANAS_PRIVATE_PREVIEW_PUBLIC_SITE: "1",
+  RUVANAS_PRIVATE_PREVIEW_ALLOWED_EMAILS: "owner@example.com", RUVANAS_PRIVATE_PREVIEW_ADMIN_EMAIL: "owner@example.com",
+  RUVANAS_PUBLIC_URL: "https://www.ruvanas.com", RUVANAS_PUBLIC_COMING_SOON_URL: "https://www.ruvanas.com/"
+};
+
+test("same-domain public marketing requires an explicit exact flag and canonical production configuration", () => {
+  const enabled = readPrivatePreviewPolicy(publicSiteEnv);
+  assert.equal(enabled.enabled, true);
+  assert.equal(enabled.valid, true);
+  assert.equal(enabled.publicSite, true);
+  for (const flag of [undefined, "0", "", "true", "yes", "01", "1 ", "false"]) {
+    const policy = readPrivatePreviewPolicy({ ...publicSiteEnv, RUVANAS_PRIVATE_PREVIEW_PUBLIC_SITE: flag });
+    assert.equal(policy.valid, false, String(flag));
+    assert.equal(policy.publicSite, false);
+  }
+  for (const change of [
+    { RUVANAS_PRIVATE_PREVIEW_ENABLED: undefined }, { RUVANAS_PRIVATE_PREVIEW_ENABLED: "0" },
+    { NODE_ENV: "development" }, { RUVANAS_ENVIRONMENT: "PRODUCTION" }, { RUVANAS_ENVIRONMENT: undefined },
+    { RUVANAS_PUBLIC_URL: "https://ruvanas.com" }, { RUVANAS_PUBLIC_URL: "https://ruvanas-platform.onrender.com" },
+    { RUVANAS_PUBLIC_URL: "https://www.ruvanas.com.evil.test" }, { RUVANAS_PUBLIC_URL: "http://www.ruvanas.com" },
+    { RUVANAS_PUBLIC_COMING_SOON_URL: "https://www.ruvanas.com/other" },
+    { RUVANAS_PUBLIC_COMING_SOON_URL: "https://other.example.test/" },
+    { RUVANAS_PRIVATE_PREVIEW_ALLOWED_EMAILS: "" }
+  ]) {
+    const policy = readPrivatePreviewPolicy({ ...publicSiteEnv, ...change });
+    assert.equal(policy.enabled, true);
+    assert.equal(policy.valid, false, JSON.stringify(change));
+    assert.equal(policy.publicSite, false);
+  }
+});
+
+test("mistyped public-site mode cannot bypass private protection when preview was otherwise disabled", () => {
+  for (const flag of ["1", "", "true", "false", "01"]) {
+    const policy = readPrivatePreviewPolicy({ RUVANAS_PRIVATE_PREVIEW_ENABLED: "0", RUVANAS_PRIVATE_PREVIEW_PUBLIC_SITE: flag });
+    assert.equal(policy.enabled, true);
+    assert.equal(policy.valid, false);
+    assert.equal(isPrivatePreviewPublicPath("/", policy), false);
+  }
+  for (const flag of [undefined, "0"]) {
+    const off = readPrivatePreviewPolicy({ RUVANAS_PRIVATE_PREVIEW_ENABLED: "0", RUVANAS_PRIVATE_PREVIEW_PUBLIC_SITE: flag });
+    assert.equal(off.enabled, false);
+    assert.equal(off.valid, true);
+    assert.equal(off.publicSite, false);
+  }
+});
+
+test("public helper allows exactly the two reviewed documents and their fixed aliases", () => {
+  const policy = readPrivatePreviewPolicy(publicSiteEnv);
+  for (const path of ["/", "/how-it-works", "/how-it-works/", "/public-marketing/index.html", "/public-marketing/how-it-works/index.html"]) {
+    assert.equal(isPrivatePreviewPublicPath(path, policy), true, path);
+    assert.equal(isPrivatePreviewPublicPath(path, { ...policy, publicSite: false }), false);
+    assert.equal(isPrivatePreviewPublicPath(path, { ...policy, valid: false }), false);
+    assert.equal(isPrivatePreviewPublicPath(path, { ...policy, enabled: false }), false);
+  }
+  for (const path of [undefined, null, {}, "/index.html", "/public-marketing", "/public-marketing/", "/public-marketing/private.html",
+    "/public-marketing/how-it-works", "/public-marketing/how-it-works/index.html/", "/public-marketing/%69ndex.html",
+    "/public-marketing/../admin", "/public-marketing/%2e%2e/admin", "/public-marketing/index.html?file=private",
+    "//public-marketing/index.html", "/public-marketing\\index.html", "/how-it-works.json", "/how-it-works/extra",
+    "/admin", "/api/auth/register", "/login", "/_next/static/app.js", "/fonts/font.woff", "/images/private.jpg"]) {
+    assert.equal(isPrivatePreviewPublicPath(path, policy), false, String(path));
+  }
+});
+
+test("same-origin loopback is confined to explicit local synthetic public-site fixtures", () => {
+  const origin = "http://127.0.0.1:3124";
+  const fixture = { ...publicSiteEnv, RUVANAS_ENVIRONMENT: "LOCAL_SYNTHETIC_PRIVATE_PREVIEW",
+    RUVANAS_PUBLIC_URL: origin, RUVANAS_PUBLIC_COMING_SOON_URL: `${origin}/` };
+  assert.equal(readPrivatePreviewPolicy(fixture).valid, true);
+  assert.equal(readPrivatePreviewPolicy(fixture).publicSite, true);
+  assert.equal(readPrivatePreviewPolicy({ ...fixture, RUVANAS_ENVIRONMENT: "PRIVATE_PREVIEW" }).valid, false);
+  assert.equal(readPrivatePreviewPolicy({ ...fixture, RUVANAS_PUBLIC_URL: "http://external.example.test",
+    RUVANAS_PUBLIC_COMING_SOON_URL: "http://external.example.test/" }).valid, false);
+  assert.equal(readPrivatePreviewPolicy({ ...fixture, RUVANAS_PUBLIC_COMING_SOON_URL: "http://127.0.0.1:3125/" }).valid, false);
 });

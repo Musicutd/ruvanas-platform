@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow,noarchive">
+<meta name="description" content="Explore Ruvanas professional media platforms. Private preview access is by administrator-issued code.">
+<title>Ruvanas | Professional Media Platforms</title>
+<style>html{scroll-behavior:smooth}body{margin:0}
+.page, .page *, .page *::before, .page *::after { box-sizing: border-box; }
+
+.page {
+  --ink: #0b1728;
+  --navy: #08111f;
+  --gold: #f4b942;
+  --gold-deep: #d99416;
+  --cream: #f7f3ea;
+  --slate: #526071;
+  min-height: 100vh;
+  overflow: hidden;
+  background: var(--cream);
+  color: var(--ink);
+  font-family: Inter, "Segoe UI", Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.skipLink {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 100;
+  transform: translateY(-150%);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  padding: 10px 14px;
+  font-weight: 800;
+}
+.skipLink:focus { transform: translateY(0); }
+
+.header {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 20;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.navShell {
+  width: min(1240px, calc(100% - 40px));
+  min-height: 82px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 32px;
+}
+
+.logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  width: max-content;
+  color: #fff;
+  text-decoration: none;
+}
+
+.brandMark {
+  width: 31px;
+  height: 31px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border: 1px solid rgba(244, 185, 66, 0.62);
+  border-radius: 50%;
+  background: rgba(244, 185, 66, 0.08);
+}
+.brandMark span { display: block; width: 3px; border-radius: 5px; background: var(--gold); }
+.brandMark span:nth-child(1) { height: 8px; }
+.brandMark span:nth-child(2) { height: 16px; }
+.brandMark span:nth-child(3) { height: 11px; }
+.logoText { font-size: 17px; font-weight: 900; letter-spacing: 0.22em; }
+.logoParent {
+  margin-left: 3px;
+  padding-left: 13px;
+  border-left: 1px solid rgba(255, 255, 255, 0.28);
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.navLinks { display: flex; align-items: center; gap: 30px; }
+.navLinks a, .loginLink {
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+  transition: color 180ms ease;
+}
+.navLinks a:hover, .loginLink:hover { color: #fff; }
+.navActions { display: flex; align-items: center; justify-content: flex-end; gap: 20px; }
+
+.navCta, .primaryButton, .priceCtaFeatured {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  border-radius: 8px;
+  background: var(--gold);
+  color: var(--ink);
+  font-weight: 900;
+  text-decoration: none;
+  transition: transform 180ms ease, background 180ms ease, box-shadow 180ms ease;
+}
+.navCta { padding: 11px 16px; font-size: 13px; }
+.navCta:hover, .primaryButton:hover, .priceCtaFeatured:hover {
+  transform: translateY(-2px);
+  background: #ffc958;
+  box-shadow: 0 10px 28px rgba(244, 185, 66, 0.18);
+}
+.arrowIcon {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.hero {
+  position: relative;
+  min-height: 820px;
+  padding: 155px 0 88px;
+  overflow: hidden;
+  background: radial-gradient(circle at 76% 42%, rgba(39, 75, 111, 0.25), transparent 34%), linear-gradient(135deg, #07101d 0%, #0b1727 52%, #0e2033 100%);
+  color: #fff;
+}
+.hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0.11;
+  background-image: linear-gradient(rgba(255,255,255,.2) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.2) 1px, transparent 1px);
+  background-size: 64px 64px;
+  mask-image: linear-gradient(to right, transparent, #000 48%, #000);
+}
+.heroGlow {
+  position: absolute;
+  width: 500px;
+  height: 500px;
+  right: -150px;
+  top: -200px;
+  border-radius: 50%;
+  background: rgba(244, 185, 66, 0.12);
+  filter: blur(80px);
+}
+.heroGrid {
+  position: relative;
+  z-index: 1;
+  width: min(1240px, calc(100% - 40px));
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1.02fr 0.98fr;
+  align-items: center;
+  gap: 76px;
+}
+.heroCopy { max-width: 650px; }
+.eyebrow, .sectionEyebrow {
+  margin: 0 0 19px;
+  color: var(--gold-deep);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+.eyebrow { display: flex; align-items: center; gap: 10px; color: var(--gold); }
+.eyebrow span { width: 23px; height: 1px; background: var(--gold); }
+.hero h1 {
+  max-width: 690px;
+  margin: 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(56px, 6vw, 86px);
+  font-weight: 500;
+  letter-spacing: -0.055em;
+  line-height: 0.98;
+}
+.hero h1 em { color: var(--gold); font-weight: 500; }
+.heroLead { max-width: 600px; margin: 28px 0 0; color: #aeb9c7; font-size: 19px; line-height: 1.65; }
+.heroActions { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-top: 34px; }
+.primaryButton, .secondaryButton { min-height: 53px; padding: 0 22px; font-size: 14px; }
+.secondaryButton {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  border-radius: 8px;
+  color: #fff;
+  font-weight: 800;
+  text-decoration: none;
+  transition: border-color 180ms ease, background 180ms ease;
+}
+.secondaryButton:hover { border-color: rgba(255, 255, 255, 0.6); background: rgba(255, 255, 255, 0.05); }
+.heroProof { display: flex; gap: 30px; margin-top: 48px; padding-top: 26px; border-top: 1px solid rgba(255, 255, 255, 0.12); }
+.heroProof div { display: grid; gap: 4px; }
+.heroProof strong { color: #fff; font-family: Georgia, serif; font-size: 25px; font-weight: 500; }
+.heroProof span { color: #7f8d9f; font-size: 10px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; }
+
+.heroVisual { position: relative; min-height: 520px; display: flex; align-items: center; justify-content: center; }
+.livePanel {
+  position: relative;
+  z-index: 2;
+  width: min(100%, 510px);
+  padding: 25px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 21px;
+  background: linear-gradient(145deg, rgba(26, 44, 68, 0.94), rgba(12, 24, 41, 0.97));
+  box-shadow: 0 34px 80px rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(16px);
+}
+.panelTop, .nowPlaying, .networkLine { display: flex; align-items: center; justify-content: space-between; }
+.panelTop p { margin: 9px 0 0; color: #8190a2; font-size: 11px; }
+.liveBadge { display: flex; align-items: center; gap: 7px; color: #fff; font-size: 11px; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase; }
+.liveBadge i { width: 7px; height: 7px; border-radius: 50%; background: #4ade80; box-shadow: 0 0 0 4px rgba(74, 222, 128, 0.12); }
+.qualityBadge { border: 1px solid rgba(244, 185, 66, 0.28); border-radius: 99px; background: rgba(244, 185, 66, 0.08); color: var(--gold); padding: 6px 9px; font-size: 9px; font-weight: 900; letter-spacing: 0.1em; }
+.nowPlaying { justify-content: flex-start; gap: 15px; margin: 27px 0 20px; padding: 17px; border-radius: 14px; background: rgba(255, 255, 255, 0.045); }
+.albumArt { flex: 0 0 59px; height: 59px; display: flex; align-items: center; justify-content: center; border-radius: 12px; background: linear-gradient(135deg, #f4b942, #c8790b); }
+.albumArt .brandMark { border-color: rgba(8, 17, 31, 0.3); }
+.albumArt .brandMark span { background: var(--ink); }
+.nowPlaying > div:nth-child(2) { min-width: 0; display: grid; gap: 4px; }
+.nowPlaying span, .nowPlaying small { color: #8190a2; font-size: 9px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
+.nowPlaying strong { overflow: hidden; color: #fff; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.nowPlaying button { flex: 0 0 42px; height: 42px; margin-left: auto; display: flex; align-items: center; justify-content: center; gap: 3px; border: 0; border-radius: 50%; background: var(--gold); }
+.nowPlaying button span { width: 2px; height: 12px; border-radius: 4px; background: var(--ink); animation: equalize 850ms ease-in-out infinite alternate; }
+.nowPlaying button span:nth-child(2) { height: 18px; animation-delay: 180ms; }
+.nowPlaying button span:nth-child(3) { height: 8px; animation-delay: 360ms; }
+@keyframes equalize { to { transform: scaleY(0.45); } }
+.waveform { height: 100px; display: flex; align-items: center; gap: 5px; padding: 0 6px; }
+.waveform span { flex: 1; height: var(--bar-height); max-width: 8px; border-radius: 99px; background: linear-gradient(to top, rgba(244, 185, 66, 0.18), var(--gold)); opacity: 0.84; }
+.networkLine { margin-top: 11px; color: #8190a2; font-size: 9px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
+.networkLine i { flex: 1; height: 1px; margin: 0 8px; background: rgba(255, 255, 255, 0.1); }
+
+.floatingCard { position: absolute; z-index: 3; display: flex; align-items: center; gap: 9px; padding: 11px 13px; border: 1px solid rgba(255,255,255,.14); border-radius: 12px; background: rgba(18, 34, 53, 0.95); box-shadow: 0 15px 40px rgba(0,0,0,.32); }
+.floatingCard svg { width: 24px; height: 24px; fill: none; stroke: var(--gold); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.floatingCard span { display: grid; gap: 2px; color: #8291a4; font-size: 8px; font-weight: 700; }
+.floatingCard strong { color: #fff; font-size: 11px; }
+.cardRetail { left: -20px; top: 50px; }
+.cardSchool { right: -25px; top: 125px; }
+.cardOnline { right: 5px; bottom: 30px; }
+
+.introStrip { min-height: 86px; display: flex; align-items: center; justify-content: center; gap: 48px; padding: 20px; background: var(--gold); }
+.introStrip p { margin: 0; font-family: Georgia, serif; font-size: 20px; font-style: italic; }
+.introStrip div { display: flex; align-items: center; gap: 18px; color: rgba(11, 23, 40, 0.75); font-size: 10px; font-weight: 900; letter-spacing: 0.12em; text-transform: uppercase; }
+.introStrip i { width: 4px; height: 4px; border-radius: 50%; background: currentColor; }
+
+.section { width: min(1200px, calc(100% - 40px)); margin: 0 auto; padding: 120px 0; }
+.sectionHeader { display: grid; grid-template-columns: 1.45fr 0.7fr; gap: 90px; align-items: end; margin-bottom: 52px; }
+.sectionHeader h2, .soundCopy h2, .pricingHeader h2, .storyContent h2, .finalCta h2 { margin: 0; font-family: Georgia, "Times New Roman", serif; font-size: clamp(42px, 5vw, 66px); font-weight: 500; letter-spacing: -0.045em; line-height: 1.04; }
+.sectionHeader > p, .pricingHeader > p { margin: 0; color: var(--slate); font-size: 16px; line-height: 1.7; }
+
+.platformGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+.platformCard { position: relative; min-height: 430px; padding: 31px; overflow: hidden; border: 1px solid #d6dbe1; border-radius: 16px; background: rgba(255,255,255,.58); transition: transform 220ms ease, border-color 220ms ease, box-shadow 220ms ease; }
+.platformCard::after { content: ""; position: absolute; width: 190px; height: 190px; right: -90px; bottom: -110px; border-radius: 50%; background: rgba(244, 185, 66, 0.14); }
+.platformCard:hover { transform: translateY(-6px); border-color: #bdc5cf; box-shadow: 0 24px 50px rgba(11, 23, 40, 0.09); }
+.platformTop { display: flex; align-items: flex-start; justify-content: space-between; }
+.platformIcon { width: 61px; height: 61px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--ink); }
+.platformIcon svg { width: 30px; height: 30px; fill: none; stroke: var(--gold); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.platformNumber { color: #9ca5af; font-family: Georgia, serif; font-size: 14px; font-style: italic; }
+.platformCard h3 { margin: 45px 0 15px; font-family: Georgia, serif; font-size: 29px; font-weight: 500; letter-spacing: -0.03em; }
+.platformCard > p { min-height: 107px; margin: 0; color: var(--slate); font-size: 14px; line-height: 1.7; }
+.platformCard ul { display: flex; flex-wrap: wrap; gap: 7px; margin: 25px 0 0; padding: 0; list-style: none; }
+.platformCard li { border: 1px solid #d5dae0; border-radius: 99px; background: #fff; padding: 7px 10px; color: #445265; font-size: 9px; font-weight: 800; }
+
+.soundSection { position: relative; display: grid; grid-template-columns: 0.9fr 1.1fr; min-height: 690px; background: var(--ink); color: #fff; }
+.soundVisual { position: relative; min-height: 620px; overflow: hidden; background: radial-gradient(circle at 50% 50%, rgba(244, 185, 66, 0.16), transparent 38%); }
+.orbit { position: absolute; left: 50%; top: 50%; z-index: 3; width: 130px; height: 130px; display: flex; align-items: center; justify-content: center; transform: translate(-50%, -50%); border: 1px solid rgba(244, 185, 66, 0.45); border-radius: 50%; background: var(--gold); box-shadow: 0 0 80px rgba(244, 185, 66, 0.25); }
+.orbit .brandMark { width: 62px; height: 62px; border-color: rgba(11, 23, 40, 0.3); }
+.orbit .brandMark span { width: 5px; background: var(--ink); }
+.orbit .brandMark span:nth-child(1) { height: 17px; }
+.orbit .brandMark span:nth-child(2) { height: 31px; }
+.orbit .brandMark span:nth-child(3) { height: 23px; }
+.soundRingOne, .soundRingTwo { position: absolute; left: 50%; top: 50%; border: 1px solid rgba(255,255,255,.1); border-radius: 50%; transform: translate(-50%, -50%); }
+.soundRingOne { width: 340px; height: 340px; }
+.soundRingTwo { width: 550px; height: 550px; }
+.soundDotOne, .soundDotTwo, .soundDotThree { position: absolute; width: 13px; height: 13px; border: 3px solid var(--ink); border-radius: 50%; background: var(--gold); box-shadow: 0 0 0 1px rgba(244,185,66,.4); }
+.soundDotOne { left: 23%; top: 28%; }
+.soundDotTwo { right: 17%; top: 47%; }
+.soundDotThree { left: 37%; bottom: 15%; }
+.soundCopy { display: flex; flex-direction: column; justify-content: center; padding: 80px max(40px, calc((100vw - 1200px) / 2)) 80px 70px; background: rgba(255,255,255,.018); }
+.soundCopy > p:not(.sectionEyebrow) { max-width: 650px; margin: 26px 0 0; color: #9aa7b7; font-size: 16px; line-height: 1.75; }
+.soundFacts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-top: 45px; padding-top: 30px; border-top: 1px solid rgba(255,255,255,.12); }
+.soundFacts div { display: grid; gap: 8px; }
+.soundFacts strong { color: var(--gold); font-size: 13px; }
+.soundFacts span { color: #778699; font-size: 11px; line-height: 1.45; }
+
+.servicesSection { padding-bottom: 105px; }
+.servicesGrid { display: grid; grid-template-columns: repeat(2, 1fr); border-top: 1px solid #cfd5dc; }
+.servicesGrid article { min-height: 168px; display: grid; grid-template-columns: 53px 1fr; gap: 16px; padding: 29px 35px 29px 0; border-bottom: 1px solid #cfd5dc; }
+.servicesGrid article:nth-child(odd) { border-right: 1px solid #cfd5dc; }
+.servicesGrid article:nth-child(even) { padding-left: 35px; }
+.servicesGrid > article > span { color: var(--gold-deep); font-family: Georgia, serif; font-size: 13px; font-style: italic; }
+.servicesGrid h3 { margin: 0 0 9px; font-family: Georgia, serif; font-size: 22px; font-weight: 500; }
+.servicesGrid p { margin: 0; color: var(--slate); font-size: 13px; line-height: 1.65; }
+
+.pricingSection { padding: 115px max(20px, calc((100vw - 1240px) / 2)); background: #e8ecf0; }
+.pricingHeader { max-width: 760px; margin: 0 auto 55px; text-align: center; }
+.pricingHeader > p { max-width: 650px; margin: 22px auto 0; }
+.pricingHeader .sectionEyebrow { margin-bottom: 18px; }
+.pricingFamilies { display: grid; gap: 72px; }
+.pricingFamily { scroll-margin-top: 100px; }
+.familyHeader { display: grid; grid-template-columns: 48px minmax(280px, .9fr) 1.1fr; gap: 26px; align-items: end; margin-bottom: 30px; padding-bottom: 26px; border-bottom: 1px solid #c6cdd5; }
+.familyHeader > span { align-self: start; color: var(--gold-deep); font-family: Georgia, serif; font-size: 15px; font-style: italic; }
+.familyHeader div > p { margin: 0 0 9px; color: var(--gold-deep); font-size: 10px; font-weight: 900; letter-spacing: .14em; text-transform: uppercase; }
+.familyHeader h3 { max-width: 500px; margin: 0; font-family: Georgia, serif; font-size: clamp(27px, 3vw, 39px); font-weight: 500; letter-spacing: -.035em; line-height: 1.08; }
+.familyHeader > p { max-width: 520px; margin: 0; color: #677386; font-size: 13px; line-height: 1.7; }
+.pricingGrid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 13px; align-items: stretch; }
+.priceCard { position: relative; min-width: 0; padding: 31px 27px; border: 1px solid #cbd1d8; border-radius: 14px; background: #f8fafb; }
+.featuredTier { border-color: var(--gold); background: var(--ink); color: #fff; box-shadow: 0 22px 50px rgba(11,23,40,.17); }
+.popularLabel { position: absolute; top: 0; right: 20px; transform: translateY(-50%); border-radius: 99px; background: var(--gold); color: var(--ink); padding: 6px 9px; font-size: 8px; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
+.priceCard h4 { margin: 0; font-family: Georgia, serif; font-size: 26px; font-weight: 500; }
+.tierDescription { min-height: 62px; margin: 10px 0 20px; color: #677386; font-size: 11px; line-height: 1.55; }
+.featuredTier .tierDescription { color: #93a1b2; }
+.price { min-height: 61px; display: flex; align-items: baseline; gap: 2px; }
+.price span { align-self: flex-start; margin-top: 10px; color: var(--gold-deep); font-size: 14px; font-weight: 900; }
+.price strong { font-family: Georgia, serif; font-size: 39px; font-weight: 500; letter-spacing: -.04em; }
+.price small { color: #7c8794; font-size: 9px; }
+.priceLabel strong { max-width: 100%; font-family: inherit; font-size: 17px; font-weight: 900; letter-spacing: -.01em; line-height: 1.2; }
+.priceCta, .priceCtaFeatured { min-height: 43px; display: flex; align-items: center; justify-content: center; gap: 6px; margin: 16px 0 23px; border: 1px solid #bbc2ca; border-radius: 7px; color: var(--ink); font-size: 11px; font-weight: 900; text-decoration: none; }
+.priceCta:hover { border-color: var(--ink); background: #fff; }
+.priceCtaFeatured { border-color: var(--gold); }
+.priceCtaDisabled { min-height: 43px; display: flex; align-items: center; justify-content: center; margin: 16px 0 23px; border: 1px dashed #bbc2ca; border-radius: 7px; background: #e9edf1; color: #687483; font-size: 11px; font-weight: 900; cursor: not-allowed; }
+.priceCard ul { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.priceCard li { display: grid; grid-template-columns: 17px 1fr; gap: 6px; color: #586577; font-size: 10px; line-height: 1.4; }
+.featuredTier li { color: #aeb9c6; }
+.priceCard li span { color: var(--gold-deep); font-weight: 900; }
+.priceCard li.unavailableFeature { color: #778396; }
+.priceCard li.unavailableFeature span { color: #8a94a3; }
+.enterprisePlan { display: grid; grid-template-columns: 1.1fr 1fr auto; gap: 42px; align-items: center; margin-top: 72px; padding: 38px 42px; border-radius: 16px; background: var(--ink); color: #fff; }
+.enterprisePlan div > p { margin: 0 0 8px; color: var(--gold); font-size: 10px; font-weight: 900; letter-spacing: .15em; text-transform: uppercase; }
+.enterprisePlan h3 { margin: 0; font-family: Georgia, serif; font-size: 27px; font-weight: 500; line-height: 1.16; }
+.enterprisePlan > p { margin: 0; color: #9eabb9; font-size: 12px; line-height: 1.65; }
+.enterprisePlan > a { min-height: 46px; display: flex; align-items: center; justify-content: center; gap: 7px; padding: 0 20px; border-radius: 7px; background: var(--gold); color: var(--ink); font-size: 11px; font-weight: 900; text-decoration: none; white-space: nowrap; }
+.enterprisePlan > a:hover { background: #ffd16f; }
+.enterpriseRegistrationPaused { min-height: 46px; display: flex; align-items: center; justify-content: center; padding: 0 20px; border: 1px dashed #68758a; border-radius: 7px; color: #aeb9c7; font-size: 11px; font-weight: 900; white-space: nowrap; cursor: not-allowed; }
+.pricingNote { max-width: 920px; margin: 30px auto 0; color: #707c8a; font-size: 10px; line-height: 1.6; text-align: center; }
+
+.storySection { width: min(1200px, calc(100% - 40px)); margin: 0 auto; display: grid; grid-template-columns: .5fr 1.5fr; gap: 70px; padding: 125px 0; }
+.storyLabel { display: flex; align-items: flex-start; gap: 17px; padding-top: 8px; color: #7b8794; font-size: 10px; font-weight: 900; letter-spacing: .15em; text-transform: uppercase; }
+.storyLabel i { flex: 1; height: 1px; margin-top: 6px; background: #cfd5dc; }
+.storyContent { max-width: 900px; }
+.storyKicker { margin: 0 0 22px; color: var(--gold-deep); font-size: 11px; font-weight: 900; letter-spacing: .16em; text-transform: uppercase; }
+.storyIntro { max-width: 760px; margin-top: 35px; }
+.storyIntro p, .storyChapter > div > p { margin: 0 0 18px; color: var(--slate); font-size: 16px; line-height: 1.78; }
+.storyIntro strong, .storyChapter strong { color: var(--ink); }
+.storyChapter { display: grid; grid-template-columns: 48px 1fr; gap: 22px; margin-top: 72px; padding-top: 34px; border-top: 1px solid #d5d9dd; }
+.storyChapterNumber { margin: 3px 0 0; color: var(--gold-deep); font-size: 11px; font-weight: 900; letter-spacing: .15em; }
+.storyChapter h3 { max-width: 720px; margin: 0 0 22px; font-family: Georgia, "Times New Roman", serif; color: var(--ink); font-size: clamp(31px, 4vw, 43px); font-weight: 500; letter-spacing: -.035em; line-height: 1.08; }
+.storyProducts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 30px 0; }
+.storyProducts article { min-height: 180px; padding: 23px; border: 1px solid #d4d9df; border-radius: 12px; background: rgba(255,255,255,.55); }
+.storyProducts article:last-child { grid-column: 1 / -1; min-height: 0; }
+.storyProducts span { display: block; margin-bottom: 12px; color: var(--gold-deep); font-size: 10px; font-weight: 900; letter-spacing: .15em; text-transform: uppercase; }
+.storyProducts p { margin: 0; color: var(--slate); font-size: 13px; line-height: 1.68; }
+.storyPrinciple { margin-top: 28px !important; padding: 22px 25px; border-left: 3px solid var(--gold); background: #eee9dc; }
+.storyClosing { margin-bottom: 5px; padding-bottom: 34px; border-bottom: 1px solid #d5d9dd; }
+.storyClosing blockquote { max-width: 720px; margin: 25px 0; padding: 0 0 0 24px; border-left: 3px solid var(--gold); font-family: Georgia, "Times New Roman", serif; color: var(--ink); font-size: clamp(22px, 3vw, 30px); line-height: 1.35; }
+
+.finalCta { width: min(1200px, calc(100% - 40px)); min-height: 390px; margin: 0 auto 90px; display: grid; grid-template-columns: 1.3fr .7fr; gap: 50px; align-items: center; padding: 65px 70px; border-radius: 22px; background: radial-gradient(circle at 88% 15%, rgba(244,185,66,.19), transparent 28%), var(--ink); color: #fff; }
+.finalCta h2 { max-width: 760px; }
+.finalActions { display: grid; justify-items: start; gap: 17px; }
+.finalLogin { color: #aeb8c4; font-size: 12px; font-weight: 700; text-decoration: none; }
+.finalLogin:hover { color: #fff; }
+
+.footer { background: #050b13; color: #fff; }
+.footerTop, .footerBottom { width: min(1200px, calc(100% - 40px)); margin: 0 auto; }
+.footerTop { min-height: 190px; display: grid; grid-template-columns: .75fr 1fr 1fr; align-items: center; gap: 50px; }
+.footerTop > p { max-width: 360px; color: #758397; font-size: 12px; line-height: 1.6; }
+.footerTop nav { display: flex; justify-content: flex-end; gap: 24px; }
+.footerTop nav a { color: #aab4c0; font-size: 11px; font-weight: 700; text-decoration: none; }
+.footerTop nav a:hover { color: #fff; }
+.footerBottom { min-height: 74px; display: flex; align-items: center; justify-content: space-between; border-top: 1px solid rgba(255,255,255,.1); color: #59677a; font-size: 9px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
+
+.page a:focus-visible, .page button:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+
+@media (max-width: 1100px) {
+  .navShell { grid-template-columns: 1fr auto; }
+  .navLinks { display: none; }
+  .heroGrid { grid-template-columns: 1fr; gap: 45px; }
+  .heroCopy { max-width: 760px; }
+  .heroVisual { min-height: 480px; }
+  .livePanel { width: min(76%, 560px); }
+  .cardRetail { left: 8%; }
+  .cardSchool { right: 7%; }
+  .cardOnline { right: 12%; }
+  .enterprisePlan { grid-template-columns: 1fr 1fr; }
+  .enterprisePlan > a { grid-column: 1 / -1; justify-self: start; }
+  .pricingGrid { grid-template-columns: repeat(3, 1fr); }
+  .priceCard:nth-last-child(-n+2) { grid-column: span 1; }
+}
+
+@media (max-width: 860px) {
+  .hero { padding-top: 135px; }
+  .hero h1 { font-size: clamp(52px, 12vw, 76px); }
+  .sectionHeader { grid-template-columns: 1fr; gap: 22px; }
+  .platformGrid { grid-template-columns: 1fr; }
+  .platformCard { min-height: 0; }
+  .platformCard > p { min-height: 0; }
+  .soundSection { grid-template-columns: 1fr; }
+  .soundVisual { min-height: 480px; }
+  .soundCopy { padding: 75px 40px; }
+  .servicesGrid { grid-template-columns: 1fr; }
+  .servicesGrid article:nth-child(odd) { border-right: 0; }
+  .servicesGrid article:nth-child(even) { padding-left: 0; }
+  .pricingGrid { grid-template-columns: repeat(2, 1fr); }
+  .familyHeader { grid-template-columns: 38px 1fr; }
+  .familyHeader > p { grid-column: 2; }
+  .priceCard:last-child { grid-column: 1 / -1; }
+  .storySection { grid-template-columns: 1fr; gap: 30px; }
+  .storyProducts { grid-template-columns: 1fr; }
+  .storyProducts article:last-child { grid-column: auto; }
+  .finalCta { grid-template-columns: 1fr; }
+  .footerTop { grid-template-columns: 1fr; gap: 20px; padding: 55px 0; }
+  .footerTop nav { justify-content: flex-start; flex-wrap: wrap; }
+}
+
+@media (max-width: 620px) {
+  .navShell { width: min(100% - 28px, 1240px); min-height: 74px; }
+  .logoParent, .loginLink { display: none; }
+  .navActions { gap: 0; }
+  .navCta { padding: 9px 12px; }
+  .heroGrid, .section, .storySection, .finalCta, .footerTop, .footerBottom { width: min(100% - 28px, 1240px); }
+  .hero { min-height: 0; padding: 125px 0 70px; }
+  .hero h1 { font-size: 50px; }
+  .heroLead { font-size: 16px; }
+  .heroActions { align-items: stretch; flex-direction: column; }
+  .primaryButton, .secondaryButton { justify-content: center; }
+  .heroProof { gap: 16px; }
+  .heroProof strong { font-size: 21px; }
+  .heroProof span { font-size: 8px; }
+  .heroVisual { min-height: 445px; }
+  .livePanel { width: 100%; padding: 17px; }
+  .waveform { height: 78px; gap: 3px; }
+  .floatingCard { transform: scale(.88); }
+  .cardRetail { left: -12px; top: 4px; }
+  .cardSchool { right: -20px; top: auto; bottom: 10px; }
+  .cardOnline { display: none; }
+  .introStrip { flex-direction: column; gap: 12px; }
+  .introStrip div { gap: 9px; font-size: 8px; }
+  .section { padding: 80px 0; }
+  .sectionHeader h2, .soundCopy h2, .pricingHeader h2, .storyContent h2, .finalCta h2 { font-size: 40px; }
+  .platformCard { padding: 25px; }
+  .soundVisual { min-height: 380px; }
+  .soundRingOne { width: 260px; height: 260px; }
+  .soundRingTwo { width: 390px; height: 390px; }
+  .orbit { width: 105px; height: 105px; }
+  .soundCopy { padding: 65px 24px; }
+  .soundFacts { grid-template-columns: 1fr; }
+  .servicesGrid article { min-height: 0; grid-template-columns: 35px 1fr; padding: 25px 0; }
+  .pricingSection { padding: 80px 14px; }
+  .pricingFamilies { gap: 58px; }
+  .familyHeader { grid-template-columns: 1fr; gap: 14px; }
+  .familyHeader > p { grid-column: auto; }
+  .pricingGrid { grid-template-columns: 1fr; }
+  .priceCard:last-child { grid-column: auto; }
+  .priceCard { padding: 27px 24px; }
+  .tierDescription { min-height: 0; }
+  .enterprisePlan { grid-template-columns: 1fr; gap: 22px; padding: 31px 25px; }
+  .enterprisePlan > a { grid-column: auto; justify-self: stretch; }
+  .storySection { padding: 85px 0; }
+  .storyChapter { grid-template-columns: 1fr; gap: 12px; margin-top: 55px; }
+  .storyProducts article { min-height: 0; }
+  .finalCta { min-height: 0; margin-bottom: 40px; padding: 48px 25px; }
+  .footerBottom { min-height: 95px; flex-direction: column; justify-content: center; gap: 10px; text-align: center; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page *, .page *::before, .page *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}
+
+.publicNotice{max-width:610px;margin:18px 0;color:#f4d69b;font-size:13px;line-height:1.65}
+.maskedPrice{display:inline-block;filter:blur(5px);user-select:none;pointer-events:none}
+.visuallyHidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+</style>
+</head>
+<body><main class="page"><a class="skipLink" href="#main-content">Skip to content</a><header class="header"><div class="navShell"><a class="logo" href="#top" aria-label="Ruvanas home"><span class="brandMark" aria-hidden="true"><span></span><span></span><span></span></span><span class="logoText">RUVANAS</span><span class="logoParent">Part of 21-Three</span></a><nav class="navLinks" aria-label="Main navigation"><a href="#platforms">Platforms</a><a href="/how-it-works/">How it works</a><a href="#services">Services</a><a href="#pricing">Pricing</a><a href="#story">Our story</a></nav><div class="navActions"><a class="navCta" href="/login">Log in <svg class="arrowIcon" viewBox="0 0 18 18" aria-hidden="true"><path d="M3 9h11M10 4l5 5-5 5"></path></svg></a></div></div></header><section class="hero" id="top"><div class="heroGlow" aria-hidden="true"></div><div class="heroGrid" id="main-content"><div class="heroCopy"><p class="eyebrow"><span></span> Audio platforms by 21-Three</p><h1>Every space deserves its <em>own sound.</em></h1><p class="heroLead">Ruvanas brings professional media within reach—from retail and schools to online stations, health, faith and other organisations.</p><p class="publicNotice">Platform capabilities shown here are illustrative. The service is in private preview; customer access is by an administrator-issued code only.</p><div class="heroActions"><a class="primaryButton" href="/login">Log in with issued code <svg class="arrowIcon" viewBox="0 0 18 18" aria-hidden="true"><path d="M3 9h11M10 4l5 5-5 5"></path></svg></a><a class="secondaryButton" href="/how-it-works/">See how it works</a></div><div class="heroProof" aria-label="Ruvanas platform highlights"><div><strong>320</strong><span>kbps high-quality audio</span></div><div><strong>24/7</strong><span>automated playout</span></div><div><strong>1–30+</strong><span>simultaneous streams</span></div></div></div><div class="heroVisual" aria-label="Illustrative Ruvanas audio network concept"><div class="livePanel"><div class="panelTop"><div><span class="liveBadge"><i></i> Network concept</span><p>Ruvanas master channel</p></div><span class="qualityBadge">HQ 320</span></div><div class="nowPlaying"><div class="albumArt"><span class="brandMark" aria-hidden="true"><span></span><span></span><span></span></span></div><div><span>Now playing</span><strong>Your brand. Your sound.</strong><small>Shared channel clock · Smooth mix</small></div><button type="button" aria-label="Playing live audio preview" disabled=""><span></span><span></span><span></span></button></div><div class="waveform" aria-hidden="true"><span style="--bar-height:28%"></span><span style="--bar-height:45%"></span><span style="--bar-height:68%"></span><span style="--bar-height:38%"></span><span style="--bar-height:82%"></span><span style="--bar-height:54%"></span><span style="--bar-height:92%"></span><span style="--bar-height:62%"></span><span style="--bar-height:35%"></span><span style="--bar-height:74%"></span><span style="--bar-height:48%"></span><span style="--bar-height:88%"></span><span style="--bar-height:58%"></span><span style="--bar-height:32%"></span><span style="--bar-height:67%"></span><span style="--bar-height:44%"></span><span style="--bar-height:78%"></span><span style="--bar-height:52%"></span><span style="--bar-height:90%"></span><span style="--bar-height:40%"></span><span style="--bar-height:64%"></span><span style="--bar-height:30%"></span><span style="--bar-height:55%"></span><span style="--bar-height:36%"></span></div><div class="networkLine"><span>Concept</span><i></i><span>Synced</span><i></i><span>Protected</span></div></div><div class="floatingCard cardRetail"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 39V17h32v22M5 17h38L39 8H9L5 17Z"></path><path d="M15 39V26h9v13M31 26v5M36 26v5"></path></svg><span><strong>Retail</strong>Multi-location concept</span></div><div class="floatingCard cardSchool"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M5 19 24 8l19 11-19 11L5 19Z"></path><path d="M12 24v10c5 6 19 6 24 0V24M42 21v13"></path></svg><span><strong>School</strong>Safeguarded publishing</span></div><div class="floatingCard cardOnline"><svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="4"></circle><path d="M16 16a11 11 0 0 0 0 16M32 16a11 11 0 0 1 0 16M10 10a20 20 0 0 0 0 28M38 10a20 20 0 0 1 0 28"></path></svg><span><strong>Online</strong>Listener experience concept</span></div></div></div></section><section class="introStrip" aria-label="Ruvanas introduction"><p>One professional foundation.</p><div><span>Retail</span><i></i><span>School</span><i></i><span>Online</span><i></i><span>Health</span><i></i><span>Faith</span><i></i><span>Organisations</span></div></section><section class="section" id="platforms"><div class="sectionHeader"><div><p class="sectionEyebrow">Seven platforms. One standard.</p><h2>Built around the way you broadcast.</h2></div><p>Choose the platform that fits today, then bring every channel, location and audience together as your ambitions grow.</p></div><div class="platformGrid"><article class="platformCard"><div class="platformTop"><span class="platformIcon"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 39V17h32v22M5 17h38L39 8H9L5 17Z"></path><path d="M15 39V26h9v13M31 26v5M36 26v5"></path></svg></span><span class="platformNumber">01</span></div><h3>In-house &amp; Retail Radio</h3><p>Create a consistent branded atmosphere across one shop or an entire estate, with central scheduling, professional playout and location-level control.</p><ul><li>Multi-location control</li><li>Branded messages</li><li>Proof of play</li></ul></article><article class="platformCard"><div class="platformTop"><span class="platformIcon"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M5 19 24 8l19 11-19 11L5 19Z"></path><path d="M12 24v10c5 6 19 6 24 0V24M42 21v13"></path></svg></span><span class="platformNumber">02</span></div><h3>School Radio</h3><p>Give students a creative voice through a purpose-built platform with supervised production, safeguarded publishing and multi-school administration.</p><ul><li>Safeguarded workflows</li><li>Student production</li><li>Noticeboards</li></ul></article><article class="platformCard"><div class="platformTop"><span class="platformIcon"><svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="4"></circle><path d="M16 16a11 11 0 0 0 0 16M32 16a11 11 0 0 1 0 16M10 10a20 20 0 0 0 0 28M38 10a20 20 0 0 1 0 28"></path></svg></span><span class="platformNumber">03</span></div><h3>Complete Online Radio</h3><p>Build a full online station with live and automated programming, public listening, a growing music database and operational tools in one place.</p><ul><li>Live &amp; AutoDJ</li><li>Public web player</li><li>Music database ready</li></ul></article><article class="platformCard"><div class="platformTop"><span class="platformIcon"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M18 7h12v11h11v12H30v11H18V30H7V18h11V7Z"></path></svg></span><span class="platformNumber">04</span></div><h3>Ruvanas Health</h3><p>Help hospitals, health organisations and wellbeing teams operate their own privacy-aware audio, podcasts and digital displays.</p><ul><li>Hospital and ward channels</li><li>Moderated requests</li><li>Restricted listening</li></ul></article><article class="platformCard"><div class="platformTop"><span class="platformIcon"><svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="4"></circle><path d="M16 16a11 11 0 0 0 0 16M32 16a11 11 0 0 1 0 16M10 10a20 20 0 0 0 0 28M38 10a20 20 0 0 1 0 28"></path></svg></span><span class="platformNumber">05</span></div><h3>Ruvanas Faith</h3><p>Give churches and ministries one subscriber-operated home for continuous radio, live services, teachings and campus media.</p><ul><li>24/7 AutoDJ</li><li>Live-service handoff</li><li>Sermon archives</li></ul></article><article class="platformCard"><div class="platformTop"><span class="platformIcon"><svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="11" r="5"></circle><circle cx="11" cy="35" r="5"></circle><circle cx="37" cy="35" r="5"></circle><path d="M24 16v8M14 32l7-6M34 32l-7-6"></path></svg></span><span class="platformNumber">06</span></div><h3>Ruvanas Organisations</h3><p>Give NGOs, clubs, associations, civic groups and networks one governed home for their own media, events, announcements and displays.</p><ul><li>Governed announcements</li><li>Event Mode</li><li>Branch controls</li></ul></article><article class="platformCard"><div class="platformTop"><span class="platformIcon"><svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="11" r="5"></circle><circle cx="11" cy="35" r="5"></circle><circle cx="37" cy="35" r="5"></circle><path d="M24 16v8M14 32l7-6M34 32l-7-6"></path></svg></span><span class="platformNumber">07</span></div><h3>Ruvanas Inside</h3><p>A governed foundation for private correctional-facility radio and rehabilitation media. Facility controls and secure delivery are being prepared.</p><ul><li>Private by design</li><li>Facility governance</li><li>Rehabilitation media</li></ul></article></div></section><section class="soundSection"><div class="soundVisual" aria-hidden="true"><div class="orbit"><span class="brandMark" aria-hidden="true"><span></span><span></span><span></span></span></div><span class="soundRingOne"></span><span class="soundRingTwo"></span><span class="soundDotOne"></span><span class="soundDotTwo"></span><span class="soundDotThree"></span></div><div class="soundCopy"><p class="sectionEyebrow">Sound quality without compromise</p><h2>Clear, continuous and unmistakably yours.</h2><p>Ruvanas is engineered for professional, high-quality sound across web players and enrolled devices. Synchronized channels, smooth transitions and resilient recovery keep your audience in the moment.</p><div class="soundFacts"><div><strong>Up to 320 kbps</strong><span>High-quality audio delivery</span></div><div><strong>Shared live clock</strong><span>Listeners join at the current moment</span></div><div><strong>Smooth transitions</strong><span>Professional two-second crossfades</span></div></div></div></section><section class="section servicesSection" id="services"><div class="sectionHeader"><div><p class="sectionEyebrow">What Ruvanas offers</p><h2>Everything needed to stay on air.</h2></div><p>From the first uploaded track to a multi-location live network, the platform keeps creative and operational work together.</p></div><div class="servicesGrid"><article><span>01</span><div><h3>High-quality sound</h3><p>Professional audio delivery up to 320 kbps for a clear, reliable listening experience.</p></div></article><article><span>02</span><div><h3>Smart scheduling</h3><p>Plan music, programmes, announcements and campaigns by day, time, location or audience.</p></div></article><article><span>03</span><div><h3>Continuous AutoDJ</h3><p>Keep every channel moving with synchronized playout, smooth transitions and resilient recovery.</p></div></article><article><span>04</span><div><h3>Central control</h3><p>Manage players, locations, schools, stations and simultaneous streams from one secure workspace.</p></div></article><article><span>05</span><div><h3>Music &amp; media</h3><p>Organise approved music, programmes, jingles and promotional audio in a protected media library.</p></div></article><article><span>06</span><div><h3>Reporting &amp; insight</h3><p>Understand activity with listener, player, campaign and proof-of-play reporting.</p></div></article><article><span>07</span><div><h3>Safe collaboration</h3><p>Use role-based access, approvals and audit trails designed for teams and supervised environments.</p></div></article><article><span>08</span><div><h3>Room to grow</h3><p>Start with one location or station, then add streams, schools, signage and campaigns as you expand.</p></div></article></div></section><section class="pricingSection" id="pricing"><div class="pricingHeader"><p class="sectionEyebrow">Plans shaped around your platform</p><h2>Choose the service you need. Grow when you are ready.</h2><p>Seven specialised product families each have five clear tiers, shared foundations and purpose-built workflows.</p></div><div class="pricingFamilies"><section class="pricingFamily" id="pricing-retail"><div class="familyHeader"><span>01</span><div><p>In-house &amp; Retail Radio</p><h3>Build the right atmosphere in every location.</h3></div><p>Professional music, messages and reporting for independent shops, growing businesses and multi-site brands.</p></div><div class="pricingGrid"><article class="priceCard "><h4>Retail Start</h4><p class="tierDescription">Entry scheduling, AutoDJ, own audio and basic promotions for one location and one zone.</p><div class="price priceLabel"><strong class="maskedPrice" aria-hidden="true">€ ••• / month</strong><span class="visuallyHidden">Pricing not yet published</span></div><span class="priceCtaDisabled" aria-disabled="true">Private access only</span><ul><li><span aria-hidden="true">✓</span>1 site</li><li><span aria-hidden="true">✓</span>5 GB media storage</li><li><span aria-hidden="true">✓</span>High-quality audio up to 128 kbps</li><li><span aria-hidden="true">✓</span>Ruvanas Studio Basic</li><li class="unavailableFeature"><span aria-hidden="true">⮽</span>Focused Licensed Music Catalogue, subject to product-use and territory rights</li><li><span aria-hidden="true">✓</span>1 connected digital display</li></ul></article><article class="priceCard "><h4>Retail Business</h4><p class="tierDescription">Multi-location scheduling, promotions, reporting and limited signage for a growing business.</p><div class="price priceLabel"><strong class="maskedPrice" aria-hidden="true">€ ••• / month</strong><span class="visuallyHidden">Pricing not yet published</span></div><span class="priceCtaDisabled" aria-disabled="true">Private access only</span><ul><li><span aria-hidden="true">✓</span>Up to 3 sites</li><li><span aria-hidden="true">✓</span>15 GB media storage</li><li><span aria-hidden="true">✓</span>High-quality audio up to 256 kbps</li><li><span aria-hidden="true">✓</span>Ruvanas Studio Basic</li><li class="unavailableFeature"><span aria-hidden="true">⮽</span>Focused Licensed Music Catalogue, subject to product-use and territory rights</li><li><span aria-hidden="true">✓</span>Up to 3 connected digital displays</li></ul></article><article class="priceCard featuredTier"><span class="popularLabel">Most popular</span><h4>Retail Professional</h4><p class="tierDescription">Advanced analytics, cross-media tools and a focused Licensed Music Catalogue for established operators.</p><div class="price priceLabel"><strong class="maskedPrice" aria-hidden="true">€ ••• / month</strong><span class="visuallyHidden">Pricing not yet published</span></div><span class="priceCtaDisabled" aria-disabled="true">Private access only</span><ul><li><span aria-hidden="true">✓</span>Up to 10 sites</li><li><span aria-hidden="true">✓</span>100 GB media storage</li><li><span aria-hidden="true">✓</span>High-quality audio up to 320 kbps</li><li><span aria-hidden="true">✓</span>Ruvanas Studio Pro</li><li><span aria-hidden="true">✓</span>Focused Licensed Music Catalogue, subject to product-use and territory rights.</li><li><span aria-hidden="true">✓</span>Up to 10 connected digital displays</li></ul></article><article class="priceCard "><h4>Retail Advanced</h4><p class="tierDescription">Regional-chain controls, integrations and a professional Licensed Music Catalogue.</p><div class="price priceLabel"><strong class="maskedPrice" aria-hidden="true">€ ••• / month</strong><span class="visuallyHidden">Pricing not yet published</span></div><span class="priceCtaDisabled" aria-disabled="true">Private access only</span><ul><li><span aria-hidden="true">✓</span>Up to 30 sites</li><li><span aria-hidden="true">✓</span>200 GB media storage</li><li><span aria-hidden="true">✓</span>High-quality audio up to 320 kbps</li><li><span aria-hidden="true">✓</span>Ruvanas Studio Pro</li><li><span aria-hidden="true">✓</span>Professional Licensed Music Catalogue, subject to product-use and territory rights.</li><li><span aria-hidden="true">✓</span>Up to 30 connected digital displays</li></ul></article><article class="priceCard "><h4>Retail Enterprise</h4><p class="tierDescription">Negotiated enterprise scale, identity, service and premium catalogue controls.</p><div class="price priceLabel"><strong class="maskedPrice" aria-hidden="true">€ ••• / month</strong><span class="visuallyHidden">Pricing not yet published</span></div><span class="priceCtaDisabled" aria-disabled="true">Private access only</span><ul><li><span aria-hidden="true">✓</span>Up to 100 sites</li><li><span aria-hidden="true">✓</span>2000 GB media storage</li><li><span aria-hidden="true">✓</span>High-quality audio up to 320 kbps</li><li><span aria-hidden="true">✓</span>Ruvanas Studio Pro</li><li><span aria-hidden="true">✓</span>Premium Licensed Music Catalogue, subject to product-use and territory rights.</li><li><span aria-hidden="true">✓</span>Up to 100 connected digital displays</li></ul></article></div></section><section class="pricingFamily" id="pricing-school"><div class="familyHeader"><span>02</span><div><p>School Radio</p><h3>Give every school a safe, creative voice.</h3></div><p>Purpose-built tools for supervised production, protected publishing and confident school-wide broadcasting.</p></div><div class="pricingGrid"><article class="priceCard "><h4>School Start</h4><p class="tierDescription">Staff-managed school broadcasting, basic production and internal publishing.</p><div class="price priceLabel"><strong class="maskedPrice" aria-hidden="true">€ ••• / month</strong><span class="visuallyHidden">Pricing not yet published</span></div><span class="priceCtaDisabled" aria-disabled="true">Private access only</span><ul><li><span aria-hidden="true">✓</span>Up to 1 station</li><li><span aria-hidden="true">✓</span>25 GB media storage</li><li><span aria-hidden="true">✓</span>Up to 100 active listeners</li><li><span aria-hidden="true">✓</span>High-quality audio up to 192 kbps</li><li class="unavailableFeature"><span aria-hidden="true">⮽</span>Ruvanas core and your authorised audio; Licensed Music Catalogue not included.</li></ul></article><article class="priceCard "><h4>School Create</h4><p class="tierDescription">Creative production, multitrack AudioLab, podcasts, newsroom and teacher approvals.</p><div class="price priceLabel"><strong class="maskedPrice" aria-hidden="true">€ ••• / month</strong><span class="visuallyHidden">Pricing not yet published</span></div><span class="priceCtaDisabled" aria-disabled="true">Private access only</span><ul><li><span aria-hidden="true">✓</span>Up to 1 station</li><li><span aria-hidden="true">✓</span>100 GB media storage</li><li><span aria-hidden="true">✓</span>Up to 300 active listeners</li><li><span aria-hidden="true">✓</span>High-quality audio up to 256 kbps</li><li class="unavailableFeature"><span aria-hidden="true">⮽</span>Ruvanas core and your authorised audio; Licensed Music Catalogue not included.</li></ul></article><article class="priceCard featuredTier"><span class="popularLabel">Most popular</span><h4>School Pro</h4><p class="tierDescription">Guarded student access, supervised live tools and a focused education-authorised catalogue.</p><div class="price priceLabel"><strong class="maskedPrice" aria-hidden="true">€ ••• / month</strong><span class="visuallyHidden">Pricing not yet published</span></div><span class="priceCtaDisabled" aria-disabled="true">Private access only</span><ul><li><span aria-hidden="true">✓</span>Up to 3 stations</li><li><span aria-hidden="true">✓</span>250 GB media storage</li><li><span aria-hidden="true">✓</span>Up to 1,000 active listeners</li><li><span aria-hidden="true">✓</span>High-quality audio up to 320 kbps</li><li><span aria-hidden="true">✓</span>Focused Licensed Music Catalogue, subject to product-use and territory rights.</li></ul></article><article class="priceCard "><h4>School Academy</h4><p class="tierDescription">Multi-school policy, templates, analytics, exchange and professional catalogue controls.</p><div class="price priceLabel"><strong class="maskedPrice" aria-hidden="true">€ ••• / month</strong><span class="visuallyHidden">Pricing not yet published</span></div><span class="priceCtaDisabled" aria-disabled="true">Private access only</span><ul><li><span aria-hidden="true">✓</span>Up to 10 stations</li><li><span aria-hidden="true">✓</span>750 GB media storage</li><li><span aria-hidden="true">✓</span>Up to 5,000 active listeners</li><li><span aria-hidden="true">✓</span>High-quality audio up to 320 kbps</li><li><span aria-hidden="true">✓</span>Professional Licensed Music Catalogue, subject to product-use and territory rights.</li></ul></article><article class="priceCard "><h4>Education Enterprise</h4><p class="tierDescription">Negotiated education identity, compliance, service and premium catalogue controls.</p><div class="price priceLabel"><strong class="maskedPrice" aria-hidden="true">€ ••• / month</strong><span class="visuallyHidden">Pricing not yet published</span></div><span class="priceCtaDisabled" aria-disabled="true">Private access only</span><ul><li><span aria-hidden="true">✓</span>Up to 50 stations</li><li><span aria-hidden="true">✓</span>2000 GB media storage</li><li><span aria-hidden="true">✓</span>Up to 20,000 active listeners</li><li><span aria-hidden="true">✓</span>High-quality audio up to 320 kbps</li><li><span aria-hidden="true">✓</span>Premium Licensed Music Catalogue, subject to product-use and territory rights.</li></ul></article></div></section><section class="pricingFamily" id="pricing-online"><div class="familyHeader"><span>03</span><div><p>Complete Online Radio</p><h3>Launch a station built to reach listeners everywhere.</h3></div><p>Live and automated broadcasting, public listening and professional station operations in one complete platform.</p></div><div class="pricingGrid"><article class="priceCard "><h4>Online Hobby</h4><p class="tierDescription">A tightly bounded station using rights-cleared uploads and core automation.</p><div class="price priceLabel"><strong class="maskedPrice" aria-hidden="true">€ ••• / month</strong><span class="visuallyHidden">Pricing not yet published</span></div><span class="priceCtaDisabled" aria-disabled="true">Private access only</span><ul><li><span aria-hidden="true">✓</span>Up to 1 station</li><li><span aria-hidden="true">✓</span>25 GB media storage</li><li><span aria-hidden="true">✓</span>Up to 100 active listeners</li><li><span aria-hidden="true">✓</span>High-quality audio up to 192 kbps</li><li class="unavailableFeature"><span aria-hidden="true">⮽</span>Ruvanas core and your authorised audio; Licensed Music Catalogue not included.</li></ul></article><article class="priceCard "><h4>Online Starter</h4><p class="tierDescription">More capacity with standard scheduling and live tools for a growing station.</p><div class="price priceLabel"><strong class="maskedPrice" aria-hidden="true">€ ••• / month</strong><span class="visuallyHidden">Pricing not yet published</span></div><span class="priceCtaDisabled" aria-disabled="true">Private access only</span><ul><li><span aria-hidden="true">✓</span>Up to 1 station</li><li><span aria-hidden="true">✓</span>100 GB media storage</li><li><span aria-hidden="true">✓</span>Up to 500 active listeners</li><li><span aria-hidden="true">✓</span>High-quality audio up to 256 kbps</li><li class="unavailableFeature"><span aria-hidden="true">⮽</span>Ruvanas core and your authorised audio; Licensed Music Catalogue not included.</li></ul></article><article class="priceCard featuredTier"><span class="popularLabel">Most popular</span><h4>Online Professional</h4><p class="tierDescription">Professional scheduling, live operation, analytics and a focused webcasting-authorised catalogue.</p><div class="price priceLabel"><strong class="maskedPrice" aria-hidden="true">€ ••• / month</strong><span class="visuallyHidden">Pricing not yet published</span></div><span class="priceCtaDisabled" aria-disabled="true">Private access only</span><ul><li><span aria-hidden="true">✓</span>Up to 3 stations</li><li><span aria-hidden="true">✓</span>250 GB media storage</li><li><span aria-hidden="true">✓</span>Up to 2,000 active listeners</li><li><span aria-hidden="true">✓</span>High-quality audio up to 320 kbps</li><li><span aria-hidden="true">✓</span>Focused Licensed Music Catalogue, subject to product-use and territory rights.</li></ul></article><article class="priceCard "><h4>Online Station Pro</h4><p class="tierDescription">Larger-team operations, advertising, integrations and professional catalogue controls.</p><div class="price priceLabel"><strong class="maskedPrice" aria-hidden="true">€ ••• / month</strong><span class="visuallyHidden">Pricing not yet published</span></div><span class="priceCtaDisabled" aria-disabled="true">Private access only</span><ul><li><span aria-hidden="true">✓</span>Up to 10 stations</li><li><span aria-hidden="true">✓</span>750 GB media storage</li><li><span aria-hidden="true">✓</span>Up to 10,000 active listeners</li><li><span aria-hidden="true">✓</span>High-quality audio up to 320 kbps</li><li><span aria-hidden="true">✓</span>Professional Licensed Music Catalogue, subject to product-use and territory rights.</li></ul></article><article class="priceCard "><h4>Online Network</h4><p class="tierDescription">Negotiated multi-station scale, enterprise controls and premium catalogue reporting.</p><div class="price priceLabel"><strong class="maskedPrice" aria-hidden="true">€ ••• / month</strong><span class="visuallyHidden">Pricing not yet published</span></div><span class="priceCtaDisabled" aria-disabled="true">Private access only</span><ul><li><span aria-hidden="true">✓</span>Up to 50 stations</li><li><span aria-hidden="true">✓</span>2000 GB media storage</li><li><span aria-hidden="true">✓</span>Up to 50,000 active listeners</li><li><span aria-hidden="true">✓</span>High-quality audio up to 320 kbps</li><li><span aria-hidden="true">✓</span>Premium Licensed Music Catalogue, subject to product-use and territory rights.</li></ul></article></div></section><section class="pricingFamily" id="pricing-health"><div class="familyHeader"><span>04</span><div><p>Ruvanas Health</p><h3>Support every health space with calm, controlled audio.</h3></div><p>Hospital and wellbeing radio, moderated requests, podcasts, players and displays with non-clinical privacy boundaries.</p></div><div class="pricingGrid"><article class="priceCard "><h4>Health Start</h4><p class="tierDescription">Own content, continuous AutoDJ, basic scheduling, a player and approved announcements for one health site.</p><div class="price priceLabel"><strong class="maskedPrice" aria-hidden="true">€ ••• / month</strong><span class="visuallyHidden">Pricing not yet published</span></div><span class="priceCtaDisabled" aria-disabled="true">Private access only</span><ul><li><span aria-hidden="true">✓</span>Up to 1 site or station</li><li><span aria-hidden="true">✓</span>25 GB media storage</li><li><span aria-hidden="true">✓</span>Up to 100 active listeners</li><li><span aria-hidden="true">✓</span>High-quality audio up to 192 kbps</li><li class="unavailableFeature"><span aria-hidden="true">⮽</span>Ruvanas core and your authorised audio; Licensed Music Catalogue not included.</li></ul></article><article class="priceCard "><h4>Health Connect</h4><p class="tierDescription">Live tools, podcasts, moderated requests and stronger scheduling across up to three sites.</p><div class="price priceLabel"><strong class="maskedPrice" aria-hidden="true">€ ••• / month</strong><span class="visuallyHidden">Pricing not yet published</span></div><span class="priceCtaDisabled" aria-disabled="true">Private access only</span><ul><li><span aria-hidden="true">✓</span>Up to 3 site or stations</li><li><span aria-hidden="true">✓</span>100 GB media storage</li><li><span aria-hidden="true">✓</span>Up to 500 active listeners</li><li><span aria-hidden="true">✓</span>High-quality audio up to 256 kbps</li><li class="unavailableFeature"><span aria-hidden="true">⮽</span>Ruvanas core and your authorised audio; Licensed Music Catalogue not included.</li></ul></article><article class="priceCard featuredTier"><span class="popularLabel">Most popular</span><h4>Health Pro</h4><p class="tierDescription">Focused catalogue, advanced Studio, public or restricted listening, analytics and up to twenty displays.</p><div class="price priceLabel"><strong class="maskedPrice" aria-hidden="true">€ ••• / month</strong><span class="visuallyHidden">Pricing not yet published</span></div><span class="priceCtaDisabled" aria-disabled="true">Private access only</span><ul><li><span aria-hidden="true">✓</span>Up to 10 site or stations</li><li><span aria-hidden="true">✓</span>250 GB media storage</li><li><span aria-hidden="true">✓</span>Up to 2,000 active listeners</li><li><span aria-hidden="true">✓</span>High-quality audio up to 320 kbps</li><li><span aria-hidden="true">✓</span>Focused Licensed Music Catalogue, subject to product-use and territory rights.</li></ul></article><article class="priceCard "><h4>Health Network</h4><p class="tierDescription">Multi-site templates, identity and API readiness, network reporting and professional catalogue controls.</p><div class="price priceLabel"><strong class="maskedPrice" aria-hidden="true">€ ••• / month</strong><span class="visuallyHidden">Pricing not yet published</span></div><span class="priceCtaDisabled" aria-disabled="true">Private access only</span><ul><li><span aria-hidden="true">✓</span>Up to 30 site or stations</li><li><span aria-hidden="true">✓</span>750 GB media storage</li><li><span aria-hidden="true">✓</span>Up to 10,000 active listeners</li><li><span aria-hidden="true">✓</span>High-quality audio up to 320 kbps</li><li><span aria-hidden="true">✓</span>Professional Licensed Music Catalogue, subject to product-use and territory rights.</li></ul></article><article class="priceCard "><h4>Health Enterprise</h4><p class="tierDescription">Enterprise identity, service levels, custom retention, integrations and priority onboarding.</p><div class="price priceLabel"><strong class="maskedPrice" aria-hidden="true">€ ••• / month</strong><span class="visuallyHidden">Pricing not yet published</span></div><span class="priceCtaDisabled" aria-disabled="true">Private access only</span><ul><li><span aria-hidden="true">✓</span>Up to 100 site or stations</li><li><span aria-hidden="true">✓</span>2000 GB media storage</li><li><span aria-hidden="true">✓</span>Up to 50,000 active listeners</li><li><span aria-hidden="true">✓</span>High-quality audio up to 320 kbps</li><li><span aria-hidden="true">✓</span>Premium Licensed Music Catalogue, subject to product-use and territory rights.</li></ul></article></div></section><section class="pricingFamily" id="pricing-faith"><div class="familyHeader"><span>05</span><div><p>Ruvanas Faith</p><h3>Keep ministry media connected throughout the week.</h3></div><p>Continuous radio, live-service handoff, teachings, podcasts and multi-campus delivery under subscriber control.</p></div><div class="pricingGrid"><article class="priceCard "><h4>Faith Start</h4><p class="tierDescription">Own content, continuous AutoDJ, a basic sermon archive, scheduling and a public player.</p><div class="price priceLabel"><strong class="maskedPrice" aria-hidden="true">€ ••• / month</strong><span class="visuallyHidden">Pricing not yet published</span></div><span class="priceCtaDisabled" aria-disabled="true">Private access only</span><ul><li><span aria-hidden="true">✓</span>Up to 1 site or station</li><li><span aria-hidden="true">✓</span>25 GB media storage</li><li><span aria-hidden="true">✓</span>Up to 100 active listeners</li><li><span aria-hidden="true">✓</span>High-quality audio up to 192 kbps</li><li class="unavailableFeature"><span aria-hidden="true">⮽</span>Ruvanas core and your authorised audio; Licensed Music Catalogue not included.</li></ul></article><article class="priceCard "><h4>Faith Connect</h4><p class="tierDescription">Live services, podcasts, Studio production, recurring schedules and up to three displays.</p><div class="price priceLabel"><strong class="maskedPrice" aria-hidden="true">€ ••• / month</strong><span class="visuallyHidden">Pricing not yet published</span></div><span class="priceCtaDisabled" aria-disabled="true">Private access only</span><ul><li><span aria-hidden="true">✓</span>Up to 3 site or stations</li><li><span aria-hidden="true">✓</span>100 GB media storage</li><li><span aria-hidden="true">✓</span>Up to 500 active listeners</li><li><span aria-hidden="true">✓</span>High-quality audio up to 256 kbps</li><li class="unavailableFeature"><span aria-hidden="true">⮽</span>Ruvanas core and your authorised audio; Licensed Music Catalogue not included.</li></ul></article><article class="priceCard featuredTier"><span class="popularLabel">Most popular</span><h4>Faith Pro</h4><p class="tierDescription">Focused catalogue, advanced live and Studio tools, branded listening and privacy-safe analytics.</p><div class="price priceLabel"><strong class="maskedPrice" aria-hidden="true">€ ••• / month</strong><span class="visuallyHidden">Pricing not yet published</span></div><span class="priceCtaDisabled" aria-disabled="true">Private access only</span><ul><li><span aria-hidden="true">✓</span>Up to 10 site or stations</li><li><span aria-hidden="true">✓</span>250 GB media storage</li><li><span aria-hidden="true">✓</span>Up to 2,000 active listeners</li><li><span aria-hidden="true">✓</span>High-quality audio up to 320 kbps</li><li><span aria-hidden="true">✓</span>Focused Licensed Music Catalogue, subject to product-use and territory rights.</li></ul></article><article class="priceCard "><h4>Faith Ministry</h4><p class="tierDescription">Multi-campus controls, APIs, advanced analytics, network programming and professional catalogue controls.</p><div class="price priceLabel"><strong class="maskedPrice" aria-hidden="true">€ ••• / month</strong><span class="visuallyHidden">Pricing not yet published</span></div><span class="priceCtaDisabled" aria-disabled="true">Private access only</span><ul><li><span aria-hidden="true">✓</span>Up to 25 site or stations</li><li><span aria-hidden="true">✓</span>750 GB media storage</li><li><span aria-hidden="true">✓</span>Up to 10,000 active listeners</li><li><span aria-hidden="true">✓</span>High-quality audio up to 320 kbps</li><li><span aria-hidden="true">✓</span>Professional Licensed Music Catalogue, subject to product-use and territory rights.</li></ul></article><article class="priceCard "><h4>Faith Network</h4><p class="tierDescription">Large ministry scale, enterprise identity, custom domains, service levels and premium catalogue reporting.</p><div class="price priceLabel"><strong class="maskedPrice" aria-hidden="true">€ ••• / month</strong><span class="visuallyHidden">Pricing not yet published</span></div><span class="priceCtaDisabled" aria-disabled="true">Private access only</span><ul><li><span aria-hidden="true">✓</span>Up to 100 site or stations</li><li><span aria-hidden="true">✓</span>2000 GB media storage</li><li><span aria-hidden="true">✓</span>Up to 50,000 active listeners</li><li><span aria-hidden="true">✓</span>High-quality audio up to 320 kbps</li><li><span aria-hidden="true">✓</span>Premium Licensed Music Catalogue, subject to product-use and territory rights.</li></ul></article></div></section><section class="pricingFamily" id="pricing-organisations"><div class="familyHeader"><span>06</span><div><p>Ruvanas Organisations</p><h3>Bring your organisation’s media into one governed workspace.</h3></div><p>Subscriber-operated channels, announcements, events, podcasts, sponsors, displays and branch controls.</p></div><div class="pricingGrid"><article class="priceCard "><h4>Organisations Start</h4><p class="tierDescription">One subscriber-operated channel with announcements, event planning and rights-cleared uploads.</p><div class="price priceLabel"><strong class="maskedPrice" aria-hidden="true">€ ••• / month</strong><span class="visuallyHidden">Pricing not yet published</span></div><span class="priceCtaDisabled" aria-disabled="true">Private access only</span><ul><li><span aria-hidden="true">✓</span>Up to 1 site or station</li><li><span aria-hidden="true">✓</span>25 GB media storage</li><li><span aria-hidden="true">✓</span>Up to 250 active listeners</li><li><span aria-hidden="true">✓</span>High-quality audio up to 192 kbps</li><li class="unavailableFeature"><span aria-hidden="true">⮽</span>Ruvanas core and your authorised audio; Licensed Music Catalogue not included.</li></ul></article><article class="priceCard "><h4>Organisations Connect</h4><p class="tierDescription">Two channels with podcasts, live events, Studio production and connected displays.</p><div class="price priceLabel"><strong class="maskedPrice" aria-hidden="true">€ ••• / month</strong><span class="visuallyHidden">Pricing not yet published</span></div><span class="priceCtaDisabled" aria-disabled="true">Private access only</span><ul><li><span aria-hidden="true">✓</span>Up to 2 site or stations</li><li><span aria-hidden="true">✓</span>100 GB media storage</li><li><span aria-hidden="true">✓</span>Up to 1,000 active listeners</li><li><span aria-hidden="true">✓</span>High-quality audio up to 256 kbps</li><li class="unavailableFeature"><span aria-hidden="true">⮽</span>Ruvanas core and your authorised audio; Licensed Music Catalogue not included.</li></ul></article><article class="priceCard featuredTier"><span class="popularLabel">Most popular</span><h4>Organisations Pro</h4><p class="tierDescription">Five channels, a focused catalogue, governed sponsors, campaigns and evidence.</p><div class="price priceLabel"><strong class="maskedPrice" aria-hidden="true">€ ••• / month</strong><span class="visuallyHidden">Pricing not yet published</span></div><span class="priceCtaDisabled" aria-disabled="true">Private access only</span><ul><li><span aria-hidden="true">✓</span>Up to 5 site or stations</li><li><span aria-hidden="true">✓</span>300 GB media storage</li><li><span aria-hidden="true">✓</span>Up to 5,000 active listeners</li><li><span aria-hidden="true">✓</span>High-quality audio up to 320 kbps</li><li><span aria-hidden="true">✓</span>Focused Licensed Music Catalogue, subject to product-use and territory rights.</li></ul></article><article class="priceCard "><h4>Organisations Network</h4><p class="tierDescription">Multi-branch governance, delegated operations and professional catalogue controls.</p><div class="price priceLabel"><strong class="maskedPrice" aria-hidden="true">€ ••• / month</strong><span class="visuallyHidden">Pricing not yet published</span></div><span class="priceCtaDisabled" aria-disabled="true">Private access only</span><ul><li><span aria-hidden="true">✓</span>Up to 15 site or stations</li><li><span aria-hidden="true">✓</span>1000 GB media storage</li><li><span aria-hidden="true">✓</span>Up to 20,000 active listeners</li><li><span aria-hidden="true">✓</span>High-quality audio up to 320 kbps</li><li><span aria-hidden="true">✓</span>Professional Licensed Music Catalogue, subject to product-use and territory rights.</li></ul></article><article class="priceCard "><h4>Organisations Enterprise</h4><p class="tierDescription">Enterprise identity, custom scale, priority service and premium catalogue reporting.</p><div class="price priceLabel"><strong class="maskedPrice" aria-hidden="true">€ ••• / month</strong><span class="visuallyHidden">Pricing not yet published</span></div><span class="priceCtaDisabled" aria-disabled="true">Private access only</span><ul><li><span aria-hidden="true">✓</span>Up to 50 site or stations</li><li><span aria-hidden="true">✓</span>3000 GB media storage</li><li><span aria-hidden="true">✓</span>Up to 100,000 active listeners</li><li><span aria-hidden="true">✓</span>High-quality audio up to 320 kbps</li><li><span aria-hidden="true">✓</span>Premium Licensed Music Catalogue, subject to product-use and territory rights.</li></ul></article></div></section><section class="pricingFamily" id="pricing-corrections"><div class="familyHeader"><span>07</span><div><p>Ruvanas Inside</p><h3>Prepare secure media for correctional environments.</h3></div><p>Commercial and account foundation is available; private delivery and facility governance require a later setup stage.</p></div><div class="pricingGrid"><article class="priceCard "><h4>Inside Essential</h4><p class="tierDescription">Foundation for one facility&#x27;s internal audio. Private delivery and facility policy require later setup.</p><div class="price priceLabel"><strong class="maskedPrice" aria-hidden="true">€ ••• / month</strong><span class="visuallyHidden">Pricing not yet published</span></div><span class="priceCtaDisabled" aria-disabled="true">Private access only</span><ul><li><span aria-hidden="true">✓</span>Corrections product access and guided foundation</li><li><span aria-hidden="true">✓</span>Ruvanas Studio Basic tier entitlement</li><li class="unavailableFeature"><span aria-hidden="true">⮽</span>Ruvanas core and your authorised audio; Licensed Music Catalogue not included.</li><li class="unavailableFeature"><span aria-hidden="true">⮽</span>Private playback requires facility policy and delivery setup</li></ul></article><article class="priceCard "><h4>Inside Facility</h4><p class="tierDescription">A single-facility tier for supervised production and governed programming as those workflows become available.</p><div class="price priceLabel"><strong class="maskedPrice" aria-hidden="true">€ ••• / month</strong><span class="visuallyHidden">Pricing not yet published</span></div><span class="priceCtaDisabled" aria-disabled="true">Private access only</span><ul><li><span aria-hidden="true">✓</span>Corrections product access and guided foundation</li><li><span aria-hidden="true">✓</span>Ruvanas Studio Basic tier entitlement</li><li class="unavailableFeature"><span aria-hidden="true">⮽</span>Ruvanas core and your authorised audio; Licensed Music Catalogue not included.</li><li class="unavailableFeature"><span aria-hidden="true">⮽</span>Private playback requires facility policy and delivery setup</li></ul></article><article class="priceCard featuredTier"><span class="popularLabel">Most popular</span><h4>Inside Rehabilitation Pro</h4><p class="tierDescription">Flagship single-facility tier with Studio Pro and a focused catalogue, subject to Corrections rights and policy.</p><div class="price priceLabel"><strong class="maskedPrice" aria-hidden="true">€ ••• / month</strong><span class="visuallyHidden">Pricing not yet published</span></div><span class="priceCtaDisabled" aria-disabled="true">Private access only</span><ul><li><span aria-hidden="true">✓</span>Corrections product access and guided foundation</li><li><span aria-hidden="true">✓</span>Ruvanas Studio Pro tier entitlement</li><li><span aria-hidden="true">✓</span>Focused Licensed Music Catalogue, subject to product-use and territory rights.</li><li class="unavailableFeature"><span aria-hidden="true">⮽</span>Private playback requires facility policy and delivery setup</li></ul></article><article class="priceCard "><h4>Inside Network</h4><p class="tierDescription">Multi-facility commercial tier; central and local governance will be delivered in a later stage.</p><div class="price priceLabel"><strong class="maskedPrice" aria-hidden="true">€ ••• / month</strong><span class="visuallyHidden">Pricing not yet published</span></div><span class="priceCtaDisabled" aria-disabled="true">Private access only</span><ul><li><span aria-hidden="true">✓</span>Corrections product access and guided foundation</li><li><span aria-hidden="true">✓</span>Ruvanas Studio Pro tier entitlement</li><li><span aria-hidden="true">✓</span>Professional Licensed Music Catalogue, subject to product-use and territory rights.</li><li class="unavailableFeature"><span aria-hidden="true">⮽</span>Private playback requires facility policy and delivery setup</li></ul></article><article class="priceCard "><h4>Justice Enterprise</h4><p class="tierDescription">Custom correctional-network scale and governance, subject to an individually agreed deployment.</p><div class="price priceLabel"><strong class="maskedPrice" aria-hidden="true">€ ••• / month</strong><span class="visuallyHidden">Pricing not yet published</span></div><span class="priceCtaDisabled" aria-disabled="true">Private access only</span><ul><li><span aria-hidden="true">✓</span>Corrections product access and guided foundation</li><li><span aria-hidden="true">✓</span>Ruvanas Studio Pro tier entitlement</li><li><span aria-hidden="true">✓</span>Premium Licensed Music Catalogue, subject to product-use and territory rights.</li><li class="unavailableFeature"><span aria-hidden="true">⮽</span>Private playback requires facility policy and delivery setup</li></ul></article></div></section></div><div class="enterprisePlan"><div><p>Enterprise</p><h3>Need a larger or specially configured service?</h3></div><p>We can tailor streams, listeners, schools, storage, identity, governance, onboarding and support around your organisation.</p><span class="enterpriseRegistrationPaused" aria-disabled="true">Private access only</span></div><p class="pricingNote">Pricing is not yet published. Service availability, eligibility and configuration will be confirmed during private onboarding.</p></section><section class="storySection" id="story"><div class="storyLabel"><span>Our story</span><i></i></div><div class="storyContent"><p class="storyKicker">Ruvanas · A 21-Three platform</p><h2>Built from radio experience. Shaped by retail. Designed for what comes next.</h2><div class="storyIntro"><p>The idea behind <strong>Ruvanas</strong> began with <strong>Manuel Chircop</strong>, whose connection with radio dates back to <strong>1993</strong>. Over more than three decades in broadcasting, Manuel experienced first-hand how radio evolved from traditional studios and scheduled programming into a world of streaming, automation, digital distribution and on-demand content.</p><p>Alongside that broadcasting experience, more than a decade working within the <strong>retail environment</strong> gave him a different perspective: businesses increasingly needed better ways to manage music, promotions, customer communication and digital media across their physical locations.</p><p>Those two worlds — <strong>broadcasting and retail</strong> — eventually came together.</p><p>Manuel&#x27;s objective was not simply to recreate traditional radio software or build another background-music service. He wanted to develop something relevant to the way organisations communicate today: a modern platform capable of bringing professional audio, broadcasting, content management and digital display technology together in one connected environment.</p><p>Working with a team of professional engineers, that idea developed into <strong>Ruvanas</strong>.</p></div><section class="storyChapter" aria-labelledby="story-five-worlds"><p class="storyChapterNumber">01</p><div><h3 id="story-five-worlds">One platform. Six specialised worlds.</h3><p>Ruvanas has been designed around a shared technology core, but with dedicated experiences for very different types of organisations.</p><div class="storyProducts"><article><span>Retail</span><p><strong>Ruvanas Retail</strong> gives retailers, hospitality businesses and other commercial organisations the tools to manage their own in-store audio, promotions, scheduling, digital displays and multi-location media.</p></article><article><span>School</span><p><strong>Ruvanas School</strong> provides schools and educational organisations with a structured environment for school radio, podcasting, media production and supervised student participation.</p></article><article><span>Radio</span><p><strong>Ruvanas Radio</strong> provides broadcasters and organisations with the technology to create and operate their own online radio services, including automation, live broadcasting, scheduling, podcasts and listener-facing experiences.</p></article><article><span>Faith</span><p><strong>Ruvanas Faith</strong> brings the traditional concept of Church Radio into a modern digital environment, giving churches, ministries and faith organisations the technology to operate their own radio channels, live services, sermons, podcasts and media networks.</p></article><article><span>Organisations</span><p><strong>Ruvanas Organisations</strong> gives NGOs, clubs, associations, community groups, civic organisations and networks technology for their own channels, announcements, events, podcasts, sponsors and displays—without becoming a CRM or administration system.</p></article><article><span>Health</span><p><strong>Ruvanas Health</strong> modernises the concept of Hospital Radio, giving hospitals and health-related organisations the tools to operate their own radio, audio and information services for patients, staff and wider communities.</p></article></div><p class="storyPrinciple">In every case, <strong>Ruvanas provides the platform — the subscriber operates the service.</strong></p></div></section><section class="storyChapter" aria-labelledby="story-more-than-radio"><p class="storyChapterNumber">02</p><div><h3 id="story-more-than-radio">More than radio</h3><p>The long-term vision for Ruvanas goes beyond simply playing audio.</p><p>The platform is being developed as a complete media environment combining technologies such as <strong>24/7 AutoDJ, intelligent scheduling, live broadcasting, Ruvanas Studio, podcasts, promotions, digital signage, device management, analytics, proof-of-play, multi-location control and rights-aware media management</strong>.</p><p>By sharing these capabilities across one core platform, Ruvanas can give each sector its own specialised experience without forcing organisations to work with several disconnected systems.</p></div></section><section class="storyChapter" aria-labelledby="story-international"><p class="storyChapterNumber">03</p><div><h3 id="story-international">Built in Malta. Designed for an international market.</h3><p>Ruvanas is being developed with an international outlook from the beginning.</p><p>While Malta provides an important foundation for development, testing and early partnerships, the ambition is to build a platform capable of serving organisations across <strong>Europe, the United Kingdom, the United States and beyond</strong>.</p><p>The goal is not simply to follow the way media technology works today, but to build a platform capable of evolving with the organisations that use it.</p></div></section><section class="storyChapter storyClosing" aria-labelledby="story-still-writing"><p class="storyChapterNumber">04</p><div><h3 id="story-still-writing">The story is still being written.</h3><p>Ruvanas started with a simple question:</p><blockquote>Can decades of broadcasting experience and real-world business experience be transformed into one modern platform that helps organisations create, manage and control their own media?</blockquote><p>That question became Ruvanas.</p><p><strong>And this is only the beginning.</strong></p></div></section></div></section><section class="finalCta"><div><p class="sectionEyebrow">Ready when you are</p><h2>Give your audience a sound worth remembering.</h2></div><div class="finalActions"><a class="primaryButton" href="/login">Log in with issued code <svg class="arrowIcon" viewBox="0 0 18 18" aria-hidden="true"><path d="M3 9h11M10 4l5 5-5 5"></path></svg></a><a class="finalLogin" href="/login">Log in</a></div></section><footer class="footer"><div class="footerTop"><a class="logo" href="#top" aria-label="Ruvanas home"><span class="brandMark" aria-hidden="true"><span></span><span></span><span></span></span><span class="logoText">RUVANAS</span></a><p>Professional media platforms for brands, schools, broadcasters, health, faith and other organisations.</p><nav aria-label="Footer navigation"><a href="#platforms">Platforms</a><a href="#services">Services</a><a href="#pricing">Pricing</a><a href="/login">Log in</a></nav></div><div class="footerBottom"><span>© 2026 Ruvanas. A part of 21-Three.</span><span>Built for sound. Ready for the world.</span></div></footer></main></body>
+</html>

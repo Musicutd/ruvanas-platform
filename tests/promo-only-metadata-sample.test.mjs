@@ -32,6 +32,13 @@ const paidEnv = Object.freeze({
   RUVANAS_PUBLIC_URL: "https://ruvanas-platform.onrender.com",
   RENDER_SERVICE_ID: "srv-da03b5lbedkc739q74k0"
 });
+const publicEnv = Object.freeze({
+  ...paidEnv, RUVANAS_PUBLIC_URL: "https://www.ruvanas.com",
+  NODE_ENV: "production",
+  RUVANAS_PRIVATE_PREVIEW_PUBLIC_SITE: "1",
+  RUVANAS_PRIVATE_PREVIEW_ADMIN_EMAIL: "owner@example.test",
+  RUVANAS_PRIVATE_PREVIEW_ALLOWED_EMAILS: "owner@example.test"
+});
 
 function fixtures() {
   return [
@@ -114,6 +121,56 @@ test("paid metadata readiness does not enable audio when its separate switch sta
     fetchImpl: () => { supplierCalls += 1; throw Error("must not fetch"); }
   }), { code: "PROMOONLY_AUDIO_SAMPLE_NOT_READY", supplierRequestCount: 0 });
   assert.equal(supplierCalls, 0);
+});
+
+test("canonical www metadata gate requires explicit same-domain policy on the existing paid service", async () => {
+  const config = readPromoOnlyMetadataSampleConfig(publicEnv);
+  assert.equal(config.ready, true);
+  assert.equal(config.audioDownloadEnabled, false);
+  assert.equal(config.manualOnly, true);
+  const calls = [];
+  const result = await fetchPromoOnlyMetadataSample(config, { fetchImpl: mockFetch(fixtures(), calls), now: NOW });
+  assert.equal(result.requestCount, 4);
+  assert.equal(calls.length, 4);
+  assert.ok(calls.every(({ url }) => url.startsWith("https://api.promoonly.com/")));
+  for (const change of [
+    { RUVANAS_PRIVATE_PREVIEW_PUBLIC_SITE: undefined }, { RUVANAS_PRIVATE_PREVIEW_PUBLIC_SITE: "0" },
+    { RUVANAS_PRIVATE_PREVIEW_PUBLIC_SITE: "true" }, { RUVANAS_PRIVATE_PREVIEW_PUBLIC_SITE: "" },
+    { NODE_ENV: "development" }, { RUVANAS_PUBLIC_COMING_SOON_URL: "https://other.example.test/" },
+    { RUVANAS_PUBLIC_URL: "https://ruvanas.com" }, { RUVANAS_PUBLIC_URL: "http://www.ruvanas.com" },
+    { RUVANAS_PUBLIC_URL: "https://www.ruvanas.com/" }, { RUVANAS_PUBLIC_URL: "https://www.ruvanas.com/login" },
+    { RUVANAS_PUBLIC_URL: "https://www.ruvanas.com?" }, { RUVANAS_PUBLIC_URL: "https://www.ruvanas.com#" },
+    { RUVANAS_PUBLIC_URL: "https://user@www.ruvanas.com" }, { RENDER_SERVICE_ID: env.RENDER_SERVICE_ID },
+    { RENDER_SERVICE_ID: "srv-other" }, { RUVANAS_PRIVATE_PREVIEW_ADMIN_EMAIL: "outside@example.test" },
+    { RUVANAS_PRIVATE_PREVIEW_ALLOWED_EMAILS: "" }, { RUVANAS_PRIVATE_PREVIEW_ENABLED: "0" },
+    { DATABASE_URL: "postgresql://fixture:fixture@production/production" },
+    { PROMOONLY_ENABLED: "true" }, { PROMOONLY_AUDIO_DOWNLOAD_ENABLED: "true" },
+    { PROMOONLY_ALLOW_HTTP_MEDIA_TEST: "true" }
+  ]) {
+    const rejected = readPromoOnlyMetadataSampleConfig({ ...publicEnv, ...change });
+    assert.equal(rejected.ready, false, JSON.stringify(change));
+    await assert.rejects(fetchPromoOnlyMetadataSample(rejected, {
+      fetchImpl: () => assert.fail("refused gate must not make requests")
+    }), { code: "PROMOONLY_SAMPLE_NOT_READY", requestCount: 0 });
+  }
+  assert.equal(readPromoOnlyMetadataSampleConfig({ ...paidEnv, RUVANAS_PRIVATE_PREVIEW_PUBLIC_SITE: "1" }).ready, false);
+  assert.equal(readPromoOnlyMetadataSampleConfig({ ...paidEnv, RUVANAS_PRIVATE_PREVIEW_PUBLIC_SITE: "0" }).ready, true);
+});
+
+test("canonical www metadata does not activate either audio switch", async () => {
+  const audio = readPromoOnlyAudioSampleConfig({ ...publicEnv,
+    PROMOONLY_AUDIO_SAMPLE_ENABLED: "false",
+    R2_ACCOUNT_ID: "8aac840009a163d4a099f06744cdf691",
+    R2_BUCKET_NAME: "ruvanas-preview-audio-20261011",
+    R2_ENDPOINT: "https://8aac840009a163d4a099f06744cdf691.r2.cloudflarestorage.com",
+    R2_ACCESS_KEY_ID: "a".repeat(32), R2_SECRET_ACCESS_KEY: "b".repeat(64)
+  });
+  assert.equal(audio.enabled, false);
+  assert.equal(audio.ready, false);
+  assert.equal(audio.audioDownloadEnabled, false);
+  await assert.rejects(fetchPromoOnlyAudioSample(audio, {
+    fetchImpl: () => assert.fail("audio remains disabled")
+  }), { code: "PROMOONLY_AUDIO_SAMPLE_NOT_READY", supplierRequestCount: 0 });
 });
 
 test("disabled and wrong-preview configurations fail before fetch", async () => {
