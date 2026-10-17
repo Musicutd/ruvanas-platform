@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { publicRequestOrigin } from "@/lib/origin-policy.mjs";
 import { readPrivatePreviewPolicy, isPrivatePreviewPublicPath, isPrivatePreviewRegistrationPath, privatePreviewSessionLanding, isPrivatePreviewAdminSession, isPrivatePreviewOwnerBootstrapSession } from "@/lib/private-preview-policy.mjs";
-import { privatePreviewTesterRequestAllowed } from "@/lib/private-preview-tester-policy.mjs";
+import { privatePreviewTesterRequestAllowed, isPrivatePreviewOnlineDraftSession } from "@/lib/private-preview-tester-policy.mjs";
 import { getSessionFromToken, SESSION_COOKIE } from "@/lib/session-lookup.js";
 import { catalogueRequestSizePolicy } from "@/lib/catalogue-request-limits.mjs";
 
@@ -188,7 +188,9 @@ export async function middleware(request) {
         if (!staticAsset && !(bootstrap ? bootstrapAllowed :
           privatePreviewTesterRequestAllowed({ session, pathname: path, method: request.method }))) {
           return previewResponse(NextResponse.json({ error: bootstrap ?
-            "Set your admin password in Private access before continuing." : "This page is not included in your read-only tester access." },
+            "Set your admin password in Private access before continuing." : isPrivatePreviewOnlineDraftSession(session) ?
+              "This action is unavailable in draft-only Online Radio testing. Broadcasting, publishing, uploads, downloads and paid actions remain blocked." :
+              "This page is not included in your read-only tester access." },
           { status: 403 }), requestId);
         }
       }

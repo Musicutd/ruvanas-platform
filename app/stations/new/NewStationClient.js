@@ -1,0 +1,234 @@
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import WorkflowProgress from "@/app/components/WorkflowProgress";
+import ContextHelp from "@/app/components/ContextHelp";
+import SkipLink from "@/app/components/SkipLink";
+import { safeWorkflowMessage, stationWorkflowSteps } from "@/lib/guided-workflows.mjs";
+
+export default function NewStationClient({ previewAccessMode = null }) {
+  const readOnly = previewAccessMode === "READ_ONLY";
+  const draftOnly = previewAccessMode === "ONLINE_DRAFT";
+  const router = useRouter();
+  const [form, setForm] = useState({
+    name: "",
+    description: ""
+  });
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  function updateField(event) {
+    setForm((current) => ({
+      ...current,
+      [event.target.name]: event.target.value
+    }));
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    if (readOnly) return;
+    setError("");
+    setLoading(true);
+
+    try {
+      const response = await fetch("/api/stations", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(form)
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setError(data.error || "Unable to create station.");
+        return;
+      }
+
+      router.push(`/stations/${data.station.id}`);
+      router.refresh();
+    } catch (submitError) {
+      setError(safeWorkflowMessage(submitError, "A connection error occurred. Please try again."));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <main style={styles.page}>
+      <SkipLink />
+      <section style={styles.card} id="main-content">
+        <a href="/dashboard" style={styles.backLink}>
+          ← Back to dashboard
+        </a>
+
+        <p style={styles.eyebrow}>ONLINE RADIO</p>
+        <h1 style={styles.title}>{draftOnly ? "Create a private test station" : "Create your station"}</h1>
+        <p style={styles.subtitle}>
+          {draftOnly ? "Save your station identity in your isolated Online Radio test workspace. This creates no streaming infrastructure or live broadcast."
+            : "Set up the basic identity of your station. Streaming infrastructure will be configured privately after creation."}
+        </p>
+
+        {!draftOnly && !readOnly ? <WorkflowProgress
+          title="Station setup"
+          steps={stationWorkflowSteps()}
+        /> : null}
+
+        <aside style={styles.guidance}>
+          <strong>{readOnly ? "Your tester access is read-only." : draftOnly ? "Private drafts only — broadcasting stays off." : "You only need the basics now."}</strong>
+          <span>{readOnly ? "You can view Online Radio, but cannot create a station. Ask the owner to enable editable Online Radio drafts for this tester account."
+            : draftOnly ? "You can save a station, playlists and weekly planner drafts. Uploads, downloads, live broadcasting and paid actions are blocked."
+              : "After creating the station, Ruvanas will guide you through the private streaming connection."}</span>
+        </aside>
+
+        {!draftOnly && !readOnly ? <ContextHelp
+          title="What happens after I create the station?"
+          introduction="Creating the station saves its identity. Ruvanas prepares the private streaming connection; you can then choose music and preview the listener page."
+          items={[
+            { title: "Name", description: "Use the name customers or staff should recognise." },
+            { title: "Description", description: "Add a short purpose or music style; you can refine it later." },
+            { title: "Next step", description: "Ruvanas will prepare the streaming connection. You can return to your dashboard to follow its progress." }
+          ]}
+          articleHref="/dashboard/help#station-setup"
+          articleLabel="Open the station guide"
+        /> : null}
+
+        {!readOnly ? <form onSubmit={handleSubmit} style={styles.form}>
+          <label style={styles.label}>
+            Station name
+            <input
+              style={styles.input}
+              type="text"
+              name="name"
+              value={form.name}
+              onChange={updateField}
+              placeholder="Example: Ruvanas Hits"
+              required
+            />
+          </label>
+
+          <label style={styles.label}>
+            Description
+            <textarea
+              style={styles.textarea}
+              name="description"
+              value={form.description}
+              onChange={updateField}
+              placeholder="Tell listeners about your station."
+              rows={5}
+            />
+          </label>
+
+          {error ? <p style={styles.error} role="alert">{error}</p> : null}
+
+          <button type="submit" style={styles.button} disabled={loading}>
+            {loading ? "Saving station…" : draftOnly ? "Save private test station" : "Create station"}
+          </button>
+        </form> : <a href="/preview-dashboard" style={styles.backLink}>Return to your assigned pillars</a>}
+      </section>
+    </main>
+  );
+}
+
+const styles = {
+  page: {
+    minHeight: "100vh",
+    background: "#101827",
+    color: "#ffffff",
+    display: "grid",
+    placeItems: "center",
+    padding: "32px 20px",
+    fontFamily: "Arial, sans-serif"
+  },
+  card: {
+    width: "100%",
+    maxWidth: 620,
+    background: "#182235",
+    border: "1px solid #26344d",
+    borderRadius: 16,
+    padding: 36,
+    boxSizing: "border-box"
+  },
+  backLink: {
+    color: "#b8c3d6",
+    textDecoration: "none"
+  },
+  eyebrow: {
+    color: "#f4b942",
+    letterSpacing: 1.5,
+    fontSize: 12,
+    fontWeight: 700,
+    marginTop: 34,
+    marginBottom: 10
+  },
+  title: {
+    fontSize: 36,
+    margin: "0 0 12px"
+  },
+  subtitle: {
+    color: "#b8c3d6",
+    lineHeight: 1.6,
+    margin: "0 0 28px"
+  },
+  form: {
+    display: "grid",
+    gap: 20
+  },
+  guidance: {
+    display: "grid",
+    gap: 6,
+    marginBottom: 22,
+    borderLeft: "4px solid #f4b942",
+    borderRadius: 8,
+    background: "#111c2e",
+    color: "#d8e0ec",
+    padding: "13px 15px",
+    lineHeight: 1.45
+  },
+  label: {
+    display: "grid",
+    gap: 8,
+    color: "#d8e0ec",
+    fontSize: 14,
+    fontWeight: 700
+  },
+  input: {
+    border: "1px solid #42526b",
+    borderRadius: 8,
+    background: "#0f1725",
+    color: "#ffffff",
+    padding: "13px 14px",
+    fontSize: 16
+  },
+  textarea: {
+    border: "1px solid #42526b",
+    borderRadius: 8,
+    background: "#0f1725",
+    color: "#ffffff",
+    padding: "13px 14px",
+    fontSize: 16,
+    resize: "vertical",
+    fontFamily: "inherit"
+  },
+  error: {
+    margin: 0,
+    border: "1px solid #a63e4a",
+    background: "#3c1d27",
+    color: "#fecdd3",
+    borderRadius: 8,
+    padding: 12,
+    lineHeight: 1.45
+  },
+  button: {
+    border: "none",
+    borderRadius: 8,
+    background: "#f4b942",
+    color: "#101827",
+    padding: "14px 18px",
+    fontSize: 16,
+    fontWeight: 800,
+    cursor: "pointer"
+  }
+};

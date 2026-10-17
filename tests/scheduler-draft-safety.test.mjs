@@ -47,7 +47,8 @@ test("same-zone draft creates a new version without updating shared timezone or 
   const version = calls.find(([type]) => type === "version")[1];
   assert.equal(version.data.organisationId, "org-a");
   assert.equal(version.data.version, 2);
-  assert.equal("isActive" in version.data, false);
+  assert.equal(version.data.isActive, false);
+  assert.equal(version.data.status, "DRAFT");
   assert.equal("publishedAt" in version.data, false);
 });
 

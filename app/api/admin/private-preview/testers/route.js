@@ -19,7 +19,7 @@ async function handle(request, update) {
     const limit = await consumeRateLimit({ key: createRateLimitKey("preview-tester-management", request, session.userId), limit: 30, windowMs: 60 * 60 * 1000 });
     if (!limit.allowed) return json({ error: "Too many changes. Please wait and try again." }, 429);
     let body;
-    try { body = await readPrivatePreviewBody(request, update ? ["userId", "pillars", "enabled", "password"] : ["email", "name", "password", "pillars"]); }
+    try { body = await readPrivatePreviewBody(request, update ? ["userId", "pillars", "enabled", "password", "accessMode"] : ["email", "name", "password", "pillars", "accessMode"]); }
     catch { return json({ error: "Invalid request." }, 400); }
     const options = { ...body, actorUserId: session.userId, policy };
     const tester = await (update ? updatePreviewTester(prisma, options) : createPreviewTester(prisma, options));
@@ -28,6 +28,8 @@ async function handle(request, update) {
   } catch (caught) {
     if (caught instanceof PrivatePreviewAccountError && caught.status < 500) return json({ error:
       caught.code === "INVALID_PASSWORD" ? "Passwords need at least 12 characters and at most 72 UTF-8 bytes." :
+        caught.code === "INVALID_ACCESS_MODE" ? "Choose read-only access or Online Radio draft editing." :
+          caught.code === "INVALID_ACCESS_MODE_PILLARS" ? "Online Radio draft editing requires Online Radio as the only selected pillar." :
         caught.code === "TESTER_LIMIT" ? "The preview is limited to 20 tester accounts." :
           "Unable to save this tester. Use a new email and select one or more pillars; existing accounts cannot be overwritten." }, caught.status);
     securityLog("error", "PRIVATE_PREVIEW_TESTER_MANAGEMENT_UNAVAILABLE", request);

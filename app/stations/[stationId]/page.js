@@ -5,9 +5,11 @@ import ContextHelp from "@/app/components/ContextHelp";
 import SkipLink from "@/app/components/SkipLink";
 import { subscriberProductForStationFamily } from "@/lib/product-access.mjs";
 import { requireSubscriberProduct } from "@/lib/subscriber-product-access";
+import { onlineDraftSubscription } from "@/lib/private-preview-online-draft.mjs";
 
 export default async function StationDetailsPage({ params }) {
-  const context = await getActiveOrganisationContext();
+  const context = await getActiveOrganisationContext({ subscription: { include: { plan: true, billingContract: true } } });
+  const { stationId } = await params;
 
   if (!context) {
     redirect("/login");
@@ -21,7 +23,7 @@ export default async function StationDetailsPage({ params }) {
 
   const station = await prisma.station.findFirst({
     where: {
-      id: params.stationId,
+      id: stationId,
       organisationId: membership.organisationId
     },
     include: {
@@ -36,6 +38,16 @@ export default async function StationDetailsPage({ params }) {
   const productKey = subscriberProductForStationFamily(station.productFamily);
   await requireSubscriberProduct(productKey);
   const productLabel = productKey === "HEALTH" ? "Ruvanas Health" : productKey === "FAITH" ? "Ruvanas Faith" : productKey === "ORGANISATIONS" ? "Ruvanas Organisations" : "Online Radio";
+  if (onlineDraftSubscription(membership.organisation.subscription)) return <main style={styles.page}>
+    <header style={styles.header}><a href="/dashboard/radio" style={styles.brand}>RUVANAS</a><a href="/dashboard/radio" style={styles.backLink}>Online Radio test</a></header>
+    <section style={styles.content} id="main-content"><p style={styles.eyebrow}>PRIVATE TEST STATION · NOT ON AIR</p>
+      <h1 style={styles.title}>{station.name}</h1><p style={styles.subtitle}>{station.description}</p>
+      <section style={styles.statusCard}><div><p style={styles.cardLabel}>Saved privately</p><h2 style={styles.status}>Draft-only workspace</h2>
+        <p>Live broadcasting, public player, stream configuration, audio uploads and paid provisioning are blocked. This station does not provision a streaming service.</p></div></section>
+      <section style={styles.nextCard}><h2 style={styles.nextTitle}>Continue your private test</h2><div style={styles.actions}>
+        <a href="/dashboard/programming#workspace-simple" style={styles.setupButton}>Draft playlists</a>
+        <a href={`/dashboard/radio/schedule/${station.id}`} style={styles.secondaryButton}>Weekly planner</a>
+      </div></section></section></main>;
 
   const needsSetup = station.status === "PENDING_SETUP";
 

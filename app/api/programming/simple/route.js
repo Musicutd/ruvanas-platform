@@ -6,6 +6,7 @@ import { normaliseGenreCode } from "@/lib/autodj-genre-entitlements.mjs";
 import { parseSimplePlaylist } from "@/lib/subscriber-playlists.mjs";
 import { safeSimplePlaylist, rightsUseForChannel } from "@/lib/subscriber-playlist-service.mjs";
 import { smartPlaylistSlug } from "@/lib/smart-playlists.mjs";
+import { ONLINE_DRAFT_LIMITS, onlineDraftChannelWhere, lockOnlineDraftOrganisation } from "@/lib/private-preview-online-draft.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,7 @@ export async function GET() {
     if (access.response) return access.response;
     const organisationId = access.context.membership.organisationId;
     const [channels, playlists, events, genres] = await Promise.all([
-      prisma.channel.findMany({ where: { organisationId, status: { in: ["ACTIVE", "DRAFT"] } }, include: {
+      prisma.channel.findMany({ where: access.sandboxDraftOnly ? onlineDraftChannelWhere(organisationId) : { organisationId, status: { in: ["ACTIVE", "DRAFT"] } }, include: {
         station: { select: { id: true, name: true, productFamily: true, status: true, streamConfig: { select: { streamUrl: true } } } },
         autoDjPolicy: { select: { enabled: true, selectedGenreCodes: true, playbackPolicy: true } },
         zoneAssignments: { include: { zone: { include: { location: { select: { timezone: true } } } } }, take: 1 }
@@ -26,6 +27,8 @@ export async function GET() {
     ]);
     return NextResponse.json({
       ok: true,
+      sandboxDraftOnly: access.sandboxDraftOnly,
+      canSchedule: !access.sandboxDraftOnly,
       canManage: ["OWNER", "MANAGER", "CONTENT_EDITOR"].includes(access.context.membership.role),
       channels: channels.map((channel) => ({
         id: channel.id, name: channel.name, status: channel.status,
@@ -47,11 +50,11 @@ export async function GET() {
 
 export async function POST(request) {
   try {
-    const access = await simplePlaylistAccess({ write: true });
+    const access = await simplePlaylistAccess({ write: true, allowOnlineDraft: true });
     if (access.response) return access.response;
     const body = await request.json().catch(() => null);
     const organisationId = access.context.membership.organisationId;
-    const channel = await prisma.channel.findFirst({ where: { id: body?.channelId, organisationId, status: { in: ["ACTIVE", "DRAFT"] } }, include: { station: { select: { productFamily: true } } } });
+    const channel = await prisma.channel.findFirst({ where: { id: body?.channelId, ...(access.sandboxDraftOnly ? onlineDraftChannelWhere(organisationId) : { organisationId, status: { in: ["ACTIVE", "DRAFT"] } }) }, include: { station: { select: { productFamily: true } } } });
     if (!channel) return NextResponse.json({ error: "Choose a channel owned by your organisation." }, { status: 404 });
     if (!rightsUseForChannel(channel)) return NextResponse.json({ error: "This channel needs a music-rights profile before playlists can be created." }, { status: 409 });
     const genres = await prisma.mediaGenre.findMany({ where: { active: true }, select: { slug: true, name: true } });
@@ -59,13 +62,19 @@ export async function POST(request) {
     if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 });
     const { name, ...settings } = parsed.data;
     const created = await prisma.$transaction(async (tx) => {
-      const musicMode = await tx.musicMode.create({ data: { organisationId, name, slug: `${smartPlaylistSlug(name)}-${randomUUID().slice(0, 8)}`, source: "SMART_PLAYLIST", status: "ACTIVE" } });
-      const playlist = await tx.smartPlaylist.create({ data: { organisationId, musicModeId: musicMode.id, createdByUserId: access.context.user.id, status: "ACTIVE", rightsUse: rightsUseForChannel(channel), ...settings }, include: { musicMode: { select: { name: true } } } });
+      if (access.sandboxDraftOnly) {
+        await lockOnlineDraftOrganisation(tx, organisationId);
+        if (await tx.smartPlaylist.count({ where: { organisationId } }) >= ONLINE_DRAFT_LIMITS.playlists) throw Object.assign(new Error("This test workspace is limited to 20 saved playlists. Edit an existing draft instead."), { code: "DRAFT_LIMIT" });
+      }
+      const status = access.sandboxDraftOnly ? "DRAFT" : "ACTIVE";
+      const musicMode = await tx.musicMode.create({ data: { organisationId, name, slug: `${smartPlaylistSlug(name)}-${randomUUID().slice(0, 8)}`, source: "SMART_PLAYLIST", status } });
+      const playlist = await tx.smartPlaylist.create({ data: { organisationId, musicModeId: musicMode.id, createdByUserId: access.context.user.id, status, rightsUse: rightsUseForChannel(channel), ...settings }, include: { musicMode: { select: { name: true } } } });
       await tx.auditLog.create({ data: { organisationId, actorUserId: access.context.user.id, action: "SUBSCRIBER_PLAYLIST_CREATED", entityType: "SmartPlaylist", entityId: playlist.id, details: { channelId: channel.id, buildMode: settings.simpleBuildMode, durationMinutes: settings.durationMinutes } } });
       return playlist;
     });
     return NextResponse.json({ ok: true, playlist: safeSimplePlaylist(created) }, { status: 201 });
   } catch (error) {
+    if (error?.code === "DRAFT_LIMIT") return NextResponse.json({ error: error.message }, { status: 409 });
     console.error("Subscriber playlist create error:", error);
     return NextResponse.json({ error: "Unable to save the playlist." }, { status: 500 });
   }

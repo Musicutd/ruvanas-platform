@@ -4,6 +4,7 @@ import { getActiveOrganisationContext, getCurrentUser } from "@/lib/auth";
 import { isOrganisationRoleAllowed, ORGANISATION_MANAGER_ROLES } from "@/lib/access-control";
 import { isWithinLimit, resolveEntitlements } from "@/lib/entitlements.mjs";
 import slugify from "@/lib/slugify";
+import { onlineDraftSubscription, lockOnlineDraftOrganisation } from "@/lib/private-preview-online-draft.mjs";
 
 export async function POST(request) {
   const user = await getCurrentUser();
@@ -55,6 +56,11 @@ export async function POST(request) {
 
   const org = membership.organisation;
   const entitlements = resolveEntitlements(org.subscription);
+  const sandboxDraftOnly = onlineDraftSubscription(org.subscription);
+  if (sandboxDraftOnly && (typeof name !== "string" || name.trim().length < 2 || name.length > 120 ||
+    (description !== undefined && (typeof description !== "string" || description.length > 2000)))) {
+    return NextResponse.json({ error: "Use a station name of 2–120 characters and a description of at most 2,000 characters." }, { status: 400 });
+  }
   const stationCount = org.stations.length;
 
   if (!entitlements.onlineRadioEnabled) {
@@ -71,7 +77,12 @@ export async function POST(request) {
     );
   }
 
-  const station = await prisma.$transaction(async (tx) => {
+  let station;
+  try { station = await prisma.$transaction(async (tx) => {
+    if (sandboxDraftOnly) {
+      await lockOnlineDraftOrganisation(tx, org.id);
+      if (await tx.station.count({ where: { organisationId: org.id } }) >= 1) throw Object.assign(new Error("This test workspace allows one private draft station."), { code: "DRAFT_LIMIT" });
+    }
     const stationSlug = slugify(name) + "-" + Math.random().toString(36).slice(2, 7);
     const createdStation = await tx.station.create({
       data: {
@@ -105,7 +116,10 @@ export async function POST(request) {
     });
 
     return createdStation;
-  });
+  }); } catch (error) {
+    if (error?.code === "DRAFT_LIMIT") return NextResponse.json({ error: error.message }, { status: 409 });
+    throw error;
+  }
 
   return NextResponse.json({ success: true, station });
 }

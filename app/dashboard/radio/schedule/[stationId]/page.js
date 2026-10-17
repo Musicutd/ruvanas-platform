@@ -4,12 +4,14 @@ import { prisma } from "@/lib/prisma";
 import { requireSubscriberProduct } from "@/lib/subscriber-product-access";
 import AdvancedSchedulerWorkspace from "@/app/dashboard/programming/AdvancedSchedulerWorkspace";
 import styles from "@/app/dashboard/programming/programming.module.css";
+import { onlineDraftChannelWhere } from "@/lib/private-preview-online-draft.mjs";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Station schedule | Ruvanas" };
 
 export default async function OnlineRadioStationSchedulePage({ params }) {
-  const { context } = await requireSubscriberProduct("ONLINE");
+  const { context, entitlements } = await requireSubscriberProduct("ONLINE");
+  const sandboxDraftOnly = entitlements.sandboxDraftOnly;
   const { stationId } = await params;
   const station = await prisma.station.findFirst({
     where: { id: stationId, organisationId: context.membership.organisationId, productFamily: "ONLINE" },
@@ -18,7 +20,7 @@ export default async function OnlineRadioStationSchedulePage({ params }) {
       name: true,
       status: true,
       streamConfig: { select: { streamUrl: true } },
-      channels: { where: { status: "ACTIVE" }, select: { id: true, name: true }, orderBy: { createdAt: "asc" } }
+      channels: { where: sandboxDraftOnly ? onlineDraftChannelWhere(context.membership.organisationId) : { status: "ACTIVE" }, select: { id: true, name: true }, orderBy: { createdAt: "asc" } }
     }
   });
   if (!station) notFound();
@@ -33,11 +35,11 @@ export default async function OnlineRadioStationSchedulePage({ params }) {
         <div>
           <p className={styles.eyebrow}>ONLINE RADIO · {station.name}</p>
           <h1>Draft your station programmes</h1>
-          <p className={styles.intro}>Choose the active station channel, add a rights-approved Music Mode to a weekly programme, save a draft, preview it, then publish when ready. A retail location or zone is not required.</p>
+          <p className={styles.intro}>{sandboxDraftOnly ? "Choose your private draft channel and a saved test playlist, then save and preview a weekly plan. No playable audio or published schedule is created." : "Choose the active station channel, add a rights-approved Music Mode to a weekly programme, save a draft, preview it, then publish when ready. A retail location or zone is not required."}</p>
         </div>
         <div className={styles.safetyNote}>
           <strong>Playback is separate</strong>
-          <span>This programme schedule does not switch the dedicated Centova encoder's rotation. Set the channel's Continuous AutoDJ and ask Ruvanas to connect the broadcast source for live audio.</span>
+          <span>{sandboxDraftOnly ? "Live broadcasting, stream configuration and publishing are blocked for this test workspace." : "This programme schedule does not switch the dedicated Centova encoder's rotation. Set the channel's Continuous AutoDJ and ask Ruvanas to connect the broadcast source for live audio."}</span>
         </div>
       </div>
       {!station.channels.length ? <div className={styles.emptyState} role="status">
@@ -47,7 +49,7 @@ export default async function OnlineRadioStationSchedulePage({ params }) {
           : "Ask your Ruvanas Super Admin to save the stream connection and prepare the Online Radio channel."}
         {" "}<Link href="/dashboard/support">Contact Ruvanas support</Link>.
       </div> : <AdvancedSchedulerWorkspace stationId={station.id} />}
-      {station.channels.length ? <p className={styles.panelIntro}><Link href="/dashboard/programming#workspace-schedule">Set Continuous AutoDJ</Link> after preparing the station schedule. The dedicated encoder must be connected before listeners hear audio.</p> : null}
+      {station.channels.length && !sandboxDraftOnly ? <p className={styles.panelIntro}><Link href="/dashboard/programming#workspace-schedule">Set Continuous AutoDJ</Link> after preparing the station schedule. The dedicated encoder must be connected before listeners hear audio.</p> : null}
     </section>
   </main>;
 }

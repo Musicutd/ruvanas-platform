@@ -6,7 +6,11 @@ import {
   listPreviewTesters, PREVIEW_PASSWORD_AUTH_METHOD, PREVIEW_TESTER_LIMIT,
   updatePreviewTester, validatePreviewPassword
 } from "../lib/private-preview-accounts.mjs";
-import { assertPreviewTesterState } from "../lib/private-preview-account-policy.mjs";
+import {
+  assertPreviewTesterState, isPreviewTesterPlan, normalizePreviewTesterAccessMode,
+  PREVIEW_ONLINE_DRAFT_PLAN, PREVIEW_ONLINE_DRAFT_PLAN_CODE, PREVIEW_TESTER_PLAN,
+  previewTesterAccessMode
+} from "../lib/private-preview-account-policy.mjs";
 
 const NOW = new Date("2026-10-15T10:00:00Z");
 const SECRET = "synthetic-private-preview-session-secret-at-least-32-characters";
@@ -134,6 +138,7 @@ test("owner creates isolated multi-pillar tester with zero-cost hidden plan and 
   const db = database();
   const created = await create(db);
   assert.deepEqual(created.pillars, ["SCHOOL", "ONLINE"]);
+  assert.equal(created.accessMode, "READ_ONLY");
   assert.equal(created.email, "tester@example.test");
   assert.equal(created.expiresAt.toISOString(), "2026-11-14T10:00:00.000Z");
   assert.equal(db.state.user.length, 2);
@@ -359,4 +364,138 @@ test("code-only testers have no usable password until the owner explicitly sets 
   const signedIn = await authenticatePreviewPassword(db, { policy, email: created.email, password: PASSWORD,
     secret: SECRET, now: NOW });
   assert.equal(signedIn.user.id, created.id);
+});
+
+test("access mode is derived only from an exact dedicated plan, not its code alone", () => {
+  for (const [mode, plan] of [["READ_ONLY", PREVIEW_TESTER_PLAN], ["ONLINE_DRAFT", PREVIEW_ONLINE_DRAFT_PLAN]]) {
+    assert.equal(previewTesterAccessMode({ ...plan, id: "synthetic-plan" }), mode);
+    assert.equal(isPreviewTesterPlan(plan), true);
+    for (const [key, value] of Object.entries(plan)) {
+      const changed = { ...plan, [key]: typeof value === "boolean" ? !value : typeof value === "number" ? value + 1 : value === null ? "changed" : `${value}-changed` };
+      assert.equal(previewTesterAccessMode(changed), null, `${mode} changed ${key}`);
+      assert.equal(isPreviewTesterPlan(changed), false, `${mode} changed ${key}`);
+    }
+  }
+  for (const value of [null, undefined, {}, { code: PREVIEW_ONLINE_DRAFT_PLAN_CODE }]) {
+    assert.equal(previewTesterAccessMode(value), null);
+  }
+  for (const mode of [null, false, 0, {}, [], "", "online_draft", "__proto__", "toString", "ADMIN"]) {
+    assert.throws(() => normalizePreviewTesterAccessMode(mode), (error) => error.code === "INVALID_ACCESS_MODE");
+  }
+});
+
+test("explicit Online Radio draft account has isolated zero-storage plan and only Online capability", async () => {
+  const db = database();
+  const created = await create(db, { accessMode: "ONLINE_DRAFT", pillars: ["ONLINE"] });
+  assert.equal(created.accessMode, "ONLINE_DRAFT");
+  assert.deepEqual(created.pillars, ["ONLINE"]);
+  assert.equal(db.state.plan[0].code, PREVIEW_ONLINE_DRAFT_PLAN_CODE);
+  assert.equal(db.state.plan[0].storageLimitGb, 0);
+  assert.equal(db.state.plan[0].monthlyPriceCents, 0);
+  assert.equal(db.state.plan[0].publiclyAvailable, false);
+  assert.equal(db.state.plan[0].licensedMusicCatalogueLevel, "NONE");
+  assert.equal(db.state.subscription[0].onlineRadioEnabled, true);
+  for (const key of ["retailRadioEnabled", "schoolRadioEnabled", "healthRadioEnabled", "faithRadioEnabled",
+    "organisationsEnabled", "correctionsRadioEnabled", "schoolPublicPublishingEnabled", "retailMediaEnabled", "digitalSignageEnabled"]) {
+    assert.equal(db.state.subscription[0][key], false, key);
+  }
+  const user = await db.user.findUnique({ where: { id: created.id } });
+  assert.equal(assertPreviewTesterState(user, { now: NOW }).accessMode, "ONLINE_DRAFT");
+  assert.equal(db.state.auditLog.at(-1).details.accessMode, "ONLINE_DRAFT");
+  const listed = await listPreviewTesters(db, { actorUserId: owner.id, policy });
+  assert.equal(listed[0].accessMode, "ONLINE_DRAFT");
+  const signedIn = await authenticatePreviewPassword(db, { policy, email: created.email, password: PASSWORD, secret: SECRET, now: NOW });
+  assert.equal(signedIn.activeOrganisationId, db.state.organisation[0].id);
+  assert.equal(db.state.session.at(-1).authMethod, "PREVIEW_PASSWORD");
+  assert.doesNotMatch(JSON.stringify(created), /passwordHash|tokenHash|Synthetic-test/);
+});
+
+test("draft mode never silently drops extra pillars or grants unsupported modes", async () => {
+  const db = database();
+  for (const pillars of [["RETAIL"], ["ONLINE", "RETAIL"], ["SCHOOL", "ONLINE"], ["ONLINE", "CORRECTIONS"]]) {
+    await rejects(create(db, { accessMode: "ONLINE_DRAFT", pillars }), "INVALID_ACCESS_MODE_PILLARS");
+  }
+  for (const accessMode of [null, false, {}, "ADMIN", "online_draft"]) {
+    await rejects(create(db, { accessMode, pillars: ["ONLINE"] }), "INVALID_ACCESS_MODE");
+  }
+  assert.equal(db.state.plan.length, 0);
+  assert.equal(db.state.organisation.length, 0);
+  assert.equal(db.state.auditLog.length, 0);
+});
+
+test("ordinary updates preserve the current draft mode and still revoke every session", async () => {
+  const db = database();
+  const created = await create(db, { accessMode: "ONLINE_DRAFT", pillars: ["ONLINE"] });
+  const originalPlanId = db.state.subscription[0].planId;
+  for (const authMethod of ["PREVIEW_PASSWORD", "PREVIEW_CODE", "PREVIEW_LOGIN_CODE", "PASSWORD"]) {
+    db.state.session.push({ id: authMethod, userId: created.id, authMethod, revokedAt: null });
+  }
+  db.state.passwordResetToken.push({ id: "reset", userId: created.id, usedAt: null });
+  const updated = await updatePreviewTester(db, { actorUserId: owner.id, policy, userId: created.id,
+    pillars: ["ONLINE"], enabled: false, now: NOW });
+  assert.equal(updated.accessMode, "ONLINE_DRAFT");
+  assert.equal(db.state.subscription[0].planId, originalPlanId);
+  assert.equal(db.state.plan.length, 1);
+  assert.ok(db.state.session.every((session) => session.revokedAt));
+  assert.ok(db.state.passwordResetToken[0].usedAt);
+  assert.equal(db.state.auditLog.at(-1).details.previousAccessMode, "ONLINE_DRAFT");
+  assert.equal(db.state.auditLog.at(-1).details.accessMode, "ONLINE_DRAFT");
+  const before = structuredClone(db.state);
+  await rejects(updatePreviewTester(db, { actorUserId: owner.id, policy, userId: created.id,
+    pillars: ["ONLINE", "SCHOOL"], enabled: true, now: NOW }), "INVALID_ACCESS_MODE_PILLARS");
+  assert.deepEqual(db.state, before);
+});
+
+test("only explicit validated mode changes switch plans, keeping the same isolated account", async () => {
+  const db = database();
+  const created = await create(db);
+  const originalUserId = created.id;
+  const originalOrganisationId = db.state.organisation[0].id;
+  await rejects(updatePreviewTester(db, { actorUserId: owner.id, policy, userId: created.id,
+    pillars: ["ONLINE", "SCHOOL"], enabled: true, accessMode: "ONLINE_DRAFT", now: NOW }), "INVALID_ACCESS_MODE_PILLARS");
+  const editable = await updatePreviewTester(db, { actorUserId: owner.id, policy, userId: created.id,
+    pillars: ["ONLINE"], enabled: true, accessMode: "ONLINE_DRAFT", now: NOW });
+  assert.equal(editable.accessMode, "ONLINE_DRAFT");
+  assert.equal(db.state.plan.length, 2);
+  assert.equal(db.state.subscription[0].planId, db.state.plan.find((plan) => plan.code === PREVIEW_ONLINE_DRAFT_PLAN_CODE).id);
+  assert.equal(db.state.user.length, 2);
+  assert.equal(db.state.organisation.length, 1);
+  assert.equal(db.state.organisation[0].id, originalOrganisationId);
+  assert.equal(editable.id, originalUserId);
+  const readonly = await updatePreviewTester(db, { actorUserId: owner.id, policy, userId: created.id,
+    pillars: ["SCHOOL", "ONLINE"], enabled: true, accessMode: "READ_ONLY", now: NOW });
+  assert.equal(readonly.accessMode, "READ_ONLY");
+  assert.equal(db.state.subscription[0].planId, db.state.plan.find((plan) => plan.code === PREVIEW_TESTER_PLAN.code).id);
+  assert.equal(db.state.plan.length, 2);
+  const user = await db.user.findUnique({ where: { id: created.id } });
+  assert.equal(assertPreviewTesterState(user, { now: NOW }).accessMode, "READ_ONLY");
+});
+
+test("a tampered draft plan or non-Online grant fails closed rather than enabling draft writes", async () => {
+  const db = database();
+  const created = await create(db, { accessMode: "ONLINE_DRAFT", pillars: ["ONLINE"] });
+  db.state.plan[0].storageLimitGb = 1;
+  await rejects(authenticatePreviewPassword(db, { policy, email: created.email, password: PASSWORD, secret: SECRET, now: NOW }), "INVALID_CREDENTIALS");
+  await rejects(updatePreviewTester(db, { actorUserId: owner.id, policy, userId: created.id,
+    pillars: ["ONLINE"], enabled: true, accessMode: "READ_ONLY", now: NOW }), "TARGET_UNAVAILABLE");
+  const listed = await listPreviewTesters(db, { actorUserId: owner.id, policy });
+  assert.equal(listed[0].accessMode, null);
+  await rejects(create(db, { accessMode: "ONLINE_DRAFT", pillars: ["ONLINE"], email: "another@example.test" }), "PREVIEW_PLAN_CHANGED");
+  db.state.plan[0].storageLimitGb = 0;
+  db.state.privatePreviewAccess[0].pillars = ["ONLINE", "SCHOOL"];
+  db.state.subscription[0].schoolRadioEnabled = true;
+  const user = await db.user.findUnique({ where: { id: created.id } });
+  assert.throws(() => assertPreviewTesterState(user, { now: NOW }), (error) => error.code === "TARGET_UNAVAILABLE");
+});
+
+test("failed mode-switch audit rolls back plan creation, subscription, grant and revocations", async () => {
+  const db = database();
+  const created = await create(db);
+  db.state.session.push({ id: "old-session", userId: created.id, authMethod: "PREVIEW_PASSWORD", revokedAt: null });
+  db.state.passwordResetToken.push({ id: "reset", userId: created.id, usedAt: null });
+  const before = structuredClone(db.state);
+  db.failNextAudit();
+  await rejects(updatePreviewTester(db, { actorUserId: owner.id, policy, userId: created.id,
+    pillars: ["ONLINE"], enabled: true, accessMode: "ONLINE_DRAFT", now: NOW }), "PREVIEW_UNAVAILABLE");
+  assert.deepEqual(db.state, before);
 });

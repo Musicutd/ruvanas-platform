@@ -27,6 +27,7 @@ export default async function SubscriberProgrammingPage() {
   if (!context.membership) redirect("/dashboard");
   const canManage = ["OWNER", "MANAGER"].includes(context.membership.role);
   const entitlements = resolveEntitlements(context.membership.organisation.subscription);
+  const sandboxDraftOnly = entitlements.sandboxDraftOnly;
   const onlineOnly = entitlements.onlineRadioEnabled && ![
     entitlements.retailRadioEnabled, entitlements.schoolRadioEnabled, entitlements.healthRadioEnabled,
     entitlements.faithRadioEnabled, entitlements.organisationsEnabled
@@ -36,7 +37,10 @@ export default async function SubscriberProgrammingPage() {
     select: { id: true, name: true },
     orderBy: { createdAt: "asc" }
   }) : null;
-  const tabs = [
+  const tabs = sandboxDraftOnly ? [
+    { id: "simple", label: "Draft playlists", description: "Save private genre and playlist settings; no audio is played" },
+    { id: "planner", label: "Weekly planner", description: "Save and preview a private test plan; publishing is blocked" }
+  ] : [
     { id: "simple", label: "AutoDJ & playlists", description: "Choose a channel, check its plan and save music settings" },
     { id: "planner", label: "Weekly planner", description: "Prepare a programme, preview seven days, then publish" },
     { id: "schedule", label: onlineOnly ? "Backup & playback" : "Locations & backup", description: onlineOnly ? "Detailed fallback music and playback settings" : "Location / zone plans and fallback music" },
@@ -59,7 +63,7 @@ export default async function SubscriberProgrammingPage() {
             <p className={styles.eyebrow}>AUTODJ & SCHEDULE</p>
             <h1>Music made easier to plan</h1>
             <p className={styles.intro}>
-              Choose your channel, set its automatic music, then plan recurring programmes in Weekly planner. Saving a draft never puts it on air; preview and publish are separate steps.
+              {sandboxDraftOnly ? "This isolated test workspace saves playlist settings and weekly programme drafts only. No audio is imported or broadcast; publishing, live controls and paid provisioning are blocked." : "Choose your channel, set its automatic music, then plan recurring programmes in Weekly planner. Saving a draft never puts it on air; preview and publish are separate steps."}
             </p>
           </div>
           <div className={styles.safetyNote}>
@@ -67,19 +71,19 @@ export default async function SubscriberProgrammingPage() {
             <span>Music selection and rights controls remain managed by Ruvanas.</span>
           </div>
         </div>
-        <WorkspaceTabs label="Programming tools" intro="Start with AutoDJ. Use Weekly planner when you want recurring programmes." tabs={tabs}>
+        <WorkspaceTabs label="Programming tools" intro={sandboxDraftOnly ? "Create a draft playlist first, then use it to plan your test week. No live audio is enabled." : "Start with AutoDJ. Use Weekly planner when you want recurring programmes."} tabs={tabs}>
           <div className={styles.workspace}><SimplePlaylistWorkspace availableProducts={enabledSubscriberProducts(entitlements).map(({ key, label }) => ({ key, label }))} /></div>
           <div className={styles.workspace}>
-            <div className={styles.notice} role="note">Weekly planner controls channel programmes. Location-specific music and backup settings remain in {onlineOnly ? "Backup & playback" : "Locations & backup"}. {onlineRadioStation ? <a href={`/dashboard/radio/schedule/${onlineRadioStation.id}`}>Open the station programme schedule</a> : null}</div>
+            <div className={styles.notice} role="note">{sandboxDraftOnly ? "Private draft planning only. A test playlist is a saved configuration, not playable audio. No plan can be published." : <>Weekly planner controls channel programmes. Location-specific music and backup settings remain in {onlineOnly ? "Backup & playback" : "Locations & backup"}.</>} {onlineRadioStation ? <a href={`/dashboard/radio/schedule/${onlineRadioStation.id}`}>Open the station programme schedule</a> : null}</div>
             <AdvancedSchedulerWorkspace />
           </div>
-          <div className={styles.workspace}><ProgrammingWorkspace organisationName={context.membership.organisation.name} onlineOnly={onlineOnly} /></div>
-          <div className={styles.workspace}>
+          {!sandboxDraftOnly ? <div className={styles.workspace}><ProgrammingWorkspace organisationName={context.membership.organisation.name} onlineOnly={onlineOnly} /></div> : null}
+          {!sandboxDraftOnly ? <div className={styles.workspace}>
             <AutoDjExpansionWorkspace /><SmartPlaylistsWorkspace /><RadioClocksWorkspace />
-          </div>
-          <div className={styles.workspace}><ExternalLiveWorkspace /><LiveFailoverWorkspace /><BrowserLiveStudioWorkspace /></div>
-          <div className={styles.workspace}><VoiceTrackingWorkspace /><AudioProcessingWorkspace /></div>
-          {canManage ? <div className={styles.workspace}><DjAccessWorkspace /></div> : null}
+          </div> : null}
+          {!sandboxDraftOnly ? <div className={styles.workspace}><ExternalLiveWorkspace /><LiveFailoverWorkspace /><BrowserLiveStudioWorkspace /></div> : null}
+          {!sandboxDraftOnly ? <div className={styles.workspace}><VoiceTrackingWorkspace /><AudioProcessingWorkspace /></div> : null}
+          {canManage && !sandboxDraftOnly ? <div className={styles.workspace}><DjAccessWorkspace /></div> : null}
         </WorkspaceTabs>
       </section>
     </main>

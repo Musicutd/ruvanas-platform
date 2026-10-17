@@ -13,6 +13,20 @@ export default async function OnlineRadioDashboard() {
   });
   const organisation = context.membership.organisation;
   const firstStation = organisation.stations.find((station) => station.status === "ACTIVE") || organisation.stations[0] || null;
+  if (entitlements.sandboxDraftOnly) return <ProductDashboard
+    eyebrow="ONLINE RADIO · PRIVATE EDITABLE TEST"
+    title="Your private station test workspace"
+    description="Create one private station, save draft playlist settings and preview a weekly programme plan. No broadcast, audio upload, public player or paid provisioning is enabled."
+    status="Draft-only testing · live broadcasting off" statusTone="attention"
+    primaryAction={{ href: firstStation ? `/stations/${firstStation.id}` : "/stations/new", label: firstStation ? "Open test station" : "Create test station" }}
+    metrics={[{ label: "Test stations", value: `${organisation.stations.length} / 1`, detail: "Private station identity only" },
+      { label: "Live broadcasting", value: "Off", detail: "No stream connection or listener delivery" },
+      { label: "Audio uploads", value: "Off", detail: "No audio storage is provisioned for this test mode" }]}
+    sections={[{ eyebrow: "TEST SAFELY", title: "Plan without going live", description: "All saved work stays inside this isolated test organisation.", actions: [
+      { href: firstStation ? `/stations/${firstStation.id}` : "/stations/new", label: firstStation ? "View test station" : "Create test station", description: "Name and describe a private pending-setup station." },
+      { href: "/dashboard/programming#workspace-simple", label: "Draft playlists", description: "Save genre and playlist settings without generating or playing audio." },
+      { href: firstStation ? `/dashboard/radio/schedule/${firstStation.id}` : "/stations/new", label: "Weekly planner", description: "Save draft versions and preview programme times. Publication stays blocked." }
+    ] }]} />;
   const listenStation = firstListenableOnlineStation(organisation.stations);
   const now = new Date();
   const [players, liveStreams, publicListeners, activeMusicModes, activeAutoDjPolicies] = await Promise.all([

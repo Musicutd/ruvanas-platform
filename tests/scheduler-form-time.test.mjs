@@ -145,7 +145,8 @@ test("scheduler UI keeps saved timezone, explicit preview meaning and publicatio
   assert.match(source, /Time zone is fixed for an existing schedule so a draft cannot retime the active programme/);
   assert.match(source, /not your computer/);
   assert.match(source, /preview of the saved plan, not a live audio or on-air status monitor/);
-  assert.match(source, /data\.canPublish && preview\.version\.status === "DRAFT"/);
+  assert.match(source, /const canPublish = data\?\.canPublish === true && !sandboxDraftOnly/);
+  assert.match(source, /canPublish && preview\.version\.status === "DRAFT"/);
   assert.match(source, /!preview\.readyToPublish \|\| busy !== ""/);
   assert.match(source, /conflictsAcknowledged: acknowledged/);
   assert.doesNotMatch(source, /getTimezoneOffset|new Date\(item\.startsAt\)\.toISOString/);
