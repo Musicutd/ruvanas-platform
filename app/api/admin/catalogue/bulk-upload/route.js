@@ -21,6 +21,7 @@ import {
 import { securityLog } from "@/lib/security-log";
 import { catalogueBulkFileSizeError } from "@/lib/catalogue-request-limits.mjs";
 import { acquireCatalogueBulkRequest, CatalogueBulkRequestError, readCatalogueBulkFormData } from "@/lib/catalogue-bulk-request.mjs";
+import { newCatalogueGenreLevel } from "@/lib/catalogue-new-genres.mjs";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -44,6 +45,8 @@ function rowResponse(row) {
     durationSeconds: row.durationSeconds,
     genreSource: row.genreSource,
     genres: row.genreNames,
+    newGenres: row.newGenreNames.map(name => ({ name, minimumCatalogueLevel: newCatalogueGenreLevel(name) })),
+    importStatus: row.metadata?.status || null,
     isExplicit: row.isExplicit,
     fileName: row.file?.baseName || null,
     notes: row.notes,
@@ -93,12 +96,13 @@ export async function POST(request) {
     if (!settings.ok) return NextResponse.json({ error: settings.error }, { status: 400 });
 
     const genres = await prisma.mediaGenre.findMany({
-      where: { active: true },
-      select: { id: true, name: true, slug: true },
+      // Include unavailable identities so an inactive/rejected genre cannot be
+      // mistaken for a missing name and recreated through a CSV upload.
+      select: { id: true, name: true, slug: true, normalizedKey: true, active: true, providerReviewStatus: true },
       orderBy: { name: "asc" }
     });
     const [manifestRows, audioFiles] = await Promise.all([
-      parseCatalogueManifest({ buffer: Buffer.from(await manifest.arrayBuffer()), fileName: manifest.name, genres }),
+      parseCatalogueManifest({ buffer: Buffer.from(await manifest.arrayBuffer()), fileName: manifest.name, genres, allowNewGenres: true }),
       extractCatalogueArchive(Buffer.from(await archive.arrayBuffer()))
     ]);
     const rows = matchManifestRowsToAudio(manifestRows, audioFiles);
@@ -155,12 +159,14 @@ export async function POST(request) {
           fileName: row.file.baseName,
           metadata: row.metadata,
           actorUserId: access.user.id,
+          newGenreNames: row.newGenreNames,
           inspected: inspected[index],
           auditContext: { bulkImportId: batchId, spreadsheetRow: row.sheetRow, manifestName: manifest.name, archiveName: archive.name }
         });
         imported.push({ sheetRow: row.sheetRow, trackId: stored.track.id, artist: stored.track.artist, title: stored.track.title });
       } catch (error) {
-        failures.push({ sheetRow: row.sheetRow, artist: row.artist, title: row.title, error: error instanceof CatalogueTrackStorageError ? error.message : "The track could not be stored." });
+        const genreError = ["CATALOGUE_GENRE_UNAVAILABLE", "CATALOGUE_GENRE_CONFLICT", "CATALOGUE_GENRE_INVALID", "CATALOGUE_GENRE_AMBIGUOUS"].includes(error?.code);
+        failures.push({ sheetRow: row.sheetRow, artist: row.artist, title: row.title, error: error instanceof CatalogueTrackStorageError || genreError ? error.message : "The track could not be stored." });
       }
     }
 

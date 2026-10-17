@@ -150,7 +150,7 @@ export default function CatalogueUploadForm({ genres }) {
             <div role="status" style={styles.metadataStatus}>
               Matched spreadsheet row {metadataPreview.sheetRow}. Check the filled details before uploading.
               {metadataPreview.newGenreNames.length ? (
-                <span> New genre{metadataPreview.newGenreNames.length > 1 ? "s" : ""}: {metadataPreview.newGenreNames.join(", ")}. These will be added to the catalogue at the Premium level when you upload; this track will stay in Draft for review.</span>
+                <span> New genre{metadataPreview.newGenreNames.length > 1 ? "s" : ""}: {metadataPreview.newGenreNames.join(", ")}. These will be added when you upload, using the existing genre-tier rules (custom genres default to Premium); this track will stay in Draft for review.</span>
               ) : null}
               <span> Rights, territories and licensed product use are not taken from the spreadsheet. Confirm those yourself.</span>
             </div>
