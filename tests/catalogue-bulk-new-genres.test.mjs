@@ -10,13 +10,17 @@ const settings = parseCatalogueBatchSettings({rightsHolder:"Synthetic rights hol
 const csv = "File,Artist,Title,BPM,Genre\ndance.mp3,Synthetic artist,Dance example,125,Dance\npop.mp3,Synthetic artist,Pop example,120,Pop\n";
 const parse = (text, genres=[pop], allowNewGenres=true) => parseCatalogueManifest({buffer:Buffer.from(text),fileName:"synthetic.csv",genres,allowNewGenres});
 
-test("missing Dance is proposed without blocking, and kept Draft rather than widening publication", async () => {
+test("missing Dance is proposed without blocking and honors the owner's explicit readiness choice", async () => {
   const rows = await parse(csv);
   assert.deepEqual(rows.map(r=>r.errors),[[],[]]);
   assert.deepEqual(rows[0].newGenreNames,["Dance"]);
   assert.deepEqual(rows[0].genreIds,[]);
-  assert.equal(metadataForBulkRow(rows[0],settings).data.status,"DRAFT");
+  assert.equal(metadataForBulkRow(rows[0],settings).data.status,"READY");
   assert.equal(metadataForBulkRow(rows[1],settings).data.status,"READY");
+  for (const row of rows) {
+    assert.equal(metadataForBulkRow(row,{...settings,publishNow:false}).data.status,"DRAFT");
+    assert.equal(metadataForBulkRow(row,{...settings,publishNow:undefined}).data.status,"DRAFT");
+  }
   assert.equal(newCatalogueGenreLevel("Dance"),"FOCUSED");
 });
 
@@ -86,10 +90,11 @@ function routeHarness({role="SUPER_ADMIN",genreRows=[pop],existingKeys=[],failGe
     readCatalogueBulkFormData:async request=>request.formData(),newCatalogueGenreLevel,
   };
   const {POST} = new Function(...Object.keys(dependencies),`${routeSource}\nreturn {POST};`)(...Object.values(dependencies));
-  function request(mode="validate",rights=true) {
+  function request(mode="validate",rights=true,publishNow=true) {
     const data = new FormData();
     data.set("archive",new File(["synthetic zip"],"synthetic.zip")); data.set("manifest",new File([csv],"synthetic.csv"));data.set("mode",mode);
     for (const [key,value] of Object.entries(settings)) if(key!=="permittedUses")data.set(key,String(key==="rightsConfirmed"?rights:value));
+    if (publishNow == null) data.delete("publishNow"); else data.set("publishNow",String(publishNow));
     data.append("permittedUses","ONLINE_RADIO");return {formData:async()=>data};
   }
   return {POST,request,calls};
@@ -100,7 +105,7 @@ test("actual bulk Check files proposes Dance and performs zero import/audit writ
   assert.equal(result.status,200); assert.equal(result.body.preview.ready,true);
   assert.equal(result.body.preview.summary.matchedTracks,2);
   assert.deepEqual(result.body.preview.rows[0].newGenres,[{name:"Dance",minimumCatalogueLevel:"FOCUSED"}]);
-  assert.equal(result.body.preview.rows[0].importStatus,"DRAFT");
+  assert.equal(result.body.preview.rows[0].importStatus,"READY");
   assert.equal(h.calls.stored.length,0);assert.equal(h.calls.audits,0);assert.equal(h.calls.released,1);
 });
 
@@ -108,9 +113,14 @@ test("actual deliberate Import passes new names only to the existing storage tra
   const h=routeHarness();const result=await h.POST(h.request("import"));
   assert.equal(result.status,201);assert.equal(h.calls.stored.length,2);
   assert.deepEqual(h.calls.stored[0].newGenreNames,["Dance"]);
-  assert.equal(h.calls.stored[0].metadata.status,"DRAFT");
+  assert.equal(h.calls.stored[0].metadata.status,"READY");
   assert.equal(h.calls.stored[1].metadata.status,"READY");
   assert.equal(h.calls.audits,1);
+  for (const choice of [false,null]) {
+    const draft = routeHarness(); const draftResult = await draft.POST(draft.request("import",true,choice));
+    assert.equal(draftResult.status,201);
+    assert.ok(draft.calls.stored.every(row=>row.metadata.status==="DRAFT"));
+  }
 });
 
 test("actual Import still refuses existing checksums, blocked genres and unconfirmed rights",async()=>{
