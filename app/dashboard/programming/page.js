@@ -37,9 +37,10 @@ export default async function SubscriberProgrammingPage() {
     orderBy: { createdAt: "asc" }
   }) : null;
   const tabs = [
-    { id: "simple", label: "Music & playlists", description: "Start Non-Stop music; add playlists when ready" },
-    { id: "schedule", label: onlineOnly ? "More AutoDJ settings" : "Weekly plan", description: onlineOnly ? "Backup music and detailed playback settings" : "See now and plan the week" },
-    { id: "automation", label: "Advanced tools", description: "Clocks, rules and detailed schedules" },
+    { id: "simple", label: "AutoDJ & playlists", description: "Choose a channel, check its plan and save music settings" },
+    { id: "planner", label: "Weekly planner", description: "Prepare a programme, preview seven days, then publish" },
+    { id: "schedule", label: onlineOnly ? "Backup & playback" : "Locations & backup", description: onlineOnly ? "Detailed fallback music and playback settings" : "Location / zone plans and fallback music" },
+    { id: "automation", label: "Advanced tools", description: "Music rules, clocks and generated playlists" },
     { id: "live", label: "Live radio", description: "Studio, sources and failover" },
     { id: "production", label: "Production", description: "Voice tracks and audio processing" },
     ...(canManage ? [{ id: "access", label: "DJ access", description: "Controlled presenter access" }] : [])
@@ -55,10 +56,10 @@ export default async function SubscriberProgrammingPage() {
       <section className={styles.shell} id="main-content">
         <div className={styles.hero}>
           <div>
-            <p className={styles.eyebrow}>MUSIC & PLAYLISTS</p>
-            <h1>{onlineOnly ? "Get your station playing" : "Choose music for your service"}</h1>
+            <p className={styles.eyebrow}>AUTODJ & SCHEDULE</p>
+            <h1>Music made easier to plan</h1>
             <p className={styles.intro}>
-              {onlineOnly ? "Start with approved Non-Stop music. Playlists and timed shows are optional, and Ruvanas handles the stream connection." : `Start with approved Non-Stop music for ${context.membership.organisation.name}. Add playlists or a weekly plan when you need them.`}
+              Choose your channel, set its automatic music, then plan recurring programmes in Weekly planner. Saving a draft never puts it on air; preview and publish are separate steps.
             </p>
           </div>
           <div className={styles.safetyNote}>
@@ -66,12 +67,15 @@ export default async function SubscriberProgrammingPage() {
             <span>Music selection and rights controls remain managed by Ruvanas.</span>
           </div>
         </div>
-        <WorkspaceTabs label="Programming tools" intro="Open only the part of radio programming you need right now." tabs={tabs}>
+        <WorkspaceTabs label="Programming tools" intro="Start with AutoDJ. Use Weekly planner when you want recurring programmes." tabs={tabs}>
           <div className={styles.workspace}><SimplePlaylistWorkspace availableProducts={enabledSubscriberProducts(entitlements).map(({ key, label }) => ({ key, label }))} /></div>
+          <div className={styles.workspace}>
+            <div className={styles.notice} role="note">Weekly planner controls channel programmes. Location-specific music and backup settings remain in {onlineOnly ? "Backup & playback" : "Locations & backup"}. {onlineRadioStation ? <a href={`/dashboard/radio/schedule/${onlineRadioStation.id}`}>Open the station programme schedule</a> : null}</div>
+            <AdvancedSchedulerWorkspace />
+          </div>
           <div className={styles.workspace}><ProgrammingWorkspace organisationName={context.membership.organisation.name} onlineOnly={onlineOnly} /></div>
           <div className={styles.workspace}>
-            {onlineRadioStation ? <div className={styles.notice} role="note">Plan recurring station shows? <a href={`/dashboard/radio/schedule/${onlineRadioStation.id}`}>Open the station programme schedule</a>. Everyday Non-Stop music is managed in Music &amp; playlists.</div> : null}
-            <AutoDjExpansionWorkspace /><SmartPlaylistsWorkspace /><RadioClocksWorkspace /><AdvancedSchedulerWorkspace />
+            <AutoDjExpansionWorkspace /><SmartPlaylistsWorkspace /><RadioClocksWorkspace />
           </div>
           <div className={styles.workspace}><ExternalLiveWorkspace /><LiveFailoverWorkspace /><BrowserLiveStudioWorkspace /></div>
           <div className={styles.workspace}><VoiceTrackingWorkspace /><AudioProcessingWorkspace /></div>

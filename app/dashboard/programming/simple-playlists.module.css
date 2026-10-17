@@ -29,6 +29,13 @@
 .cataloguePreview { display: grid; gap: 6px; border: 1px solid var(--rv-border); border-radius: 11px; padding: 14px 16px; background: var(--rv-surface-muted); line-height: 1.45; }
 .cataloguePreview strong { color: var(--rv-accent-text); }
 .cataloguePreview small { color: var(--rv-text-muted); }
+.channelMeta { flex: 1 1 220px; display: grid; gap: 7px; align-content: start; }
+.channelMeta span, .statusCard small { color: var(--rv-text-muted); font-size: 13px; line-height: 1.5; }
+.channelMeta button { justify-self: start; }
+.statusGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.statusCard { display: grid; gap: 9px; align-content: start; border: 1px solid var(--rv-border); border-radius: 12px; padding: 16px; background: var(--rv-surface-muted); overflow-wrap: anywhere; }
+.statusCard h3 { color: var(--rv-text-muted); font-size: 13px; font-weight: 700; }
+.statusCard > strong { font-size: 17px; }
 .toggle { display: flex; align-items: center; gap: 10px; font-size: 18px; }
 .toggle input { width: 22px; height: 22px; }
 .genreGrid { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -54,3 +61,5 @@
 .success { color: var(--rv-success-text); background: var(--rv-success-bg); }
 .error { color: var(--rv-error-text); background: var(--rv-error-bg); }
 @media (max-width: 540px) { .panel { padding: 16px; } .taskDetails > summary { padding: 16px; } .taskDetails > .panel { margin: 0 8px 8px; } .row { display: grid; } .cards, .methods { grid-template-columns: 1fr; } }
+@media (max-width: 850px) { .statusGrid { grid-template-columns: 1fr; } }
+@media (prefers-reduced-motion: reduce) { .layout { scroll-behavior: auto; } }

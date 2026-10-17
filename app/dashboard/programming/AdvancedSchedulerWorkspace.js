@@ -2,26 +2,17 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { scopeStationScheduleData } from "@/lib/station-schedule-scope.mjs";
+import { schedulerFormTimezone, schedulerLocalInput, schedulerPayloadItem, schedulerPreviewDays } from "@/lib/scheduler-form-time.mjs";
 import styles from "./programming.module.css";
+import previewStyles from "./advanced-scheduler-preview.module.css";
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-const SOURCES = [["RADIO_CLOCK", "Radio Clock"], ["MUSIC_MODE", "Music Mode"], ["SHOW_RUNDOWN", "Show Rundown"]];
-const EMPTY_ITEM = { label: "Scheduled programme", recurrence: "WEEKLY", sourceType: "RADIO_CLOCK", weekday: 1, startTime: "09:00", startsAt: "", durationMinutes: 60, priority: 50, sourceId: "" };
+const SOURCES = [["MUSIC_MODE", "Music mix"], ["RADIO_CLOCK", "Radio clock"], ["SHOW_RUNDOWN", "Approved show"]];
+const EMPTY_ITEM = { label: "Music programme", recurrence: "WEEKLY", sourceType: "MUSIC_MODE", weekday: 1, startTime: "09:00", startsAt: "", durationMinutes: 60, priority: 50, sourceId: "" };
 const EMPTY_FORM = { channelId: "", name: "", timezone: "Europe/Malta", items: [{ ...EMPTY_ITEM }] };
 
 function sourceOptions(sources, type) {
   return { RADIO_CLOCK: sources?.radioClocks, MUSIC_MODE: sources?.musicModes, SHOW_RUNDOWN: sources?.rundowns }[type] || [];
-}
-
-function localInput(iso) {
-  if (!iso) return "";
-  const date = new Date(iso);
-  const offset = date.getTimezoneOffset() * 60_000;
-  return new Date(date.valueOf() - offset).toISOString().slice(0, 16);
-}
-
-function payloadItem(item) {
-  return { ...item, startsAt: item.recurrence === "ONE_OFF" && item.startsAt ? new Date(item.startsAt).toISOString() : null };
 }
 
 export default function AdvancedSchedulerWorkspace({ stationId = null }) {
@@ -38,24 +29,31 @@ export default function AdvancedSchedulerWorkspace({ stationId = null }) {
     try {
       const response = await fetch("/api/programming/advanced-scheduler", { cache: "no-store" });
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || "Unable to load the Advanced Scheduler.");
+      if (!response.ok) throw new Error(payload.error || "Unable to load the weekly planner.");
       const scoped = scopeStationScheduleData(payload, stationId);
       const scopedChannels = scoped.sources.channels;
       setData(scoped);
-      if (stationId) setForm((current) => ({
-        ...current,
-        channelId: scopedChannels.some((channel) => channel.id === current.channelId) ? current.channelId : scopedChannels[0]?.id || "",
-        items: current.items.map((item) => item.sourceType === "RADIO_CLOCK" && !item.sourceId ? { ...item, sourceType: "MUSIC_MODE", label: "Music rotation" } : item)
-      }));
+      if (stationId) setForm((current) => {
+        const channel = scopedChannels.find((channel) => channel.id === current.channelId) || scopedChannels[0];
+        return {
+          ...current,
+          channelId: channel?.id || "",
+          timezone: current.channelId === channel?.id ? current.timezone : schedulerFormTimezone(channel, EMPTY_FORM.timezone),
+          items: current.items.map((item) => item.sourceType === "RADIO_CLOCK" && !item.sourceId ? { ...item, sourceType: "MUSIC_MODE", label: "Music rotation" } : item)
+        };
+      });
     } catch (loadError) { setError(loadError.message); } finally { setBusy(""); }
   }, [stationId]);
 
   useEffect(() => { load(); }, [load]);
   const schedules = data?.schedules || [];
   const configuredChannelIds = useMemo(() => new Set(schedules.map((schedule) => schedule.channel.id)), [schedules]);
+  const previewDays = useMemo(() => preview ? schedulerPreviewDays(preview) : [], [preview]);
+  const selectedChannel = data?.sources?.channels?.find((channel) => channel.id === form.channelId);
 
   function resetForm() {
-    setForm({ ...EMPTY_FORM, channelId: stationId ? data?.sources?.channels?.[0]?.id || "" : "", items: [{ ...EMPTY_ITEM, sourceType: stationId ? "MUSIC_MODE" : EMPTY_ITEM.sourceType, label: stationId ? "Music rotation" : EMPTY_ITEM.label }] });
+    const channel = stationId ? data?.sources?.channels?.[0] : null;
+    setForm({ ...EMPTY_FORM, channelId: channel?.id || "", timezone: schedulerFormTimezone(channel, EMPTY_FORM.timezone), items: [{ ...EMPTY_ITEM, sourceType: stationId ? "MUSIC_MODE" : EMPTY_ITEM.sourceType, label: stationId ? "Music rotation" : EMPTY_ITEM.label }] });
     setEditingId(null); setPreview(null); setAcknowledged(false); setError(""); setNotice("");
   }
 
@@ -66,7 +64,7 @@ export default function AdvancedSchedulerWorkspace({ stationId = null }) {
       channelId: schedule.channel.id,
       name: schedule.name,
       timezone: schedule.timezone,
-      items: version.items.map((item) => ({ label: item.label, recurrence: item.recurrence, sourceType: item.sourceType, weekday: item.weekday ?? 1, startTime: item.startTime || "09:00", startsAt: localInput(item.startsAt), durationMinutes: item.durationMinutes, priority: item.priority, sourceId: item.sourceId }))
+      items: version.items.map((item) => ({ label: item.label, recurrence: item.recurrence, sourceType: item.sourceType, weekday: item.weekday ?? 1, startTime: item.startTime || "09:00", startsAt: schedulerLocalInput(item.startsAt, schedule.timezone), originalStartsAt: item.startsAt, originalTimezone: schedule.timezone, durationMinutes: item.durationMinutes, priority: item.priority, sourceId: item.sourceId }))
     });
     setPreview(null); setAcknowledged(false); setError(""); setNotice(`Preparing version ${schedule.latestVersion + 1}. The active version stays live until you publish.`);
   }
@@ -83,7 +81,7 @@ export default function AdvancedSchedulerWorkspace({ stationId = null }) {
   async function save(event) {
     event.preventDefault(); setBusy("save"); setError(""); setNotice(""); setPreview(null); setAcknowledged(false);
     try {
-      const body = { ...form, items: form.items.map(payloadItem) };
+      const body = { ...form, items: form.items.map((item) => schedulerPayloadItem(item, form.timezone)) };
       const response = await fetch(editingId ? `/api/programming/advanced-scheduler/${editingId}` : "/api/programming/advanced-scheduler", { method: editingId ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Unable to save the schedule draft.");
@@ -99,7 +97,7 @@ export default function AdvancedSchedulerWorkspace({ stationId = null }) {
       const response = await fetch(`/api/programming/advanced-scheduler/${scheduleId}/preview?versionId=${encodeURIComponent(versionId)}&days=7`, { cache: "no-store" });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Unable to compile this schedule.");
-      setPreview(payload.preview); setEditingId(scheduleId);
+      setPreview(payload.preview);
     } catch (previewError) { setError(previewError.message); } finally { setBusy(""); }
   }
 
@@ -123,11 +121,11 @@ export default function AdvancedSchedulerWorkspace({ stationId = null }) {
     } catch (archiveError) { setError(archiveError.message); } finally { setBusy(""); }
   }
 
-  if (busy === "load" && !data) return <section className={styles.panel}><div className={styles.loading}>Loading Advanced Scheduler…</div></section>;
+  if (busy === "load" && !data) return <section className={styles.panel}><div className={styles.loading}>Loading weekly planner…</div></section>;
 
   return <section className={styles.panel} aria-labelledby="advanced-scheduler-title">
-    <div className={styles.sectionHeading}><div><p className={styles.kicker}>{stationId ? "STATION SCHEDULE" : "ADVANCED SCHEDULER"}</p><h2 id="advanced-scheduler-title">{stationId ? "Plan your station channel" : "Build the channel day"}</h2></div><span className={styles.count}>{schedules.length} channel{schedules.length === 1 ? "" : "s"}</span></div>
-    <p className={styles.panelIntro}>Assign published Radio Clocks, playable Music Modes and approved Show Rundowns directly to {stationId ? "this station's channel" : "a channel"}. Weekly and one-off programmes are compiled in the channel timezone before publication. Save a draft first; publishing is a separate action.</p>
+    <div className={styles.sectionHeading}><div><p className={styles.kicker}>WEEKLY PLANNER</p><h2 id="advanced-scheduler-title">{stationId ? "Plan your station week" : "Weekly programme planner"}</h2></div><span className={styles.count}>{schedules.length} channel{schedules.length === 1 ? "" : "s"}</span></div>
+    <p className={styles.panelIntro}>Choose an approved music mix, a published radio clock or an approved show for {stationId ? "this station's channel" : "a channel"}. Set its day, start time and length, then review the saved week in the planner time zone. Save a draft first; publishing is a separate action.</p>
     {error ? <div className={styles.error} role="alert">{error}</div> : null}{notice ? <div className={styles.notice} role="status">{notice}</div> : null}
 
     {!data?.sources?.channels?.length && stationId ? <div className={styles.emptyState}>No active channel is prepared for this station. Ask Ruvanas Super Admin to prepare the Online Radio channel in station setup first.</div> : null}
@@ -139,16 +137,29 @@ export default function AdvancedSchedulerWorkspace({ stationId = null }) {
     </article>; })}</div> : <div className={styles.emptyState}>No channel schedules yet. Choose an active Online Radio channel and build its first governed week.</div>}
 
     {data?.canAuthor && (!stationId || data.sources?.channels?.length) ? <form className={styles.schedulerForm} onSubmit={save}><div className={styles.smartFormHeader}><div><h3>{editingId ? "Prepare the next schedule version" : "Create a channel schedule"}</h3><p>Saving never changes live playback. Publication is a separate owner or manager action.</p></div>{editingId ? <button type="button" className={styles.secondaryButton} onClick={resetForm}>Create another</button> : null}</div>
-      <div className={styles.formGrid}><label><span>{stationId ? "Station channel" : "Channel"}</span><select required disabled={Boolean(editingId)} value={form.channelId} onChange={(event) => setForm({ ...form, channelId: event.target.value })}><option value="">Choose channel</option>{(data.sources?.channels || []).map((channel) => <option key={channel.id} value={channel.id} disabled={!editingId && configuredChannelIds.has(channel.id)}>{channel.name}{channel.configured ? " · configured" : ""}</option>)}</select></label><label><span>Schedule name</span><input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="e.g. Ruvanas Radio weekly grid" /></label><label><span>Channel timezone</span><input required value={form.timezone} onChange={(event) => setForm({ ...form, timezone: event.target.value })} placeholder="Europe/Malta" /></label></div>
+      <div className={styles.formGrid}><label><span>{stationId ? "Station channel" : "Channel"}</span><select required disabled={Boolean(editingId)} value={form.channelId} onChange={(event) => { const channel = data.sources.channels.find((channel) => channel.id === event.target.value); setForm({ ...form, channelId: event.target.value, timezone: schedulerFormTimezone(channel, EMPTY_FORM.timezone) }); }}><option value="">Choose channel</option>{(data.sources?.channels || []).map((channel) => <option key={channel.id} value={channel.id} disabled={!editingId && configuredChannelIds.has(channel.id)}>{channel.name}{channel.configured ? " · configured" : ""}</option>)}</select></label><label><span>Schedule name</span><input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="e.g. Ruvanas Radio weekly grid" /></label><label><span>Planner time zone</span><input required readOnly={Boolean(editingId)} value={form.timezone} onChange={(event) => setForm({ ...form, timezone: event.target.value })} placeholder="Europe/Malta" aria-describedby="scheduler-timezone-help" /></label></div>
+      <p className={previewStyles.timeHelp} id="scheduler-timezone-help">{selectedChannel ? `${selectedChannel.name} · ` : ""}All programme times below use the planner time zone above, not your computer&apos;s clock. Check it before saving. One-off times that are missing or repeated when clocks change must use a different time; an unchanged saved instant is preserved.</p>
+      {editingId ? <p className={previewStyles.timeHelp}>Time zone is fixed for an existing schedule so a draft cannot retime the active programme.</p> : null}
       <div className={styles.slotHeader}><h3>Programmes</h3><button type="button" className={styles.secondaryButton} disabled={form.items.length >= 200} onClick={() => setForm({ ...form, items: [...form.items, { ...EMPTY_ITEM, label: `Programme ${form.items.length + 1}` }] })}>Add programme</button></div>
-      <div className={styles.schedulerItems}>{form.items.map((item, index) => <div className={styles.schedulerItem} key={index}><span className={styles.clockPosition}>{index + 1}</span><label><span>Programme label</span><input required value={item.label} onChange={(event) => updateItem(index, "label", event.target.value)} /></label><label><span>Source type</span><select value={item.sourceType} onChange={(event) => updateItem(index, "sourceType", event.target.value)}>{SOURCES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className={styles.schedulerSource}><span>Approved source</span><select required value={item.sourceId} onChange={(event) => updateItem(index, "sourceId", event.target.value)}><option value="">Choose source</option>{sourceOptions(data.sources, item.sourceType).map((source) => <option key={source.id} value={source.id}>{source.name}</option>)}</select></label><label><span>Recurrence</span><select value={item.recurrence} onChange={(event) => updateItem(index, "recurrence", event.target.value)}><option value="WEEKLY">Every week</option><option value="ONE_OFF">One-off</option></select></label>{item.recurrence === "WEEKLY" ? <><label><span>Day</span><select value={item.weekday} onChange={(event) => updateItem(index, "weekday", Number(event.target.value))}>{DAYS.map((day, weekday) => <option key={day} value={weekday}>{day}</option>)}</select></label><label><span>Local start</span><input required type="time" value={item.startTime} onChange={(event) => updateItem(index, "startTime", event.target.value)} /></label></> : <label className={styles.oneOffTime}><span>One-off start</span><input required type="datetime-local" value={item.startsAt} onChange={(event) => updateItem(index, "startsAt", event.target.value)} /></label>}<label><span>Minutes</span><input type="number" min="1" max="1440" disabled={item.sourceType === "RADIO_CLOCK"} value={item.durationMinutes} onChange={(event) => updateItem(index, "durationMinutes", event.target.value)} /></label><label><span>Priority</span><input type="number" min="0" max="100" value={item.priority} onChange={(event) => updateItem(index, "priority", event.target.value)} /></label><button type="button" className={styles.removeButton} disabled={form.items.length === 1} onClick={() => setForm({ ...form, items: form.items.filter((_, itemIndex) => itemIndex !== index) })}>Remove</button></div>)}</div>
+      <div className={styles.schedulerItems}>{form.items.map((item, index) => <div className={styles.schedulerItem} key={index}>
+        <span className={styles.clockPosition}>{index + 1}</span>
+        <label><span>Programme name</span><input required value={item.label} onChange={(event) => updateItem(index, "label", event.target.value)} /></label>
+        <label><span>Play from</span><select value={item.sourceType} onChange={(event) => updateItem(index, "sourceType", event.target.value)}>{SOURCES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+        <label className={styles.schedulerSource}><span>Approved music or show</span><select required value={item.sourceId} onChange={(event) => updateItem(index, "sourceId", event.target.value)}><option value="">Choose music or show</option>{sourceOptions(data.sources, item.sourceType).map((source) => <option key={source.id} value={source.id}>{source.name}</option>)}</select></label>
+        <label><span>Repeat</span><select value={item.recurrence} onChange={(event) => updateItem(index, "recurrence", event.target.value)}><option value="WEEKLY">Every week</option><option value="ONE_OFF">One time only</option></select></label>
+        {item.recurrence === "WEEKLY" ? <><label><span>Day</span><select value={item.weekday} onChange={(event) => updateItem(index, "weekday", Number(event.target.value))}>{DAYS.map((day, weekday) => <option key={day} value={weekday}>{day}</option>)}</select></label><label><span>Start time</span><input required type="time" value={item.startTime} onChange={(event) => updateItem(index, "startTime", event.target.value)} /></label></> : <label className={styles.oneOffTime}><span>Start date &amp; time</span><input required type="datetime-local" value={item.startsAt} onChange={(event) => updateItem(index, "startsAt", event.target.value)} /></label>}
+        <label><span>Length (minutes)</span><input type="number" min="1" max="1440" disabled={item.sourceType === "RADIO_CLOCK"} value={item.durationMinutes} onChange={(event) => updateItem(index, "durationMinutes", event.target.value)} /></label>
+        <button type="button" className={styles.removeButton} disabled={form.items.length === 1} onClick={() => setForm({ ...form, items: form.items.filter((_, itemIndex) => itemIndex !== index) })}>Remove</button>
+        <details className={previewStyles.priority}><summary>Advanced: overlap priority</summary><p>A higher number wins when programmes overlap. Equal priorities block publishing; different-priority overrides require review before publishing.</p><label><span>Overlap priority</span><input type="number" min="0" max="100" value={item.priority} onChange={(event) => updateItem(index, "priority", event.target.value)} /></label></details>
+      </div>)}</div>
       <div className={styles.actionBar}><span className={styles.safeClaim}>Draft → timezone preview → controlled publication</span><button className={styles.primaryButton} disabled={busy !== ""}>{busy === "save" ? "Saving…" : editingId ? "Save next version" : "Create schedule draft"}</button></div>
     </form> : !data?.canAuthor ? <div className={styles.readOnlyMessage}>You can inspect channel schedules. An owner, manager or content editor can prepare changes.</div> : null}
 
     {preview ? <div className={styles.schedulerPreview}><div className={styles.sectionHeading}><div><p className={styles.kicker}>SEVEN-DAY COMPILED PREVIEW</p><h3>{preview.schedule.name} · version {preview.version.version}</h3></div><span className={preview.readyToPublish ? styles.publishedBadge : styles.draftBadge}>{preview.readyToPublish ? "READY" : "CONFLICTS"}</span></div>
+      <div className={previewStyles.context}><strong>{preview.schedule.channel?.name || "Selected channel"} · {preview.schedule.timezone}</strong><span>This is a preview of the saved plan, not a live audio or on-air status monitor. Unsaved form changes are not included. Publishing is a separate action.</span><small>Empty periods show no saved programme. AutoDJ may cover those gaps when it is enabled and approved music is available.</small></div>
       {preview.compatibilityWarnings.map((warning) => <div className={styles.compatibilityWarning} key={warning}>{warning}</div>)}
       {preview.conflicts.map((conflict, index) => <div className={conflict.severity === "BLOCKING" ? styles.blockingConflict : styles.overrideConflict} key={`${conflict.leftPosition}-${conflict.rightPosition}-${index}`}>{conflict.severity === "BLOCKING" ? "Blocking overlap" : `Priority override: programme ${conflict.winnerPosition + 1} wins`} · programmes {conflict.leftPosition + 1} and {conflict.rightPosition + 1}</div>)}
-      <div className={styles.compiledList}>{preview.occurrences.slice(0, 100).map((occurrence, index) => <div className={styles.compiledItem} key={`${occurrence.position}-${occurrence.startsAt}-${index}`}><time>{new Date(occurrence.startsAt).toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</time><div><strong>{occurrence.label}</strong><span>{occurrence.sourceType.replaceAll("_", " ")} · {occurrence.source.name}</span></div><small>{occurrence.durationMinutes || Math.round((new Date(occurrence.endsAt) - new Date(occurrence.startsAt)) / 60000)} min · priority {occurrence.priority}</small></div>)}</div>
+      <div className={previewStyles.days} aria-label={`Saved seven-day plan in ${preview.schedule.timezone}`}>{previewDays.map((day) => <section className={previewStyles.day} key={day.date}><div className={previewStyles.dayHeader}><h4>{day.label}</h4><span>{day.items.length ? `${day.items.length} programme${day.items.length === 1 ? "" : "s"}` : "No saved programmes"}</span></div>{day.items.length ? <ol className={previewStyles.programmes}>{day.items.map((occurrence, index) => <li className={previewStyles.programme} key={`${occurrence.position}-${occurrence.startsAt}-${index}`}><time>{occurrence.startLabel} – {occurrence.endLabel}{occurrence.continuesAfterDay ? " · continues" : ""}</time><div><strong>{occurrence.label}</strong><p>{occurrence.source.name}</p><details><summary>Source &amp; priority</summary><span>{SOURCES.find(([value]) => value === occurrence.sourceType)?.[1] || occurrence.sourceType.replaceAll("_", " ")} · {Math.round((new Date(occurrence.endsAt) - new Date(occurrence.startsAt)) / 60000)} min · priority {occurrence.priority}</span></details></div></li>)}</ol> : <p className={previewStyles.empty}>No programme is saved for this day. Check automatic music if you want gap coverage.</p>}</section>)}</div>
       {preview.conflicts.some((conflict) => conflict.severity === "CONTROLLED_OVERRIDE") ? <label className={styles.reviewCheck}><input type="checkbox" checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)} /><span>I reviewed the priority overrides and confirm that the higher-priority programmes should win.</span></label> : null}
       {data.canPublish && preview.version.status === "DRAFT" ? <div className={styles.actionBar}><button type="button" className={styles.primaryButton} disabled={!preview.readyToPublish || busy !== "" || (preview.conflicts.some((conflict) => conflict.severity === "CONTROLLED_OVERRIDE") && !acknowledged)} onClick={() => publish(preview.schedule.id, preview.version.id)}>Publish version {preview.version.version}</button></div> : null}
     </div> : null}

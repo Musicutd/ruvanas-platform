@@ -14,14 +14,15 @@ export async function PUT(request, { params }) {
     if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 });
     const { scheduleId } = await params;
     const organisationId = membership.organisationId;
-    const schedule = await prisma.programmeSchedule.findFirst({ where: { id: scheduleId, organisationId }, select: { id: true, channelId: true } });
+    const schedule = await prisma.programmeSchedule.findFirst({ where: { id: scheduleId, organisationId }, select: { id: true, channelId: true, timezone: true } });
     if (!schedule) return NextResponse.json({ error: "Channel schedule not found." }, { status: 404 });
     if (schedule.channelId !== parsed.data.channelId) return NextResponse.json({ error: "A schedule's channel cannot be changed. Create a schedule for the other channel instead." }, { status: 409 });
+    if (schedule.timezone !== parsed.data.timezone) return NextResponse.json({ error: "An existing schedule's time zone is fixed so saving a draft cannot retime its active programme. Keep the saved time zone." }, { status: 409 });
     await validateProgrammeScheduleSources(prisma, organisationId, parsed.data.items);
     await prisma.$transaction(async (tx) => {
       const latest = await tx.programmeScheduleVersion.findFirst({ where: { scheduleId, organisationId }, orderBy: { version: "desc" }, select: { version: true } });
       const nextVersion = (latest?.version || 0) + 1;
-      await tx.programmeSchedule.update({ where: { id: scheduleId }, data: { name: parsed.data.name, timezone: parsed.data.timezone } });
+      await tx.programmeSchedule.update({ where: { id: scheduleId }, data: { name: parsed.data.name } });
       await tx.programmeScheduleVersion.create({ data: { organisationId, scheduleId, version: nextVersion, createdByUserId: user.id, items: { create: parsed.data.items } } });
       await tx.auditLog.create({ data: { organisationId, actorUserId: user.id, action: "PROGRAMME_SCHEDULE_VERSION_CREATED", entityType: "ProgrammeSchedule", entityId: scheduleId, details: { channelId: schedule.channelId, version: nextVersion, itemCount: parsed.data.items.length } } });
     });

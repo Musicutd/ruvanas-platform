@@ -39,8 +39,9 @@ test("simple music setup keeps optional playlist and time-slot forms closed init
     readFile(new URL("../app/dashboard/programming/SimplePlaylistWorkspace.js", import.meta.url), "utf8"),
     readFile(new URL("../app/dashboard/programming/simple-playlists.module.css", import.meta.url), "utf8")
   ]);
-  assert.match(page, /label: "Music & playlists"/);
-  assert.match(page, /onlineOnly \? "More AutoDJ settings" : "Weekly plan"/);
+  assert.match(page, /label: "AutoDJ & playlists"/);
+  assert.match(page, /label: "Weekly planner"/);
+  assert.match(page, /onlineOnly \? "Backup & playback" : "Locations & backup"/);
   assert.match(simple, /Playlists and timed slots below are optional/);
   assert.match(simple, /For Online Radio, Ruvanas prepares that channel/);
   assert.doesNotMatch(simple, /Create a channel first/);

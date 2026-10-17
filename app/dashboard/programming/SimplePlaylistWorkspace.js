@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { nonStopSettingsChanged, summariseChannelPlaylistPlan } from "@/lib/subscriber-autodj-workspace.mjs";
 import styles from "./simple-playlists.module.css";
 
 const emptyPlaylist = { name: "", durationValue: 1, durationUnit: "HOURS", buildMode: "RANDOM_GENRE_POOL", genreCodes: [] };
@@ -26,22 +27,32 @@ export default function SimplePlaylistWorkspace({ availableProducts = [] }) {
   const [catalogue, setCatalogue] = useState(null);
   const [catalogueError, setCatalogueError] = useState("");
   const [browseProduct, setBrowseProduct] = useState(availableProducts[0]?.key || "");
+  const [snapshotAt, setSnapshotAt] = useState(null);
+  const [clock, setClock] = useState(null);
 
-  async function load() {
+  async function load({ refreshNonStop = false } = {}) {
     const response = await fetch("/api/programming/simple", { cache: "no-store" });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "Unable to load playlists.");
     setData(result);
+    const loadedAt = new Date();
+    setSnapshotAt(loadedAt); setClock(loadedAt);
     const chosen = result.channels.find((item) => item.id === channelId) || result.channels[0];
     if (chosen) {
       setChannelId(chosen.id);
       setPlaylistChannelId((current) => current || chosen.id);
-      setNonStopEnabled(chosen.nonStop.enabled);
-      setNonStopGenres(chosen.nonStop.genreCodes);
+      if (refreshNonStop || chosen.id !== channelId) {
+        setNonStopEnabled(chosen.nonStop.enabled);
+        setNonStopGenres(chosen.nonStop.genreCodes);
+      }
       setSchedule((current) => ({ ...current, channelId: current.channelId || chosen.id, timezone: current.channelId ? current.timezone : chosen.timezone }));
     }
   }
   useEffect(() => { load().catch((issue) => setError(issue.message)); }, []);
+  useEffect(() => {
+    const timer = window.setInterval(() => setClock(new Date()), 60000);
+    return () => window.clearInterval(timer);
+  }, []);
   useEffect(() => {
     if (!channelId && !browseProduct) return;
     const controller = new AbortController();
@@ -57,33 +68,57 @@ export default function SimplePlaylistWorkspace({ availableProducts = [] }) {
   const channel = data?.channels.find((item) => item.id === channelId);
   const playlistChannel = data?.channels.find((item) => item.id === playlistChannelId);
   const scheduleChannel = data?.channels.find((item) => item.id === schedule.channelId);
+  const unsavedNonStop = nonStopSettingsChanged(channel?.nonStop, nonStopEnabled, nonStopGenres);
+  const channelPlan = useMemo(() => summariseChannelPlaylistPlan(data?.events, channelId, clock), [data, channelId, clock]);
   const compatible = useMemo(() => data?.playlists.filter((item) => item.rightsUse === scheduleChannel?.rightsUse) || [], [data, scheduleChannel]);
   const genreName = (code) => data?.genres.find((item) => item.code === code)?.name || code.replaceAll("_", " ");
+  const planTime = (value) => new Date(value).toLocaleString("en-GB", { timeZone: channel?.timezone || "Europe/Malta", weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
-  async function send(url, options) {
+  useEffect(() => {
+    if (!unsavedNonStop) return;
+    const warn = (event) => { event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [unsavedNonStop]);
+
+  async function send(url, options, reloadOptions) {
     setBusy(true); setMessage(""); setError("");
     try {
       const response = await fetch(url, { headers: { "Content-Type": "application/json" }, ...options });
       const result = await response.json();
       if (!response.ok) { const issue = new Error(result.error || "The change could not be saved."); issue.affectedEvents = result.affectedEvents; throw issue; }
-      await load();
+      await load(reloadOptions);
       return result;
     } finally { setBusy(false); }
   }
 
   function chooseChannel(id) {
+    if (unsavedNonStop && !window.confirm("Discard your unsaved AutoDJ changes and switch channel?")) return;
     const selected = data.channels.find((item) => item.id === id);
     setChannelId(id);
     setNonStopEnabled(selected?.nonStop.enabled || false);
     setNonStopGenres(selected?.nonStop.genreCodes || []);
+    setMessage(""); setError("");
     setSchedule((current) => ({ ...current, channelId: id, playlistId: "", timezone: selected?.timezone || "Europe/Malta" }));
   }
 
-  async function saveNonStop(enabled = nonStopEnabled) {
+  async function saveNonStop() {
     try {
-      const result = await send("/api/programming/simple/nonstop", { method: "PUT", body: JSON.stringify({ channelId, enabled, genreCodes: nonStopGenres }) });
+      const result = await send("/api/programming/simple/nonstop", { method: "PUT", body: JSON.stringify({ channelId, enabled: nonStopEnabled, genreCodes: nonStopGenres }) }, { refreshNonStop: true });
       setMessage(result.enabled ? `AutoDJ Non-Stop is on. ${result.playableTrackCount} rights-approved songs are ready.` : "AutoDJ Non-Stop is off.");
-    } catch (issue) { setNonStopEnabled(channel?.nonStop.enabled === true); setError(issue.message); }
+    } catch (issue) { setError(`${issue.message} Refresh the saved status before retrying if the connection was interrupted.`); }
+  }
+
+  function discardNonStop() {
+    setNonStopEnabled(channel?.nonStop.enabled === true);
+    setNonStopGenres(channel?.nonStop.genreCodes || []);
+    setError("");
+  }
+
+  async function refreshSnapshot() {
+    if (unsavedNonStop && !window.confirm("Discard your unsaved AutoDJ changes and refresh the saved status?")) return;
+    setBusy(true); setError(""); setMessage("");
+    try { await load({ refreshNonStop: true }); } catch (issue) { setError(issue.message); } finally { setBusy(false); }
   }
 
   function toggleGenre(code) {
@@ -93,7 +128,7 @@ export default function SimplePlaylistWorkspace({ availableProducts = [] }) {
     const section = document.getElementById(id);
     const disclosure = section?.closest("details");
     if (disclosure) disclosure.open = true;
-    section?.scrollIntoView({ behavior: "smooth" });
+    section?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
   }
   function moveSlot(from, to) {
     if (to < 0 || to >= playlist.genreCodes.length || from === to) return;
@@ -149,11 +184,26 @@ export default function SimplePlaylistWorkspace({ availableProducts = [] }) {
   return <div className={styles.layout}>
     {message && <p className={styles.success} role="status">{message}</p>}
     {error && <p className={styles.error} role="alert">{error}</p>}
+    {data.channels.length > 0 && <section className={styles.panel} aria-labelledby="channel-plan-title">
+      <p className={styles.kicker}>YOUR CHANNEL · SAVED SETTINGS</p>
+      <h2 id="channel-plan-title">AutoDJ at a glance</h2>
+      <div className={styles.row}>
+        <label>Station / channel<select value={channelId} disabled={busy} onChange={(event) => chooseChannel(event.target.value)}>{data.channels.map((item) => <option key={item.id} value={item.id}>{item.stationName ? `${item.stationName} / ` : ""}{item.name} · {item.productFamily}</option>)}</select></label>
+        <div className={styles.channelMeta}><strong>Time zone: {channel?.timezone}</strong><span>Status times use this time zone.</span><button type="button" className={styles.secondary} disabled={busy} onClick={refreshSnapshot}>{busy ? "Working…" : "Refresh saved status"}</button></div>
+      </div>
+      <div className={styles.statusGrid}>
+        <article className={styles.statusCard}><h3>Automatic music</h3><strong>{channel?.nonStop.enabled ? "Saved: ON" : "Saved: OFF"}</strong><span>{channel?.nonStop.genreCodes.length ? channel.nonStop.genreCodes.map(genreName).join(" · ") : "All eligible genres"}</span><small>{channel?.nonStop.playbackPolicy === "FOLLOW_LOCATION_HOURS" ? "Follows location opening hours" : "24-hour policy"} · scheduled programmes take priority.</small></article>
+        <article className={styles.statusCard}><h3>Playlist slot now</h3><strong>{channelPlan.current.length > 1 ? "Overlapping playlist slots — review required" : channelPlan.current[0]?.playlistName || "No playlist slot at this time"}</strong>{channelPlan.current.map((item) => <span key={item.id}>{planTime(item.startsAt)} – {planTime(item.endsAt)}</span>)}<small>This is the saved playlist plan, not confirmation of what is audible.</small></article>
+        <article className={styles.statusCard}><h3>Next playlist slot</h3><strong>{channelPlan.next?.playlistName || "No next playlist slot in this snapshot"}</strong>{channelPlan.next && <span>{planTime(channelPlan.next.startsAt)} – {planTime(channelPlan.next.endsAt)}</span>}<small>Recurring programmes are reviewed separately in Weekly planner.</small></article>
+      </div>
+      <p className={styles.hint}>Snapshot checked {snapshotAt ? planTime(snapshotAt) : "just now"}. Live presenters, emergency overrides, rights checks and other published programmes may change the output. Refresh to check for changes made elsewhere.</p>
+      {!data.canManage && <p className={styles.summary}>View only. An owner, manager or content editor can change automatic music and playlist slots. Only an owner or manager can publish a weekly programme.</p>}
+    </section>}
     <section className={styles.panel} aria-label="Approved music catalogue">
       <p className={styles.kicker}>APPROVED MUSIC · AVAILABLE AUTOMATICALLY</p>
       <h2>Music for your service</h2>
       {!data.channels.length && availableProducts.length > 1 ? <label>Service<select value={browseProduct} onChange={(event) => setBrowseProduct(event.target.value)}>{availableProducts.map((product) => <option key={product.key} value={product.key}>{product.label}</option>)}</select></label> : null}
-      {data.channels.length ? <p className={styles.hint}>Showing music cleared for {channel?.name || "your selected channel"}. Change the channel below to check another service.</p> : <p className={styles.hint}>You can browse approved songs now. A channel is needed only when you are ready to start playback.</p>}
+      {data.channels.length ? <p className={styles.hint}>Showing music cleared for {channel?.name || "your selected channel"}. Use the selector above to check another service. This is a catalogue count, not the number of songs matching your AutoDJ settings.</p> : <p className={styles.hint}>You can browse approved songs now. A channel is needed only when you are ready to start playback.</p>}
       <div className={styles.cataloguePreview} aria-live="polite">
         <strong>{catalogue ? `${catalogue.total} approved catalogue track${catalogue.total === 1 ? "" : "s"} available` : "Checking the approved catalogue…"}</strong>
         {catalogueError ? <span>{catalogueError}</span> : catalogue?.tracks?.length ? <span>{catalogue.tracks.slice(0, 5).map((track) => `${track.artist} — ${track.title}`).join(" · ")}</span> : catalogue ? <span>No catalogue tracks are cleared for this service, territory and plan yet. Your own approved uploads may still be available.</span> : null}
@@ -168,11 +218,11 @@ export default function SimplePlaylistWorkspace({ availableProducts = [] }) {
         <p className={styles.kicker}>1 · SIMPLE CONTINUOUS MUSIC</p><h2 id="nonstop-title">AutoDJ Non-Stop</h2>
         <p>Keep approved music playing when no scheduled programme is active. Streaming connection details remain with Ruvanas.</p>
         <p className={styles.hint}>If you want music playing all day, start here. Playlists and timed slots below are optional.</p>
-        <label>Channel<select value={channelId} onChange={(event) => chooseChannel(event.target.value)}>{data.channels.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.productFamily}</option>)}</select></label>
         <p className={styles.hint}>{channel?.streamingStatus === "RIGHTS_PROFILE_REQUIRED" ? "Ask Ruvanas to classify this channel's music-rights pillar before using playlists." : channel?.streamingStatus === "CONFIGURED" ? "Streaming details saved" : channel?.streamingStatus === "RUVANAS_PLAYBACK" ? "Ruvanas playback channel ready for music setup" : "Pending manual streaming configuration · you can prepare music now"}</p>
-        <label className={styles.toggle}><input type="checkbox" checked={nonStopEnabled} disabled={!data.canManage || busy || !channel?.rightsUse} onChange={(event) => { setNonStopEnabled(event.target.checked); saveNonStop(event.target.checked); }} /> AutoDJ Non-Stop {nonStopEnabled ? "ON" : "OFF"}</label>
+        <label className={styles.toggle}><input type="checkbox" checked={nonStopEnabled} disabled={!data.canManage || busy || !channel?.rightsUse} onChange={(event) => setNonStopEnabled(event.target.checked)} /> Use automatic music between programmes</label>
         <details><summary>Limit music to selected genres (optional)</summary><p>Leave all unchecked to use every eligible genre.</p><div className={styles.genreGrid}>{data.genres.map((genre) => <label key={genre.id}><input type="checkbox" checked={nonStopGenres.includes(genre.code)} disabled={!data.canManage || busy} onChange={() => setNonStopGenres((current) => current.includes(genre.code) ? current.filter((code) => code !== genre.code) : [...current, genre.code])} />{genre.name}</label>)}</div></details>
-        <button type="button" disabled={!data.canManage || busy || !channel?.rightsUse} onClick={() => saveNonStop()}>Save genre choices</button>
+        <p className={styles.summary} role="status">{unsavedNonStop ? "Unsaved changes — nothing has changed on the channel yet." : "Showing saved AutoDJ settings."} Saving applies your automatic music settings to this channel and may affect live playback. It does not publish a weekly programme.</p>
+        <div className={styles.actions}><button type="button" disabled={!data.canManage || busy || !channel?.rightsUse || !unsavedNonStop} onClick={saveNonStop}>{busy ? "Working…" : "Save AutoDJ changes"}</button><button type="button" className={styles.secondary} disabled={busy || !unsavedNonStop} onClick={discardNonStop}>Discard changes</button></div>
       </section>
       <details className={styles.taskDetails}>
         <summary><span>2 · OPTIONAL</span><strong>Create or manage playlists{data.playlists.length ? ` · ${data.playlists.length} saved` : ""}</strong><small>Save a reusable mix for a time of day or a special programme.</small></summary>
@@ -195,6 +245,7 @@ export default function SimplePlaylistWorkspace({ availableProducts = [] }) {
         <p className={styles.kicker}>3 · PLAN A TIME SLOT</p>
         <h2 id="schedule-title">Plan a playlist time</h2>
         <p>Place a saved playlist on one of your channels. At the end, Non-Stop resumes if it is on.</p>
+        <p className={styles.summary}>Scheduling a playlist creates an active time slot immediately. For recurring programmes with draft → preview → publish, use Weekly planner instead.</p>
         <div className={styles.row}>
           <label>Channel<select value={schedule.channelId} disabled={!data.canManage || busy} onChange={(event) => { const selected = data.channels.find((item) => item.id === event.target.value); setSchedule((current) => ({ ...current, channelId: event.target.value, playlistId: "", timezone: selected?.timezone || "Europe/Malta" })); }}>{data.channels.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
           <label>Saved Playlist<select value={schedule.playlistId} disabled={!data.canManage || busy} onChange={(event) => setSchedule((current) => ({ ...current, playlistId: event.target.value }))}><option value="">Choose playlist…</option>{compatible.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
