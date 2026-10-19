@@ -43,6 +43,8 @@ function rowResponse(row) {
     mixName: row.mixName,
     bpm: row.bpm,
     durationSeconds: row.durationSeconds,
+    submittedDurationSeconds: row.submittedDurationSeconds ?? null,
+    durationSource: row.durationSource || null,
     genreSource: row.genreSource,
     genres: row.genreNames,
     newGenres: row.newGenreNames.map(name => ({ name, minimumCatalogueLevel: newCatalogueGenreLevel(name) })),
@@ -110,7 +112,13 @@ export async function POST(request) {
     for (const row of rows) {
       if (!row.file || row.errors.length) { inspected.push(null); continue; }
       try {
-        const audio = inspectCatalogueAudio({ buffer: row.file.buffer, fileName: row.file.baseName });
+        const audio = await inspectCatalogueAudio({ buffer: row.file.buffer, fileName: row.file.baseName });
+        row.submittedDurationSeconds = row.durationSeconds;
+        row.durationSeconds = audio.durationSeconds;
+        row.durationSource = "VERIFIED_AUDIO";
+        if (row.submittedDurationSeconds != null && row.submittedDurationSeconds !== audio.durationSeconds) {
+          row.notes.push(`Spreadsheet length differs; the verified audio length (${audio.durationSeconds} seconds) will be used.`);
+        }
         inspected.push(audio);
       } catch (error) {
         row.errors.push(error instanceof Error ? error.message : "The audio file is invalid.");
@@ -161,7 +169,8 @@ export async function POST(request) {
           actorUserId: access.user.id,
           newGenreNames: row.newGenreNames,
           inspected: inspected[index],
-          auditContext: { bulkImportId: batchId, spreadsheetRow: row.sheetRow, manifestName: manifest.name, archiveName: archive.name }
+          auditContext: { bulkImportId: batchId, spreadsheetRow: row.sheetRow, manifestName: manifest.name, archiveName: archive.name,
+            spreadsheetDurationSeconds: row.submittedDurationSeconds ?? null }
         });
         imported.push({ sheetRow: row.sheetRow, trackId: stored.track.id, artist: stored.track.artist, title: stored.track.title });
       } catch (error) {

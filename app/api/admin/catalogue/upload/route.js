@@ -85,7 +85,9 @@ export async function POST(request) {
     });
     return NextResponse.json({
       ok: true,
-      track: { id: stored.track.id, title: stored.track.title, artist: stored.track.artist, status: stored.track.status }
+      track: { id: stored.track.id, title: stored.track.title, artist: stored.track.artist, status: stored.track.status,
+        durationSeconds: stored.audio.durationSeconds },
+      durationSource: "VERIFIED_AUDIO"
     }, { status: 201 });
   } catch (error) {
     const genreUnavailable = ["CATALOGUE_GENRE_UNAVAILABLE", "CATALOGUE_GENRE_CONFLICT", "CATALOGUE_GENRE_INVALID", "CATALOGUE_GENRE_AMBIGUOUS"].includes(error?.code);

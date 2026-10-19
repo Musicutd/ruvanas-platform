@@ -83,7 +83,7 @@ function routeHarness({role="SUPER_ADMIN",genreRows=[pop],existingKeys=[],failGe
     matchManifestRowsToAudio,metadataForBulkRow,parseCatalogueBatchSettings,parseCatalogueManifest,
     CatalogueTrackStorageError:StorageError,
     findExistingCatalogueChecksums:async()=>new Set(existingKeys),
-    inspectCatalogueAudio:({fileName})=>({storageKey:fileName}),
+    inspectCatalogueAudio:async({fileName})=>({storageKey:fileName,durationSeconds:180}),
     storeCatalogueTrack:async(args)=>{calls.stored.push(args);if(failGenre)throw Object.assign(new Error("The genre is now unavailable."),{code:typeof failGenre === "string" ? failGenre : "CATALOGUE_GENRE_UNAVAILABLE"});return {track:{id:"synthetic-track",artist:args.metadata.artist,title:args.metadata.title}};},
     securityLog:()=>{},catalogueBulkFileSizeError:()=>null,
     acquireCatalogueBulkRequest:()=>()=>{calls.released++;},CatalogueBulkRequestError:RequestError,

@@ -88,7 +88,7 @@ export default function CatalogueUploadForm({ genres }) {
       }
 
       setSuccess(
-        `${body.track.artist} — ${body.track.title} was uploaded as ${body.track.status.toLowerCase()}.`
+        `${body.track.artist} — ${body.track.title} was uploaded as ${body.track.status.toLowerCase()}. Verified audio length: ${Math.floor(body.track.durationSeconds / 60)}:${String(body.track.durationSeconds % 60).padStart(2, "0")}.`
       );
       formRef.current?.reset();
       previewRequest.current += 1;
@@ -192,6 +192,7 @@ export default function CatalogueUploadForm({ genres }) {
         <label style={styles.label}>
           Duration in seconds (optional)
           <input name="durationSeconds" type="number" min={1} max={86400} disabled={uploading} style={styles.input} />
+          <span style={styles.hint}>Spreadsheet estimate only. The actual audio length is verified on upload and used automatically.</span>
         </label>
 
         <label style={styles.label}>
