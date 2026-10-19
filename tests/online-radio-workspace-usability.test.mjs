@@ -37,13 +37,14 @@ test("playlist validation and dirty tracking explain incomplete inputs without a
   assert.equal(musicDuration(185), "3:05");
   assert.equal(musicDuration(null), "Not supplied");
 });
-test("Online library cannot fetch music or mount uploads in sandbox and never starts playback", async () => {
+test("Online library needs an explicit metadata grant in sandbox and never starts playback", async () => {
   const ui = await source("app/dashboard/programming/OnlineRadioLibraryWorkspace.js");
-  assert.match(ui, /if \(sandboxDraftOnly\) \{ setLoading\(false\); return; \}/);
-  assert.match(ui, /if \(sandboxDraftOnly \|\| !setup \|\| view !== "catalogue"\) return/);
-  assert.match(ui, /if \(sandboxDraftOnly\) return <section/);
+  assert.match(ui, /const blockedDraft = sandboxDraftOnly && !catalogueMetadataOnly/);
+  assert.match(ui, /if \(blockedDraft\) \{ setLoading\(false\); return; \}/);
+  assert.match(ui, /if \(blockedDraft \|\| !setup \|\| \(catalogueMetadataOnly && !channelId\) \|\| view !== "catalogue"\)/);
+  assert.match(ui, /if \(blockedDraft\) return <section/);
   assert.doesNotMatch(ui, /<audio|autoPlay|\.play\(|method:\s*"(?:POST|PUT|PATCH|DELETE)"/);
-  assert.match(ui, /view === "uploads" \? <MusicLibraryPro onlineRadioContext/);
+  assert.match(ui, /!catalogueMetadataOnly && view === "uploads" \? <MusicLibraryPro onlineRadioContext/);
   assert.match(ui, /showing the first/);
 });
 test("Online planning offers three linked steps and safe channel switching", async () => {

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { SUBSCRIBER_PRODUCT_LIST } from "@/lib/product-access.mjs";
+import { isPreviewOnlineDraftAccessMode } from "@/lib/private-preview-account-policy.mjs";
 
 const endpoint = "/api/admin/private-preview/testers";
 const EMPTY_TESTERS = Object.freeze([]);
@@ -15,8 +16,11 @@ function AccessModeChoice({ id, value, onChange, disabled }) {
     <select id={`${id}-mode`} value={value} onChange={(event) => onChange(event.target.value)} disabled={disabled} style={inputStyle}>
       <option value="READ_ONLY">Read-only — selected pillars</option>
       <option value="ONLINE_DRAFT">Editable Online Radio drafts only</option>
+      <option value="ONLINE_DRAFT_CATALOGUE">Online Radio drafts + Malta catalogue (no audio)</option>
     </select>
-    <p>{value === "ONLINE_DRAFT"
+    <p>{value === "ONLINE_DRAFT_CATALOGUE"
+      ? "Online Radio only: browse rights-filtered FOCUSED catalogue metadata for Malta and save private station, playlist and weekly planner drafts. Audio playback, uploads, downloads, live broadcasting, publishing and paid actions remain blocked. No streaming service or audio storage is provisioned."
+      : value === "ONLINE_DRAFT"
       ? "Online Radio only: save a private station, playlists and weekly planner drafts. Live broadcasting, uploads, downloads and paid actions remain blocked. No streaming service is provisioned."
       : "View the selected pillars in a separate sandbox. Saving changes, publishing, uploads and downloads are unavailable."}</p>
   </>;
@@ -40,7 +44,8 @@ function PillarChoices({ id, value, onChange, disabled }) {
 
 function TesterEditor({ tester, working, onSave }) {
   const [pillars, setPillars] = useState(tester.pillars || []);
-  const [accessMode, setAccessMode] = useState(tester.accessMode === "ONLINE_DRAFT" ? "ONLINE_DRAFT" : "READ_ONLY");
+  const [accessMode, setAccessMode] = useState(isPreviewOnlineDraftAccessMode(tester.accessMode) ? tester.accessMode : "READ_ONLY");
+  const draftAccess = isPreviewOnlineDraftAccessMode(accessMode);
   const [enabled, setEnabled] = useState(Boolean(tester.enabled));
   const [password, setPassword] = useState("");
   const id = `preview-tester-${tester.id}`;
@@ -51,7 +56,7 @@ function TesterEditor({ tester, working, onSave }) {
     event.preventDefault();
     const nextPassword = password;
     setPassword("");
-    onSave({ userId: tester.id, pillars: accessMode === "ONLINE_DRAFT" ? ["ONLINE"] : pillars, accessMode, enabled, ...(nextPassword ? { password: nextPassword } : {}) });
+    onSave({ userId: tester.id, pillars: draftAccess ? ["ONLINE"] : pillars, accessMode, enabled, ...(nextPassword ? { password: nextPassword } : {}) });
   }
 
   return (
@@ -62,7 +67,7 @@ function TesterEditor({ tester, working, onSave }) {
         Access expires: {expiryLabel}</p>
       <p>Allowed pillars: {SUBSCRIBER_PRODUCT_LIST.filter((pillar) => tester.pillars?.includes(pillar.key))
         .map((pillar) => pillar.label).join(", ") || "None"}.</p>
-      <p>Workspace access: {tester.accessMode === "ONLINE_DRAFT" ? "Editable Online Radio drafts only" : "Read-only"}.</p>
+      <p>Workspace access: {tester.accessMode === "ONLINE_DRAFT_CATALOGUE" ? "Online Radio drafts + Malta catalogue metadata (no audio)" : tester.accessMode === "ONLINE_DRAFT" ? "Editable Online Radio drafts only" : "Read-only"}.</p>
       <details>
         <summary>Edit this tester’s access</summary>
         <form onSubmit={submit} style={{ marginTop: 16 }}>
@@ -71,8 +76,8 @@ function TesterEditor({ tester, working, onSave }) {
               onChange={(event) => setEnabled(event.target.checked)} />{" "}
             Enable this tester’s access
           </label>
-          <AccessModeChoice id={id} value={accessMode} disabled={working} onChange={(mode) => { setAccessMode(mode); if (mode === "ONLINE_DRAFT") setPillars(["ONLINE"]); }} />
-          <PillarChoices id={id} value={accessMode === "ONLINE_DRAFT" ? ["ONLINE"] : pillars} onChange={setPillars} disabled={working || accessMode === "ONLINE_DRAFT"} />
+          <AccessModeChoice id={id} value={accessMode} disabled={working} onChange={(mode) => { setAccessMode(mode); if (isPreviewOnlineDraftAccessMode(mode)) setPillars(["ONLINE"]); }} />
+          <PillarChoices id={id} value={draftAccess ? ["ONLINE"] : pillars} onChange={setPillars} disabled={working || draftAccess} />
           <label htmlFor={`${id}-password`} style={{ display: "block", marginTop: 20, fontWeight: 700 }}>
             Set or reset password (optional)
           </label>
@@ -81,7 +86,7 @@ function TesterEditor({ tester, working, onSave }) {
             aria-describedby={`${id}-password-help`} style={inputStyle} />
           <p id={`${id}-password-help`}>Leave blank to keep the current sign-in method. Entering a password enables password sign-in. {passwordHelp}</p>
           <p>Saving, including a change of workspace access, signs this tester out of existing sessions. Saving enabled access starts a fresh 30-day access period. Disabling blocks sign-in.</p>
-          <button type="submit" disabled={working || pillars.length === 0}>
+          <button type="submit" disabled={working || (!draftAccess && pillars.length === 0)}>
             {working ? "Please wait…" : "Save tester access"}
           </button>
         </form>
@@ -98,6 +103,7 @@ export default function TesterControls({ initialTesters = EMPTY_TESTERS }) {
   const [password, setPassword] = useState("");
   const [pillars, setPillars] = useState([]);
   const [accessMode, setAccessMode] = useState("READ_ONLY");
+  const draftAccess = isPreviewOnlineDraftAccessMode(accessMode);
   const [working, setWorking] = useState(false);
   const [message, setMessage] = useState("");
   const [failed, setFailed] = useState(false);
@@ -172,14 +178,14 @@ export default function TesterControls({ initialTesters = EMPTY_TESTERS }) {
     event.preventDefault();
     const nextPassword = password;
     setPassword("");
-    saveTester({ email: email.trim().toLowerCase(), name: name.trim(), pillars: accessMode === "ONLINE_DRAFT" ? ["ONLINE"] : pillars, accessMode,
+    saveTester({ email: email.trim().toLowerCase(), name: name.trim(), pillars: draftAccess ? ["ONLINE"] : pillars, accessMode,
       ...(passwordEnabled ? { password: nextPassword } : {}) });
   }
 
   return (
     <section style={panelStyle} aria-labelledby="preview-testers-heading" aria-busy={working}>
       <h2 id="preview-testers-heading">Invited tester accounts</h2>
-      <p>Only you, the owner, can create these non-admin accounts. Each tester gets a separate sandbox, not access to your administration or another tester’s data. Read-only is the default; you can explicitly allow private Online Radio drafts only. Live broadcasting, uploads, downloads, paid actions and public registration stay closed.</p>
+      <p>Only you, the owner, can create these non-admin accounts. Each tester gets a separate sandbox, not access to your administration or another tester’s data. Read-only is the default; you can explicitly allow private Online Radio drafts, with an optional Malta catalogue metadata view. Metadata access does not enable audio playback. Live broadcasting, uploads, downloads, paid actions and public registration stay closed.</p>
       <p>Access expires after 30 days. Up to 20 tester accounts can be created; no account deletion or automatic email is provided here. Temporary one-use codes are issued separately using the tester’s email.</p>
       <form onSubmit={createTester}>
         <fieldset disabled={working || testers.length >= 20} style={{ border: 0, padding: 0, margin: 0 }}>
@@ -202,9 +208,9 @@ export default function TesterControls({ initialTesters = EMPTY_TESTERS }) {
               aria-describedby="preview-new-tester-password-help" style={inputStyle} />
             <p id="preview-new-tester-password-help">{passwordHelp} The password field is cleared after each attempt and cannot be read back.</p>
           </> : <p>This tester will sign in only using a one-use code you issue. Create the account first, then use the one-use code controls to issue their code.</p>}
-          <AccessModeChoice id="preview-new-tester" value={accessMode} disabled={working} onChange={(mode) => { setAccessMode(mode); if (mode === "ONLINE_DRAFT") setPillars(["ONLINE"]); }} />
-          <PillarChoices id="preview-new-tester" value={accessMode === "ONLINE_DRAFT" ? ["ONLINE"] : pillars} onChange={setPillars} disabled={working || accessMode === "ONLINE_DRAFT"} />
-          <button type="submit" disabled={working || pillars.length === 0} style={{ marginTop: 20 }}>
+          <AccessModeChoice id="preview-new-tester" value={accessMode} disabled={working} onChange={(mode) => { setAccessMode(mode); if (isPreviewOnlineDraftAccessMode(mode)) setPillars(["ONLINE"]); }} />
+          <PillarChoices id="preview-new-tester" value={draftAccess ? ["ONLINE"] : pillars} onChange={setPillars} disabled={working || draftAccess} />
+          <button type="submit" disabled={working || (!draftAccess && pillars.length === 0)} style={{ marginTop: 20 }}>
             {working ? "Please wait…" : "Create tester account"}
           </button>
         </fieldset>

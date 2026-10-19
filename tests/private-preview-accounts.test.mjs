@@ -9,7 +9,7 @@ import {
 import {
   assertPreviewTesterState, isPreviewTesterPlan, normalizePreviewTesterAccessMode,
   PREVIEW_ONLINE_DRAFT_PLAN, PREVIEW_ONLINE_DRAFT_PLAN_CODE, PREVIEW_TESTER_PLAN,
-  previewTesterAccessMode
+  PREVIEW_ONLINE_DRAFT_CATALOGUE_PLAN_CODE, previewTesterAccessMode, previewTesterCatalogueMetadataPolicy
 } from "../lib/private-preview-account-policy.mjs";
 
 const NOW = new Date("2026-10-15T10:00:00Z");
@@ -408,6 +408,58 @@ test("explicit Online Radio draft account has isolated zero-storage plan and onl
   assert.equal(signedIn.activeOrganisationId, db.state.organisation[0].id);
   assert.equal(db.state.session.at(-1).authMethod, "PREVIEW_PASSWORD");
   assert.doesNotMatch(JSON.stringify(created), /passwordHash|tokenHash|Synthetic-test/);
+});
+
+test("owner can create the exact Malta metadata-only draft mode without commercial catalogue rights", async () => {
+  const db = database();
+  const created = await create(db, { accessMode: "ONLINE_DRAFT_CATALOGUE", pillars: ["ONLINE"] });
+  assert.equal(created.accessMode, "ONLINE_DRAFT_CATALOGUE");
+  const plan = db.state.plan[0];
+  assert.equal(plan.code, PREVIEW_ONLINE_DRAFT_CATALOGUE_PLAN_CODE);
+  assert.deepEqual(previewTesterCatalogueMetadataPolicy(plan), { territory: "MT", catalogueLevel: "FOCUSED" });
+  assert.equal(plan.monthlyPriceCents, 0);
+  assert.equal(plan.storageLimitGb, 0);
+  assert.equal(plan.includesRuvanasCatalogue, false);
+  assert.equal(plan.licensedMusicCatalogueLevel, "NONE");
+  assert.equal(plan.promoUploadEnabled, false);
+  const signedIn = await authenticatePreviewPassword(db, { policy, email: created.email, password: PASSWORD, secret: SECRET, now: NOW });
+  assert.equal(signedIn.activeOrganisationId, db.state.organisation[0].id);
+  assert.equal((await listPreviewTesters(db, { actorUserId: owner.id, policy }))[0].accessMode, "ONLINE_DRAFT_CATALOGUE");
+  assert.doesNotMatch(JSON.stringify(created), /passwordHash|tokenHash|Synthetic-test/);
+});
+
+test("owner metadata-mode change preserves the target account and password, revokes sessions, and leaves other testers unchanged", async () => {
+  const db = database();
+  const target = await create(db, { accessMode: "ONLINE_DRAFT", pillars: ["ONLINE"] });
+  const other = await create(db, { email: "other@example.test" });
+  const organisationId = db.state.subscription[0].organisationId;
+  const passwordHash = db.state.user.find(user => user.id === target.id).passwordHash;
+  const otherBefore = structuredClone({ user: db.state.user.find(user => user.id === other.id),
+    access: db.state.privatePreviewAccess.find(access => access.userId === other.id), subscription: db.state.subscription[1] });
+  db.state.session.push({ id: "target-session", userId: target.id, revokedAt: null });
+  db.state.session.push({ id: "other-session", userId: other.id, revokedAt: null });
+  const saved = await updatePreviewTester(db, { actorUserId: owner.id, policy, userId: target.id,
+    pillars: ["ONLINE"], enabled: true, accessMode: "ONLINE_DRAFT_CATALOGUE", now: NOW });
+  assert.equal(saved.id, target.id);
+  assert.equal(saved.accessMode, "ONLINE_DRAFT_CATALOGUE");
+  assert.equal(db.state.subscription[0].organisationId, organisationId);
+  assert.equal(db.state.user.find(user => user.id === target.id).passwordHash, passwordHash);
+  assert.ok(db.state.session.find(row => row.id === "target-session").revokedAt);
+  assert.equal(db.state.session.find(row => row.id === "other-session").revokedAt, null);
+  assert.deepEqual({ user: db.state.user.find(user => user.id === other.id),
+    access: db.state.privatePreviewAccess.find(access => access.userId === other.id), subscription: db.state.subscription[1] }, otherBefore);
+  assert.equal(db.state.auditLog.at(-1).details.previousAccessMode, "ONLINE_DRAFT");
+  assert.equal(db.state.auditLog.at(-1).details.accessMode, "ONLINE_DRAFT_CATALOGUE");
+});
+
+test("failed metadata-mode audit rolls back its new plan and every target change", async () => {
+  const db = database();
+  const created = await create(db, { accessMode: "ONLINE_DRAFT", pillars: ["ONLINE"] });
+  const before = structuredClone(db.state);
+  db.failNextAudit();
+  await rejects(updatePreviewTester(db, { actorUserId: owner.id, policy, userId: created.id,
+    pillars: ["ONLINE"], enabled: true, accessMode: "ONLINE_DRAFT_CATALOGUE", now: NOW }), "PREVIEW_UNAVAILABLE");
+  assert.deepEqual(db.state, before);
 });
 
 test("draft mode never silently drops extra pillars or grants unsupported modes", async () => {

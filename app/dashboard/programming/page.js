@@ -29,6 +29,7 @@ export default async function SubscriberProgrammingPage({ searchParams }) {
   const canManage = ["OWNER", "MANAGER"].includes(context.membership.role);
   const entitlements = resolveEntitlements(context.membership.organisation.subscription);
   const sandboxDraftOnly = entitlements.sandboxDraftOnly;
+  const catalogueMetadataOnly = sandboxDraftOnly && entitlements.sandboxCatalogueMetadata === true;
   const onlineOnly = entitlements.onlineRadioEnabled && ![
     entitlements.retailRadioEnabled, entitlements.schoolRadioEnabled, entitlements.healthRadioEnabled,
     entitlements.faithRadioEnabled, entitlements.organisationsEnabled
@@ -45,7 +46,7 @@ export default async function SubscriberProgrammingPage({ searchParams }) {
     orderBy: { createdAt: "asc" }
   }) : null;
   const tabs = sandboxDraftOnly ? [
-    { id: "library", label: "1 · Music library", description: "Understand catalogue access in this draft-only test" },
+    { id: "library", label: "1 · Music library", description: catalogueMetadataOnly ? "Browse approved catalogue details for your Malta test" : "Understand catalogue access in this draft-only test" },
     { id: "simple", label: "2 · Playlists", description: "Save a reusable genre-based music draft" },
     { id: "planner", label: "3 · Weekly planner", description: "Place programmes in a week and preview the times" }
   ] : [
@@ -81,7 +82,7 @@ export default async function SubscriberProgrammingPage({ searchParams }) {
           </div>
         </div>
         <WorkspaceTabs label={radioPlanning ? "Your station workflow" : "Programming tools"} intro={radioPlanning ? "Work from left to right, or return to any step. Your unsaved work stays in its tab." : "Start with AutoDJ. Use Weekly planner when you want recurring programmes."} tabs={tabs}>
-          {radioPlanning ? <div className={styles.workspace}><OnlineRadioLibraryWorkspace sandboxDraftOnly={sandboxDraftOnly} /></div> : null}
+          {radioPlanning ? <div className={styles.workspace}><OnlineRadioLibraryWorkspace sandboxDraftOnly={sandboxDraftOnly} catalogueMetadataOnly={catalogueMetadataOnly} /></div> : null}
           <div className={styles.workspace}><SimplePlaylistWorkspace onlineOnly={radioPlanning} planningOnly={radioPlanning} availableProducts={enabledSubscriberProducts(entitlements).map(({ key, label }) => ({ key, label }))} /></div>
           <div className={styles.workspace}>
             <div className={styles.notice} role="note">{sandboxDraftOnly ? "Private draft planning only. A test playlist is a saved configuration, not playable audio. No plan can be published." : <>Weekly planner controls channel programmes. Location-specific music and backup settings remain in {onlineOnly ? "Backup & playback" : "Locations & backup"}.</>} {onlineRadioStation ? <a href={`/dashboard/radio/schedule/${onlineRadioStation.id}`}>Open the station programme schedule</a> : null}</div>

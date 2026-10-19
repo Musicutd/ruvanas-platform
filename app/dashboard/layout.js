@@ -7,7 +7,7 @@ import { pillarListenHref } from "@/lib/pillar-audio.mjs";
 import { enabledSubscriberProducts } from "@/lib/product-access.mjs";
 import SubscriberPortalShell from "./SubscriberPortalShell";
 import { isPrivatePreviewTester, readPrivatePreviewPolicy } from "@/lib/private-preview-policy.mjs";
-import { previewTesterAccessMode } from "@/lib/private-preview-account-policy.mjs";
+import { isPreviewOnlineDraftAccessMode, previewTesterAccessMode } from "@/lib/private-preview-account-policy.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -28,8 +28,9 @@ export default async function DashboardLayout({ children }) {
 
   const organisation = context.membership.organisation;
   const previewTester = isPrivatePreviewTester(context.user, readPrivatePreviewPolicy());
-  const previewDraftOnly = previewTester && previewTesterAccessMode(organisation.subscription?.plan) === "ONLINE_DRAFT";
+  const previewDraftOnly = previewTester && isPreviewOnlineDraftAccessMode(previewTesterAccessMode(organisation.subscription?.plan));
   const entitlements = resolveEntitlements(organisation.subscription);
+  const previewCatalogueMetadata = previewDraftOnly && entitlements.sandboxCatalogueMetadata === true;
   const firstStation = organisation.stations.find((station) => station.status === "ACTIVE")
     || organisation.stations[0]
     || null;
@@ -55,7 +56,8 @@ export default async function DashboardLayout({ children }) {
       listenHrefs={listenHrefs}
     >
       {previewTester ? <aside style={{ padding: 16, background: "#fff5d6", color: "#172033", borderBottom: "1px solid #d5b66b" }}>
-        {previewDraftOnly ? "Editable Online Radio test workspace. Save station, playlist and weekly planner drafts only. Live broadcasting, uploads, downloads, paid actions and public registration are blocked. "
+        {previewCatalogueMetadata ? "Editable Online Radio test workspace with Malta catalogue metadata. Browse rights-filtered FOCUSED track details for Malta and save private drafts. Live broadcasting, uploads, downloads, audio playback, publishing, paid actions and public registration are blocked. "
+          : previewDraftOnly ? "Editable Online Radio test workspace. Save station, playlist and weekly planner drafts only. Live broadcasting, uploads, downloads, paid actions and public registration are blocked. "
           : "Read-only tester sandbox. Editing, uploads, downloads and publishing are unavailable. "}<a href="/preview-dashboard">Your assigned pillars</a>
       </aside> : null}
       {children}

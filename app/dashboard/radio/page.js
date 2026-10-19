@@ -16,11 +16,11 @@ export default async function OnlineRadioDashboard() {
   if (entitlements.sandboxDraftOnly) return <ProductDashboard
     eyebrow="ONLINE RADIO · PRIVATE EDITABLE TEST"
     title="Your private station test workspace"
-    description="Create one private station, save draft playlist settings and preview a weekly programme plan. No broadcast, audio upload, public player or paid provisioning is enabled."
-    status="Draft-only testing · live broadcasting off" statusTone="attention"
+    description={entitlements.sandboxCatalogueMetadata ? "Browse rights-filtered FOCUSED catalogue metadata for Malta, save private playlist settings and preview a weekly programme plan. Audio playback, uploads, broadcasting, public publishing and paid provisioning remain off." : "Create one private station, save draft playlist settings and preview a weekly programme plan. No broadcast, audio upload, public player or paid provisioning is enabled."}
+    status={entitlements.sandboxCatalogueMetadata ? "Malta catalogue metadata · audio and broadcasting off" : "Draft-only testing · live broadcasting off"} statusTone="attention"
     primaryAction={{ href: firstStation ? `/stations/${firstStation.id}` : "/stations/new", label: firstStation ? "Open test station" : "Create test station" }}
     quickTasks={[
-      { href: "/dashboard/programming?product=ONLINE#workspace-library", label: "1 · Music library", description: "See what your draft-only music access includes." },
+      { href: "/dashboard/programming?product=ONLINE#workspace-library", label: "1 · Music library", description: entitlements.sandboxCatalogueMetadata ? "Browse approved catalogue metadata for Malta. No audio playback or download." : "See what your draft-only music access includes." },
       { href: "/dashboard/programming?product=ONLINE#workspace-simple", label: "2 · Playlists", description: "Create a reusable private genre-based mix." },
       { href: "/dashboard/programming?product=ONLINE#workspace-planner", label: "3 · Weekly planner", description: "Save programmes and preview your private test week." }
     ]}

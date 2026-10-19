@@ -6,10 +6,11 @@ import WorkflowProgress from "@/app/components/WorkflowProgress";
 import ContextHelp from "@/app/components/ContextHelp";
 import SkipLink from "@/app/components/SkipLink";
 import { safeWorkflowMessage, stationWorkflowSteps } from "@/lib/guided-workflows.mjs";
+import { isPreviewOnlineDraftAccessMode } from "@/lib/private-preview-account-policy.mjs";
 
 export default function NewStationClient({ previewAccessMode = null }) {
   const readOnly = previewAccessMode === "READ_ONLY";
-  const draftOnly = previewAccessMode === "ONLINE_DRAFT";
+  const draftOnly = isPreviewOnlineDraftAccessMode(previewAccessMode);
   const router = useRouter();
   const [form, setForm] = useState({
     name: "",
