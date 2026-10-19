@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireActiveStudio } from "@/lib/studio-access";
 import { ORGANISATION_MANAGER_ROLES } from "@/lib/permissions.mjs";
-import { assertDestinationCapacity, broadcastMetadata, safeStudioDestination } from "@/lib/studio-broadcast.mjs";
+import { assertDestinationCapacity, broadcastMetadata, safeStudioBroadcastSession, safeStudioDestination } from "@/lib/studio-broadcast.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +34,7 @@ async function getWorkspace(access) {
     prisma.studioPlayoutSession.findMany({ where: { organisationId, status: { in: ["ACTIVE", "FALLBACK"] } }, include: { items: { where: { status: "ON_AIR" } } }, orderBy: { updatedAt: "desc" } }),
     prisma.station.findMany({ where: { organisationId, status: "ACTIVE", streamConfig: { isNot: null } }, include: { streamConfig: { select: { id: true, serverType: true, outputCodec: true, bitrateKbps: true, sourceConnectionStatus: true } } }, orderBy: { name: "asc" } })
   ]);
-  return { studioLevel: access.entitlements.studioLevel, externalDestinationLimit: access.entitlements.studioExternalDestinationLimit, providerConfigured: Boolean(process.env.STUDIO_BROADCAST_PROVIDER_URL && process.env.STUDIO_BROADCAST_PROVIDER_TOKEN), destinations: destinations.map(safeStudioDestination), sessions: sessions.map((session) => ({ ...session, destinations: session.destinations.map((link) => ({ ...link, destination: safeStudioDestination(link.destination) })) })), playoutSessions, stations };
+  return { studioLevel: access.entitlements.studioLevel, externalDestinationLimit: access.entitlements.studioExternalDestinationLimit, providerConfigured: Boolean(process.env.STUDIO_BROADCAST_PROVIDER_URL && process.env.STUDIO_BROADCAST_PROVIDER_TOKEN), destinations: destinations.map(safeStudioDestination), sessions: sessions.map(safeStudioBroadcastSession), playoutSessions, stations };
 }
 
 export async function GET() {
@@ -78,7 +78,7 @@ export async function POST(request) {
       const session = await prisma.studioBroadcastSession.create({ data: { organisationId: access.organisation.id, playoutSessionId: playout.id, automaticMetadata, createdByUserId: access.user.id, destinations: { create: destinations.map((destination) => ({ destinationId: destination.id, state: destination.type === "RUVANAS_MANAGED" && destination.connectionState === "CONNECTED" ? "CONNECTED" : "STANDBY" })) } }, include: sessionInclude });
       await prisma.auditLog.create({ data: { organisationId: access.organisation.id, actorUserId: access.user.id, action: "STUDIO_BROADCAST_STARTED", entityType: "StudioBroadcastSession", entityId: session.id, details: { playoutSessionId: playout.id, destinationIds: destinations.map((item) => item.id), browserAuthoritative: false } } });
       await recordBroadcastCommand(access, input, idempotencyKey, { sessionId: session.id }, session.id);
-      return NextResponse.json({ session }, { status: 201 });
+      return NextResponse.json({ session: safeStudioBroadcastSession(session) }, { status: 201 });
     }
     const session = await prisma.studioBroadcastSession.findFirst({ where: { id: input.sessionId, organisationId: access.organisation.id, status: "ACTIVE" }, include: sessionInclude });
     if (!session) throw Object.assign(new Error("The active Studio Broadcast session was not found."), { status: 404 });
@@ -93,7 +93,7 @@ export async function POST(request) {
     const updated = await prisma.studioBroadcastSession.update({ where: { id: session.id }, data: { ...data, revision: { increment: 1 } }, include: sessionInclude });
     await prisma.auditLog.create({ data: { organisationId: access.organisation.id, actorUserId: access.user.id, action: `STUDIO_BROADCAST_${input.action}`, entityType: "StudioBroadcastSession", entityId: session.id, details: { revision: updated.revision } } });
     await recordBroadcastCommand(access, input, idempotencyKey, { sessionId: updated.id, revision: updated.revision }, updated.id);
-    return NextResponse.json({ session: updated });
+    return NextResponse.json({ session: safeStudioBroadcastSession(updated) });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "The broadcast command failed safely." }, { status: error?.status || 409 });
   }
