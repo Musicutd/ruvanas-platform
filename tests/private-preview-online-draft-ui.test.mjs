@@ -42,13 +42,13 @@ test("tester landing and subscriber shell distinguish draft workspace from read-
 test("simple draft editing excludes live controls and keeps playlist save and duplicate", async () => {
   const ui = await source("app/dashboard/programming/SimplePlaylistWorkspace.js");
   assert.match(ui, /const sandboxDraftOnly = data\?\.sandboxDraftOnly === true/);
-  assert.match(ui, /const canSchedule = !sandboxDraftOnly && data\?\.canSchedule !== false && data\?\.canManage === true/);
-  assert.match(ui, /if \(!data \|\| data\.sandboxDraftOnly === true\) return/);
-  assert.match(ui, /!sandboxDraftOnly && <section[^\n]*aria-label="Approved music catalogue"/);
-  assert.match(ui, /!sandboxDraftOnly && <section[^\n]*aria-labelledby="nonstop-title"/);
-  assert.match(ui, /!sandboxDraftOnly && data\.canSchedule !== false && <details className=\{styles\.taskDetails\}/);
-  assert.match(ui, /!sandboxDraftOnly && <button[^\n]*onClick=\{\(\) => archivePlaylist\(item\)\}/);
-  assert.match(ui, /async function saveNonStop\(\) \{\s*if \(sandboxDraftOnly \|\| !data\?\.canManage\) return/);
+  assert.match(ui, /const canSchedule = !planningOnly && !sandboxDraftOnly && data\?\.canSchedule !== false && data\?\.canManage === true/);
+  assert.match(ui, /if \(!data \|\| data\.sandboxDraftOnly === true \|\| planningOnly\) return/);
+  assert.match(ui, /!sandboxDraftOnly && !planningOnly && <section[^\n]*aria-label="Approved music catalogue"/);
+  assert.match(ui, /!sandboxDraftOnly && !planningOnly && <section[^\n]*aria-labelledby="nonstop-title"/);
+  assert.match(ui, /!sandboxDraftOnly && !planningOnly && data\.canSchedule !== false && <details className=\{styles\.taskDetails\}/);
+  assert.match(ui, /!sandboxDraftOnly && !planningOnly \? <button[^\n]*onClick=\{\(\) => archivePlaylist\(item\)\}/);
+  assert.match(ui, /async function saveNonStop\(\) \{\s*if \(planningOnly \|\| sandboxDraftOnly \|\| !data\?\.canManage\) return/);
   assert.match(ui, /async function archivePlaylist\(item\) \{\s*if \(sandboxDraftOnly \|\| !data\?\.canManage\) return/);
   assert.match(ui, /onClick=\{savePlaylist\}/);
   assert.match(ui, /onClick=\{\(\) => duplicatePlaylist\(item\)\}/);

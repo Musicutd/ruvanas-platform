@@ -1,11 +1,8 @@
 "use client";
 
 import { Children, useEffect, useId, useMemo, useRef, useState } from "react";
+import { workspaceTabFromHash } from "@/lib/workspace-tab-navigation.mjs";
 import styles from "./workspace-tabs.module.css";
-
-function normaliseTabId(value) {
-  return String(value || "").trim().toLowerCase().replace(/[^a-z0-9-]+/g, "-");
-}
 
 export default function WorkspaceTabs({ label, intro, tabs, children, defaultTab }) {
   const instanceId = useId().replaceAll(":", "");
@@ -16,13 +13,34 @@ export default function WorkspaceTabs({ label, intro, tabs, children, defaultTab
   const [activeId, setActiveId] = useState(firstTab);
   const [visited, setVisited] = useState(() => new Set(firstTab ? [firstTab] : []));
   const tabRefs = useRef([]);
+  const tabListRef = useRef(null);
 
   useEffect(() => {
-    const requested = normaliseTabId(window.location.hash.replace(/^#workspace-/, ""));
-    const nextId = availableTabs.some((tab) => tab.id === requested) ? requested : firstTab;
-    setActiveId(nextId);
-    setVisited((current) => new Set([...current, nextId]));
+    function syncHash(event) {
+      const nextId = workspaceTabFromHash(window.location.hash, availableTabs.map((tab) => tab.id), firstTab);
+      if (!nextId) return; // Programme-day and other in-panel anchors must not switch tools.
+      setActiveId(nextId);
+      setVisited((current) => new Set([...current, nextId]));
+      if (event?.type === "hashchange") tabRefs.current[availableTabs.findIndex((tab) => tab.id === nextId)]?.focus({ preventScroll: true });
+    }
+    syncHash();
+    window.addEventListener("hashchange", syncHash);
+    return () => window.removeEventListener("hashchange", syncHash);
   }, [firstTab, tabIdsKey]);
+
+  useEffect(() => {
+    function revealActiveTab() {
+      const index = availableTabs.findIndex((tab) => tab.id === activeId);
+      const tab = tabRefs.current[index], list = tabListRef.current;
+      if (!tab || !list) return;
+      const selected = tab.getBoundingClientRect(), visible = list.getBoundingClientRect();
+      const left = selected.left < visible.left ? selected.left - visible.left : selected.right > visible.right ? selected.right - visible.right : 0;
+      if (left) list.scrollBy({ left, behavior: "auto" }); // Horizontal only: keep the heading in view on first load.
+    }
+    revealActiveTab();
+    window.addEventListener("resize", revealActiveTab);
+    return () => window.removeEventListener("resize", revealActiveTab);
+  }, [activeId, tabIdsKey]);
 
   function selectTab(tabId, updateUrl = true) {
     setActiveId(tabId);
@@ -58,7 +76,7 @@ export default function WorkspaceTabs({ label, intro, tabs, children, defaultTab
         <strong>{label}</strong>
         {intro ? <span>{intro}</span> : null}
       </div>
-      <div className={styles.tabList} role="tablist" aria-label={label}>
+      <div ref={tabListRef} className={styles.tabList} role="tablist" aria-label={label}>
         {availableTabs.map((tab, index) => {
           const selected = tab.id === activeId;
           return (

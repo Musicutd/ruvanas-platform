@@ -19,6 +19,11 @@ export default async function OnlineRadioDashboard() {
     description="Create one private station, save draft playlist settings and preview a weekly programme plan. No broadcast, audio upload, public player or paid provisioning is enabled."
     status="Draft-only testing · live broadcasting off" statusTone="attention"
     primaryAction={{ href: firstStation ? `/stations/${firstStation.id}` : "/stations/new", label: firstStation ? "Open test station" : "Create test station" }}
+    quickTasks={[
+      { href: "/dashboard/programming?product=ONLINE#workspace-library", label: "1 · Music library", description: "See what your draft-only music access includes." },
+      { href: "/dashboard/programming?product=ONLINE#workspace-simple", label: "2 · Playlists", description: "Create a reusable private genre-based mix." },
+      { href: "/dashboard/programming?product=ONLINE#workspace-planner", label: "3 · Weekly planner", description: "Save programmes and preview your private test week." }
+    ]}
     metrics={[{ label: "Test stations", value: `${organisation.stations.length} / 1`, detail: "Private station identity only" },
       { label: "Live broadcasting", value: "Off", detail: "No stream connection or listener delivery" },
       { label: "Audio uploads", value: "Off", detail: "No audio storage is provisioned for this test mode" }]}
@@ -48,15 +53,10 @@ export default async function OnlineRadioDashboard() {
     publicPlayerEnabled: Boolean(firstStation?.publicPlayerEnabled),
     activePublicListeners: publicListeners
   });
-  const stationReady = firstStation?.status === "ACTIVE" && Boolean(firstStation?.streamConfig?.streamUrl);
-  const quickTasks = !firstStation ? [] : stationReady ? [
-    { href: "/dashboard/autodj/online", label: "AutoDJ music", description: "Keep your station playing; detailed schedules stay available separately." },
-    { href: `/stations/${firstStation.id}/public-player`, label: "Your listening page", description: "Preview or publish the page you will share with listeners." },
-    { href: "/dashboard/media", label: "Add your own audio", description: "Prepare station-owned tracks, jingles and spoken content." }
-  ] : [
-    { href: "/dashboard/autodj/online", label: "Prepare AutoDJ music", description: "Choose approved music now; Ruvanas handles the broadcast connection separately." },
-    { href: "/dashboard/media", label: "Prepare your audio", description: "Add station-owned audio while Ruvanas prepares the broadcast connection." },
-    { href: "/dashboard/support", label: "Ask Ruvanas", description: "Send a question and follow the answer in one place." }
+  const quickTasks = [
+    { href: "/dashboard/programming?product=ONLINE#workspace-library", label: "1 · Music library", description: "Find approved songs and manage your own uploaded audio." },
+    { href: "/dashboard/programming?product=ONLINE#workspace-simple", label: "2 · Playlists", description: "Create reusable genre-based music mixes for your programmes." },
+    { href: "/dashboard/programming?product=ONLINE#workspace-planner", label: "3 · Weekly planner", description: "Arrange your programmes, save a draft and review the week." }
   ];
 
   return <ProductDashboard

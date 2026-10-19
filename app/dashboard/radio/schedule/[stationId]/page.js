@@ -42,9 +42,10 @@ export default async function OnlineRadioStationSchedulePage({ params }) {
           <span>{sandboxDraftOnly ? "Live broadcasting, stream configuration and publishing are blocked for this test workspace." : "This programme schedule does not switch the dedicated Centova encoder's rotation. Set the channel's Continuous AutoDJ and ask Ruvanas to connect the broadcast source for live audio."}</span>
         </div>
       </div>
+      <nav className={styles.notice} aria-label="Music and planning steps"><Link href="/dashboard/programming?product=ONLINE#workspace-library">1 · Music library</Link>{" → "}<Link href="/dashboard/programming?product=ONLINE#workspace-simple">2 · Playlists</Link>{" → "}<strong aria-current="page">3 · Weekly planner</strong></nav>
       {!station.channels.length ? <div className={styles.emptyState} role="status">
         <strong>Channel setup is needed for {station.name}.</strong>{" "}
-        {station.streamConfig?.streamUrl
+        {sandboxDraftOnly ? "Ask your administrator to prepare the private draft channel. A stream connection is not needed and remains blocked for this test workspace." : station.streamConfig?.streamUrl
           ? "The stream URL is saved, but the station has no active Ruvanas channel. Ask your Ruvanas Super Admin to open this station’s setup and choose Prepare Online Radio channel."
           : "Ask your Ruvanas Super Admin to save the stream connection and prepare the Online Radio channel."}
         {" "}<Link href="/dashboard/support">Contact Ruvanas support</Link>.

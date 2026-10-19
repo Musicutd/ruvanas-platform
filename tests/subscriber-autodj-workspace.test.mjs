@@ -46,7 +46,7 @@ test("subscriber UI explicitly stages AutoDJ, labels planned output and exposes 
   assert.match(simple, /Discard your unsaved AutoDJ changes and switch channel/);
   assert.match(simple, /beforeunload/);
   assert.match(simple, /timeZone: channel\?\.timezone/);
-  assert.match(page, /id: "planner", label: "Weekly planner"/);
-  assert.equal((page.match(/<AdvancedSchedulerWorkspace\s*\/>/g) || []).length, 1);
+  assert.match(page, /id: "planner", label: radioPlanning \? "3 · Weekly planner" : "Weekly planner"/);
+  assert.equal((page.match(/<AdvancedSchedulerWorkspace onlineChannelIds=\{onlineChannelIds\}\s*\/>/g) || []).length, 1);
   assert.match(page, /<AutoDjExpansionWorkspace \/><SmartPlaylistsWorkspace \/><RadioClocksWorkspace \/>/);
 });
