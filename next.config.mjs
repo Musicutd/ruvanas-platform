@@ -1,6 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // This package locates its executable relative to its own directory. Keep
+  // Node's installed-package resolution instead of relocating it into a chunk.
+  serverExternalPackages: ["ffprobe-static"],
   outputFileTracingIncludes: {
     "/public-marketing/[[...path]]": ["./assets/private-preview-public-site/**/*"]
   },
