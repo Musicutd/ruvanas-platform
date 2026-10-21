@@ -119,7 +119,7 @@ test("actual public website helper requires both an active service and permissio
 
 test("device-cookie delivery and encoder worker enforce the canonical boundary before source access", async () => {
   const player = await readFile(new URL("../lib/player-auth.js", import.meta.url), "utf8");
-  const worker = await readFile(new URL("../scripts/online-radio-encoder-worker.mjs", import.meta.url), "utf8");
+  const worker = await readFile(new URL("../scripts/online-radio-encoder-live.mjs", import.meta.url), "utf8");
   assert.match(player, /resolveEntitlements\(player\.organisation\?\.subscription\)\.outputEnabled \? player : null/);
   const outputGuard = worker.indexOf('if (!entitlements.outputEnabled) return { ready: false, reason: "OUTPUT_NOT_PERMITTED" }');
   assert.ok(outputGuard > worker.indexOf("const entitlements = resolveEntitlements"));

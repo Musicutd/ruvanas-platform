@@ -7,11 +7,14 @@ RUN apt-get update \
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY prisma ./prisma
+COPY scripts/patch-next-middleware-finalize.mjs ./scripts/
 RUN npm ci
 
 COPY lib ./lib
-COPY scripts/online-radio-encoder-worker.mjs scripts/check-online-radio-liquidsoap.mjs ./scripts/
+COPY scripts/online-radio-encoder-worker.mjs scripts/online-radio-encoder-live.mjs scripts/online-radio-source-report.mjs scripts/check-online-radio-liquidsoap.mjs ./scripts/
 RUN node scripts/check-online-radio-liquidsoap.mjs
 
 USER node
-CMD ["node", "scripts/online-radio-encoder-worker.mjs"]
+# A deploy or resume alone cannot transmit audio. Serving is a separate command
+# plus an explicit runtime gate and all existing station/rights permissions.
+CMD ["node", "scripts/online-radio-encoder-worker.mjs", "--hold"]

@@ -57,3 +57,11 @@ test("Liquidsoap script uses an explicit source port and escapes source values",
   assert.doesNotMatch(directSource, /port=8395/);
   assert.throws(() => liquidsoapScript({ playlistPath: "x", host: "x", port: 0, username: "x", password: "x", bitrateKbps: 128, stationName: "x" }));
 });
+
+test("replacement Centova source uses configured port 8282 without a legacy destination", () => {
+  const script = liquidsoapScript({ playlistPath: "/tmp/test-radio.m3u", host: "stream.example.com", port: 8282,
+    username: null, password: "synthetic-test-only", bitrateKbps: 128, stationName: "Test Radio" });
+  assert.match(script, /port=8282/);
+  assert.match(script, /public=false/);
+  assert.doesNotMatch(script, /port=8393|port=8198|user=/);
+});
