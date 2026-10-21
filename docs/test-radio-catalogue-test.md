@@ -43,6 +43,15 @@ do not weaken or use that historical guard. Review the full live migration
 history before the ordinary migration-deploy path. No automatic destructive
 reset, history repair or seed is part of this feature.
 
+For this release, `node scripts/catalogue-test-migrate.mjs --check` checks the
+exact existing paid host, canonical origin, isolated database, disabled output
+gates and the observed 128-entry migration baseline without writing. Only an
+explicit `--apply` can invoke official Prisma deployment for the single pinned
+new migration. It then verifies that the prior history is unchanged and the two
+new tables and seven expected indexes exist. Imports, build and ordinary web
+startup never run this command. Do not use reset, resolve, seed or substitute
+credentials to make a failed preflight pass.
+
 An existing, verified unused worker may deliberately run
 `node scripts/catalogue-test-worker.mjs --serve-tests` only after both
 `RUVANAS_CATALOGUE_TEST_ALLOW_LIVE=true` and
