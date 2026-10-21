@@ -14,15 +14,107 @@ import { catalogueTestMediaIdentity, connectCatalogueTestSource, downloadCatalog
 import { TEST_RADIO_CATALOGUE_TEST as LIMITS } from "../lib/online-radio-catalogue-test.mjs";
 
 const failure = code => Object.assign(new Error(code), { code });
-export function catalogueTestWorkerMode(args, env = {}) {
+const validSessionId = value => typeof value === "string" && /^c[a-z0-9]{10,40}$/i.test(value);
+export function catalogueTestWorkerMode(args = [], env = {}) {
+  if (!Array.isArray(args) || args.some(arg => typeof arg !== "string")) throw failure("TEST_WORKER_ARGUMENTS_INVALID");
   if (!args.length || args.length === 1 && args[0] === "--check") return "CHECK_ONLY";
-  if (args.length !== 1 || args[0] !== "--serve-tests") throw failure("TEST_WORKER_ARGUMENTS_INVALID");
+  if (args.length !== 1 || !["--serve-tests", "--serve-test-once"].includes(args[0])) throw failure("TEST_WORKER_ARGUMENTS_INVALID");
   if (env.RUVANAS_CATALOGUE_TEST_ALLOW_LIVE !== "true" || env.RUVANAS_CATALOGUE_TEST_STATION_ID !== LIMITS.stationId) throw failure("TEST_WORKER_NOT_APPROVED");
+  if (args[0] === "--serve-test-once") {
+    if (!validSessionId(env.RUVANAS_CATALOGUE_TEST_SESSION_ID)) throw failure("TEST_WORKER_SESSION_REQUIRED");
+    return "SERVE_ONE_EXPLICIT_OWNER_TEST";
+  }
   return "SERVE_EXPLICIT_OWNER_TESTS";
 }
 
-export async function serveCatalogueTests() {
-  catalogueTestWorkerMode(["--serve-tests"], process.env);
+function waitForPoll(milliseconds, signal) {
+  if (signal.aborted) return Promise.resolve();
+  return new Promise(resolve => {
+    const done = () => { clearTimeout(timer); signal.removeEventListener("abort", done); resolve(); };
+    const timer = setTimeout(done, milliseconds);
+    signal.addEventListener("abort", done, { once: true });
+    if (signal.aborted) done();
+  });
+}
+
+// Pure injected selector/orchestration: never searches or claims another row.
+// Waiting PREPARED does not arm it. The existing runner alone owns actual audio,
+// its independent deadline, rights revalidation and closure confirmation.
+export async function runCatalogueTestOnce({ sessionId, loadSelected, renewLease, runSelected,
+  signal = new AbortController().signal, now = () => new Date(), monotonicNow = () => performance.now(), wait = waitForPoll } = {}) {
+  if (!validSessionId(sessionId) || [loadSelected, renewLease, runSelected, now, monotonicNow, wait].some(fn => typeof fn !== "function") ||
+      typeof signal?.throwIfAborted !== "function") throw failure("TEST_WORKER_ONCE_OPTIONS_INVALID");
+  const started = monotonicNow(), maximumWaitMs = LIMITS.maximumAuthorizationSeconds * 1000;
+  const refused = code => ({ status: "REFUSED", code, stopConfirmed: true });
+  const stopped = () => ({ status: "STOPPED", code: "TEST_WORKER_STOPPED", stopConfirmed: true });
+  async function beforeStart(operation) {
+    signal.throwIfAborted();
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const finish = (value, error) => {
+        if (settled) return;
+        settled = true; clearTimeout(timer); signal.removeEventListener("abort", cancel);
+        error ? reject(error) : resolve(value);
+      };
+      const cancel = () => finish(null, failure("TEST_WORKER_STOPPED"));
+      const timer = setTimeout(() => finish(null, failure("TEST_WORKER_ONCE_LOOKUP_TIMEOUT")), 1000);
+      signal.addEventListener("abort", cancel, { once: true });
+      Promise.resolve().then(() => { signal.throwIfAborted(); return operation(); }).then(value => finish(value), error => finish(null, error));
+      if (signal.aborted) cancel();
+    });
+  }
+  while (!signal.aborted) {
+    try {
+      const instant = now(), elapsed = monotonicNow() - started;
+      if (!(instant instanceof Date) || !Number.isFinite(instant.getTime()) || !Number.isFinite(elapsed) || elapsed < 0) return refused("TEST_WORKER_CLOCK_INVALID");
+      if (elapsed >= maximumWaitMs) return refused("TEST_REQUEST_EXPIRED");
+      const selected = await beforeStart(() => loadSelected({ sessionId, now: instant, allowPrepared: true, signal }));
+      const current = now();
+      if (!(current instanceof Date) || !Number.isFinite(current.getTime())) return refused("TEST_WORKER_CLOCK_INVALID");
+      if (selected?.authorized !== true || selected.id !== sessionId || selected.stationId !== LIMITS.stationId) return refused("TEST_WORKER_SESSION_MISMATCH");
+      if (!["PREPARED", "ARMED"].includes(selected.status)) return refused("TEST_WORKER_SESSION_NOT_STARTABLE");
+      if (selected.stopRequestedAt) return stopped();
+      if (!(selected.expiresAt instanceof Date) || !Number.isFinite(selected.expiresAt.getTime()) || selected.expiresAt <= current) return refused("TEST_REQUEST_EXPIRED");
+      if (selected.status === "ARMED" && (!(selected.deadlineAt instanceof Date) || !Number.isFinite(selected.deadlineAt.getTime()) ||
+          selected.deadlineAt <= current || selected.deadlineAt > selected.expiresAt)) return refused("TEST_REQUEST_EXPIRED");
+      if (await beforeStart(() => renewLease({ sessionId, now: current, signal })) !== true) return refused("TEST_WORKER_LEASE_BUSY");
+      if (signal.aborted) return stopped();
+      const afterLease = now(), currentElapsed = monotonicNow() - started;
+      if (!(afterLease instanceof Date) || !Number.isFinite(afterLease.getTime()) || !Number.isFinite(currentElapsed) || currentElapsed < 0) return refused("TEST_WORKER_CLOCK_INVALID");
+      if (currentElapsed >= maximumWaitMs || selected.expiresAt <= afterLease ||
+          selected.status === "ARMED" && selected.deadlineAt <= afterLease) return refused("TEST_REQUEST_EXPIRED");
+      if (selected.status === "ARMED") {
+        // Exactly one invocation. There is intentionally no retry, even if a
+        // claim response or terminal bookkeeping becomes uncertain.
+        try {
+          const result = await runSelected(sessionId);
+          if (!result || typeof result.stopConfirmed !== "boolean" || !["REFUSED", "STOPPED", "FAILED", "COMPLETED"].includes(result.status) ||
+              !/^(TEST|CATALOGUE_TEST)_[A-Z_]+$/.test(result.code || "")) throw failure("TEST_WORKER_ONCE_RESULT_INVALID");
+          return result;
+        } catch { return { status: "FAILED", code: "CATALOGUE_TEST_STOP_UNCONFIRMED", stopConfirmed: false }; }
+      }
+      const remaining = Math.min(selected.expiresAt.getTime() - afterLease.getTime(), maximumWaitMs - currentElapsed);
+      if (remaining <= 0) return refused("TEST_REQUEST_EXPIRED");
+      await wait(Math.min(3000, remaining), signal);
+    } catch (error) {
+      if (signal.aborted) return stopped();
+      return refused(/^(TEST|CATALOGUE_TEST)_[A-Z_]+$/.test(error?.code || "") ? error.code : "TEST_WORKER_ONCE_REFUSED");
+    }
+  }
+  return stopped();
+}
+
+export async function holdCatalogueTestWorker(signal) {
+  if (signal.aborted) return;
+  await waitForPoll(2147483647, signal);
+  // A very long manual hold must remain inert, not resume database polling.
+  if (!signal.aborted) return holdCatalogueTestWorker(signal);
+}
+
+export async function serveCatalogueTests({ once = false } = {}) {
+  if (typeof once !== "boolean") throw failure("TEST_WORKER_ARGUMENTS_INVALID");
+  catalogueTestWorkerMode([once ? "--serve-test-once" : "--serve-tests"], process.env);
+  const selectedSessionId = once ? process.env.RUVANAS_CATALOGUE_TEST_SESSION_ID : null;
   for (const name of ["DATABASE_URL", "SECRET_ENCRYPTION_KEY", "R2_ENDPOINT", "R2_BUCKET_NAME", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"]) {
     if (!process.env[name]) throw failure("TEST_WORKER_CONFIGURATION_REQUIRED");
   }
@@ -44,7 +136,7 @@ export async function serveCatalogueTests() {
   const stop = new AbortController();
   const onStop = () => stop.abort(failure("TEST_WORKER_STOPPED"));
   process.once("SIGINT", onStop); process.once("SIGTERM", onStop);
-  let quarantine = false;
+  let quarantine = false, onceResult = null;
   const clock = { now: () => Date.now(), monotonicNow: () => performance.now(), setTimeout, clearTimeout };
   const log = (event, code) => console.log(JSON.stringify({ service: "CATALOGUE_TEST_WORKER", event, ...(code ? { code } : {}) }));
   async function renewWorkerLease() {
@@ -131,9 +223,20 @@ export async function serveCatalogueTests() {
       }
     });
   }
-  log("worker_waiting_for_explicit_owner_test");
+  log(once ? "worker_waiting_for_selected_owner_test" : "worker_waiting_for_explicit_owner_test");
   try {
-    while (!stop.signal.aborted && !quarantine) {
+    if (once) {
+      onceResult = await runCatalogueTestOnce({ sessionId: selectedSessionId, signal: stop.signal,
+        loadSelected: options => loadAuthorizedCatalogueTest(db, options), renewLease: renewWorkerLease, runSelected: runOne });
+      if (!onceResult.stopConfirmed) {
+        quarantine = true;
+        await db.stationStreamConfig.updateMany({ where: { stationId: LIMITS.stationId, encoderLeaseOwner: owner },
+          data: { lastError: "CATALOGUE_TEST_STOP_UNCONFIRMED" } }).catch(() => undefined);
+      }
+      // This exact selected row only; never expire or select unrelated tests.
+      await db.onlineRadioCatalogueTest.updateMany({ where: { id: selectedSessionId, stationId: LIMITS.stationId, status: "ARMED" },
+        data: { status: "FAILED", endedAt: new Date(), endedReason: onceResult.code } });
+    } else while (!stop.signal.aborted && !quarantine) {
       if (!await renewWorkerLease()) throw failure("TEST_WORKER_LEASE_BUSY");
       const now = new Date();
       // Expired requests are terminal, never automatically retried after a
@@ -158,10 +261,22 @@ export async function serveCatalogueTests() {
       });
     }
   } finally {
-    if (!quarantine) await db.stationStreamConfig.updateMany({ where: { stationId: LIMITS.stationId, encoderLeaseOwner: owner },
-      data: { encoderLeaseOwner: null, encoderLeaseUntil: null } }).catch(() => undefined);
-    process.removeListener("SIGINT", onStop); process.removeListener("SIGTERM", onStop);
-    storage.destroy(); await db.$disconnect();
+    try {
+      if (!quarantine) await db.stationStreamConfig.updateMany({ where: { stationId: LIMITS.stationId, encoderLeaseOwner: owner },
+        data: { encoderLeaseOwner: null, encoderLeaseUntil: null } }).catch(() => undefined);
+      storage.destroy(); await db.$disconnect();
+    } catch (error) {
+      if (!once) throw error;
+      onceResult = { status: "FAILED", code: "TEST_WORKER_CLEANUP_FAILED", stopConfirmed: onceResult?.stopConfirmed === true };
+    } finally {
+      if (once) {
+        console.log(JSON.stringify({ service: "CATALOGUE_TEST_WORKER", event: "single_test_done_held", status: onceResult?.status || "FAILED",
+          code: /^(TEST|CATALOGUE_TEST)_[A-Z_]+$/.test(onceResult?.code || "") ? onceResult.code : "TEST_WORKER_ONCE_REFUSED",
+          stopConfirmed: onceResult?.stopConfirmed === true, anotherSessionAllowed: false }));
+        await holdCatalogueTestWorker(stop.signal);
+      }
+      process.removeListener("SIGINT", onStop); process.removeListener("SIGTERM", onStop);
+    }
   }
 }
 
@@ -169,7 +284,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
   try {
     const mode = catalogueTestWorkerMode(process.argv.slice(2), process.env);
     if (mode === "CHECK_ONLY") console.log(JSON.stringify({ service: "CATALOGUE_TEST_WORKER", mode, streamingStarted: false }));
-    else await serveCatalogueTests();
+    else await serveCatalogueTests({ once: mode === "SERVE_ONE_EXPLICIT_OWNER_TEST" });
   } catch (error) {
     const code = /^(TEST|CATALOGUE_TEST)_[A-Z_]+$/.test(error?.code || "") ? error.code : "TEST_WORKER_FAILED";
     console.error(JSON.stringify({ service: "CATALOGUE_TEST_WORKER", code })); process.exitCode = 1;
