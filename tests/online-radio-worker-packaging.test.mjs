@@ -18,6 +18,7 @@ test("Online Radio image keeps its existing normal worker entrypoint and syntax-
   assert.match(dockerfile, /USER node[\s\S]+CMD \["node", "scripts\/online-radio-encoder-worker\.mjs", "--hold"\]/);
   assert.match(dockerfile, /RUN node scripts\/check-online-radio-liquidsoap\.mjs/);
   assert.match(dockerfile, /COPY scripts\/online-radio-encoder-worker\.mjs scripts\/online-radio-encoder-live\.mjs scripts\/online-radio-source-report\.mjs/);
+  assert.match(dockerfile, /scripts\/online-radio-encoder-no-audio\.mjs scripts\/check-online-radio-liquidsoap\.mjs/);
   assert.match(checker, /spawnSync\("liquidsoap", \["--check", scriptPath\]/);
   assert.doesNotMatch(dockerfile, /catalogue-test-worker|db:migrate|start-production/);
 });
