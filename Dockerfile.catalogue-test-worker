@@ -1,0 +1,13 @@
+FROM node:22-bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY package.json package-lock.json ./
+COPY prisma ./prisma
+RUN npm ci
+COPY lib ./lib
+COPY scripts/catalogue-test-worker.mjs ./scripts/
+RUN node scripts/catalogue-test-worker.mjs --check
+USER node
+# Default is safe validation and exit. An existing approved worker must be
+# deliberately assigned before --serve-tests plus its two live env gates work.
+CMD ["node", "scripts/catalogue-test-worker.mjs", "--check"]

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getAdminUser } from "@/lib/requireAdmin";
 import AdminStationSetupForm from "./AdminStationSetupForm";
 import AdminStreamingProfiles from "./AdminStreamingProfiles";
+import CatalogueStreamTest from "./CatalogueStreamTest";
 
 export default async function AdminStationSetupPage({ params }) {
   const user = await getAdminUser();
@@ -69,6 +70,7 @@ export default async function AdminStationSetupPage({ params }) {
         hasStreamConfig={Boolean(station.streamConfig?.streamUrl)}
         initialData={initialData}
       />
+      {station.id === "cmvcnbwi20008hr23sd76psi8" && <CatalogueStreamTest stationId={station.id} />}
       <AdminStreamingProfiles stationId={station.id} channels={channels} destinations={destinations} liveSources={liveSources} />
     </div>
   );

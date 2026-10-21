@@ -1,14 +1,43 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-import { test } from "node:test";
+import { copyFile, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { after, before, test } from "node:test";
+import { fileURLToPath } from "node:url";
 import {
   decidePreviewAccessMigration, PREVIEW_ACCESS_MIGRATION, PREVIEW_ACCESS_MIGRATION_CHECKSUM, previewMigrationChecksumEvidence,
   privatePreviewAccessMigrationPreflight, readPreviewMigrationCatalog, runGuardedPreviewAccessMigration as runGuardedMigration
 } from "../scripts/private-preview-access-migrate.mjs";
 import { runPreviewAccountDatabaseAcceptance } from "../scripts/private-preview-account-db-acceptance.mjs";
 
+let historicalRoot;
+// The one-off guard deliberately authorizes only its original migration set.
+// Exercise its historical deployment paths against exact original SQL bytes,
+// never by relaxing the guard to accept migrations added by later releases.
+before(async () => {
+  historicalRoot = await mkdtemp(path.join(tmpdir(), "ruvanas-preview-migration-history-"));
+  const catalog = await readPreviewMigrationCatalog();
+  for (const entry of catalog.filter(({ name }) => name <= PREVIEW_ACCESS_MIGRATION)) {
+    const directory = path.join(historicalRoot, "prisma", "migrations", entry.name);
+    await mkdir(directory, { recursive: true });
+    await copyFile(fileURLToPath(new URL(`../prisma/migrations/${entry.name}/migration.sql`, import.meta.url)),
+      path.join(directory, "migration.sql"));
+  }
+  const original = await readPreviewMigrationCatalog(historicalRoot);
+  assert.ok(original.length > 100);
+  assert.equal(original.at(-1).name, PREVIEW_ACCESS_MIGRATION);
+  assert.equal(original.at(-1).checksum, PREVIEW_ACCESS_MIGRATION_CHECKSUM);
+});
+after(async () => {
+  if (historicalRoot && path.dirname(historicalRoot) === path.resolve(tmpdir()) &&
+      path.basename(historicalRoot).startsWith("ruvanas-preview-migration-history-")) {
+    await rm(historicalRoot, { recursive: true, force: true });
+  }
+});
+
 function runGuardedPreviewAccessMigration(options) {
-  return runGuardedMigration({ acceptance: async () => ({ ok: true, status: "ROLLED_BACK_PASS" }), ...options });
+  return runGuardedMigration({ root: historicalRoot,
+    acceptance: async () => ({ ok: true, status: "ROLLED_BACK_PASS" }), ...options });
 }
 
 const ENV = {
@@ -90,20 +119,24 @@ test("unknown, failed, rolled-back, duplicated or changed database history alway
   ]) assert.equal(decidePreviewAccessMigration([OLD, NEW], history).code, code);
 });
 
-test("real local manifest derives every historical migration and pins only the reviewed additive SQL", async () => {
+test("real local manifest retains the pinned SQL but the old guard refuses later migrations before connecting", async () => {
   const catalog = await readPreviewMigrationCatalog();
   assert.ok(catalog.length > 100);
-  assert.equal(catalog.at(-1).name, PREVIEW_ACCESS_MIGRATION);
-  assert.equal(catalog.at(-1).checksum, PREVIEW_ACCESS_MIGRATION_CHECKSUM);
+  assert.equal(catalog.find(({ name }) => name === PREVIEW_ACCESS_MIGRATION).checksum, PREVIEW_ACCESS_MIGRATION_CHECKSUM);
+  assert.ok(catalog.some(({ name }) => name > PREVIEW_ACCESS_MIGRATION));
   const decision = decidePreviewAccessMigration(catalog,
     catalog.filter((entry) => entry.name !== PREVIEW_ACCESS_MIGRATION).map((entry) => row(entry)));
-  assert.equal(decision.action, "DEPLOY");
-  assert.equal(decision.migrationCount, catalog.length);
+  assert.deepEqual(decision, { ok: false, code: "ADDITIVE_MIGRATION_CHANGED" });
+  const guarded = await runGuardedMigration({ env: ENV,
+    connect: () => { throw new Error("Unexpected real-catalog connection"); },
+    deploy: () => { throw new Error("Unexpected real-catalog deployment"); },
+    acceptance: () => { throw new Error("Unexpected real-catalog acceptance"); } });
+  assert.deepEqual(guarded, { ok: false, code: "ADDITIVE_MIGRATION_CHANGED" });
 });
 
 async function mockDatabase({ identity = true, includeNew = false, failDisconnect = false,
   historicalEolVariants = false, corruptHistory = false } = {}) {
-  const catalog = await readPreviewMigrationCatalog();
+  const catalog = await readPreviewMigrationCatalog(historicalRoot);
   let history = catalog.filter((entry) => includeNew || entry.name !== PREVIEW_ACCESS_MIGRATION).map((entry) => row(entry));
   if (historicalEolVariants) history = history.map((record) => {
     const file = catalog.find((entry) => entry.name === record.migration_name);
@@ -184,7 +217,7 @@ test("every historical row is checked before deploy and identified mismatches pr
   assert.match(result.migrationName, /^\d{14}_[a-z0-9_]+$/);
   assert.equal(deployed, false);
   assert.equal(db.calls.disconnects, 1);
-  const catalog = await readPreviewMigrationCatalog();
+  const catalog = await readPreviewMigrationCatalog(historicalRoot);
   const variantDb = await mockDatabase({ historicalEolVariants: true });
   const expected = catalog.filter((entry) => entry.name !== PREVIEW_ACCESS_MIGRATION &&
     entry.checksumCRLF && entry.checksumCRLF !== entry.checksum).length;

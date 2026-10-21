@@ -3594,6 +3594,7 @@ model Station {
 
   organisation                  Organisation                   @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   streamConfig                  StationStreamConfig?
+  catalogueTests                OnlineRadioCatalogueTest[]
   channels                      Channel[]
   playoutEvents                 PlayoutEvent[]
   streamHealthSamples           StationStreamHealthSample[]
@@ -3616,6 +3617,56 @@ model Station {
   @@unique([id, organisationId])
   @@index([organisationId, productFamily, status])
   @@index([organisationId])
+}
+
+// Explicit, short-lived owner tests. Never a subscriber entitlement or a
+// recurring AutoDJ schedule. Source-send events are not listener proof of play.
+model OnlineRadioCatalogueTest {
+  id                       String   @id @default(cuid())
+  stationId                String
+  organisationId           String
+  createdByUserId          String
+  status                   String   @default("PREPARED")
+  origin                   String
+  territory                String   @default("MT")
+  catalogueLevel           String   @default("FOCUSED")
+  durationSeconds          Int      @default(300)
+  authorization            Json
+  plan                     Json
+  fingerprint              String
+  expiresAt                DateTime
+  requestedAt              DateTime?
+  deadlineAt               DateTime?
+  publicExposureAcceptedAt DateTime?
+  leaseOwner               String?
+  leaseUntil               DateTime?
+  startedAt                DateTime?
+  endedAt                  DateTime?
+  stopRequestedAt          DateTime?
+  endedReason              String?
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  station Station                         @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  events  OnlineRadioCatalogueTestEvent[]
+
+  @@index([stationId, status, createdAt])
+  @@index([status, expiresAt])
+}
+
+model OnlineRadioCatalogueTestEvent {
+  id         String   @id @default(cuid())
+  testId     String
+  eventKey   String
+  kind       String
+  trackId    String?
+  details    Json
+  occurredAt DateTime @default(now())
+
+  test OnlineRadioCatalogueTest @relation(fields: [testId], references: [id], onDelete: Cascade)
+
+  @@unique([testId, eventKey])
+  @@index([testId, occurredAt])
 }
 
 model StationDomain {
