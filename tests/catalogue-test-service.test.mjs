@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { PREVIEW_ONLINE_DRAFT_CATALOGUE_PLAN } from "../lib/private-preview-account-policy.mjs";
 import { TEST_RADIO_CATALOGUE_TEST as LIMITS } from "../lib/online-radio-catalogue-test.mjs";
 import { catalogueTestSourceFingerprint, catalogueTestWorkerReady, catalogueTestOwnerSessionValid,
@@ -397,6 +398,72 @@ test("authorized worker loads the fixed approved plan, not a replacement selecti
   assert.equal(new Set(loaded.tracks.map(({ id: trackId }) => trackId)).size, loaded.tracks.length);
   assert.equal(f.data.station.streamConfig.outboundAutoDjEnabled, false);
   assert.equal(f.data.station.organisation.subscription.plan.licensedMusicCatalogueLevel, "NONE");
+});
+
+function reorderJsonObjects(value) {
+  if (Array.isArray(value)) return value.map(reorderJsonObjects);
+  if (value && typeof value === "object") return Object.fromEntries(Object.keys(value).sort((a, b) => b.length - a.length || b.localeCompare(a))
+    .map(key => [key, reorderJsonObjects(value[key])]));
+  return value;
+}
+
+test("fresh plan hashes survive recursive JSONB-style object reordering through prepared, armed and worker loads", async () => {
+  const f = fixture(), session = await prepared(f), row = f.data.tests[0], original = copy(row.plan), originalHash = row.fingerprint;
+  row.plan = reorderJsonObjects(row.plan);
+  assert.notEqual(JSON.stringify(row.plan), JSON.stringify(original), "the fixture must actually change persisted key order");
+  assert.deepEqual(row.plan, original, "object values and all array positions stay identical");
+  const preparedLoad = await loadAuthorizedCatalogueTest(f.db, { sessionId: session.id, now: NOW, allowPrepared: true });
+  assert.equal(preparedLoad.authorized, true); assert.equal(preparedLoad.fingerprint, originalHash);
+  assert.deepEqual(preparedLoad.tracks.map(item => item.id), original.items.map(item => item.trackId));
+  await armCatalogueTest(f.db, options(f, { sessionId: session.id, startEnabled: true, publicExposureAccepted: true }));
+  const armedLoad = await loadAuthorizedCatalogueTest(f.db, { sessionId: session.id, now: new Date(NOW.getTime() + 1000) });
+  assert.equal(armedLoad.authorized, true); assert.equal(armedLoad.fingerprint, originalHash);
+  assert.equal(f.data.station.streamConfig.outboundAutoDjEnabled, false);
+});
+
+test("canonical plan hashes still reject changed scalars, added fields and reordered arrays before current media lookup", async () => {
+  for (const mutate of [plan => { plan.targetSeconds -= 1; }, plan => { plan.items[0].playDurationSeconds += 1; },
+    plan => { plan.items[0].title += " changed"; }, plan => { plan.validation.authorizationFingerprint = "f".repeat(64); },
+    plan => { plan.extraField = true; }, plan => { plan.items.reverse(); }, plan => { plan.validation.tracks.reverse(); }]) {
+    const f = fixture(), session = await prepared(f);
+    f.data.tests[0].plan = reorderJsonObjects(f.data.tests[0].plan);
+    mutate(f.data.tests[0].plan); f.calls.reads.length = 0;
+    await rejected(loadAuthorizedCatalogueTest(f.db, { sessionId: session.id, now: NOW, allowPrepared: true }), "TEST_PLAN_CHANGED");
+    assert.equal(f.calls.reads.some(({ model }) => model === "track"), false);
+  }
+});
+
+test("legacy insertion-order plan hashes are not accepted as a fallback", async () => {
+  const f = fixture(), session = await prepared(f), row = f.data.tests[0];
+  const legacy = createHash("sha256").update(JSON.stringify(row.plan)).digest("hex");
+  assert.notEqual(legacy, row.fingerprint);
+  row.fingerprint = legacy; row.plan = reorderJsonObjects(row.plan);
+  await rejected(loadAuthorizedCatalogueTest(f.db, { sessionId: session.id, now: NOW, allowPrepared: true }), "TEST_PLAN_CHANGED");
+});
+
+// Opt-in SELECT-only acceptance against the explicitly named disposable LOCAL
+// fixture. No application DATABASE_URL, production table or cloud is used.
+const localJsonbFixture = process.env.RUVANAS_ENCODER_LOCAL_TEST_DB;
+test("actual local PostgreSQL JSONB plan roundtrip retains exact authorization and detects tampering", { skip: !localJsonbFixture }, async () => {
+  const url = new URL(localJsonbFixture);
+  if (url.protocol !== "postgresql:" || url.hostname !== "127.0.0.1" || url.port !== "58582" ||
+      url.pathname !== "/encoder_source_fixture" || url.username !== "encoder_fixture" || url.password || url.search || url.hash) {
+    throw new Error("Explicit passwordless local JSONB fixture required.");
+  }
+  const { PrismaClient } = await import("@prisma/client");
+  const db = new PrismaClient({ datasourceUrl: url.href });
+  try {
+    const f = fixture(), session = await prepared(f), row = f.data.tests[0], before = JSON.stringify(row.plan);
+    const records = await db.$queryRaw`SELECT ${before}::jsonb AS plan`;
+    assert.equal(records.length, 1); assert.notEqual(JSON.stringify(records[0].plan), before);
+    assert.deepEqual(records[0].plan, row.plan);
+    row.plan = records[0].plan;
+    assert.equal((await loadAuthorizedCatalogueTest(f.db, { sessionId: session.id, now: NOW, allowPrepared: true })).authorized, true);
+    await armCatalogueTest(f.db, options(f, { sessionId: session.id, startEnabled: true, publicExposureAccepted: true }));
+    assert.equal((await loadAuthorizedCatalogueTest(f.db, { sessionId: session.id, now: new Date(NOW.getTime() + 1000) })).authorized, true);
+    f.data.tests[0].plan.items.reverse();
+    await rejected(loadAuthorizedCatalogueTest(f.db, { sessionId: session.id, now: NOW }), "TEST_PLAN_CHANGED");
+  } finally { await db.$disconnect(); }
 });
 
 test("revoked, expired, deleted or demoted original owners cannot authorize later worker playback", async () => {
