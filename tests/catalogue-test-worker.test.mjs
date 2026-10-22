@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
-import { catalogueTestWorkerMode, runCatalogueTestOnce, holdCatalogueTestWorker } from "../scripts/catalogue-test-worker.mjs";
+import { catalogueTestWorkerMode, runCatalogueTestOnce, holdCatalogueTestWorker, renewCatalogueTestWorkerLease } from "../scripts/catalogue-test-worker.mjs";
 
 test("diagnostic worker defaults to no streaming or database clients", () => {
   for (const args of [[], ["--check"]]) assert.equal(catalogueTestWorkerMode(args), "CHECK_ONLY");
@@ -83,17 +83,113 @@ test("the prepared wait is bounded by its stored expiry and the original monoton
   }
 });
 
-test("lease loss, owner denial and cancellation fail closed without switching IDs or retrying", async () => {
+test("owner denial and cancellation fail closed without switching IDs or retrying audio", async () => {
   const denied = onceFixture({ loadSelected: async () => { throw Object.assign(new Error("private-owner-detail"), { code: "TEST_OWNER_SESSION_REQUIRED" }); } });
   assert.equal((await runCatalogueTestOnce(denied.options)).code, "TEST_OWNER_SESSION_REQUIRED"); assert.equal(denied.calls.runs.length, 0);
-  const lost = onceFixture({ renewLease: async () => false }); lost.row.status = "ARMED";
-  assert.equal((await runCatalogueTestOnce(lost.options)).code, "TEST_WORKER_LEASE_BUSY"); assert.equal(lost.calls.runs.length, 0);
   const cancelled = onceFixture(); cancelled.controller.abort();
   assert.equal((await runCatalogueTestOnce(cancelled.options)).code, "TEST_WORKER_STOPPED"); assert.equal(cancelled.calls.loaded.length, 0);
   const uncertain = onceFixture({ runSelected: async () => { throw new Error("unconfirmed private resource"); } }); uncertain.row.status = "ARMED";
   const result = await runCatalogueTestOnce(uncertain.options);
   assert.equal(result.stopConfirmed, false); assert.equal(result.code, "CATALOGUE_TEST_STOP_UNCONFIRMED");
   assert.equal(uncertain.calls.loaded.length, 1); assert.doesNotMatch(JSON.stringify(result), /private/);
+});
+
+test("a rolling-deploy lease drains before exactly one selected audio attempt", async () => {
+  const f = onceFixture(); f.row.status = "ARMED";
+  f.options.renewLease = async ({ sessionId }) => { f.calls.leases.push(sessionId); return f.calls.leases.length > 2; };
+  assert.equal(await runCatalogueTestOnce(f.options), COMPLETED);
+  assert.deepEqual(f.calls.waits, [3000, 3000]);
+  assert.deepEqual(f.calls.loaded, [SELECTED, SELECTED, SELECTED]);
+  assert.deepEqual(f.calls.leases, [SELECTED, SELECTED, SELECTED]);
+  assert.deepEqual(f.calls.runs, [SELECTED]);
+});
+
+test("an occupied lease never extends either the prepared expiry or armed deadline", async () => {
+  for (const status of ["PREPARED", "ARMED"]) {
+    const f = onceFixture({ renewLease: async () => false }); f.row.status = status;
+    if (status === "PREPARED") f.row.expiresAt = new Date(f.options.now().getTime() + 4500);
+    else f.row.deadlineAt = new Date(f.options.now().getTime() + 4500);
+    assert.equal((await runCatalogueTestOnce(f.options)).code, "TEST_REQUEST_EXPIRED");
+    assert.deepEqual(f.calls.waits, [3000, 1500]); assert.deepEqual(f.calls.runs, []);
+  }
+});
+
+test("lease retries revalidate authorization and stop immediately on cancellation", async () => {
+  for (const change of ["cancel", "revoke", "running", "deadline"]) {
+    const f = onceFixture({ renewLease: async () => false }); f.row.status = "ARMED";
+    f.options.wait = async milliseconds => {
+      f.calls.waits.push(milliseconds); f.advance(milliseconds);
+      if (change === "cancel") f.controller.abort();
+      if (change === "revoke") f.row.authorized = false;
+      if (change === "running") f.row.status = "RUNNING";
+      if (change === "deadline") f.row.deadlineAt = f.options.now();
+    };
+    const result = await runCatalogueTestOnce(f.options);
+    assert.equal(result.code, ({ cancel: "TEST_WORKER_STOPPED", revoke: "TEST_WORKER_SESSION_MISMATCH",
+      running: "TEST_WORKER_SESSION_NOT_STARTABLE", deadline: "TEST_REQUEST_EXPIRED" })[change]);
+    assert.deepEqual(f.calls.runs, []); assert.equal(f.calls.waits.length, 1);
+  }
+});
+
+test("ambiguous or throwing lease results are not retried", async () => {
+  for (const value of [undefined, null, "false", 0]) {
+    const f = onceFixture({ renewLease: async () => value }); f.row.status = "ARMED";
+    assert.equal((await runCatalogueTestOnce(f.options)).code, "TEST_WORKER_LEASE_BUSY");
+    assert.deepEqual(f.calls.waits, []); assert.deepEqual(f.calls.runs, []);
+  }
+  const f = onceFixture({ renewLease: async () => { throw Object.assign(new Error(), { code: "TEST_WORKER_LEASE_LOST" }); } });
+  assert.equal((await runCatalogueTestOnce(f.options)).code, "TEST_WORKER_LEASE_LOST");
+  assert.deepEqual(f.calls.waits, []); assert.deepEqual(f.calls.runs, []);
+});
+
+const leaseSource = () => ({ providerKey: "CENTOVA_CAST", serverHost: "pollux.shoutca.st", sourcePort: 8282,
+  bitrateKbps: 128, sourceUsername: null, centovaUsername: "ruvanastestradio", outboundAutoDjEnabled: false,
+  sourcePasswordEncrypted: "synthetic-test-only" });
+const leaseOwner = "catalogue-test:0123456789abcdef0123456789abcdef";
+
+test("shutdown during the source read prevents a late lease write", async () => {
+  const controller = new AbortController(); let complete; const writes = [];
+  const db = { stationStreamConfig: { findUnique: () => new Promise(resolve => { complete = resolve; }),
+    updateMany: async input => { writes.push(input); return { count: 1 }; } } };
+  const pending = renewCatalogueTestWorkerLease({ db, owner: leaseOwner, signal: controller.signal });
+  const rejection = assert.rejects(pending, { name: "AbortError" });
+  controller.abort(); complete(leaseSource()); await rejection;
+  assert.deepEqual(writes, []);
+});
+
+test("a lease write completing after shutdown releases only that exact owner", async () => {
+  const controller = new AbortController(); let complete; const writes = [];
+  const db = { stationStreamConfig: { findUnique: async () => leaseSource(), updateMany: input => {
+    writes.push(input); return writes.length === 1 ? new Promise(resolve => { complete = resolve; }) : Promise.resolve({ count: 1 });
+  } } };
+  const pending = renewCatalogueTestWorkerLease({ db, owner: leaseOwner, signal: controller.signal });
+  const rejection = assert.rejects(pending, { name: "AbortError" });
+  await new Promise(resolve => setImmediate(resolve)); controller.abort(); complete({ count: 1 }); await rejection;
+  assert.equal(writes.length, 2);
+  assert.deepEqual(writes[1], { where: { stationId: STATION, encoderLeaseOwner: leaseOwner }, data: { encoderLeaseOwner: null, encoderLeaseUntil: null } });
+});
+
+test("a timed-out renewal is cancelled before a delayed source read can write", { timeout: 5000 }, async () => {
+  const f = onceFixture(); f.row.status = "ARMED"; let complete; const writes = [];
+  const db = { stationStreamConfig: { findUnique: () => new Promise(resolve => { complete = resolve; }),
+    updateMany: async input => { writes.push(input); return { count: 1 }; } } };
+  f.options.renewLease = ({ signal }) => renewCatalogueTestWorkerLease({ db, owner: leaseOwner, signal });
+  assert.equal((await runCatalogueTestOnce(f.options)).code, "TEST_WORKER_ONCE_LOOKUP_TIMEOUT");
+  complete(leaseSource()); await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(writes, []); assert.deepEqual(f.calls.runs, []); assert.deepEqual(f.calls.waits, []);
+});
+
+test("a timed-out in-flight lease write releases only its owner when it eventually completes", { timeout: 5000 }, async () => {
+  const f = onceFixture(); f.row.status = "ARMED"; let complete; const writes = [];
+  const db = { stationStreamConfig: { findUnique: async () => leaseSource(), updateMany: input => {
+    writes.push(input); return writes.length === 1 ? new Promise(resolve => { complete = resolve; }) : Promise.resolve({ count: 1 });
+  } } };
+  f.options.renewLease = ({ signal }) => renewCatalogueTestWorkerLease({ db, owner: leaseOwner, signal });
+  assert.equal((await runCatalogueTestOnce(f.options)).code, "TEST_WORKER_ONCE_LOOKUP_TIMEOUT");
+  complete({ count: 1 }); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(writes.length, 2);
+  assert.deepEqual(writes[1], { where: { stationId: STATION, encoderLeaseOwner: leaseOwner }, data: { encoderLeaseOwner: null, encoderLeaseUntil: null } });
+  assert.deepEqual(f.calls.runs, []); assert.deepEqual(f.calls.waits, []);
 });
 
 test("expiry while renewing the selected worker lease still cannot reach the audio runner", async () => {
@@ -138,6 +234,8 @@ test("the actual one-shot branch never uses arbitrary ARMED selection or expires
   const branch = source.slice(source.indexOf("if (once) {\n      onceResult"), source.indexOf("} else while (!stop.signal.aborted"));
   assert.match(branch, /runCatalogueTestOnce\(\{ sessionId: selectedSessionId/);
   assert.match(branch, /where: \{ id: selectedSessionId, stationId: LIMITS.stationId, status: "ARMED" \}/);
+  assert.match(branch, /runSelected: sessionId => \{ onceRunAttempted = true; return runOne\(sessionId\); \}/);
+  assert.match(branch, /if \(!stop\.signal\.aborted \|\| onceRunAttempted\) \{/);
   assert.doesNotMatch(branch, /findFirst|deadlineAt: \{ lte|session\.id/);
   assert.ok(source.indexOf("storage.destroy(); await db.$disconnect();") < source.indexOf("await holdCatalogueTestWorker(stop.signal)"));
   assert.ok(source.indexOf("await holdCatalogueTestWorker(stop.signal)") < source.indexOf('process.removeListener("SIGINT", onStop)'));

@@ -51,15 +51,19 @@ export async function runCatalogueTestOnce({ sessionId, loadSelected, renewLease
     signal.throwIfAborted();
     return new Promise((resolve, reject) => {
       let settled = false;
+      const operationStop = new AbortController();
       const finish = (value, error) => {
         if (settled) return;
         settled = true; clearTimeout(timer); signal.removeEventListener("abort", cancel);
         error ? reject(error) : resolve(value);
       };
-      const cancel = () => finish(null, failure("TEST_WORKER_STOPPED"));
-      const timer = setTimeout(() => finish(null, failure("TEST_WORKER_ONCE_LOOKUP_TIMEOUT")), 1000);
+      const cancel = () => { operationStop.abort(failure("TEST_WORKER_STOPPED")); finish(null, failure("TEST_WORKER_STOPPED")); };
+      const timer = setTimeout(() => {
+        operationStop.abort(failure("TEST_WORKER_ONCE_LOOKUP_TIMEOUT"));
+        finish(null, failure("TEST_WORKER_ONCE_LOOKUP_TIMEOUT"));
+      }, 1000);
       signal.addEventListener("abort", cancel, { once: true });
-      Promise.resolve().then(() => { signal.throwIfAborted(); return operation(); }).then(value => finish(value), error => finish(null, error));
+      Promise.resolve().then(() => { signal.throwIfAborted(); return operation(operationStop.signal); }).then(value => finish(value), error => finish(null, error));
       if (signal.aborted) cancel();
     });
   }
@@ -68,7 +72,7 @@ export async function runCatalogueTestOnce({ sessionId, loadSelected, renewLease
       const instant = now(), elapsed = monotonicNow() - started;
       if (!(instant instanceof Date) || !Number.isFinite(instant.getTime()) || !Number.isFinite(elapsed) || elapsed < 0) return refused("TEST_WORKER_CLOCK_INVALID");
       if (elapsed >= maximumWaitMs) return refused("TEST_REQUEST_EXPIRED");
-      const selected = await beforeStart(() => loadSelected({ sessionId, now: instant, allowPrepared: true, signal }));
+      const selected = await beforeStart(operationSignal => loadSelected({ sessionId, now: instant, allowPrepared: true, signal: operationSignal }));
       const current = now();
       if (!(current instanceof Date) || !Number.isFinite(current.getTime())) return refused("TEST_WORKER_CLOCK_INVALID");
       if (selected?.authorized !== true || selected.id !== sessionId || selected.stationId !== LIMITS.stationId) return refused("TEST_WORKER_SESSION_MISMATCH");
@@ -77,13 +81,16 @@ export async function runCatalogueTestOnce({ sessionId, loadSelected, renewLease
       if (!(selected.expiresAt instanceof Date) || !Number.isFinite(selected.expiresAt.getTime()) || selected.expiresAt <= current) return refused("TEST_REQUEST_EXPIRED");
       if (selected.status === "ARMED" && (!(selected.deadlineAt instanceof Date) || !Number.isFinite(selected.deadlineAt.getTime()) ||
           selected.deadlineAt <= current || selected.deadlineAt > selected.expiresAt)) return refused("TEST_REQUEST_EXPIRED");
-      if (await beforeStart(() => renewLease({ sessionId, now: current, signal })) !== true) return refused("TEST_WORKER_LEASE_BUSY");
+      const leaseHeld = await beforeStart(operationSignal => renewLease({ sessionId, now: current, signal: operationSignal }));
+      // A previous deployment may retain its short lease during shutdown.
+      // Retry only an explicitly occupied lease, never an ambiguous result.
+      if (leaseHeld !== true && leaseHeld !== false) return refused("TEST_WORKER_LEASE_BUSY");
       if (signal.aborted) return stopped();
       const afterLease = now(), currentElapsed = monotonicNow() - started;
       if (!(afterLease instanceof Date) || !Number.isFinite(afterLease.getTime()) || !Number.isFinite(currentElapsed) || currentElapsed < 0) return refused("TEST_WORKER_CLOCK_INVALID");
       if (currentElapsed >= maximumWaitMs || selected.expiresAt <= afterLease ||
           selected.status === "ARMED" && selected.deadlineAt <= afterLease) return refused("TEST_REQUEST_EXPIRED");
-      if (selected.status === "ARMED") {
+      if (leaseHeld && selected.status === "ARMED") {
         // Exactly one invocation. There is intentionally no retry, even if a
         // claim response or terminal bookkeeping becomes uncertain.
         try {
@@ -93,7 +100,8 @@ export async function runCatalogueTestOnce({ sessionId, loadSelected, renewLease
           return result;
         } catch { return { status: "FAILED", code: "CATALOGUE_TEST_STOP_UNCONFIRMED", stopConfirmed: false }; }
       }
-      const remaining = Math.min(selected.expiresAt.getTime() - afterLease.getTime(), maximumWaitMs - currentElapsed);
+      const remaining = Math.min(selected.expiresAt.getTime() - afterLease.getTime(), maximumWaitMs - currentElapsed,
+        selected.status === "ARMED" ? selected.deadlineAt.getTime() - afterLease.getTime() : Infinity);
       if (remaining <= 0) return refused("TEST_REQUEST_EXPIRED");
       await wait(Math.min(3000, remaining), signal);
     } catch (error) {
@@ -102,6 +110,26 @@ export async function runCatalogueTestOnce({ sessionId, loadSelected, renewLease
     }
   }
   return stopped();
+}
+
+// Cancellation cannot retract a database query already sent. Check before a
+// write, and release only this owner's lease if that write completes too late.
+export async function renewCatalogueTestWorkerLease({ db, owner, signal, now = () => new Date() }) {
+  signal.throwIfAborted();
+  const config = await db.stationStreamConfig.findUnique({ where: { stationId: LIMITS.stationId } });
+  signal.throwIfAborted();
+  validateCatalogueTestTarget(config);
+  const instant = now();
+  const updated = await db.stationStreamConfig.updateMany({ where: { stationId: LIMITS.stationId, outboundAutoDjEnabled: false,
+    sourcePasswordEncrypted: config.sourcePasswordEncrypted, serverHost: config.serverHost, sourcePort: config.sourcePort,
+    OR: [{ encoderLeaseOwner: owner }, { encoderLeaseUntil: null }, { encoderLeaseUntil: { lt: instant } }] },
+    data: { encoderLeaseOwner: owner, encoderLeaseUntil: new Date(instant.getTime() + 15_000) } });
+  if (signal.aborted) {
+    if (updated.count === 1) await db.stationStreamConfig.updateMany({ where: { stationId: LIMITS.stationId, encoderLeaseOwner: owner },
+      data: { encoderLeaseOwner: null, encoderLeaseUntil: null } });
+    signal.throwIfAborted();
+  }
+  return updated.count === 1;
 }
 
 export async function holdCatalogueTestWorker(signal) {
@@ -136,18 +164,11 @@ export async function serveCatalogueTests({ once = false } = {}) {
   const stop = new AbortController();
   const onStop = () => stop.abort(failure("TEST_WORKER_STOPPED"));
   process.once("SIGINT", onStop); process.once("SIGTERM", onStop);
-  let quarantine = false, onceResult = null;
+  let quarantine = false, onceResult = null, onceRunAttempted = false;
   const clock = { now: () => Date.now(), monotonicNow: () => performance.now(), setTimeout, clearTimeout };
   const log = (event, code) => console.log(JSON.stringify({ service: "CATALOGUE_TEST_WORKER", event, ...(code ? { code } : {}) }));
-  async function renewWorkerLease() {
-    const now = new Date();
-    const config = await db.stationStreamConfig.findUnique({ where: { stationId: LIMITS.stationId } });
-    validateCatalogueTestTarget(config);
-    const updated = await db.stationStreamConfig.updateMany({ where: { stationId: LIMITS.stationId, outboundAutoDjEnabled: false,
-      sourcePasswordEncrypted: config.sourcePasswordEncrypted, serverHost: config.serverHost, sourcePort: config.sourcePort,
-      OR: [{ encoderLeaseOwner: owner }, { encoderLeaseUntil: null }, { encoderLeaseUntil: { lt: now } }] },
-      data: { encoderLeaseOwner: owner, encoderLeaseUntil: new Date(now.getTime() + 15_000) } });
-    return updated.count === 1;
+  function renewWorkerLease({ signal = stop.signal } = {}) {
+    return renewCatalogueTestWorkerLease({ db, owner, signal: AbortSignal.any([stop.signal, signal]) });
   }
   async function runOne(sessionId) {
     return runCatalogueTest({ sessionId, clock, signal: stop.signal,
@@ -227,15 +248,20 @@ export async function serveCatalogueTests({ once = false } = {}) {
   try {
     if (once) {
       onceResult = await runCatalogueTestOnce({ sessionId: selectedSessionId, signal: stop.signal,
-        loadSelected: options => loadAuthorizedCatalogueTest(db, options), renewLease: renewWorkerLease, runSelected: runOne });
+        loadSelected: options => loadAuthorizedCatalogueTest(db, options), renewLease: renewWorkerLease,
+        runSelected: sessionId => { onceRunAttempted = true; return runOne(sessionId); } });
       if (!onceResult.stopConfirmed) {
         quarantine = true;
         await db.stationStreamConfig.updateMany({ where: { stationId: LIMITS.stationId, encoderLeaseOwner: owner },
           data: { lastError: "CATALOGUE_TEST_STOP_UNCONFIRMED" } }).catch(() => undefined);
       }
+      // A pre-audio shutdown must not fail an ARMED row that the replacement
+      // can still claim. An attempted/ambiguous run is never automatically retried.
       // This exact selected row only; never expire or select unrelated tests.
-      await db.onlineRadioCatalogueTest.updateMany({ where: { id: selectedSessionId, stationId: LIMITS.stationId, status: "ARMED" },
-        data: { status: "FAILED", endedAt: new Date(), endedReason: onceResult.code } });
+      if (!stop.signal.aborted || onceRunAttempted) {
+        await db.onlineRadioCatalogueTest.updateMany({ where: { id: selectedSessionId, stationId: LIMITS.stationId, status: "ARMED" },
+          data: { status: "FAILED", endedAt: new Date(), endedReason: onceResult.code } });
+      }
     } else while (!stop.signal.aborted && !quarantine) {
       if (!await renewWorkerLease()) throw failure("TEST_WORKER_LEASE_BUSY");
       const now = new Date();
