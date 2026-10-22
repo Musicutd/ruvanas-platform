@@ -9,11 +9,15 @@ import { EventEmitter } from "node:events";
 import { catalogueTestFfmpegArguments, catalogueTestMediaIdentity, downloadCatalogueTestMedia, shoutcastTestResponseAccepted, validateCatalogueTestTarget, watchCatalogueTestChild } from "../lib/catalogue-test-transport.mjs";
 
 const asset = bytes => ({ libraryType: "RUVANAS_CATALOGUE", organisationId: null, storageKey: `catalogue/music/${createHash("sha256").update(bytes).digest("hex")}.mp3`, sizeBytes: BigInt(bytes.length) });
-const target = () => ({ providerKey: "CENTOVA_CAST", serverHost: "pollux.shoutca.st", sourcePort: 8282, bitrateKbps: 128, sourceUsername: "", centovaUsername: "ruvanas_test_radio", outboundAutoDjEnabled: false, sourcePasswordEncrypted: "not-a-real-secret" });
+const target = () => ({ providerKey: "CENTOVA_CAST", serverHost: "pollux.shoutca.st", sourcePort: 8282, bitrateKbps: 128, sourceUsername: "", centovaUsername: "ruvanastestradio", outboundAutoDjEnabled: false, sourcePasswordEncrypted: "not-a-real-secret" });
 
-test("test target is fixed and cannot hijack normal AutoDJ or another destination", () => {
+test("renamed test account remains fixed to port 8282 and password-only source authentication", () => {
   assert.equal(validateCatalogueTestTarget(target()), true);
-  for (const change of [{ serverHost: "127.0.0.1" }, { sourcePort: 8198 }, { centovaUsername: "radio105" }, { sourceUsername: "root" }, { bitrateKbps: 320 }, { outboundAutoDjEnabled: true }, { sourcePasswordEncrypted: null }]) {
+  assert.equal(validateCatalogueTestTarget({ ...target(), sourceUsername: null }), true);
+  for (const change of [{ providerKey: "GENERIC_HTTP" }, { serverHost: "127.0.0.1" }, { serverHost: "other.shoutca.st" },
+    { sourcePort: 8198 }, { sourcePort: 8393 }, { centovaUsername: "ruvanas_test_radio" }, { centovaUsername: "radio105" },
+    { sourceUsername: "ruvanastestradio" }, { sourceUsername: "root" }, { bitrateKbps: 320 },
+    { outboundAutoDjEnabled: true }, { sourcePasswordEncrypted: null }, { lastError: "CATALOGUE_TEST_STOP_UNCONFIRMED" }]) {
     assert.throws(() => validateCatalogueTestTarget({ ...target(), ...change }), { code: "TEST_SOURCE_NOT_READY" });
   }
 });

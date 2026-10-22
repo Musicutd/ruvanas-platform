@@ -14,8 +14,8 @@ const copy = (value) => structuredClone(value);
 
 function source() {
   return { providerKey: "CENTOVA_CAST", serverHost: "pollux.shoutca.st", sourcePort: 8282,
-    sourceUsername: null, centovaUsername: "ruvanas_test_radio", bitrateKbps: 128,
-    streamUrl: "https://ruvanas_test_radio-radio105network.radioca.st/stream", outboundAutoDjEnabled: false,
+    sourceUsername: null, centovaUsername: "ruvanastestradio", bitrateKbps: 128,
+    streamUrl: "https://ruvanastestradio-radio105network.radioca.st/stream", outboundAutoDjEnabled: false,
     sourcePasswordEncrypted: "test-only-ciphertext-not-a-real-secret", encoderLeaseOwner: "catalogue-test:mock-worker",
     encoderLeaseUntil: new Date(NOW.getTime() + 45_000) };
 }
@@ -149,6 +149,9 @@ async function rejected(promise, code) { await assert.rejects(promise, { code })
 test("owner readiness inspection is SELECT-only and does not enable output or alter the tester subscription", async () => {
   const f = fixture(), before = copy(f.data);
   const result = await inspectCatalogueTest(f.db, options(f));
+  assert.equal(LIMITS.stationId, "cmvcnbwi20008hr23sd76psi8");
+  assert.equal(result.context.station.id, LIMITS.stationId);
+  assert.equal(result.context.station.streamConfig.centovaUsername, "ruvanastestradio");
   assert.equal(result.plan.ready, true);
   assert.equal(result.sourceReady, true);
   assert.equal(result.workerReady, true);
