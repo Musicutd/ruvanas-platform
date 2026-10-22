@@ -61,6 +61,12 @@ function setup(overrides = {}, clockOptions = {}) {
   return { options, clock, calls, session, resource };
 }
 
+function useHourProfile(fixture) {
+  Object.assign(fixture.session, { profileId: "ONE_HOUR", authorization: { profileId: "ONE_HOUR", maximumSeconds: 3600 },
+    durationSeconds: 3600, deadlineAt: new Date(START + 3_600_000), authorizationExpiresAt: new Date(START + 3_600_000) });
+  return fixture;
+}
+
 test("runner refuses missing adapters and requires an explicit clock without side effects", async () => {
   await assert.rejects(runCatalogueTest(), { code: "CATALOGUE_TEST_ADAPTERS_REQUIRED" });
   const fixture = setup(); delete fixture.options.clock;
@@ -334,4 +340,120 @@ test("a claim completing after its timeout is terminally cleaned without startin
   assert.equal(fixture.calls.finish[0].claim.leaseId, "late-claim");
   assert.equal(fixture.calls.finish[0].result.status, "STOPPED");
   assert.equal(fixture.calls.finish[0].releaseAllowed, true);
+});
+
+test("only a matching server authorization enables the one-hour profile and client limit objects are ignored", async () => {
+  for (const change of [
+    { durationSeconds: 301 },
+    { durationSeconds: 3600, profileId: "ONE_HOUR" },
+    { durationSeconds: 3600, testProfile: { maximumSeconds: 3600, maximumItems: 40 } },
+    { profileId: null }, { authorization: null },
+    { authorization: { profileId: "UNKNOWN", maximumSeconds: 3600 } },
+    { profileId: "ONE_HOUR", authorization: { profileId: "ONE_HOUR", maximumSeconds: 300 } },
+    { profileId: "FIVE_MINUTES", authorization: { profileId: "ONE_HOUR", maximumSeconds: 3600 } }
+  ]) {
+    const fixture = setup(); Object.assign(fixture.session, change);
+    const result = await drive(runCatalogueTest(fixture.options), fixture.clock);
+    assert.equal(result.code, "CATALOGUE_TEST_AUTHORIZATION_DENIED");
+    assert.equal(fixture.calls.claim, 0); assert.equal(fixture.calls.prepare, 0); assert.equal(fixture.calls.connect, 0);
+  }
+  const fixture = useHourProfile(setup());
+  fixture.session.testProfile = { maximumSeconds: Infinity, maximumAudioBytes: Infinity };
+  fixture.options.prepareAudio = async ({ session }) => {
+    assert.equal(session.testProfile.maximumSeconds, 3600);
+    assert.equal(session.testProfile.maximumAudioBytes, 64 * 1024 * 1024);
+    assert.equal(Object.isFrozen(session.testProfile), true);
+    return { dispose() {} };
+  };
+  assert.equal((await drive(runCatalogueTest(fixture.options), fixture.clock)).status, "COMPLETED");
+});
+
+test("one-hour audio stops exactly at its server deadline in either timer order without another source attempt", async () => {
+  for (const newestFirst of [false, true]) {
+    const fixture = useHourProfile(setup({}, { newestFirst }));
+    fixture.options.playTrack = async ({ track, emit, registerResource }) => {
+      fixture.calls.play += 1; registerResource(fixture.resource("hour-decoder"));
+      await emit({ type: "AUDIO_SENT", trackId: track.id, audioBytesSent: 1000 });
+      return new Promise(() => {});
+    };
+    const pending = runCatalogueTest(fixture.options); await flush();
+    await fixture.clock.advance(3_600_000);
+    const result = await drive(pending, fixture.clock);
+    assert.equal(result.status, "STOPPED"); assert.equal(result.code, "CATALOGUE_TEST_DEADLINE");
+    assert.equal(result.stopConfirmed, true); assert.equal(result.audioBytesSent, 1000);
+    assert.ok(fixture.calls.forced.some(item => item.name === "hour-decoder" && item.at === 3_600_000));
+    assert.equal(fixture.calls.play, 1); assert.equal(fixture.calls.connect, 1);
+    await fixture.clock.advance(60_000); assert.equal(fixture.calls.connect, 1);
+  }
+});
+
+test("hour profile accepts 40 unique tracks with two source resources and refuses a forty-first track", async () => {
+  const fixture = useHourProfile(setup());
+  fixture.session.tracks = Array.from({ length: 40 }, (_, index) => ({ id: `track${index}`, mediaAssetId: `asset${index}`, durationSeconds: 90 }));
+  fixture.options.connectSource = async ({ registerResource }) => {
+    fixture.calls.connect += 1;
+    const source = fixture.resource("registered-source"); registerResource(source);
+    return { ...source, authenticated: true };
+  };
+  fixture.options.playTrack = async ({ track, emit, registerResource }) => {
+    fixture.calls.play += 1; registerResource(fixture.resource(`decoder-${track.id}`));
+    await emit({ type: "AUDIO_SENT", trackId: track.id, audioBytesSent: 100 });
+    return { audioBytesSent: 100, completed: true };
+  };
+  const result = await drive(runCatalogueTest(fixture.options), fixture.clock);
+  assert.equal(result.status, "COMPLETED"); assert.equal(result.tracksEnded, 40); assert.equal(result.stopConfirmed, true);
+  const excess = useHourProfile(setup()); excess.session.tracks = [...fixture.session.tracks, { id: "track41", mediaAssetId: "asset41", durationSeconds: 90 }];
+  assert.equal((await drive(runCatalogueTest(excess.options), excess.clock)).status, "REFUSED");
+  assert.equal(excess.calls.prepare, 0);
+  const legacy = setup(); legacy.session.tracks = fixture.session.tracks.slice(0, 9);
+  assert.equal((await drive(runCatalogueTest(legacy.options), legacy.clock)).status, "REFUSED");
+});
+
+test("hour encoded-byte ceiling permits 58 MB but stops a cumulative overrun beyond 64 MiB", async () => {
+  for (const perTrack of [29_000_000, 33 * 1024 * 1024]) {
+    const fixture = useHourProfile(setup());
+    fixture.options.playTrack = async ({ track, emit }) => {
+      await emit({ type: "AUDIO_SENT", trackId: track.id, audioBytesSent: perTrack });
+      return { audioBytesSent: perTrack, completed: true };
+    };
+    const result = await drive(runCatalogueTest(fixture.options), fixture.clock);
+    if (perTrack === 29_000_000) { assert.equal(result.status, "COMPLETED"); assert.equal(result.audioBytesSent, 58_000_000); }
+    else { assert.equal(result.status, "FAILED"); assert.equal(result.code, "CATALOGUE_TEST_AUDIO_BUDGET_EXCEEDED"); }
+    assert.equal(result.stopConfirmed, true); assert.equal(fixture.calls.connect, 1);
+  }
+  const legacy = setup(); legacy.options.playTrack = async ({ track, emit }) => {
+    await emit({ type: "AUDIO_SENT", trackId: track.id, audioBytesSent: 17 * 1024 * 1024 });
+    return { audioBytesSent: 17 * 1024 * 1024, completed: true };
+  };
+  assert.equal((await drive(runCatalogueTest(legacy.options), legacy.clock)).code, "CATALOGUE_TEST_AUDIO_OBSERVATION_INVALID");
+});
+
+test("resource ceilings remain fixed at sixteen for legacy tests and forty-two for an hour", async () => {
+  for (const [hour, limit] of [[false, 16], [true, 42]]) {
+    const fixture = hour ? useHourProfile(setup()) : setup();
+    fixture.options.prepareAudio = async ({ registerResource }) => {
+      for (let index = 0; index <= limit; index++) registerResource(fixture.resource(`resource${index}`));
+      return { dispose() {} };
+    };
+    const result = await drive(runCatalogueTest(fixture.options), fixture.clock);
+    assert.equal(result.code, "CATALOGUE_TEST_RESOURCE_LIMIT"); assert.equal(result.stopConfirmed, true);
+    assert.equal(fixture.calls.connect, 0);
+    assert.ok(fixture.calls.forced.some(item => item.name === `resource${limit}`));
+  }
+});
+
+test("owner cancellation during an hour session closes audio immediately, rather than waiting for the hour", async () => {
+  const fixture = useHourProfile(setup()), controller = new AbortController(); fixture.options.signal = controller.signal;
+  fixture.options.playTrack = async ({ registerResource, track, emit }) => {
+    fixture.calls.play += 1; registerResource(fixture.resource("hour-child"));
+    await emit({ type: "AUDIO_SENT", trackId: track.id, audioBytesSent: 321 });
+    return new Promise(() => {});
+  };
+  const pending = runCatalogueTest(fixture.options); await flush();
+  await fixture.clock.advance(500); controller.abort();
+  const result = await drive(pending, fixture.clock);
+  assert.equal(result.status, "STOPPED"); assert.equal(result.code, "CATALOGUE_TEST_ABORTED");
+  assert.equal(result.audioBytesSent, 321); assert.equal(result.stopConfirmed, true);
+  assert.ok(fixture.calls.forced.some(item => item.name === "hour-child" && item.at === 500));
+  assert.equal(fixture.calls.play, 1); assert.equal(fixture.calls.connect, 1);
 });

@@ -50,6 +50,19 @@ test("encoder arguments expose no network destination and never loop the source"
   assert.equal(args.at(-1), "pipe:1"); assert.ok(!args.includes("-stream_loop"));
   assert.throws(() => catalogueTestFfmpegArguments("x", 301));
 });
+
+test("longer audio segments require the trusted hour authorization rather than a duration or client limit object", () => {
+  const session = { profileId: "ONE_HOUR", authorization: { profileId: "ONE_HOUR", maximumSeconds: 3600 } };
+  const args = catalogueTestFfmpegArguments("/tmp/verified.mp3", 3600, session);
+  assert.equal(args[args.indexOf("-t") + 1], "3600");
+  assert.ok(!args.includes("-stream_loop")); assert.equal(args.at(-1), "pipe:1");
+  for (const invalid of [{}, { profileId: "ONE_HOUR" }, { testProfile: { maximumSeconds: 3600 } },
+    { profileId: "FIVE_MINUTES", authorization: session.authorization },
+    { authorization: { profileId: "ONE_HOUR", maximumSeconds: 300 } }, { profileId: null }]) {
+    assert.throws(() => catalogueTestFfmpegArguments("/tmp/verified.mp3", 301, invalid), { code: "TEST_AUDIO_ARGUMENTS_INVALID" });
+  }
+  assert.throws(() => catalogueTestFfmpegArguments("/tmp/verified.mp3", 3601, session), { code: "TEST_AUDIO_ARGUMENTS_INVALID" });
+});
 test("a failed kill is not proof of child exit and cannot release its files or lease", async () => {
   const child = new EventEmitter();
   let kills = 0, resource, confirmed = false;

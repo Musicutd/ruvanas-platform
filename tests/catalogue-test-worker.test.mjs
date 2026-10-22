@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
-import { catalogueTestWorkerMode, runCatalogueTestOnce, holdCatalogueTestWorker, renewCatalogueTestWorkerLease } from "../scripts/catalogue-test-worker.mjs";
+import { catalogueTestWorkerMode, runCatalogueTestOnce, holdCatalogueTestWorker, renewCatalogueTestWorkerLease, catalogueTestPreparationPlan } from "../scripts/catalogue-test-worker.mjs";
 
 test("diagnostic worker defaults to no streaming or database clients", () => {
   for (const args of [[], ["--check"]]) assert.equal(catalogueTestWorkerMode(args), "CHECK_ONLY");
@@ -50,6 +50,64 @@ test("once mode requires the exact station/live gates and a single opaque sessio
   assert.throws(() => catalogueTestWorkerMode(["--serve-test-once"], { ...env, RUVANAS_CATALOGUE_TEST_ALLOW_LIVE: "TRUE" }));
   assert.throws(() => catalogueTestWorkerMode(["--serve-test-once", "--serve-tests"], env));
   assert.throws(() => catalogueTestWorkerMode(["--serve-test-once"], { ...env, RUVANAS_CATALOGUE_TEST_STATION_ID: "other" }));
+});
+
+function addHourGrant(fixture) {
+  const issuedAt = fixture.options.now();
+  Object.assign(fixture.row, { profileId: "ONE_HOUR", durationSeconds: 3600,
+    authorization: { profileId: "ONE_HOUR", maximumSeconds: 3600, issuedAt: issuedAt.toISOString(), expiresAt: new Date(issuedAt.getTime() + 4_200_000).toISOString() },
+    expiresAt: new Date(issuedAt.getTime() + 4_200_000), deadlineAt: new Date(issuedAt.getTime() + 3_600_000) });
+}
+
+test("a 70-minute hour-test grant still allows at most ten minutes of pre-arm waiting", async () => {
+  const f = onceFixture(); addHourGrant(f);
+  assert.equal((await runCatalogueTestOnce(f.options)).code, "TEST_REQUEST_EXPIRED");
+  assert.equal(f.calls.waits.reduce((total, value) => total + value, 0), 600000);
+  assert.equal(f.calls.runs.length, 0);
+  const stale = onceFixture(); addHourGrant(stale); stale.advance(590000);
+  assert.equal((await runCatalogueTestOnce(stale.options)).code, "TEST_REQUEST_EXPIRED");
+  assert.equal(stale.calls.waits.reduce((total, value) => total + value, 0), 10000);
+});
+
+test("an armed hour session remains exact-once and an untrusted extended profile never reaches a lease", async () => {
+  const f = onceFixture(); addHourGrant(f); f.row.status = "ARMED";
+  assert.equal(await runCatalogueTestOnce(f.options), COMPLETED);
+  assert.deepEqual(f.calls.runs, [SELECTED]); assert.deepEqual(f.calls.waits, []);
+  for (const changes of [{ profileId: "ONE_HOUR" }, { profileId: "UNKNOWN" }, { authorization: null },
+    { authorization: { profileId: "ONE_HOUR", maximumSeconds: 300 } }]) {
+    const denied = onceFixture(); denied.row.status = "ARMED"; Object.assign(denied.row, changes);
+    assert.equal((await runCatalogueTestOnce(denied.options)).code, "TEST_PROFILE_INVALID");
+    assert.deepEqual(denied.calls.leases, []); assert.deepEqual(denied.calls.runs, []);
+  }
+});
+
+function preparationSession(count, bytes, hour = false) {
+  return { authorized: true, ...(hour ? { profileId: "ONE_HOUR", authorization: { profileId: "ONE_HOUR", maximumSeconds: 3600 } } : {}),
+    tracks: Array.from({ length: count }, (_, index) => ({ id: `track${index}`, mediaAssetId: `asset${index}`,
+      track: { mediaAsset: { id: `asset${index}`, libraryType: "RUVANAS_CATALOGUE", organisationId: null,
+        storageKey: `catalogue/music/${index.toString(16).padStart(64, "0")}.mp3`, sizeBytes: BigInt(bytes) } } })) };
+}
+
+test("worker preparation validates all metadata against fixed profile file/count budgets before storage access", () => {
+  const plan = catalogueTestPreparationPlan(preparationSession(40, 6 * 1024 * 1024, true));
+  assert.equal(plan.totalBytes, 240 * 1024 * 1024); assert.equal(plan.entries.length, 40);
+  assert.equal(plan.profile.maximumUniqueFileBytes, 256 * 1024 * 1024); assert.equal(Object.isFrozen(plan.entries), true);
+  assert.throws(() => catalogueTestPreparationPlan(preparationSession(40, 7 * 1024 * 1024, true)), { code: "TEST_CACHE_LIMIT" });
+  assert.throws(() => catalogueTestPreparationPlan(preparationSession(41, 1024, true)), { code: "TEST_PLAN_CHANGED" });
+  assert.throws(() => catalogueTestPreparationPlan(preparationSession(9, 1024)), { code: "TEST_PLAN_CHANGED" });
+  assert.throws(() => catalogueTestPreparationPlan(preparationSession(8, 13 * 1024 * 1024)), { code: "TEST_CACHE_LIMIT" });
+  assert.throws(() => catalogueTestPreparationPlan(preparationSession(1, 50 * 1024 * 1024 + 1, true)), { code: "TEST_MEDIA_IDENTITY_INVALID" });
+  const forged = preparationSession(40, 1024); forged.testProfile = { maximumItems: 100, maximumUniqueFileBytes: Infinity };
+  assert.throws(() => catalogueTestPreparationPlan(forged), { code: "TEST_PLAN_CHANGED" });
+});
+
+test("worker preflight counts shared immutable media once and rejects conflicting identities", () => {
+  const session = preparationSession(3, 40 * 1024 * 1024);
+  const shared = session.tracks[0].track.mediaAsset;
+  session.tracks[1].mediaAssetId = shared.id; session.tracks[1].track.mediaAsset = { ...shared };
+  assert.equal(catalogueTestPreparationPlan(session).totalBytes, 80 * 1024 * 1024);
+  session.tracks[1].track.mediaAsset.sizeBytes += 1n;
+  assert.throws(() => catalogueTestPreparationPlan(session), { code: "TEST_MEDIA_IDENTITY_INVALID" });
 });
 
 test("a selected prepared session waits only for its own explicit arming and runs exactly once", async () => {

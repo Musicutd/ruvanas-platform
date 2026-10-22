@@ -12,6 +12,7 @@ import { loadAuthorizedCatalogueTest, catalogueTestSourceFingerprint, CATALOGUE_
 import { catalogueTestMediaIdentity, connectCatalogueTestSource, downloadCatalogueTestMedia,
   sendCatalogueTestTrack, validateCatalogueTestTarget } from "../lib/catalogue-test-transport.mjs";
 import { TEST_RADIO_CATALOGUE_TEST as LIMITS } from "../lib/online-radio-catalogue-test.mjs";
+import { catalogueTestPreparationDeadline, catalogueTestProfileForSession, getCatalogueTestProfile } from "../lib/catalogue-test-profiles.mjs";
 
 const failure = code => Object.assign(new Error(code), { code });
 const validSessionId = value => typeof value === "string" && /^c[a-z0-9]{10,40}$/i.test(value);
@@ -44,7 +45,8 @@ export async function runCatalogueTestOnce({ sessionId, loadSelected, renewLease
   signal = new AbortController().signal, now = () => new Date(), monotonicNow = () => performance.now(), wait = waitForPoll } = {}) {
   if (!validSessionId(sessionId) || [loadSelected, renewLease, runSelected, now, monotonicNow, wait].some(fn => typeof fn !== "function") ||
       typeof signal?.throwIfAborted !== "function") throw failure("TEST_WORKER_ONCE_OPTIONS_INVALID");
-  const started = monotonicNow(), maximumWaitMs = LIMITS.maximumAuthorizationSeconds * 1000;
+  // A longer audio grant never extends the separate ten-minute pre-arm wait.
+  const started = monotonicNow(), maximumWaitMs = getCatalogueTestProfile().maximumPreparationSeconds * 1000;
   let selectedStopAt = Infinity;
   const refused = code => ({ status: "REFUSED", code, stopConfirmed: true });
   const stopped = () => ({ status: "STOPPED", code: "TEST_WORKER_STOPPED", stopConfirmed: true });
@@ -87,10 +89,16 @@ export async function runCatalogueTestOnce({ sessionId, loadSelected, renewLease
       if (selected?.authorized !== true || selected.id !== sessionId || selected.stationId !== LIMITS.stationId) return refused("TEST_WORKER_SESSION_MISMATCH");
       if (!["PREPARED", "ARMED"].includes(selected.status)) return refused("TEST_WORKER_SESSION_NOT_STARTABLE");
       if (selected.stopRequestedAt) return stopped();
+      if (!catalogueTestProfileForSession(selected)) return refused("TEST_PROFILE_INVALID");
       if (!(selected.expiresAt instanceof Date) || !Number.isFinite(selected.expiresAt.getTime()) || selected.expiresAt <= current) return refused("TEST_REQUEST_EXPIRED");
       if (selected.status === "ARMED" && (!(selected.deadlineAt instanceof Date) || !Number.isFinite(selected.deadlineAt.getTime()) ||
           selected.deadlineAt <= current || selected.deadlineAt > selected.expiresAt)) return refused("TEST_REQUEST_EXPIRED");
       selectedStopAt = Math.min(selectedStopAt, selected.expiresAt.getTime(), selected.status === "ARMED" ? selected.deadlineAt.getTime() : Infinity);
+      if (selected.status === "PREPARED" && selected.authorization !== undefined) {
+        const preparationDeadline = catalogueTestPreparationDeadline(selected.authorization, selected.durationSeconds);
+        if (!preparationDeadline || preparationDeadline <= current) return refused("TEST_REQUEST_EXPIRED");
+        selectedStopAt = Math.min(selectedStopAt, preparationDeadline.getTime());
+      }
       const leaseHeld = await beforeStart(operationSignal => renewLease({ sessionId, now: current, signal: operationSignal }));
       // A previous deployment may retain its short lease during shutdown.
       // Retry only an explicitly occupied lease, never an ambiguous result.
@@ -147,6 +155,31 @@ export async function holdCatalogueTestWorker(signal) {
   await waitForPoll(2147483647, signal);
   // A very long manual hold must remain inert, not resume database polling.
   if (!signal.aborted) return holdCatalogueTestWorker(signal);
+}
+
+// Preflight every selected file before the first storage request. The runner's
+// authenticated session supplies the profile; a supplied testProfile is ignored.
+export function catalogueTestPreparationPlan(session) {
+  const profile = catalogueTestProfileForSession(session);
+  if (!profile || session?.authorized !== true) throw failure("TEST_PROFILE_INVALID");
+  if (!Array.isArray(session.tracks) || !session.tracks.length || session.tracks.length > profile.maximumItems) throw failure("TEST_PLAN_CHANGED");
+  const trackIds = new Set(), assets = new Map(), entries = [];
+  let totalBytes = 0;
+  for (const item of session.tracks) {
+    const asset = item?.track?.mediaAsset;
+    if (typeof item?.id !== "string" || !item.id || trackIds.has(item.id) ||
+        typeof asset?.id !== "string" || !asset.id || item.mediaAssetId !== asset.id) throw failure("TEST_PLAN_CHANGED");
+    trackIds.add(item.id);
+    const identity = catalogueTestMediaIdentity(asset), prior = assets.get(asset.id);
+    if (prior && (prior.checksum !== identity.checksum || prior.sizeBytes !== identity.sizeBytes || prior.extension !== identity.extension)) throw failure("TEST_MEDIA_IDENTITY_INVALID");
+    if (!prior) {
+      totalBytes += identity.sizeBytes;
+      if (totalBytes > profile.maximumUniqueFileBytes) throw failure("TEST_CACHE_LIMIT");
+      assets.set(asset.id, identity);
+    }
+    entries.push(Object.freeze({ trackId: item.id, asset: Object.freeze({ ...asset }), identity: Object.freeze(identity) }));
+  }
+  return Object.freeze({ profile, totalBytes, entries: Object.freeze(entries) });
 }
 
 export async function serveCatalogueTests({ once = false } = {}) {
@@ -207,22 +240,23 @@ export async function serveCatalogueTests({ once = false } = {}) {
         return { authorized: true, leaseHeld: renewed, fingerprint: current.fingerprint };
       },
       prepareAudio: async ({ session, signal }) => {
+        const preparation = catalogueTestPreparationPlan(session);
         const directory = await mkdtemp(path.join(tmpdir(), "ruvanas-catalogue-test-"));
-        const files = new Map();
+        const files = new Map(), cachedAssets = new Map();
         let total = 0;
         try {
-          for (const item of session.tracks) {
+          for (const item of preparation.entries) {
             signal.throwIfAborted();
-            const asset = item.track.mediaAsset;
-            const identity = catalogueTestMediaIdentity(asset);
+            const { asset, identity } = item;
+            if (cachedAssets.has(asset.id)) { files.set(item.trackId, cachedAssets.get(asset.id)); continue; }
             total += identity.sizeBytes;
-            if (total > 100 * 1024 * 1024) throw failure("TEST_CACHE_LIMIT");
+            if (total > preparation.profile.maximumUniqueFileBytes) throw failure("TEST_CACHE_LIMIT");
             const object = await storage.send(new GetObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: asset.storageKey }), {
               abortSignal: AbortSignal.any([signal, AbortSignal.timeout(30_000)]) });
             if (!object.Body || Number(object.ContentLength) !== identity.sizeBytes) { object.Body?.destroy?.(); throw failure("TEST_MEDIA_SIZE_MISMATCH"); }
             const file = path.join(directory, `${files.size}.${identity.extension}`);
             await downloadCatalogueTestMedia(object.Body, file, asset, { signal });
-            files.set(item.id, file);
+            files.set(item.trackId, file); cachedAssets.set(asset.id, file);
           }
           return { files, dispose: () => rm(directory, { recursive: true, force: true }) };
         } catch (error) { await rm(directory, { recursive: true, force: true }); throw error; }
@@ -232,8 +266,8 @@ export async function serveCatalogueTests({ once = false } = {}) {
         if (current.fingerprint !== session.fingerprint || catalogueTestSourceFingerprint(current.source) !== catalogueTestSourceFingerprint(session.source)) throw failure("TEST_SOURCE_CHANGED");
         return connectCatalogueTestSource({ source: current.source, password: decryptSecret(current.source.sourcePasswordEncrypted), signal, registerResource });
       },
-      playTrack: ({ prepared, connection, track, signal, emit, registerResource }) => sendCatalogueTestTrack({
-        ffmpegPath, filePath: prepared.files.get(track.id), track, connection, signal, emit, registerResource
+      playTrack: ({ prepared, connection, track, session, signal, emit, registerResource }) => sendCatalogueTestTrack({
+        ffmpegPath, filePath: prepared.files.get(track.id), track, session, connection, signal, emit, registerResource
       }),
       appendEvent: async ({ event }) => {
         const details = {};
