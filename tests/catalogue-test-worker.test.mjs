@@ -142,6 +142,78 @@ test("ambiguous or throwing lease results are not retried", async () => {
   assert.deepEqual(f.calls.waits, []); assert.deepEqual(f.calls.runs, []);
 });
 
+test("cold selected reads and lease acquisition may each take more than one second", { timeout: 10000 }, async () => {
+  const f = onceFixture(); f.row.status = "ARMED";
+  f.options.loadSelected = async ({ sessionId }) => {
+    f.calls.loaded.push(sessionId); await new Promise(resolve => setTimeout(resolve, 1100)); return { ...f.row };
+  };
+  f.options.renewLease = async ({ sessionId }) => {
+    f.calls.leases.push(sessionId); await new Promise(resolve => setTimeout(resolve, 1100)); return true;
+  };
+  assert.equal(await runCatalogueTestOnce(f.options), COMPLETED);
+  assert.deepEqual(f.calls.loaded, [SELECTED]); assert.deepEqual(f.calls.leases, [SELECTED]); assert.deepEqual(f.calls.runs, [SELECTED]);
+});
+
+test("prestart lease timeouts are clipped to the selected expiry, armed deadline and original monotonic budget", { timeout: 5000 }, async () => {
+  for (const boundary of ["expiry", "armed", "monotonic"]) {
+    const f = onceFixture(); let complete, operationSignal;
+    if (boundary === "expiry") f.row.expiresAt = new Date(f.options.now().getTime() + 40);
+    if (boundary === "armed") { f.row.status = "ARMED"; f.row.deadlineAt = new Date(f.options.now().getTime() + 40); }
+    if (boundary === "monotonic") {
+      f.row.expiresAt = new Date(f.options.now().getTime() + 900000);
+      f.options.loadSelected = async () => { f.advance(599960); return { ...f.row }; };
+    }
+    f.options.renewLease = ({ signal }) => { operationSignal = signal; return new Promise(resolve => { complete = resolve; }); };
+    assert.equal((await runCatalogueTestOnce(f.options)).code, "TEST_REQUEST_EXPIRED");
+    assert.equal(operationSignal.aborted, true);
+    complete(true); await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(f.calls.runs, []); assert.deepEqual(f.calls.waits, []);
+  }
+});
+
+test("the first lookup respects the remaining original monotonic budget before any stored deadline is known", { timeout: 5000 }, async () => {
+  const f = onceFixture(); let first = true, operationSignal;
+  f.options.monotonicNow = () => { if (first) { first = false; return 0; } return 599960; };
+  f.options.loadSelected = ({ signal }) => { operationSignal = signal; return new Promise(() => {}); };
+  assert.equal((await runCatalogueTestOnce(f.options)).code, "TEST_REQUEST_EXPIRED");
+  assert.equal(operationSignal.aborted, true); assert.deepEqual(f.calls.leases, []); assert.deepEqual(f.calls.runs, []);
+});
+
+test("a lookup after lease contention cannot outwait the previously validated armed deadline", { timeout: 5000 }, async () => {
+  const f = onceFixture(); f.row.status = "ARMED"; f.row.deadlineAt = new Date(f.options.now().getTime() + 3040);
+  let operationSignal, complete;
+  f.options.loadSelected = ({ sessionId, signal }) => {
+    f.calls.loaded.push(sessionId);
+    if (f.calls.loaded.length === 1) return Promise.resolve({ ...f.row });
+    operationSignal = signal; return new Promise(resolve => { complete = resolve; });
+  };
+  f.options.renewLease = async () => false;
+  assert.equal((await runCatalogueTestOnce(f.options)).code, "TEST_REQUEST_EXPIRED");
+  assert.equal(operationSignal.aborted, true); assert.deepEqual(f.calls.waits, [3000]);
+  complete({ ...f.row }); await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(f.calls.runs, []);
+});
+
+test("a later row cannot extend the expiry or armed deadline already learned for this test", { timeout: 5000 }, async () => {
+  for (const boundary of ["expiry", "armed"]) {
+    const f = onceFixture(); let operationSignal;
+    if (boundary === "expiry") f.row.expiresAt = new Date(f.options.now().getTime() + 3040);
+    else { f.row.status = "ARMED"; f.row.deadlineAt = new Date(f.options.now().getTime() + 3040); }
+    f.options.wait = async milliseconds => {
+      f.calls.waits.push(milliseconds); f.advance(milliseconds);
+      f.row.expiresAt = new Date(f.options.now().getTime() + 600000);
+      f.row.deadlineAt = new Date(f.options.now().getTime() + 300000);
+    };
+    f.options.renewLease = ({ sessionId, signal }) => {
+      f.calls.leases.push(sessionId);
+      if (f.calls.leases.length === 1) return Promise.resolve(false);
+      operationSignal = signal; return new Promise(() => {});
+    };
+    assert.equal((await runCatalogueTestOnce(f.options)).code, "TEST_REQUEST_EXPIRED");
+    assert.equal(operationSignal.aborted, true); assert.deepEqual(f.calls.waits, [3000]); assert.deepEqual(f.calls.runs, []);
+  }
+});
+
 const leaseSource = () => ({ providerKey: "CENTOVA_CAST", serverHost: "pollux.shoutca.st", sourcePort: 8282,
   bitrateKbps: 128, sourceUsername: null, centovaUsername: "ruvanastestradio", outboundAutoDjEnabled: false,
   sourcePasswordEncrypted: "synthetic-test-only" });
@@ -169,7 +241,7 @@ test("a lease write completing after shutdown releases only that exact owner", a
   assert.deepEqual(writes[1], { where: { stationId: STATION, encoderLeaseOwner: leaseOwner }, data: { encoderLeaseOwner: null, encoderLeaseUntil: null } });
 });
 
-test("a timed-out renewal is cancelled before a delayed source read can write", { timeout: 5000 }, async () => {
+test("a timed-out renewal is cancelled before a delayed source read can write", { timeout: 10000 }, async () => {
   const f = onceFixture(); f.row.status = "ARMED"; let complete; const writes = [];
   const db = { stationStreamConfig: { findUnique: () => new Promise(resolve => { complete = resolve; }),
     updateMany: async input => { writes.push(input); return { count: 1 }; } } };
@@ -179,7 +251,7 @@ test("a timed-out renewal is cancelled before a delayed source read can write", 
   assert.deepEqual(writes, []); assert.deepEqual(f.calls.runs, []); assert.deepEqual(f.calls.waits, []);
 });
 
-test("a timed-out in-flight lease write releases only its owner when it eventually completes", { timeout: 5000 }, async () => {
+test("a timed-out in-flight lease write releases only its owner when it eventually completes", { timeout: 10000 }, async () => {
   const f = onceFixture(); f.row.status = "ARMED"; let complete; const writes = [];
   const db = { stationStreamConfig: { findUnique: async () => leaseSource(), updateMany: input => {
     writes.push(input); return writes.length === 1 ? new Promise(resolve => { complete = resolve; }) : Promise.resolve({ count: 1 });
@@ -199,7 +271,7 @@ test("expiry while renewing the selected worker lease still cannot reach the aud
   assert.equal(result.code, "TEST_REQUEST_EXPIRED"); assert.equal(f.calls.runs.length, 0);
 });
 
-test("a cancelled or timed-out selected lookup is never adopted later for playback", { timeout: 5000 }, async () => {
+test("a cancelled or timed-out selected lookup is never adopted later for playback", { timeout: 10000 }, async () => {
   for (const cancel of [true, false]) {
     const f = onceFixture(); f.row.status = "ARMED";
     let complete;

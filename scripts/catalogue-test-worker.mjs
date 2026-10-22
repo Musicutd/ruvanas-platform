@@ -45,10 +45,19 @@ export async function runCatalogueTestOnce({ sessionId, loadSelected, renewLease
   if (!validSessionId(sessionId) || [loadSelected, renewLease, runSelected, now, monotonicNow, wait].some(fn => typeof fn !== "function") ||
       typeof signal?.throwIfAborted !== "function") throw failure("TEST_WORKER_ONCE_OPTIONS_INVALID");
   const started = monotonicNow(), maximumWaitMs = LIMITS.maximumAuthorizationSeconds * 1000;
+  let selectedStopAt = Infinity;
   const refused = code => ({ status: "REFUSED", code, stopConfirmed: true });
   const stopped = () => ({ status: "STOPPED", code: "TEST_WORKER_STOPPED", stopConfirmed: true });
   async function beforeStart(operation) {
     signal.throwIfAborted();
+    const instant = now(), elapsed = monotonicNow() - started;
+    if (!(instant instanceof Date) || !Number.isFinite(instant.getTime()) || !Number.isFinite(elapsed) || elapsed < 0) throw failure("TEST_WORKER_CLOCK_INVALID");
+    const remaining = Math.min(maximumWaitMs - elapsed, selectedStopAt - instant.getTime());
+    if (remaining <= 0) throw failure("TEST_REQUEST_EXPIRED");
+    // Allow a cold database connection, but never extend the original wait
+    // budget or any expiry/deadline already learned from this selected row.
+    const timeoutMs = Math.min(5000, remaining);
+    const timeoutCode = remaining <= 5000 ? "TEST_REQUEST_EXPIRED" : "TEST_WORKER_ONCE_LOOKUP_TIMEOUT";
     return new Promise((resolve, reject) => {
       let settled = false;
       const operationStop = new AbortController();
@@ -59,9 +68,9 @@ export async function runCatalogueTestOnce({ sessionId, loadSelected, renewLease
       };
       const cancel = () => { operationStop.abort(failure("TEST_WORKER_STOPPED")); finish(null, failure("TEST_WORKER_STOPPED")); };
       const timer = setTimeout(() => {
-        operationStop.abort(failure("TEST_WORKER_ONCE_LOOKUP_TIMEOUT"));
-        finish(null, failure("TEST_WORKER_ONCE_LOOKUP_TIMEOUT"));
-      }, 1000);
+        operationStop.abort(failure(timeoutCode));
+        finish(null, failure(timeoutCode));
+      }, timeoutMs);
       signal.addEventListener("abort", cancel, { once: true });
       Promise.resolve().then(() => { signal.throwIfAborted(); return operation(operationStop.signal); }).then(value => finish(value), error => finish(null, error));
       if (signal.aborted) cancel();
@@ -81,6 +90,7 @@ export async function runCatalogueTestOnce({ sessionId, loadSelected, renewLease
       if (!(selected.expiresAt instanceof Date) || !Number.isFinite(selected.expiresAt.getTime()) || selected.expiresAt <= current) return refused("TEST_REQUEST_EXPIRED");
       if (selected.status === "ARMED" && (!(selected.deadlineAt instanceof Date) || !Number.isFinite(selected.deadlineAt.getTime()) ||
           selected.deadlineAt <= current || selected.deadlineAt > selected.expiresAt)) return refused("TEST_REQUEST_EXPIRED");
+      selectedStopAt = Math.min(selectedStopAt, selected.expiresAt.getTime(), selected.status === "ARMED" ? selected.deadlineAt.getTime() : Infinity);
       const leaseHeld = await beforeStart(operationSignal => renewLease({ sessionId, now: current, signal: operationSignal }));
       // A previous deployment may retain its short lease during shutdown.
       // Retry only an explicitly occupied lease, never an ambiguous result.
@@ -88,7 +98,7 @@ export async function runCatalogueTestOnce({ sessionId, loadSelected, renewLease
       if (signal.aborted) return stopped();
       const afterLease = now(), currentElapsed = monotonicNow() - started;
       if (!(afterLease instanceof Date) || !Number.isFinite(afterLease.getTime()) || !Number.isFinite(currentElapsed) || currentElapsed < 0) return refused("TEST_WORKER_CLOCK_INVALID");
-      if (currentElapsed >= maximumWaitMs || selected.expiresAt <= afterLease ||
+      if (currentElapsed >= maximumWaitMs || selectedStopAt <= afterLease.getTime() || selected.expiresAt <= afterLease ||
           selected.status === "ARMED" && selected.deadlineAt <= afterLease) return refused("TEST_REQUEST_EXPIRED");
       if (leaseHeld && selected.status === "ARMED") {
         // Exactly one invocation. There is intentionally no retry, even if a
@@ -100,7 +110,7 @@ export async function runCatalogueTestOnce({ sessionId, loadSelected, renewLease
           return result;
         } catch { return { status: "FAILED", code: "CATALOGUE_TEST_STOP_UNCONFIRMED", stopConfirmed: false }; }
       }
-      const remaining = Math.min(selected.expiresAt.getTime() - afterLease.getTime(), maximumWaitMs - currentElapsed,
+      const remaining = Math.min(selectedStopAt - afterLease.getTime(), maximumWaitMs - currentElapsed,
         selected.status === "ARMED" ? selected.deadlineAt.getTime() - afterLease.getTime() : Infinity);
       if (remaining <= 0) return refused("TEST_REQUEST_EXPIRED");
       await wait(Math.min(3000, remaining), signal);
