@@ -469,3 +469,75 @@ test("all public refusal reasons have fixed non-sensitive labels", () => {
   assert.equal(Object.isFrozen(LIMITS), true);
   assert.equal(Object.isFrozen(CATALOGUE_TEST_REASON_LABELS), true);
 });
+
+function hourFixture() {
+  const input = fixture();
+  Object.assign(input.authorization, { profileId: "ONE_HOUR", maximumSeconds: 3600,
+    issuedAt: NOW, expiresAt: new Date(NOW.getTime() + 4_200_000) });
+  input.durationSeconds = 3600;
+  input.tracks = Array.from({ length: 20 }, (_, index) => track(index + 1, 180));
+  return input;
+}
+
+test("an explicit one-hour grant builds exactly one hour of unique approved music without widening ordinary output", () => {
+  const input = hourFixture(), before = structuredClone(input);
+  const plan = buildOnlineRadioCatalogueTestPlan(input);
+  assert.equal(plan.ready, true);
+  assert.equal(plan.profileId, "ONE_HOUR");
+  assert.equal(plan.totalSeconds, 3600);
+  assert.equal(plan.stopAt, "2026-10-21T13:00:00.000Z");
+  assert.equal(plan.items.length, 20);
+  assert.equal(new Set(plan.items.map(item => item.trackId)).size, 20);
+  assert.equal(plan.uniqueFileBytes, 20_000_000);
+  assert.deepEqual(input, before);
+  const dto = safeCatalogueTestPlan(plan);
+  assert.equal(dto.profileId, "ONE_HOUR");
+  assert.equal(dto.uniqueFileBytes, 20_000_000);
+  assert.equal(input.entitlements.outputEnabled, false);
+  assert.equal(buildOnlineRadioCatalogueTestPlan({ ...input, durationSeconds: undefined }).targetSeconds, 3600);
+});
+
+test("hour duration cannot be requested by a legacy or mismatched grant, nor altered to a caller-selected length", () => {
+  const input = hourFixture();
+  for (const authorization of [{ ...fixture().authorization, maximumSeconds: 3600 },
+    { ...input.authorization, profileId: null }, { ...input.authorization, maximumSeconds: 300 }, { ...input.authorization, profileId: "UNKNOWN" }]) {
+    expectDenied({ ...input, authorization }, "AUTHORIZATION_SCOPE_INVALID");
+  }
+  expectDenied({ ...fixture(), durationSeconds: 3600 }, "INVALID_DURATION");
+  for (const durationSeconds of [300, 3599, 3601, "3600"]) expectDenied({ ...input, durationSeconds }, "INVALID_DURATION");
+  expectDenied(mutate(input, item => { item.authorization.expiresAt = new Date(NOW.getTime() + 4_200_001); }), "AUTHORIZATION_EXPIRED");
+  expectDenied(mutate(input, item => { item.authorization.expiresAt = new Date(NOW.getTime() + 3_599_999); }), "AUTHORIZATION_EXPIRED");
+  expectDenied({ ...input, serviceExpiresAt: new Date(NOW.getTime() + 3_599_999) }, "AUTHORIZATION_EXPIRED");
+});
+
+test("hour planning preserves exact station, private exposure, rights and provider restrictions", () => {
+  expectDenied(mutate(hourFixture(), input => { input.station.id = "cmanotherstation000001"; }), "TEST_STATION_REQUIRED");
+  expectDenied(mutate(hourFixture(), input => { input.station.publicPlayerEnabled = true; }), "STATION_NOT_PRIVATE");
+  for (const change of [item => { item.rightsReviewStatus = "PENDING"; }, item => { item.permittedTerritories = "US"; },
+    item => { item.permittedUses = ["RETAIL"]; }, item => { item.catalogueProvider = "PROMO_ONLY"; },
+    item => { item.minimumCatalogueLevel = "PREMIUM"; }]) {
+    const input = hourFixture(); input.tracks.forEach(change);
+    expectDenied(input, "NO_RIGHTS_APPROVED_AUDIO");
+  }
+});
+
+test("hour rights must cover the entire end window, not merely the first five minutes", () => {
+  const input = hourFixture(), now = new Date("2026-10-21T23:30:00.000Z");
+  input.instant = now; input.authorization.issuedAt = now;
+  input.authorization.expiresAt = new Date(now.getTime() + 4_200_000);
+  input.tracks.forEach(item => { item.licenceExpiresAt = new Date("2026-10-21T00:00:00.000Z"); });
+  const denial = expectDenied(input, "NO_RIGHTS_APPROVED_AUDIO");
+  assert.equal(denial.excludedReasons.RIGHTS_WINDOW_INACTIVE, 20);
+});
+
+test("hour source-byte, unique-item and no-repeat limits remain finite and per-file size is unchanged", () => {
+  const oversized = hourFixture(); oversized.tracks.forEach(item => { item.mediaAsset.sizeBytes = 14n * 1024n ** 2n; });
+  expectDenied(oversized, "PLAN_TOO_LARGE");
+  const tooMany = hourFixture(); tooMany.tracks = Array.from({ length: 41 }, (_, index) => track(index + 1, 89));
+  expectDenied(tooMany, "INSUFFICIENT_AUDIO");
+  expectDenied({ ...hourFixture(), tracks: [track(1, 180)] }, "INSUFFICIENT_AUDIO");
+  const tooLargeFile = hourFixture(); tooLargeFile.tracks.forEach(item => { item.mediaAsset.sizeBytes = 50n * 1024n ** 2n + 1n; });
+  expectDenied(tooLargeFile, "NO_RIGHTS_APPROVED_AUDIO");
+  const standard = buildOnlineRadioCatalogueTestPlan(fixture());
+  assert.equal(standard.profileId, "FIVE_MINUTES"); assert.equal(standard.targetSeconds, 300);
+});

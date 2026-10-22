@@ -681,3 +681,108 @@ test("a confirmed terminal test does not quarantine newer preparation or disable
   assert.equal(dashboard.attentionRequired, false);
   assert.equal(dashboard.startEnabled, true);
 });
+
+function hourFixture() {
+  const f = fixture();
+  f.actor.expiresAt = new Date(NOW.getTime() + 7_200_000);
+  f.data.ownerSessions[0].expiresAt = copy(f.actor.expiresAt);
+  f.data.tracks = Array.from({ length: 20 }, (_, index) => {
+    const value = track(index + 1); value.mediaAsset.durationSeconds = 180; return value;
+  });
+  return f;
+}
+const hourOptions = (f, more = {}) => options(f, { profileId: "ONE_HOUR", ...more });
+function rehashTestPlan(row) {
+  const json = JSON.stringify(row.plan, (_key, value) => value && typeof value === "object" && !Array.isArray(value)
+    ? Object.fromEntries(Object.keys(value).sort().map(key => [key, value[key]])) : value);
+  row.fingerprint = createHash("sha256").update(json).digest("hex");
+}
+
+test("hour readiness and preparation issue a bounded separate owner grant with no stream or ordinary plan mutation", async () => {
+  const f = hourFixture(), before = copy(f.data);
+  const readiness = await catalogueTestDashboard(f.db, hourOptions(f));
+  assert.equal(readiness.preview.profileId, "ONE_HOUR");
+  assert.equal(readiness.preview.targetSeconds, 3600);
+  assert.equal(readiness.preview.items.length, 20);
+  assert.deepEqual(f.data, before); assert.equal(f.calls.writes.length, 0);
+  const saved = await prepareCatalogueTest(f.db, hourOptions(f));
+  assert.equal(saved.profileId, "ONE_HOUR"); assert.equal(saved.durationSeconds, 3600);
+  assert.equal(saved.status, "PREPARED");
+  assert.equal(saved.preparationDeadlineAt.toISOString(), "2026-10-21T12:10:00.000Z");
+  assert.equal(saved.expiresAt.toISOString(), "2026-10-21T13:10:00.000Z");
+  const row = f.data.tests[0];
+  assert.equal(row.authorization.maximumSeconds, 3600);
+  assert.equal(row.authorization.profileId, "ONE_HOUR");
+  assert.equal(row.plan.profileId, "ONE_HOUR"); assert.equal(row.plan.targetSeconds, 3600);
+  assert.deepEqual(f.data.station, before.station);
+  assert.equal(row.deadlineAt, null); assert.equal(row.requestedAt, null);
+});
+
+test("hour arm has an exact immutable deadline and current worker reload returns only the approved profile", async () => {
+  const f = hourFixture(), saved = await prepareCatalogueTest(f.db, hourOptions(f));
+  const at = new Date(NOW.getTime() + 120_000);
+  f.data.station.streamConfig.encoderLeaseUntil = new Date(at.getTime() + 45_000);
+  await armCatalogueTest(f.db, options(f, { sessionId: saved.id, now: at, startEnabled: true, publicExposureAccepted: true }));
+  const loaded = await loadAuthorizedCatalogueTest(f.db, { sessionId: saved.id, now: at });
+  assert.equal(loaded.profileId, "ONE_HOUR"); assert.equal(loaded.durationSeconds, 3600);
+  assert.equal(loaded.tracks.length, 20);
+  assert.equal(loaded.deadlineAt.toISOString(), "2026-10-21T13:02:00.000Z");
+  assert.equal(loaded.source.outboundAutoDjEnabled, false);
+  assert.equal(f.calls.reads.filter(call => call.model === "track").at(-1).args.take, 40);
+  await rejected(armCatalogueTest(f.db, options(f, { sessionId: saved.id, now: at, startEnabled: true, publicExposureAccepted: true })), "TEST_AUTHORIZATION_INACTIVE");
+  await rejected(loadAuthorizedCatalogueTest(f.db, { sessionId: saved.id, now: loaded.deadlineAt }), "TEST_DEADLINE_INVALID");
+});
+
+test("hour preparation cannot wait past ten minutes or silently shrink to an expiring owner permission", async () => {
+  const f = hourFixture(), saved = await prepareCatalogueTest(f.db, hourOptions(f));
+  await rejected(loadAuthorizedCatalogueTest(f.db, { sessionId: saved.id, now: new Date(NOW.getTime() + 600_000), allowPrepared: true }), "TEST_PREPARATION_EXPIRED");
+  const shortOwner = hourFixture(); shortOwner.actor.expiresAt = new Date(NOW.getTime() + 3_500_000);
+  await rejected(prepareCatalogueTest(shortOwner.db, hourOptions(shortOwner)), "AUTHORIZATION_EXPIRED");
+  assert.equal(shortOwner.calls.writes.length, 0);
+  const shortService = hourFixture(); shortService.data.station.organisation.subscription.currentPeriodEnd = new Date(NOW.getTime() + 3_500_000);
+  await rejected(prepareCatalogueTest(shortService.db, hourOptions(shortService)), "AUTHORIZATION_EXPIRED");
+  for (const profileId of [null, "UNKNOWN", 3600]) {
+    const bad = fixture(); await rejected(inspectCatalogueTest(bad.db, options(bad, { profileId })), "TEST_PROFILE_INVALID");
+    assert.equal(bad.calls.reads.length, 0);
+  }
+});
+
+test("persisted duration, grant and plan profile must agree even when a tampered plan is rehashed", async () => {
+  for (const [change, code] of [
+    [row => { row.authorization.maximumSeconds = 300; }, "TEST_PROFILE_INVALID"],
+    [row => { row.authorization.profileId = undefined; }, "TEST_PROFILE_INVALID"],
+    [row => { row.durationSeconds = 3599; }, "TEST_PROFILE_INVALID"],
+    [row => { row.plan.profileId = "FIVE_MINUTES"; }, "TEST_PLAN_CHANGED"],
+    [row => { row.plan.targetSeconds = 300; }, "TEST_PLAN_CHANGED"],
+    [row => { row.plan.items.push(copy(row.plan.items[0])); }, "TEST_PLAN_CHANGED"],
+  ]) {
+    const f = hourFixture(), saved = await prepareCatalogueTest(f.db, hourOptions(f));
+    change(f.data.tests[0]); rehashTestPlan(f.data.tests[0]);
+    await rejected(loadAuthorizedCatalogueTest(f.db, { sessionId: saved.id, now: NOW, allowPrepared: true }), code);
+  }
+});
+
+test("hour tests retain rights/source revalidation, active-session exclusion and stop quarantine", async () => {
+  const f = hourFixture(), saved = await prepareCatalogueTest(f.db, hourOptions(f));
+  await armCatalogueTest(f.db, options(f, { sessionId: saved.id, startEnabled: true, publicExposureAccepted: true }));
+  await rejected(prepareCatalogueTest(f.db, hourOptions(f)), "TEST_ALREADY_ACTIVE");
+  f.data.tracks[0].rightsReviewStatus = "PENDING";
+  await rejected(loadAuthorizedCatalogueTest(f.db, { sessionId: saved.id, now: NOW }), "TEST_TRACK_APPROVAL_CHANGED");
+  f.data.tracks[0].rightsReviewStatus = "APPROVED";
+  f.data.station.streamConfig.sourcePort = 8198;
+  await rejected(loadAuthorizedCatalogueTest(f.db, { sessionId: saved.id, now: NOW }), "TEST_SOURCE_CHANGED");
+  f.data.station.streamConfig.sourcePort = 8282;
+  await stopCatalogueTest(f.db, options(f, { sessionId: saved.id }));
+  await rejected(loadAuthorizedCatalogueTest(f.db, { sessionId: saved.id, now: NOW }), "TEST_AUTHORIZATION_INACTIVE");
+  f.data.tests[0].status = "FAILED"; f.data.tests[0].endedReason = "CATALOGUE_TEST_STOP_UNCONFIRMED";
+  await rejected(prepareCatalogueTest(f.db, hourOptions(f)), "TEST_STOP_UNCONFIRMED");
+});
+
+test("legacy profile-free saved five-minute grants remain valid and cannot be upgraded by a duration edit", async () => {
+  const f = fixture(), saved = await prepared(f), row = f.data.tests[0];
+  delete row.authorization.profileId; delete row.plan.profileId; rehashTestPlan(row);
+  const loaded = await loadAuthorizedCatalogueTest(f.db, { sessionId: saved.id, now: NOW, allowPrepared: true });
+  assert.equal(loaded.profileId, "FIVE_MINUTES"); assert.equal(loaded.durationSeconds, 300);
+  row.durationSeconds = 3600;
+  await rejected(loadAuthorizedCatalogueTest(f.db, { sessionId: saved.id, now: NOW, allowPrepared: true }), "TEST_PROFILE_INVALID");
+});
