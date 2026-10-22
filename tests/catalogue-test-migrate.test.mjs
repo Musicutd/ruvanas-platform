@@ -19,14 +19,16 @@ const clone = value => structuredClone(value);
 let root, catalog, prior;
 before(async () => {
   root = await mkdtemp(path.join(tmpdir(), "ruvanas-catalogue-migrate-tests-"));
-  const actual = await readPreviewMigrationCatalog();
+  // This historical one-release guard intentionally refuses later migrations.
+  // Its fixture retains exactly its original migration universe.
+  const actual = (await readPreviewMigrationCatalog()).filter(entry => entry.name <= NEW);
   for (const entry of actual) {
     const directory = path.join(root, "prisma/migrations", entry.name);
     await mkdir(directory, { recursive: true });
     const source = fileURLToPath(new URL(`../prisma/migrations/${entry.name}/migration.sql`, import.meta.url));
-    // Fixtures preserve every historical byte. Only the NEW fixture uses its
-    // explicitly reviewed LF bytes; the real-file preflight never normalizes.
-    if (entry.name === NEW) await writeFile(path.join(directory, "migration.sql"), (await readFile(source, "utf8")).replace(/\r\n/g, "\n"));
+    // Fixtures preserve history except the two explicitly LF-pinned releases;
+    // fixture checkout conversion never changes real migration file bytes.
+    if ([NEW, PREVIEW_ACCESS_MIGRATION].includes(entry.name)) await writeFile(path.join(directory, "migration.sql"), (await readFile(source, "utf8")).replace(/\r\n/g, "\n"));
     else await copyFile(source, path.join(directory, "migration.sql"));
   }
   await copyFile(new URL("../prisma/schema.prisma", import.meta.url), path.join(root, "prisma/schema.prisma"));
