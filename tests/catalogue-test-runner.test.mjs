@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { runCatalogueTest } from "../lib/catalogue-test-runner.mjs";
+import { runCatalogueTest, CatalogueTestRunnerError } from "../lib/catalogue-test-runner.mjs";
 
 const START = Date.UTC(2030, 0, 1);
 const fingerprint = "a".repeat(64);
 const flush = async () => { for (let index = 0; index < 80; index += 1) await Promise.resolve(); };
-function fakeClock() {
+function fakeClock({ newestFirst = false } = {}) {
   let milliseconds = 0, nextId = 0;
   const timers = new Map();
   return {
@@ -15,7 +15,8 @@ function fakeClock() {
     async advance(amount) {
       const target = milliseconds + amount;
       while (true) {
-        const next = [...timers].filter(([, timer]) => timer.at <= target).sort((left, right) => left[1].at - right[1].at || left[0] - right[0])[0];
+        const next = [...timers].filter(([, timer]) => timer.at <= target).sort((left, right) => left[1].at - right[1].at ||
+          (newestFirst ? right[0] - left[0] : left[0] - right[0]))[0];
         if (!next) break;
         milliseconds = next[1].at; timers.delete(next[0]); next[1].fn(); await flush();
       }
@@ -31,8 +32,8 @@ async function drive(promise, clock, maximumMs = 8_000) {
   if (error) throw error;
   return value;
 }
-function setup(overrides = {}) {
-  const clock = fakeClock();
+function setup(overrides = {}, clockOptions = {}) {
+  const clock = fakeClock(clockOptions);
   const calls = { load: 0, claim: 0, prepare: 0, connect: 0, play: 0, dispose: 0, forced: [], events: [], finish: [] };
   const resource = name => ({
     forceClose() { calls.forced.push({ name, at: clock.monotonicNow() }); },
@@ -123,6 +124,70 @@ test("a hung source authentication is stopped through its early resource registr
   assert.ok(fixture.calls.forced.some(item => item.name === "authenticating-socket" && item.at === 2000));
   assert.equal(fixture.calls.play, 0);
   assert.equal(fixture.calls.events.some(event => event.type === "SOURCE_AUTHENTICATED"), false);
+});
+
+test("deadline-budgeted preparation, connection and playback report the same stop in either equal-timer order", async () => {
+  for (const newestFirst of [false, true]) for (const stage of ["prepare", "connect", "play"]) {
+    const fixture = setup({}, { newestFirst });
+    fixture.session.deadlineAt = fixture.session.authorizationExpiresAt = new Date(START + 1500);
+    if (stage === "prepare") fixture.options.prepareAudio = ({ registerResource }) => {
+      fixture.calls.prepare += 1; registerResource(fixture.resource("preparing-child")); return new Promise(() => {});
+    };
+    if (stage === "connect") fixture.options.connectSource = ({ registerResource }) => {
+      fixture.calls.connect += 1; registerResource(fixture.resource("authenticating-socket")); return new Promise(() => {});
+    };
+    if (stage === "play") fixture.options.playTrack = async ({ track, emit, registerResource }) => {
+      fixture.calls.play += 1;
+      const bytes = track.id === "track1" ? 300 : 123;
+      await emit({ type: "AUDIO_SENT", trackId: track.id, audioBytesSent: bytes });
+      if (track.id === "track1") return { audioBytesSent: bytes, completed: true };
+      registerResource(fixture.resource("encoding-child")); return new Promise(() => {});
+    };
+    const result = await drive(runCatalogueTest(fixture.options), fixture.clock);
+    assert.equal(result.status, "STOPPED"); assert.equal(result.code, "CATALOGUE_TEST_DEADLINE"); assert.equal(result.stopConfirmed, true);
+    assert.equal(Math.min(...fixture.calls.forced.map(item => item.at)), 1500);
+    assert.equal(fixture.calls.connect, stage === "prepare" ? 0 : 1);
+    assert.equal(fixture.calls.play, stage === "play" ? 2 : 0);
+    assert.equal(result.audioBytesSent, stage === "play" ? 423 : 0);
+    assert.equal(result.tracksEnded, stage === "play" ? 1 : 0);
+    const terminal = fixture.calls.events.find(event => event.type === "TEST_ENDED");
+    assert.equal(terminal.status, "STOPPED"); assert.equal(terminal.code, "CATALOGUE_TEST_DEADLINE"); assert.equal(terminal.stopConfirmed, true);
+    assert.equal(fixture.calls.finish[0].releaseAllowed, true);
+    if (stage === "play") {
+      const ends = fixture.calls.events.filter(event => event.type === "TRACK_ENDED");
+      assert.deepEqual(ends.map(event => [event.trackId, event.audioBytesSent, event.completed]), [["track1", 300, true], ["track2", 123, false]]);
+      assert.equal(ends[1].endedReason, "TEST_STOPPED"); assert.equal(ends[1].stopConfirmed, true);
+    }
+  }
+});
+
+test("genuine adapter timeouts before the deadline remain failures, not normal deadline stops", async () => {
+  for (const stage of ["heartbeat", "event", "play"]) {
+    const fixture = setup({}, { newestFirst: true });
+    fixture.session.deadlineAt = fixture.session.authorizationExpiresAt = new Date(START + 1500);
+    if (stage === "heartbeat") fixture.options.heartbeat = () => new Promise(() => {});
+    if (stage === "event") fixture.options.appendEvent = async ({ event }) => {
+      fixture.calls.events.push(event);
+      if (event.type === "TEST_CLAIMED") return new Promise(() => {});
+      return true;
+    };
+    if (stage === "play") fixture.options.playTrack = async () => { throw new CatalogueTestRunnerError("CATALOGUE_TEST_ADAPTER_TIMEOUT"); };
+    const result = await drive(runCatalogueTest(fixture.options), fixture.clock);
+    assert.equal(result.status, "FAILED"); assert.equal(result.code, "CATALOGUE_TEST_ADAPTER_TIMEOUT");
+    assert.equal(result.stopConfirmed, true); assert.equal(result.audioBytesSent, 0);
+    assert.equal(fixture.calls.connect, stage === "play" ? 1 : 0);
+  }
+});
+
+test("a deadline-classified stop still quarantines an unconfirmed source closure", async () => {
+  const fixture = setup({}, { newestFirst: true });
+  fixture.session.deadlineAt = fixture.session.authorizationExpiresAt = new Date(START + 1500);
+  fixture.options.connectSource = async () => ({ authenticated: true, forceClose() {}, close: () => new Promise(() => {}) });
+  fixture.options.playTrack = () => new Promise(() => {});
+  const result = await drive(runCatalogueTest(fixture.options), fixture.clock);
+  assert.equal(result.status, "FAILED"); assert.equal(result.code, "CATALOGUE_TEST_STOP_UNCONFIRMED");
+  assert.equal(result.stopConfirmed, false); assert.equal(result.preparedPreserved, true);
+  assert.equal(fixture.calls.dispose, 0); assert.equal(fixture.calls.finish[0].releaseAllowed, false);
 });
 
 test("parent cancellation interrupts observed partial audio and never retries the source", async () => {
