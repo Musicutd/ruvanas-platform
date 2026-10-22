@@ -5,6 +5,7 @@ import { readPrivatePreviewBody } from "@/lib/private-preview-request.mjs";
 import { catalogueTestDashboard, prepareCatalogueTest, armCatalogueTest, stopCatalogueTest,
   catalogueTestOwnerSessionValid } from "@/lib/catalogue-test-service.mjs";
 import { TEST_RADIO_CATALOGUE_TEST, CATALOGUE_TEST_REASON_LABELS } from "@/lib/online-radio-catalogue-test.mjs";
+import { getCatalogueTestProfile } from "@/lib/catalogue-test-profiles.mjs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,11 +36,14 @@ function failure(error) {
   // Never return driver, transport, credential or raw exception messages.
   return respond({ error: labels[code] || "The request could not be confirmed. Check Test Radio before retrying.", code }, code === "TEST_UNAVAILABLE" ? 503 : 409);
 }
-export async function GET(_request, { params }) {
+export async function GET(request, { params }) {
   const check = await access(params);
   if (check.error) return check.error;
+  const query = new URL(request?.url || TEST_RADIO_CATALOGUE_TEST.origin).searchParams;
+  const profileId = query.has("profileId") ? query.get("profileId") : undefined;
+  if (query.getAll("profileId").length > 1 || !getCatalogueTestProfile(profileId)) return respond({ error: "Choose a supported test duration." }, 400);
   try { return respond(await catalogueTestDashboard(prisma, { actorSession: check.actorSession,
-    startEnabled: process.env.RUVANAS_CATALOGUE_TEST_START_ENABLED === "true" })); }
+    profileId, startEnabled: process.env.RUVANAS_CATALOGUE_TEST_START_ENABLED === "true" })); }
   catch (error) { return failure(error); }
 }
 export async function POST(request, { params }) {
@@ -48,14 +52,15 @@ export async function POST(request, { params }) {
   if (check.error) return check.error;
   let input;
   try {
-    input = await readPrivatePreviewBody(request, ["action", "sessionId", "publicExposureAccepted"]);
+    input = await readPrivatePreviewBody(request, ["action", "sessionId", "publicExposureAccepted", "profileId"]);
     if (!input || typeof input !== "object" || Array.isArray(input) || !["prepare", "arm", "stop"].includes(input.action) ||
-        Object.keys(input).some(key => !["action", "sessionId", "publicExposureAccepted"].includes(key))) throw new Error();
+        Object.keys(input).some(key => !["action", "sessionId", "publicExposureAccepted", "profileId"].includes(key))) throw new Error();
+    if (input.action === "prepare" ? !getCatalogueTestProfile(input.profileId) : Object.hasOwn(input, "profileId")) throw new Error();
     if (input.action !== "prepare" && !/^c[a-z0-9]{10,40}$/i.test(input.sessionId || "")) throw new Error();
   } catch { return respond({ error: "Send a valid test command." }, 400); }
   try {
     const options = { actorSession: check.actorSession, sessionId: input.sessionId };
-    if (input.action === "prepare") return respond({ session: await prepareCatalogueTest(prisma, options) });
+    if (input.action === "prepare") return respond({ session: await prepareCatalogueTest(prisma, { ...options, profileId: input.profileId }) });
     if (input.action === "stop") return respond({ session: await stopCatalogueTest(prisma, options) });
     return respond({ session: await armCatalogueTest(prisma, { ...options, publicExposureAccepted: input.publicExposureAccepted,
       startEnabled: process.env.RUVANAS_CATALOGUE_TEST_START_ENABLED === "true" }) });

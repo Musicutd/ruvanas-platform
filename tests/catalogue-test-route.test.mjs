@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { catalogueTestOwnerSessionValid } from "../lib/catalogue-test-service.mjs";
 import { readPrivatePreviewBody } from "../lib/private-preview-request.mjs";
 import { CATALOGUE_TEST_REASON_LABELS, TEST_RADIO_CATALOGUE_TEST } from "../lib/online-radio-catalogue-test.mjs";
+import { getCatalogueTestProfile } from "../lib/catalogue-test-profiles.mjs";
 
 const source = await readFile(new URL("../app/api/admin/stations/[stationId]/catalogue-test/route.js", import.meta.url), "utf8");
 const executable = source.replace(/^import[\s\S]*?;\r?\n/gm, "").replace(/^export /gm, "");
@@ -13,7 +14,7 @@ function fixture({ role = "SUPER_ADMIN", env = {}, error = null } = {}) {
     authMethod: "PASSWORD", revokedAt: null, expiresAt: new Date(Date.now() + 600_000) };
   const operation = action => async (_db, options) => { calls.push({ action, options }); if (error) throw error; return { id: "cmtest000000000001", status: action === "prepare" ? "PREPARED" : "ARMED" }; };
   const dependencies = { NextResponse: { json: (body, options = {}) => Response.json(body, options) }, prisma: {},
-    getCurrentSession: async () => session, catalogueTestOwnerSessionValid, TEST_RADIO_CATALOGUE_TEST, CATALOGUE_TEST_REASON_LABELS, readPrivatePreviewBody,
+    getCurrentSession: async () => session, catalogueTestOwnerSessionValid, TEST_RADIO_CATALOGUE_TEST, CATALOGUE_TEST_REASON_LABELS, readPrivatePreviewBody, getCatalogueTestProfile,
     catalogueTestDashboard: operation("inspect"), prepareCatalogueTest: operation("prepare"), armCatalogueTest: operation("arm"), stopCatalogueTest: operation("stop"), process: { env } };
   const routes = new Function(...Object.keys(dependencies), `${executable}\nreturn {GET,POST};`)(...Object.values(dependencies));
   const params = stationId => ({ params: Promise.resolve({ stationId: stationId || TEST_RADIO_CATALOGUE_TEST.stationId }) });
@@ -51,6 +52,41 @@ test("only exact true startup flag can be forwarded, never a client-supplied gat
   await f.routes.POST(f.request({ action: "arm", sessionId: "cmtest000000000001", publicExposureAccepted: true }), f.params());
   assert.equal(f.calls[0].options.startEnabled, true);
   assert.equal((await f.routes.POST(f.request({ action: "arm", sessionId: "cmtest000000000001", startEnabled: true }), f.params())).status, 400);
+});
+
+test("owner can inspect and prepare only named profiles; arm and stop cannot alter duration", async () => {
+  const f = fixture();
+  for (const profileId of ["FIVE_MINUTES", "ONE_HOUR"]) {
+    assert.equal((await f.routes.GET(new Request(`https://www.ruvanas.com/api/test?profileId=${profileId}`), f.params())).status, 200);
+    assert.equal(f.calls.at(-1).options.profileId, profileId);
+    assert.equal((await f.routes.POST(f.request({ action: "prepare", profileId }), f.params())).status, 200);
+    assert.equal(f.calls.at(-1).options.profileId, profileId);
+  }
+  const before = f.calls.length;
+  for (const profileId of [null, "", "ONE_HOUR ", "TWO_HOURS", 3600, { maximumSeconds: 3600 }]) {
+    assert.equal((await f.routes.POST(f.request({ action: "prepare", profileId }), f.params())).status, 400);
+  }
+  for (const body of [{ action: "prepare", durationSeconds: 3600 }, { action: "prepare", maximumSeconds: 3600 },
+    { action: "arm", sessionId: "cmtest000000000001", profileId: "ONE_HOUR" }, { action: "stop", sessionId: "cmtest000000000001", profileId: "ONE_HOUR" }]) {
+    assert.equal((await f.routes.POST(f.request(body), f.params())).status, 400);
+  }
+  for (const query of ["profileId=", "profileId=unknown", "profileId=ONE_HOUR&profileId=FIVE_MINUTES"]) {
+    assert.equal((await f.routes.GET(new Request(`https://www.ruvanas.com/api/test?${query}`), f.params())).status, 400);
+  }
+  assert.equal(f.calls.length, before);
+});
+
+test("hour selector defaults to five minutes and saved duration controls explicit start", async () => {
+  const ui = await readFile(new URL("../app/admin/stations/[stationId]/setup/CatalogueStreamTest.js", import.meta.url), "utf8");
+  assert.match(ui, /useState\("FIVE_MINUTES"\)/);
+  assert.match(ui, /option value="ONE_HOUR">60 minutes/);
+  assert.match(ui, /const prepared = savedProfileMatches/);
+  assert.match(ui, /Start \{Math\.ceil\(state\.latest\.durationSeconds \/ 60\)\}-minute Centova test/);
+  assert.match(ui, /Automatic hard stop/);
+  assert.match(ui, /hard cutoff cannot be extended/);
+  assert.match(ui, /sequence === refreshSequence\.current/);
+  assert.match(ui, /setProfileId\(body\.latest\.profileId\)/);
+  assert.match(ui, /!previewMatches/);
 });
 test("uncertain mutation errors never promise no start or reveal driver credentials", async () => {
   const f = fixture({ error: new Error("postgresql://private:secret@internal") });
