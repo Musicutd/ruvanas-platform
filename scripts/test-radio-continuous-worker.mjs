@@ -19,10 +19,11 @@ export async function serveContinuousTestRadio({ env = process.env, signal: pare
   }
   const endpoint = new URL(env.R2_ENDPOINT.trim());
   if (endpoint.protocol !== 'https:' || !/^[a-f0-9]{32}\.r2\.cloudflarestorage\.com$/.test(endpoint.hostname) || endpoint.port || endpoint.username || endpoint.password || !['', '/'].includes(endpoint.pathname) || endpoint.search || endpoint.hash) throw Object.assign(new Error('CONTINUOUS_STORAGE_ENDPOINT_INVALID'), { code: 'CONTINUOUS_STORAGE_ENDPOINT_INVALID' });
-  const [{ PrismaClient }, { S3Client, GetObjectCommand }, { decryptSecret }, service, transport, audio, metadata] = await Promise.all([
+  const [{ PrismaClient }, { S3Client, GetObjectCommand }, { decryptSecret }, service, transport, audio, metadata, scheduleService, scheduleTimeline] = await Promise.all([
     import('@prisma/client'), import('@aws-sdk/client-s3'), import('../lib/crypto.js'),
     import('../lib/test-radio-continuous-service.mjs'), import('../lib/catalogue-test-transport.mjs'),
-    import('../lib/test-radio-continuous-playout.mjs'), import('../lib/catalogue-test-https-metadata.mjs')
+    import('../lib/test-radio-continuous-scheduled-playout.mjs'), import('../lib/catalogue-test-https-metadata.mjs'),
+    import('../lib/test-radio-continuous-schedule-service.mjs'), import('../lib/test-radio-continuous-schedule-timeline.mjs')
   ]);
   const { catalogueTestTrackMetadata } = await import('../lib/catalogue-test-metadata.mjs');
   const require = createRequire(import.meta.url);
@@ -47,7 +48,10 @@ export async function serveContinuousTestRadio({ env = process.env, signal: pare
     const preparedTracks = new Map(), titleTracks = new Map(), preparedFiles = new Set(), rejectedTracks = new Map();
     const playedBag = new Set();
     let latest = approval, currentTrackId = null, currentFingerprint = null, currentAudioBytes = 0, lastSourceWrite = null;
-    let heartbeatTask, titleQueue = null, metadataAbort = null, connection = null, result = null, failure = null;
+    let currentPhase = { phase: 'RANDOM', occurrenceId: null, scheduleRevision: null };
+    let heartbeatTask, scheduleTask, measurementTask, titleQueue = null, metadataAbort = null, connection = null, result = null, failure = null;
+    let activeFiles = 0, activeFileBytes = 0, latestSchedule = { enabled: false }, measuredFrames = new Map();
+    let timeline = scheduleTimeline.buildContinuousScheduleTimeline(latestSchedule, measuredFrames), scheduleWarning = null;
     const observe = createContinuousObservationQueue({
       write: data => continuousBounded(() => service.recordContinuousRadioObservation(db, { grantId, leaseOwner, ...data, now: new Date() }), signal),
       onError: error => watchdog.abort(error)
@@ -55,8 +59,8 @@ export async function serveContinuousTestRadio({ env = process.env, signal: pare
     const checkFresh = async () => {
       const fresh = await continuousBounded(() => service.loadAuthorizedContinuousRadio(db, { now: new Date(), env, expectedGrantId: grantId }), signal);
       if (fresh.grant.sourceFingerprint !== approval.grant.sourceFingerprint) throw fail('CONTINUOUS_SOURCE_CHANGED');
-      for (const [id, track] of preparedTracks) {
-        if (!fresh.tracks.some(candidate => candidate.track.id === id && candidate.fingerprint === track.fingerprint)) throw fail('CONTINUOUS_TRACK_APPROVAL_CHANGED');
+      for (const track of preparedTracks.values()) {
+        if (!fresh.tracks.some(candidate => candidate.track.id === track.track.id && candidate.fingerprint === track.fingerprint)) throw fail('CONTINUOUS_TRACK_APPROVAL_CHANGED');
       }
       if (currentTrackId && !fresh.tracks.some(candidate => candidate.track.id === currentTrackId && candidate.fingerprint === currentFingerprint)) throw fail('CONTINUOUS_TRACK_APPROVAL_CHANGED');
       const renewed = await continuousBounded(() => service.renewContinuousRadioLease(db, { grantId, workerId, leaseOwner, now: new Date(), env }), signal);
@@ -66,7 +70,7 @@ export async function serveContinuousTestRadio({ env = process.env, signal: pare
       for (const id of playedBag) if (!eligibleIds.has(id)) playedBag.delete(id);
       for (const id of titleTracks.keys()) if (!eligibleIds.has(id)) titleTracks.delete(id);
       if (lastSourceWrite !== null && performance.now() - lastSourceWrite > 20000) throw fail('CONTINUOUS_AUDIO_STALLED');
-      if (currentTrackId && currentAudioBytes > 0 && lastSourceWrite !== null && performance.now() - lastSourceWrite < 4000) observe.push({ state: 'STREAMING', trackId: currentTrackId, audioBytesSent: currentAudioBytes });
+      if (currentTrackId && currentAudioBytes > 0 && lastSourceWrite !== null && performance.now() - lastSourceWrite < 4000) observe.push({ state: 'STREAMING', trackId: currentTrackId, audioBytesSent: currentAudioBytes, ...currentPhase });
     };
     try {
       directory = await mkdtemp(path.join(tmpdir(), 'ruvanas-continuous-'));
@@ -78,6 +82,91 @@ export async function serveContinuousTestRadio({ env = process.env, signal: pare
           await continuousWait(3000, signal);
         }
       })();
+      const rebuildTimeline = () => {
+        try { timeline = scheduleTimeline.buildContinuousScheduleTimeline(latestSchedule, measuredFrames); }
+        catch { timeline = scheduleTimeline.buildContinuousScheduleTimeline({ enabled: false }, measuredFrames); }
+      };
+      // Planner loading never blocks PCM or lease renewal. Bad/stale planner
+      // data disables programmes, not the separately approved random catalogue.
+      scheduleTask = (async () => {
+        while (!signal.aborted) {
+          try {
+            const loaded = await continuousBounded(() => scheduleService.loadAuthorizedContinuousSchedule(db, { authorized: latest, now: new Date(), env }), signal, 3000);
+            latestSchedule = loaded; rebuildTimeline();
+            const code = loaded.enabled ? null : loaded.reasonCode || null;
+            if (code && code !== scheduleWarning) log('schedule_random_fallback', code);
+            scheduleWarning = code;
+          } catch {
+            latestSchedule = { enabled: false }; rebuildTimeline();
+            if (!signal.aborted && scheduleWarning !== 'CONTINUOUS_SCHEDULE_UNAVAILABLE') log('schedule_random_fallback', 'CONTINUOUS_SCHEDULE_UNAVAILABLE');
+            scheduleWarning = 'CONTINUOUS_SCHEDULE_UNAVAILABLE';
+          }
+          await continuousWait(3000, signal);
+        }
+      })();
+      async function prepareSelected(selected, preparationSignal, { measurement = false } = {}) {
+        const asset = selected.track.mediaAsset, identity = transport.catalogueTestMediaIdentity(asset);
+        // Three compressed files maximum (each <=50 MiB): current, random
+        // fallback, and scheduled prefetch OR the one precision measurement.
+        while (activeFiles >= 3 || activeFileBytes + identity.sizeBytes > 150 * 1024 * 1024) {
+          await continuousWait(25, preparationSignal); preparationSignal.throwIfAborted();
+        }
+        preparationSignal.throwIfAborted(); activeFiles++; activeFileBytes += identity.sizeBytes;
+        const file = path.join(directory, `${randomUUID()}.${identity.extension}`); let released = false;
+        preparedFiles.add(file);
+        const dispose = async () => {
+          if (released) return; released = true;
+          preparedTracks.delete(file); await rm(file, { force: true }); preparedFiles.delete(file);
+          activeFiles--; activeFileBytes -= identity.sizeBytes;
+        };
+        try {
+          const fileSignal = AbortSignal.any([preparationSignal, AbortSignal.timeout(30000)]);
+          const object = await storage.send(new GetObjectCommand({ Bucket: env.R2_BUCKET_NAME, Key: asset.storageKey }), { abortSignal: fileSignal });
+          if (!object.Body || Number(object.ContentLength) !== identity.sizeBytes) { object.Body?.destroy?.(); throw fail('CONTINUOUS_MEDIA_SIZE_MISMATCH'); }
+          await transport.downloadCatalogueTestMedia(object.Body, file, asset, { signal: fileSignal });
+          preparationSignal.throwIfAborted();
+          if (!latest.tracks.some(item => item.track.id === selected.track.id && item.fingerprint === selected.fingerprint)) throw fail('CONTINUOUS_TRACK_APPROVAL_CHANGED');
+          preparedTracks.set(file, { ...selected, measurement }); titleTracks.set(selected.track.id, selected);
+          return { id: selected.track.id, mediaAssetId: asset.id, filePath: file, durationSeconds: selected.durationSeconds, dispose };
+        } catch (error) { await dispose(); throw error; }
+      }
+      async function prepareScheduled({ plan, signal: engineSignal }) {
+        const preparationSignal = AbortSignal.any([signal, engineSignal]);
+        const selected = latest.tracks.find(item => item.track.id === plan.trackId && item.fingerprint === plan.fingerprint);
+        if (!selected) throw fail('CONTINUOUS_TRACK_APPROVAL_CHANGED');
+        return prepareSelected(selected, preparationSignal);
+      }
+      // Measure only programmes in the next hour, one decoder at a time, and
+      // at most 64 unique candidates per recipe. Larger/unready recipes stay
+      // random with a warning; we never scan an unbounded catalogue at startup.
+      measurementTask = (async () => {
+        const refused = new Map();
+        while (!signal.aborted) {
+          let candidate = null;
+          const instant = Date.now();
+          for (const occurrence of latestSchedule.enabled ? latestSchedule.occurrences || [] : []) {
+            if (Date.parse(occurrence.endsAt) <= instant || Date.parse(occurrence.startsAt) > instant + 3600000) continue;
+            if (occurrence.tracks.length > 64) continue;
+            candidate = occurrence.tracks.find(track => !measuredFrames.has(track.fingerprint) && (refused.get(track.fingerprint) || 0) <= instant);
+            if (candidate) break;
+          }
+          if (!candidate) { await continuousWait(1000, signal); continue; }
+          let track;
+          try {
+            const selected = latest.tracks.find(item => item.track.id === candidate.trackId && item.fingerprint === candidate.fingerprint);
+            if (!selected) throw fail('CONTINUOUS_TRACK_APPROVAL_CHANGED');
+            track = await prepareSelected(selected, signal, { measurement: true });
+            const frames = await audio.measureContinuousAudioFrames({ ffmpegPath, track, signal, registerResource });
+            if (measuredFrames.size >= 256) measuredFrames.delete(measuredFrames.keys().next().value);
+            measuredFrames.set(candidate.fingerprint, frames); rebuildTimeline();
+          } catch (error) {
+            if (error.stopConfirmed === false) { watchdog.abort(error); break; }
+            if (!signal.aborted) { refused.set(candidate.fingerprint, Date.now() + 600000); log('schedule_media_unavailable', continuousSafeCode(error)); }
+          } finally { if (track) await track.dispose().catch(error => watchdog.abort(error)); }
+          if (refused.size > 256) refused.delete(refused.keys().next().value);
+          await continuousWait(25, signal);
+        }
+      })();
       async function nextTrack({ recentTrackIds = [], signal: engineSignal } = {}) {
         const preparationSignal = engineSignal ? AbortSignal.any([signal, engineSignal]) : signal;
         preparationSignal.throwIfAborted();
@@ -86,29 +175,17 @@ export async function serveContinuousTestRadio({ env = process.env, signal: pare
         for (let attempts = 0; attempts < Math.min(20, latest.tracks.length); attempts++) {
           const instant = Date.now();
           for (const [id, until] of rejectedTracks) if (until <= instant) rejectedTracks.delete(id);
-          const all = latest.tracks.filter(item => !preparedTracks.has(item.track.id) && (rejectedTracks.get(item.track.id) || 0) < instant);
+          const occupiedIds = new Set([...preparedTracks.values()].filter(item => !item.measurement).map(item => item.track.id));
+          const all = latest.tracks.filter(item => !occupiedIds.has(item.track.id) && (rejectedTracks.get(item.track.id) || 0) < instant);
           if (!all.length) throw fail('CONTINUOUS_NO_AVAILABLE_AUDIO');
           let candidates = all.filter(item => !playedBag.has(item.track.id));
           if (!candidates.length) { playedBag.clear(); candidates = all; }
           const nonRecent = candidates.filter(item => !recentTrackIds.slice(-2).includes(item.track.id));
           if (nonRecent.length) candidates = nonRecent;
-          const selected = candidates[randomInt(candidates.length)], asset = selected.track.mediaAsset;
-          const identity = transport.catalogueTestMediaIdentity(asset);
-          const file = path.join(directory, `${randomUUID()}.${identity.extension}`);
-          preparedFiles.add(file);
+          const selected = candidates[randomInt(candidates.length)];
           try {
-            const fileSignal = AbortSignal.any([preparationSignal, AbortSignal.timeout(30000)]);
-            const object = await storage.send(new GetObjectCommand({ Bucket: env.R2_BUCKET_NAME, Key: asset.storageKey }), { abortSignal: fileSignal });
-            if (!object.Body || Number(object.ContentLength) !== identity.sizeBytes) { object.Body?.destroy?.(); throw fail('CONTINUOUS_MEDIA_SIZE_MISMATCH'); }
-            await transport.downloadCatalogueTestMedia(object.Body, file, asset, { signal: fileSignal });
-            preparationSignal.throwIfAborted();
-            // Approval may have changed while storage was downloading.
-            if (!latest.tracks.some(item => item.track.id === selected.track.id && item.fingerprint === selected.fingerprint)) throw fail('CONTINUOUS_TRACK_APPROVAL_CHANGED');
-            preparedTracks.set(selected.track.id, selected); titleTracks.set(selected.track.id, selected); playedBag.add(selected.track.id);
-            return { id: selected.track.id, mediaAssetId: asset.id, filePath: file, durationSeconds: selected.durationSeconds,
-              async dispose() { preparedTracks.delete(selected.track.id); await rm(file, { force: true }); preparedFiles.delete(file); } };
+            const prepared = await prepareSelected(selected, preparationSignal); playedBag.add(selected.track.id); return prepared;
           } catch (error) {
-            await rm(file, { force: true }); preparedFiles.delete(file);
             if (preparationSignal.aborted) preparationSignal.throwIfAborted();
             rejectedTracks.set(selected.track.id, Date.now() + 10 * 60000);
             log('track_prepare_refused', continuousSafeCode(error));
@@ -136,20 +213,23 @@ export async function serveContinuousTestRadio({ env = process.env, signal: pare
         log('song_title', verified ? 'CONTINUOUS_TITLE_VERIFIED' : 'CONTINUOUS_TITLE_UNVERIFIED');
       }, onError: () => log('song_title', 'CONTINUOUS_TITLE_UNVERIFIED') });
       log('source_authenticated');
-      result = await audio.runTestRadioContinuousPlayout({ ffmpegPath, connection: source, signal, registerResource,
+      result = await audio.runScheduledContinuousPlayout({ ffmpegPath, connection: source, signal, registerResource,
         nextTrack: options => startingTracks.length ? Promise.resolve(startingTracks.shift()) : nextTrack(options),
+        schedule: { planAt: instant => timeline.planAt(instant), prepareTrack: prepareScheduled },
         emit(event) {
           if (event.type === 'TRACK_AUDIO_STARTED') {
             currentTrackId = event.trackId; currentAudioBytes = event.audioBytesSent;
             currentFingerprint = titleTracks.get(currentTrackId)?.fingerprint || null;
-            observe.push({ state: 'STREAMING', trackId: currentTrackId, audioBytesSent: currentAudioBytes });
-            log('track_audio_started', null, { trackId: currentTrackId, senderEvidenceOnly: true });
+            currentPhase = { phase: event.phase, occurrenceId: event.occurrenceId || null, scheduleRevision: event.scheduleRevision || null };
+            observe.push({ state: 'STREAMING', trackId: currentTrackId, audioBytesSent: currentAudioBytes, ...currentPhase });
+            log('track_audio_started', null, { trackId: currentTrackId, ...currentPhase, presentationAt: event.presentationAt, sourceLatenessMs: event.sourceLatenessMs, senderEvidenceOnly: true });
             const entry = titleTracks.get(currentTrackId);
             const title = entry && catalogueTestTrackMetadata({ id: currentTrackId, track: entry.track });
             metadataAbort?.abort();
             // Never overlap or block audio for a slow title request.
             if (title) titleQueue.push(title);
           }
+          if (event.type === 'SCHEDULE_FALLBACK') log('schedule_random_fallback', event.reasonCode, { occurrenceId: event.occurrenceId });
           if (event.type === 'AUDIO_PROGRESS' && event.trackId === currentTrackId) currentAudioBytes = event.audioBytesSent;
           // Keep a bounded catalogue map: the same ID may already be prefetched
           // again when an older occurrence emits its final encoder frame.
@@ -160,6 +240,7 @@ export async function serveContinuousTestRadio({ env = process.env, signal: pare
     finally {
       metadataAbort?.abort(); watchdog.abort(failure || fail('CONTINUOUS_STOPPED'));
       await heartbeatTask;
+      await Promise.all([scheduleTask, measurementTask]);
       await observe.flush();
       // Record source closure separately from metadata cleanup: a stalled title
       // request is not evidence that the music source is still connected.

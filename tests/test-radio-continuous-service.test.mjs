@@ -136,6 +136,22 @@ test("authenticated Stop still persists when the signing key is unavailable", as
   await releaseContinuousRadioLease(f.db, active);
   assert.equal((await continuousRadioDashboard(f.db, f.options)).status, "STOPPED");
 });
+
+test("programme phase requires fresh accepted audio and stale schedule evidence never stops authorised music", async () => {
+  const f = fixture(), active = await running(f);
+  await recordContinuousRadioObservation(f.db, { ...active, state: "STREAMING", trackId: f.data.tracks[0].id, audioBytesSent: 384,
+    phase: "RANDOM" });
+  let view = await continuousRadioDashboard(f.db, f.options);
+  assert.equal(view.listening.enabled, true); assert.equal(view.listening.phase, "RANDOM"); assert.equal(view.listening.programme, null);
+  // No valid signed schedule is present in this fixture. A late observation of
+  // a formerly approved programme must not turn into a current programme claim.
+  await recordContinuousRadioObservation(f.db, { ...active, state: "STREAMING", trackId: f.data.tracks[0].id, audioBytesSent: 768,
+    phase: "SCHEDULED", occurrenceId: "old-occurrence", scheduleRevision: "old-revision" });
+  view = await continuousRadioDashboard(f.db, f.options);
+  assert.equal(view.listening.enabled, true); assert.equal(view.listening.phase, "UNKNOWN"); assert.equal(view.listening.programme, null);
+  const stale = await continuousRadioDashboard(f.db, { ...f.options, now: new Date(NOW.getTime() + 16000) });
+  assert.equal(stale.listening.enabled, false); assert.equal(stale.listening.phase, "UNKNOWN");
+});
 test("atomic leases exclude competing workers, enforce takeover grace and retain unconfirmed shutdown", async () => {
   const f = fixture(), active = await running(f);
   await assert.rejects(claimContinuousRadioLease(f.db, { ...active, workerId: "worker-instance-2" }), { code: "CONTINUOUS_WORKER_BUSY" });
