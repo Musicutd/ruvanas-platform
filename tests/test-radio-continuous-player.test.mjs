@@ -71,6 +71,20 @@ test("start requests require explicit public exposure acceptance and cannot wide
   assert.deepEqual(continuousRadioStartBody(true), { action: "start", publicExposureAccepted: true, monthlyBudgetUsd: 15 });
 });
 
+test("programme badge comes only from fresh source evidence and disappears with the player", () => {
+  const f = fixture();
+  f.listening.phase = "RANDOM";
+  assert.equal(continuousRadioPlayerView(f).programme.label, "Random AutoDJ");
+  f.listening.phase = "SCHEDULED";
+  f.listening.programme = { occurrenceId: "occurrence-1", scheduleRevision: "revision-1", label: "Morning Mix",
+    startsAt: "2026-10-23T12:00:00Z", endsAt: "2026-10-23T13:00:00Z" };
+  assert.equal(continuousRadioPlayerView(f).programme.label, "Scheduled programme: Morning Mix");
+  assert.equal(continuousRadioPlayerView(f, 15_000).programme, undefined);
+  assert.equal(continuousRadioPlayerView(f, 0, true).programme, undefined);
+  delete f.listening.track;
+  assert.equal(continuousRadioPlayerView(f).programme, null);
+});
+
 test("audio removal releases the old stream without playing a new one", () => {
   const calls = [], old = { pause: () => calls.push("pause"), removeAttribute: key => calls.push(key), load: () => calls.push("load") };
   const ref = { current: old };
@@ -128,7 +142,8 @@ test("real setup page renders the Stop panel before connection settings and leav
   const components = { "./AdminStationSetupForm": () => React.createElement("div", null, "Existing connection settings"),
     "./AdminStreamingProfiles": () => React.createElement("div", null, "Existing destination settings"),
     "./CatalogueStreamTest": () => React.createElement("div", null, "Bounded diagnostic controls"),
-    "./ContinuousAutoDj": () => React.createElement("div", null, "Continuous Start and Stop controls") };
+    "./ContinuousAutoDj": () => React.createElement("div", null, "Continuous Start and Stop controls"),
+    "./TestRadioWeeklyPlanner": () => React.createElement("div", null, "Test Radio weekly planner controls") };
   const module = { exports: {} };
   vm.runInNewContext(code, { module, exports: module.exports, require: name => {
     if (name === "@/lib/prisma") return { prisma };
@@ -144,5 +159,5 @@ test("real setup page renders the Stop panel before connection settings and leav
   stationId = "another-existing-station";
   const other = await render();
   assert.match(other, /Existing connection settings/); assert.match(other, /Existing destination settings/);
-  assert.doesNotMatch(other, /Continuous Start|Bounded diagnostic|Advanced diagnostics/);
+  assert.doesNotMatch(other, /Continuous Start|Bounded diagnostic|Advanced diagnostics|Test Radio weekly planner controls/);
 });

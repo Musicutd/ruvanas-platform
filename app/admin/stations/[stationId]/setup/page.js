@@ -5,6 +5,7 @@ import AdminStationSetupForm from "./AdminStationSetupForm";
 import AdminStreamingProfiles from "./AdminStreamingProfiles";
 import CatalogueStreamTest from "./CatalogueStreamTest";
 import ContinuousAutoDj from "./ContinuousAutoDj";
+import TestRadioWeeklyPlanner from "./TestRadioWeeklyPlanner";
 
 export default async function AdminStationSetupPage({ params }) {
   const user = await getAdminUser();
@@ -64,6 +65,7 @@ export default async function AdminStationSetupPage({ params }) {
       </p>
 
       {station.id === "cmvcnbwi20008hr23sd76psi8" && <ContinuousAutoDj stationId={station.id} />}
+      {station.id === "cmvcnbwi20008hr23sd76psi8" && <TestRadioWeeklyPlanner stationId={station.id} />}
       <AdminStationSetupForm
         stationId={station.id}
         stationName={station.name}

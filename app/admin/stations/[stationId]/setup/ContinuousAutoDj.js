@@ -23,6 +23,7 @@ export function ContinuousRadioListening({ snapshot, refreshError }) {
   useEffect(() => { setPlaybackMessage(""); }, [view.enabled, view.listenerUrl]);
   return <div style={{ padding: 18, background: "#edf3f8", borderRadius: 10, margin: "18px 0" }}>
     <p role="status" style={{ marginTop: 0, fontWeight: 700 }}>{view.label}</p>
+    {view.programme && <p style={{ fontWeight: 700, color: "#32556c" }}>{view.programme.label}</p>}
     {view.track ? <div style={{ borderLeft: "4px solid #e4a51e", paddingLeft: 12 }}>
       <p style={{ marginBottom: 4, fontSize: 13 }}>Music sent to Streamerr</p>
       <p style={{ margin: "4px 0", fontSize: 21, fontWeight: 800 }}>{view.track.title}</p>
@@ -107,7 +108,7 @@ export default function ContinuousAutoDj({ stationId }) {
   return <section aria-labelledby="continuous-autodj-title" style={{ margin: "28px 0", padding: 24, border: "2px solid #d8a527", borderRadius: 12, background: "#f7fafc", color: "#14283d" }}>
     <p style={{ margin: "0 0 8px", color: "#816000", fontWeight: 800 }}>OWNER CONTROL · TEST RADIO ONLY</p>
     <h2 id="continuous-autodj-title" style={{ marginTop: 0 }}>Continuous AutoDJ</h2>
-    <p>Play approved songs from your existing Ruvanas music library in a continuing random rotation. Once started, AutoDJ runs without a timed-test cutoff until you stop it, unless a safety, music-rights or service-permission check requires a stop.</p>
+    <p>Play approved songs from your existing Ruvanas music library in a continuing random rotation. Approved weekly programmes take over at their exact start time; random AutoDJ returns at the end. Once started, AutoDJ runs until you stop it, unless a safety, music-rights or service-permission check requires a stop.</p>
     <p>Only Test Radio uses this control. Registration stays closed and other Streamerr channels are unchanged.</p>
     <div style={{ background: "#fff5d9", padding: 14, borderRadius: 8 }}>
       <strong>Approved allowance: US$15 per month.</strong> The planning estimate is about US$13.70 per month for the existing worker and one 128 kbps stream, including a small bandwidth allowance. This is per station, not per listener; existing website, Streamerr, R2 and taxes are separate. This control does not upgrade your plan or create a paid service.
