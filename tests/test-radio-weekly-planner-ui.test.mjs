@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import vm from "node:vm";
 import * as ui from "../lib/test-radio-weekly-planner-ui.mjs";
+import * as deskUi from "../lib/test-radio-playlist-desk-ui.mjs";
 const CHANNEL_ID = "c000000000000000000000001", PLAYLIST_ID = "c000000000000000000000002";
 
 function fixture() {
@@ -82,7 +83,13 @@ test("real UI renders truthful review, escapes catalogue text, offers safe stop 
   const source = await readFile(new URL(`../${filename}`, import.meta.url), "utf8");
   const code = babel.transformSync(source, { filename, babelrc: false, configFile: false, envName: "test", presets: [require.resolve("next/babel")] }).code;
   const module = { exports: {} };
-  vm.runInNewContext(code, { module, exports: module.exports, require: name => name === "@/lib/test-radio-weekly-planner-ui.mjs" ? ui : require(name.startsWith("@babel/runtime/") ? `next/dist/compiled/${name}` : name) });
+  vm.runInNewContext(code, { module, exports: module.exports, require: name => {
+    if (name === "@/lib/test-radio-weekly-planner-ui.mjs") return ui;
+    if (name === "@/lib/test-radio-playlist-desk-ui.mjs") return deskUi;
+    if (name === "./TestRadioPlaylistDesk") return { __esModule: true, default: () => React.createElement("div", null, "Playlist desk") };
+    if (name === "./test-radio-planner.module.css") return { __esModule: true, default: new Proxy({}, { get: (_target, key) => String(key) }) };
+    return require(name.startsWith("@babel/runtime/") ? `next/dist/compiled/${name}` : name);
+  } });
   const state = fixture(); state.draft.preview.occurrences[0].label = '<img src=x onerror="alert(1)">'; state.draft.preview.warnings = ["Priority override needs review"];
   const review = renderToStaticMarkup(React.createElement(module.exports.TestRadioWeeklyReview, { state }));
   assert.match(review, /Review saved version 3/); assert.match(review, /09:00–10:00/); assert.match(review, /My saved mix/);

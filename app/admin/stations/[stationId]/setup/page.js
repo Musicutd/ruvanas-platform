@@ -55,7 +55,8 @@ export default async function AdminStationSetupPage({ params }) {
   };
 
   return (
-    <div style={{ maxWidth: 720, margin: "40px auto", padding: "0 16px" }}>
+    <div style={{ maxWidth: station.id === "cmvcnbwi20008hr23sd76psi8" ? 1360 : 720, margin: "40px auto", padding: "0 16px" }}>
+      <div style={{ maxWidth: 720, margin: "0 auto" }}>
       <h1 style={{ fontSize: 28, fontWeight: 800, marginBottom: 8 }}>
         Configure streaming for {station.name}
       </h1>
@@ -65,7 +66,9 @@ export default async function AdminStationSetupPage({ params }) {
       </p>
 
       {station.id === "cmvcnbwi20008hr23sd76psi8" && <ContinuousAutoDj stationId={station.id} />}
+      </div>
       {station.id === "cmvcnbwi20008hr23sd76psi8" && <TestRadioWeeklyPlanner stationId={station.id} />}
+      <div style={{ maxWidth: 720, margin: "0 auto" }}>
       <AdminStationSetupForm
         stationId={station.id}
         stationName={station.name}
@@ -81,6 +84,7 @@ export default async function AdminStationSetupPage({ params }) {
         </details>
       </>}
       <AdminStreamingProfiles stationId={station.id} channels={channels} destinations={destinations} liveSources={liveSources} />
+      </div>
     </div>
   );
 }
