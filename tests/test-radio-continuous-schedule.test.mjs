@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { PREVIEW_ONLINE_DRAFT_CATALOGUE_PLAN } from "../lib/private-preview-account-policy.mjs";
 import { TEST_RADIO_CONTINUOUS as P, continuousSourceFingerprint, signContinuousCommand } from "../lib/test-radio-continuous-policy.mjs";
 import { CONTINUOUS_CONTROL_ID, loadAuthorizedContinuousRadio } from "../lib/test-radio-continuous-service.mjs";
@@ -58,7 +59,11 @@ function fixture() {
     },
     programmeScheduleVersion: {
       create: async ({ data: row }) => { const id = `cmversion${String(++next).padStart(14, "0")}`;
-        const created = { ...clone(row), id, items: row.items.create.map((item, i) => ({ ...clone(item), id: `${id}item${i}`, versionId: id })) };
+        for (const item of row.items.create) {
+          assert.equal(Object.hasOwn(item, "organisationId"), false, "Prisma nested items inherit organisationId from their parent version");
+          assert.equal(Object.hasOwn(item, "versionId"), false, "Prisma nested items inherit versionId from their parent version");
+        }
+        const created = { ...clone(row), id, items: row.items.create.map((item, i) => ({ ...clone(item), organisationId: row.organisationId, id: `${id}item${i}`, versionId: id })) };
         data.versions.push(created); writes.push(clone(created)); return clone(created); },
       findFirst: async ({ where }) => clone(data.versions.find(v => v.id === where.id && v.organisationId === where.organisationId && v.scheduleId === where.scheduleId && where.status.in.includes(v.status) &&
         data.schedules.some(s => s.id === v.scheduleId && s.channelId === where.schedule.channelId && s.organisationId === where.organisationId)) || null),
@@ -236,4 +241,14 @@ test("review refuses scheduled pools exceeding the worker's64-recording preparat
   assert.equal(screen.draft.readyToApprove, false); assert.equal(screen.draft.reviewHash, null);
   assert.ok(screen.warnings.some(warning => warning.includes("more than 64 recordings")));
   assert.equal((await loadAuthorizedContinuousRadio(f.db, { now: NOW, env: ENV })).tracks.length, 65);
+});
+test("nested schedule item create matches the generated Prisma composite-relation input", async () => {
+  const declarations = await readFile(new URL("../node_modules/.prisma/client/index.d.ts", import.meta.url), "utf8");
+  const shape = declarations.match(/export type ProgrammeScheduleItemUncheckedCreateWithoutVersionInput = \{([\s\S]*?)\n  \}/)?.[1];
+  assert.ok(shape, "Generated Prisma nested item input must be available");
+  assert.doesNotMatch(shape, /\b(?:organisationId|versionId)\??:/);
+  assert.match(shape, /\bmusicModeId\??:/);
+  const f = fixture(); await saveContinuousScheduleDraft(f.db, { ...f.options, input: f.input });
+  assert.equal(f.data.versions[0].organisationId, ORG);
+  assert.equal(f.data.versions[0].items[0].organisationId, ORG);
 });
