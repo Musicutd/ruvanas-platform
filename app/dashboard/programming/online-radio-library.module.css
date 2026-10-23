@@ -19,6 +19,8 @@
 .filters button:disabled { opacity: .6; cursor: not-allowed; }
 .results { font-weight: 800; }
 .tracks { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.subscriberTrackViewport { max-height: min(56vh, 560px); min-height: 180px; overflow: auto; scrollbar-gutter: stable; padding: 3px; }
+.subscriberTrackViewport:focus-visible { outline: 3px solid #2563eb; outline-offset: 3px; border-radius: 8px; }
 .tracks li { display: flex; justify-content: space-between; gap: 14px; padding: 16px; border: 1px solid var(--rv-border); border-radius: 11px; overflow-wrap: anywhere; }
 .tracks h3 { margin: 0; font-size: 17px; }
 .tracks p { margin: 5px 0; }

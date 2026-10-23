@@ -18,18 +18,26 @@ import AutoDjExpansionWorkspace from "./AutoDjExpansionWorkspace";
 import WorkspaceTabs from "../WorkspaceTabs";
 import SimplePlaylistWorkspace from "./SimplePlaylistWorkspace";
 import OnlineRadioLibraryWorkspace from "./OnlineRadioLibraryWorkspace";
+import TestRadioSubscriberWorkspace from "./TestRadioSubscriberWorkspace";
+import { resolveTestRadioSubscriberWorkspace } from "@/lib/test-radio-subscriber-access.mjs";
 import styles from "./programming.module.css";
 
 export const dynamic = "force-dynamic";
 
 export default async function SubscriberProgrammingPage({ searchParams }) {
-  const context = await getActiveOrganisationContext({ subscription: { include: { plan: true, billingContract: true } } });
+  const context = await getActiveOrganisationContext({ subscription: { include: { plan: true, billingContract: true } }, enterpriseSecurityPolicy: true });
   if (!context) redirect("/login");
   if (!context.membership) redirect("/dashboard");
   const canManage = ["OWNER", "MANAGER"].includes(context.membership.role);
   const entitlements = resolveEntitlements(context.membership.organisation.subscription);
   const sandboxDraftOnly = entitlements.sandboxDraftOnly;
   const catalogueMetadataOnly = sandboxDraftOnly && entitlements.sandboxCatalogueMetadata === true;
+  const testRadioWorkspace = await resolveTestRadioSubscriberWorkspace(prisma, context);
+  if (testRadioWorkspace) return <main className={styles.page}>
+    <SkipLink />
+    <header className={styles.header}><a href="/dashboard/radio" className={styles.brand}>RUVANAS</a><a href="/dashboard/radio" className={styles.back}>Back to Online Radio</a></header>
+    <section className={styles.shell} id="main-content"><TestRadioSubscriberWorkspace stationId={testRadioWorkspace.stationId} /></section>
+  </main>;
   const onlineOnly = entitlements.onlineRadioEnabled && ![
     entitlements.retailRadioEnabled, entitlements.schoolRadioEnabled, entitlements.healthRadioEnabled,
     entitlements.faithRadioEnabled, entitlements.organisationsEnabled

@@ -24,14 +24,14 @@ export function TestRadioPlaylistPreview({ preview, name }) {
   </>;
 }
 
-export default function TestRadioPlaylistDesk({ stationId, onSourcesChanged, onAddToWeek, canAddToWeek = false }) {
+export default function TestRadioPlaylistDesk({ stationId, onSourcesChanged, onAddToWeek, canAddToWeek = false, draftOnly = false }) {
   const [data, setData] = useState(null), [form, setForm] = useState(emptyDeskRecipe), [baseline, setBaseline] = useState(() => deskRecipeSnapshot(emptyDeskRecipe()));
   const [selectedId, setSelectedId] = useState(null), [search, setSearch] = useState(""), [preview, setPreview] = useState(null);
   const [busy, setBusy] = useState(""), [error, setError] = useState(""), [message, setMessage] = useState("");
   const sequence = useRef(0), requestAbort = useRef(null), saving = useRef(false), saveAttempt = useRef(null);
   const searchInput = useRef(null), nameInput = useRef(null), sourcesChanged = useRef(onSourcesChanged);
   sourcesChanged.current = onSourcesChanged;
-  const endpoint = `/api/admin/stations/${encodeURIComponent(stationId)}/continuous-playlists`;
+  const endpoint = draftOnly ? "/api/programming/test-radio/library" : `/api/admin/stations/${encodeURIComponent(stationId)}/continuous-playlists`;
   const dirty = deskRecipeSnapshot(form) !== baseline;
   const selected = data?.recipes?.find(recipe => recipe.sourceId === selectedId);
   const savedFormMatches = Boolean(selected && deskRecipeSnapshot(form) === deskRecipeSnapshot(deskRecipeForm(selected)));

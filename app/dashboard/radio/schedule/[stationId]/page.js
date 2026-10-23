@@ -1,18 +1,21 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireSubscriberProduct } from "@/lib/subscriber-product-access";
 import AdvancedSchedulerWorkspace from "@/app/dashboard/programming/AdvancedSchedulerWorkspace";
 import styles from "@/app/dashboard/programming/programming.module.css";
 import { onlineDraftChannelWhere } from "@/lib/private-preview-online-draft.mjs";
+import { resolveTestRadioSubscriberWorkspace } from "@/lib/test-radio-subscriber-access.mjs";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Station schedule | Ruvanas" };
 
 export default async function OnlineRadioStationSchedulePage({ params }) {
-  const { context, entitlements } = await requireSubscriberProduct("ONLINE");
+  const { context, entitlements } = await requireSubscriberProduct("ONLINE", { enterpriseSecurityPolicy: true });
   const sandboxDraftOnly = entitlements.sandboxDraftOnly;
   const { stationId } = await params;
+  const testRadioWorkspace = await resolveTestRadioSubscriberWorkspace(prisma, context);
+  if (testRadioWorkspace?.stationId === stationId) redirect("/dashboard/programming?product=ONLINE#workspace-planner");
   const station = await prisma.station.findFirst({
     where: { id: stationId, organisationId: context.membership.organisationId, productFamily: "ONLINE" },
     select: {

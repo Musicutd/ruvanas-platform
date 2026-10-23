@@ -6,9 +6,10 @@ import SkipLink from "@/app/components/SkipLink";
 import { subscriberProductForStationFamily } from "@/lib/product-access.mjs";
 import { requireSubscriberProduct } from "@/lib/subscriber-product-access";
 import { onlineDraftSubscription } from "@/lib/private-preview-online-draft.mjs";
+import { resolveTestRadioSubscriberWorkspace } from "@/lib/test-radio-subscriber-access.mjs";
 
 export default async function StationDetailsPage({ params }) {
-  const context = await getActiveOrganisationContext({ subscription: { include: { plan: true, billingContract: true } } });
+  const context = await getActiveOrganisationContext({ subscription: { include: { plan: true, billingContract: true } }, enterpriseSecurityPolicy: true });
   const { stationId } = await params;
 
   if (!context) {
@@ -37,6 +38,19 @@ export default async function StationDetailsPage({ params }) {
 
   const productKey = subscriberProductForStationFamily(station.productFamily);
   await requireSubscriberProduct(productKey);
+  const testRadioWorkspace = await resolveTestRadioSubscriberWorkspace(prisma, context);
+  if (testRadioWorkspace?.stationId === station.id) return <main style={styles.page}>
+    <SkipLink />
+    <header style={styles.header}><a href="/dashboard/radio" style={styles.brand}>RUVANAS</a><a href="/dashboard/radio" style={styles.backLink}>Online Radio</a></header>
+    <section style={styles.content} id="main-content"><p style={styles.eyebrow}>TEST RADIO · MUSIC & PLANNING</p>
+      <h1 style={styles.title}>{station.name}</h1><p style={styles.subtitle}>Your existing music catalogue, saved playlists and weekly programme drafts.</p>
+      <section style={styles.statusCard}><div><p style={styles.cardLabel}>Workspace permissions</p><h2 style={styles.status}>Plan here · admin approves on air</h2>
+        <p>Browse approved track details and save playlist or weekly drafts. Saving never changes the current broadcast. AutoDJ controls, streaming settings and on-air approval stay with the administrator.</p></div></section>
+      <section style={styles.nextCard}><h2 style={styles.nextTitle}>What would you like to prepare?</h2><div style={styles.actions}>
+        <a href="/dashboard/programming?product=ONLINE#workspace-library" style={styles.setupButton}>Music library</a>
+        <a href="/dashboard/programming?product=ONLINE#workspace-simple" style={styles.secondaryButton}>Generate or load a playlist</a>
+        <a href="/dashboard/programming?product=ONLINE#workspace-planner" style={styles.secondaryButton}>Weekly planner</a>
+      </div></section></section></main>;
   const productLabel = productKey === "HEALTH" ? "Ruvanas Health" : productKey === "FAITH" ? "Ruvanas Faith" : productKey === "ORGANISATIONS" ? "Ruvanas Organisations" : "Online Radio";
   if (onlineDraftSubscription(membership.organisation.subscription)) return <main style={styles.page}>
     <header style={styles.header}><a href="/dashboard/radio" style={styles.brand}>RUVANAS</a><a href="/dashboard/radio" style={styles.backLink}>Online Radio test</a></header>

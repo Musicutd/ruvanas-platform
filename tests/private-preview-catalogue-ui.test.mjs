@@ -33,6 +33,7 @@ function loadUI(file, context = fixture(accountPolicy.PREVIEW_ONLINE_DRAFT_CATAL
   const unavailable = () => { throw new Error("UNEXPECTED_TEST_SIDE_EFFECT"); };
   const mocked = {
     "@/lib/private-preview-account-policy.mjs": accountPolicy,
+    "@/lib/test-radio-subscriber-access.mjs": { resolveTestRadioSubscriberWorkspace: async () => null },
     "@/lib/product-access.mjs": productAccess,
     "@/lib/entitlements.mjs": entitlementPolicy,
     "@/lib/online-radio-workspace.mjs": radioWorkspace,
