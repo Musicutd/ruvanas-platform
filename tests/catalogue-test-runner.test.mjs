@@ -457,3 +457,233 @@ test("owner cancellation during an hour session closes audio immediately, rather
   assert.ok(fixture.calls.forced.some(item => item.name === "hour-child" && item.at === 500));
   assert.equal(fixture.calls.play, 1); assert.equal(fixture.calls.connect, 1);
 });
+
+function handoverFixture(clockOptions = {}) {
+  const fixture = setup({}, clockOptions);
+  Object.assign(fixture.session, {
+    stationId: "cmvcnbwi20008hr23sd76psi8", durationSeconds: 300,
+    deadlineAt: new Date(START + 300_000), authorizationExpiresAt: new Date(START + 300_000),
+    authorization: { profileId: "FIVE_MINUTES", maximumSeconds: 300, testMode: "HANDOVER_90_SECONDS" },
+    plan: { testMode: "HANDOVER_90_SECONDS", audioDurationSeconds: 90, targetSeconds: 300 },
+    tracks: Array.from({ length: 3 }, (_, index) => ({ id: `handover-track-${index}`, mediaAssetId: `handover-asset-${index}`, durationSeconds: 30 }))
+  });
+  fixture.calls.sequencePlay = 0;
+  fixture.observation = (index, type = "AUDIO_SENT", bytes = 384, completed = true) => ({
+    type, segmentIndex: index, trackId: fixture.session.tracks[index].id, mediaAssetId: fixture.session.tracks[index].mediaAssetId,
+    phase: ["AUTODJ", "SCHEDULED", "AUTODJ_RETURN"][index], audioBytesSent: bytes, totalAudioBytesSent: index * 384 + bytes,
+    ...(type === "SEGMENT_ENDED" ? { completed } : {})
+  });
+  fixture.options.playSequence = async ({ emit, connection, registerResource }) => {
+    fixture.calls.sequencePlay++; assert.equal(connection.authenticated, true);
+    registerResource(fixture.resource("persistent-sequence-encoder"));
+    for (let index = 0; index < 3; index++) {
+      assert.equal(await emit(fixture.observation(index)), true);
+      assert.equal(await emit(fixture.observation(index, "SEGMENT_ENDED")), true);
+    }
+    return { completed: true, segmentsEnded: 3, audioBytesSent: 1152 };
+  };
+  return fixture;
+}
+
+test("signed handover uses one source and one sequence with all three ordered diagnostic phases", async () => {
+  const fixture = handoverFixture();
+  const result = await drive(runCatalogueTest(fixture.options), fixture.clock);
+  assert.equal(result.status, "COMPLETED"); assert.equal(result.audioBytesSent, 1152);
+  assert.equal(result.tracksEnded, 3); assert.equal(result.stopConfirmed, true);
+  assert.equal(fixture.calls.sequencePlay, 1); assert.equal(fixture.calls.play, 0); assert.equal(fixture.calls.connect, 1);
+  assert.equal(fixture.calls.dispose, 1); assert.equal(fixture.calls.finish[0].releaseAllowed, true);
+  const started = fixture.calls.events.filter(event => event.type === "TRACK_AUDIO_SENT");
+  assert.deepEqual(started.map(event => event.phase), ["AUTODJ", "SCHEDULED", "AUTODJ_RETURN"]);
+  assert.deepEqual(started.map(event => event.segmentIndex), [0, 1, 2]);
+  assert.ok(started.every(event => event.attribution === "ENCODER_FRAME_DIAGNOSTIC"));
+  assert.deepEqual(fixture.calls.events.map(event => event.type), ["TEST_CLAIMED", "SOURCE_AUTHENTICATED",
+    "TRACK_AUDIO_SENT", "TRACK_ENDED", "TRACK_AUDIO_SENT", "TRACK_ENDED", "TRACK_AUDIO_SENT", "TRACK_ENDED", "TEST_ENDED"]);
+  assert.ok(fixture.calls.forced.some(item => item.name === "persistent-sequence-encoder"));
+});
+
+test("unsigned, cross-station and incomplete handover requests refuse before claim or connection", async () => {
+  for (const modify of [
+    f => { delete f.session.authorization.testMode; },
+    f => { delete f.session.plan.testMode; },
+    f => { f.session.authorization.testMode = "UNRECOGNIZED"; },
+    f => { f.session.authorization.testMode = "UNRECOGNIZED"; f.session.plan.testMode = "UNRECOGNIZED"; },
+    f => { f.session.testMode = "HANDOVER_90_SECONDS"; delete f.session.authorization.testMode; delete f.session.plan.testMode; },
+    f => { f.session.testMode = "UNRECOGNIZED"; },
+    f => { f.session.plan.audioDurationSeconds = 3600; },
+    f => { f.session.stationId = "another-station"; },
+    f => { f.session.tracks[1].durationSeconds = 31; },
+    f => { f.session.tracks[1].mediaAssetId = f.session.tracks[0].mediaAssetId; },
+    f => { f.options.playSequence = undefined; }
+  ]) {
+    const fixture = handoverFixture(); modify(fixture);
+    const result = await drive(runCatalogueTest(fixture.options), fixture.clock);
+    assert.equal(result.status, "REFUSED"); assert.equal(fixture.calls.claim, 0); assert.equal(fixture.calls.prepare, 0);
+    assert.equal(fixture.calls.connect, 0); assert.equal(fixture.calls.play, 0); assert.equal(fixture.calls.sequencePlay, 0);
+  }
+});
+
+test("handover rejects out-of-order, incorrect identity, phase and byte observations without another source attempt", async () => {
+  for (const bad of [
+    f => f.observation(1),
+    f => ({ ...f.observation(0), segmentIndex: 2 }),
+    f => ({ ...f.observation(0), mediaAssetId: "unapproved-asset" }),
+    f => ({ ...f.observation(0), phase: "SCHEDULED" }),
+    f => ({ ...f.observation(0), audioBytesSent: 0, totalAudioBytesSent: 0 }),
+    f => ({ ...f.observation(0), audioBytesSent: 1.5, totalAudioBytesSent: 1.5 }),
+    f => ({ ...f.observation(0), totalAudioBytesSent: 385 }),
+    f => ({ ...f.observation(0), audioBytesSent: 17 * 1024 * 1024, totalAudioBytesSent: 17 * 1024 * 1024 }),
+    f => f.observation(0, "SEGMENT_ENDED")
+  ]) {
+    const fixture = handoverFixture();
+    fixture.options.playSequence = async ({ emit }) => { fixture.calls.sequencePlay++; assert.equal(await emit(bad(fixture)), false); return {}; };
+    const result = await drive(runCatalogueTest(fixture.options), fixture.clock);
+    assert.equal(result.code, "CATALOGUE_TEST_AUDIO_OBSERVATION_INVALID"); assert.equal(result.status, "FAILED");
+    assert.equal(result.stopConfirmed, true); assert.equal(fixture.calls.connect, 1); assert.equal(fixture.calls.sequencePlay, 1);
+    assert.equal(fixture.calls.events.filter(event => event.type === "TRACK_AUDIO_SENT").length, 0);
+  }
+});
+
+test("handover rejects decreasing bytes, unconfirmed segment ends and incomplete final results", async () => {
+  for (const variant of ["decreasing", "not-complete", "bad-result"]) {
+    const fixture = handoverFixture();
+    fixture.options.playSequence = async ({ emit }) => {
+      assert.equal(await emit(fixture.observation(0)), true);
+      if (variant === "decreasing") {
+        assert.equal(await emit({ ...fixture.observation(0), audioBytesSent: 383, totalAudioBytesSent: 383 }), false);
+      } else if (variant === "not-complete") {
+        assert.equal(await emit(fixture.observation(0, "SEGMENT_ENDED", 384, false)), false);
+      }
+      return { completed: true, segmentsEnded: 3, audioBytesSent: 1152 };
+    };
+    const result = await drive(runCatalogueTest(fixture.options), fixture.clock);
+    assert.equal(result.status, "FAILED"); assert.equal(result.stopConfirmed, true); assert.equal(result.audioBytesSent, 384);
+    assert.equal(result.code, variant === "bad-result" ? "CATALOGUE_TEST_AUDIO_RESULT_INVALID" : "CATALOGUE_TEST_AUDIO_OBSERVATION_INVALID");
+    assert.equal(fixture.calls.connect, 1);
+    const ended = fixture.calls.events.filter(event => event.type === "TRACK_ENDED");
+    assert.equal(ended.length, 1); assert.equal(ended[0].completed, false);
+  }
+});
+
+test("handover rights revocation closes the persistent encoder and prevents scheduled takeover", async () => {
+  const fixture = handoverFixture();
+  fixture.options.heartbeat = async () => ({ authorized: fixture.clock.monotonicNow() < 1000, leaseHeld: true, fingerprint });
+  fixture.options.playSequence = async ({ emit, registerResource }) => {
+    registerResource(fixture.resource("handover-child")); await emit(fixture.observation(0));
+    return new Promise(() => {});
+  };
+  const result = await drive(runCatalogueTest(fixture.options), fixture.clock);
+  assert.equal(result.code, "CATALOGUE_TEST_AUTHORIZATION_REVOKED"); assert.equal(result.stopConfirmed, true);
+  assert.equal(result.audioBytesSent, 384); assert.equal(fixture.calls.connect, 1);
+  assert.ok(fixture.calls.forced.some(item => item.name === "handover-child" && item.at === 1000));
+  assert.deepEqual(fixture.calls.events.filter(event => event.type === "TRACK_AUDIO_SENT").map(event => event.phase), ["AUTODJ"]);
+});
+
+test("handover hard deadline independently closes a stalled sequence and refuses its late events", async () => {
+  for (const newestFirst of [false, true]) {
+    const fixture = handoverFixture({ newestFirst }); let lateEmit;
+    fixture.options.playSequence = async ({ emit, registerResource }) => {
+      lateEmit = emit; registerResource(fixture.resource("handover-child"));
+      await emit(fixture.observation(0)); return new Promise(() => {});
+    };
+    const pending = runCatalogueTest(fixture.options); await flush(); await fixture.clock.advance(300_000);
+    const result = await drive(pending, fixture.clock);
+    assert.equal(result.status, "STOPPED"); assert.equal(result.code, "CATALOGUE_TEST_DEADLINE");
+    assert.equal(result.stopConfirmed, true); assert.equal(result.audioBytesSent, 384);
+    assert.equal(fixture.calls.connect, 1); assert.equal(await lateEmit(fixture.observation(1)), false);
+    assert.ok(fixture.calls.forced.some(item => item.name === "handover-child" && item.at === 300_000));
+    assert.equal(fixture.calls.events.filter(event => event.type === "TRACK_AUDIO_SENT").length, 1);
+  }
+});
+
+test("handover unconfirmed encoder closure preserves prepared audio and does not release its lease", async () => {
+  const fixture = handoverFixture();
+  fixture.options.playSequence = async ({ emit, registerResource }) => {
+    registerResource({ forceClose() {}, close: () => new Promise(() => {}) });
+    await emit(fixture.observation(0));
+    return { completed: false };
+  };
+  const result = await drive(runCatalogueTest(fixture.options), fixture.clock);
+  assert.equal(result.code, "CATALOGUE_TEST_STOP_UNCONFIRMED"); assert.equal(result.preparedPreserved, true);
+  assert.equal(result.stopConfirmed, false); assert.equal(fixture.calls.dispose, 0);
+  assert.equal(fixture.calls.finish[0].releaseAllowed, false); assert.equal(fixture.calls.connect, 1);
+});
+
+test("handover database latency does not delay phase boundaries but success waits for the ordered diagnostic writes", async () => {
+  const fixture = handoverFixture(), emitted = []; let releaseWrite, writePending = false, finished = false;
+  fixture.options.appendEvent = async ({ event }) => {
+    fixture.calls.events.push(event);
+    if (event.type === "TRACK_ENDED" && event.segmentIndex === 0) {
+      writePending = true;
+      return new Promise(resolve => { releaseWrite = resolve; });
+    }
+    return true;
+  };
+  fixture.options.playSequence = async ({ emit, registerResource }) => {
+    registerResource(fixture.resource("handover-child"));
+    for (let index = 0; index < 3; index++) {
+      assert.equal(await emit(fixture.observation(index)), true);
+      emitted.push({ phase: index, at: fixture.clock.monotonicNow() });
+      assert.equal(await emit(fixture.observation(index, "SEGMENT_ENDED")), true);
+    }
+    return { completed: true, segmentsEnded: 3, audioBytesSent: 1152 };
+  };
+  const pending = runCatalogueTest(fixture.options).then(result => { finished = true; return result; });
+  await flush();
+  assert.equal(writePending, true); assert.equal(finished, false);
+  assert.deepEqual(emitted, [{ phase: 0, at: 0 }, { phase: 1, at: 0 }, { phase: 2, at: 0 }]);
+  assert.equal(fixture.calls.finish.length, 0);
+  assert.equal(fixture.calls.events.some(event => event.phase === "SCHEDULED"), false);
+  await fixture.clock.advance(250);
+  assert.equal(finished, false); assert.equal(fixture.calls.forced.length, 0);
+  releaseWrite(true);
+  const result = await drive(pending, fixture.clock);
+  assert.equal(result.status, "COMPLETED"); assert.equal(result.stopConfirmed, true);
+  assert.equal(result.audioBytesSent, 1152); assert.equal(fixture.calls.connect, 1);
+  assert.deepEqual(fixture.calls.events.filter(event => event.type === "TRACK_AUDIO_SENT").map(event => event.phase), ["AUTODJ", "SCHEDULED", "AUTODJ_RETURN"]);
+  assert.deepEqual(fixture.calls.events.map(event => event.sequence), [1, 2, 3, 4, 5, 6, 7, 8, 9]);
+});
+
+test("handover failed or hung diagnostic writes abort the persistent encoder without another source attempt", async () => {
+  for (const kind of ["false", "reject", "timeout"]) {
+    const fixture = handoverFixture(); let lateEmit;
+    fixture.options.appendEvent = async ({ event }) => {
+      fixture.calls.events.push(event);
+      if (event.type === "TRACK_ENDED" && event.segmentIndex === 0) {
+        return new Promise((resolve, reject) => {
+          if (kind !== "timeout") fixture.clock.setTimeout(() => kind === "false" ? resolve(false) : reject(new Error("database unavailable")), 250);
+        });
+      }
+      return true;
+    };
+    fixture.options.playSequence = async ({ emit, registerResource }) => {
+      lateEmit = emit; registerResource(fixture.resource("handover-child"));
+      assert.equal(await emit(fixture.observation(0)), true);
+      assert.equal(await emit(fixture.observation(0, "SEGMENT_ENDED")), true);
+      assert.equal(await emit(fixture.observation(1)), true);
+      return new Promise(() => {});
+    };
+    const result = await drive(runCatalogueTest(fixture.options), fixture.clock);
+    assert.equal(result.status, "FAILED"); assert.equal(result.code, "CATALOGUE_TEST_EVENT_WRITE_FAILED");
+    assert.equal(result.stopConfirmed, true); assert.equal(result.audioBytesSent, 768);
+    assert.equal(result.tracksEnded, 1); assert.equal(fixture.calls.connect, 1);
+    assert.ok(fixture.calls.forced.some(item => item.name === "handover-child" && item.at === (kind === "timeout" ? 1000 : 250)));
+    assert.equal(await lateEmit(fixture.observation(2)), false);
+    assert.equal(fixture.calls.events.some(event => event.phase === "AUTODJ_RETURN"), false);
+    assert.equal(fixture.calls.finish[0].releaseAllowed, true);
+  }
+});
+
+test("concurrent duplicate handover segment ends cannot double-count audio or advance to another phase", async () => {
+  const fixture = handoverFixture();
+  fixture.options.playSequence = async ({ emit }) => {
+    assert.equal(await emit(fixture.observation(0)), true);
+    const results = await Promise.all([emit(fixture.observation(0, "SEGMENT_ENDED")), emit(fixture.observation(0, "SEGMENT_ENDED"))]);
+    assert.deepEqual(results, [true, false]);
+    return { completed: true, segmentsEnded: 3, audioBytesSent: 1152 };
+  };
+  const result = await drive(runCatalogueTest(fixture.options), fixture.clock);
+  assert.equal(result.status, "FAILED"); assert.equal(result.code, "CATALOGUE_TEST_AUDIO_OBSERVATION_INVALID");
+  assert.equal(result.audioBytesSent, 384); assert.equal(result.tracksEnded, 1);
+  assert.equal(result.stopConfirmed, true); assert.equal(fixture.calls.connect, 1);
+  assert.equal(fixture.calls.events.some(event => event.phase === "SCHEDULED"), false);
+});

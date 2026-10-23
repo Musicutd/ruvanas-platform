@@ -13,6 +13,10 @@ import { catalogueTestMediaIdentity, connectCatalogueTestSource, downloadCatalog
   sendCatalogueTestTrack, validateCatalogueTestTarget } from "../lib/catalogue-test-transport.mjs";
 import { TEST_RADIO_CATALOGUE_TEST as LIMITS } from "../lib/online-radio-catalogue-test.mjs";
 import { catalogueTestPreparationDeadline, catalogueTestProfileForSession, getCatalogueTestProfile } from "../lib/catalogue-test-profiles.mjs";
+import { prepareCatalogueTestPlayout, sendCatalogueTestPlayout } from "../lib/catalogue-test-playout.mjs";
+import { CATALOGUE_TEST_HANDOVER_MODE } from "../lib/catalogue-test-playout-plan.mjs";
+import { createCatalogueTestMetadata } from "../lib/catalogue-test-metadata.mjs";
+import { createCatalogueTestHttpsMetadataUpdater } from "../lib/catalogue-test-https-metadata.mjs";
 
 const failure = code => Object.assign(new Error(code), { code });
 const validSessionId = value => typeof value === "string" && /^c[a-z0-9]{10,40}$/i.test(value);
@@ -214,7 +218,18 @@ export async function serveCatalogueTests({ once = false } = {}) {
     return renewCatalogueTestWorkerLease({ db, owner, signal: AbortSignal.any([stop.signal, signal]) });
   }
   async function runOne(sessionId) {
-    return runCatalogueTest({ sessionId, clock, signal: stop.signal,
+    let metadata = null;
+    const startedTitles = new Set();
+    const withMetadata = emit => async observation => {
+      const accepted = await emit(observation);
+      if (accepted && observation.type === "AUDIO_SENT" && !startedTitles.has(observation.trackId)) {
+        startedTitles.add(observation.trackId);
+        // Metadata is best-effort and never holds the real-time audio path.
+        void metadata?.audioStarted(observation).then(result => log("track_metadata", result.code));
+      }
+      return accepted;
+    };
+    try { return await runCatalogueTest({ sessionId, clock, signal: stop.signal,
       loadAuthorizedSession: ({ now }) => loadAuthorizedCatalogueTest(db, { sessionId, now }),
       claim: async ({ now, session }) => db.$transaction(async tx => {
         const config = await tx.stationStreamConfig.updateMany({ where: { stationId: LIMITS.stationId, outboundAutoDjEnabled: false,
@@ -239,7 +254,7 @@ export async function serveCatalogueTests({ once = false } = {}) {
         });
         return { authorized: true, leaseHeld: renewed, fingerprint: current.fingerprint };
       },
-      prepareAudio: async ({ session, signal }) => {
+      prepareAudio: async ({ session, signal, registerResource }) => {
         const preparation = catalogueTestPreparationPlan(session);
         const directory = await mkdtemp(path.join(tmpdir(), "ruvanas-catalogue-test-"));
         const files = new Map(), cachedAssets = new Map();
@@ -258,20 +273,33 @@ export async function serveCatalogueTests({ once = false } = {}) {
             await downloadCatalogueTestMedia(object.Body, file, asset, { signal });
             files.set(item.trackId, file); cachedAssets.set(asset.id, file);
           }
-          return { files, dispose: () => rm(directory, { recursive: true, force: true }) };
+          const playout = session.authorization?.testMode === CATALOGUE_TEST_HANDOVER_MODE
+            ? await prepareCatalogueTestPlayout({ session, files, ffmpegPath, signal, registerResource }) : null;
+          return { files, playout, dispose: async () => { playout?.dispose(); await rm(directory, { recursive: true, force: true }); } };
         } catch (error) { await rm(directory, { recursive: true, force: true }); throw error; }
       },
       connectSource: async ({ session, signal, registerResource }) => {
         const current = await loadAuthorizedCatalogueTest(db, { sessionId, now: new Date() });
         if (current.fingerprint !== session.fingerprint || catalogueTestSourceFingerprint(current.source) !== catalogueTestSourceFingerprint(session.source)) throw failure("TEST_SOURCE_CHANGED");
-        return connectCatalogueTestSource({ source: current.source, password: decryptSecret(current.source.sourcePasswordEncrypted), signal, registerResource });
+        const password = decryptSecret(current.source.sourcePasswordEncrypted);
+        const connection = await connectCatalogueTestSource({ source: current.source, password, signal, registerResource });
+        try {
+          const update = createCatalogueTestHttpsMetadataUpdater({ enabled: true, stationId: session.stationId,
+            source: current.source, password, connection, registerResource });
+          metadata = createCatalogueTestMetadata({ mode: "BOUNDED_OWNER_TEST", session, source: current.source,
+            connection, update, signal, clock });
+        } catch { log("track_metadata", "TEST_METADATA_UNAVAILABLE"); }
+        return connection;
       },
       playTrack: ({ prepared, connection, track, session, signal, emit, registerResource }) => sendCatalogueTestTrack({
-        ffmpegPath, filePath: prepared.files.get(track.id), track, session, connection, signal, emit, registerResource
+        ffmpegPath, filePath: prepared.files.get(track.id), track, session, connection, signal, emit: withMetadata(emit), registerResource
+      }),
+      playSequence: ({ prepared, connection, signal, emit, registerResource }) => sendCatalogueTestPlayout({
+        prepared: prepared.playout, connection, ffmpegPath, signal, emit: withMetadata(emit), registerResource
       }),
       appendEvent: async ({ event }) => {
         const details = {};
-        for (const key of ["audioBytesSent", "completed", "endedReason", "stopConfirmed", "status", "code"]) if (event[key] !== undefined) details[key] = event[key];
+        for (const key of ["audioBytesSent", "completed", "endedReason", "stopConfirmed", "status", "code", "segmentIndex", "phase", "attribution"]) if (event[key] !== undefined) details[key] = event[key];
         await db.onlineRadioCatalogueTestEvent.create({ data: { testId: sessionId, eventKey: `${owner}:${event.sequence}`,
           kind: event.type, trackId: event.trackId || null, details, occurredAt: event.occurredAt } });
         return true;
@@ -286,7 +314,7 @@ export async function serveCatalogueTests({ once = false } = {}) {
           data: { lastError: "CATALOGUE_TEST_STOP_UNCONFIRMED" } });
         return updated.count === 1;
       }
-    });
+    }); } finally { metadata?.close(); }
   }
   log(once ? "worker_waiting_for_selected_owner_test" : "worker_waiting_for_explicit_owner_test");
   try {

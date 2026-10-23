@@ -24,7 +24,9 @@ globalThis.fetch = blocked;
 (await import("node:module")).syncBuiltinESMExports();
 const modules = ["./scripts/online-radio-encoder-live.mjs", "./lib/online-radio-accounted-runner.mjs",
   "./lib/online-radio-accounted-transport.mjs", "./lib/online-radio-catalogue-policy.mjs",
-  "./lib/online-radio-delivery-ledger.mjs", "./lib/online-radio-source-session.mjs"];
+  "./lib/online-radio-delivery-ledger.mjs", "./lib/online-radio-source-session.mjs",
+  "./scripts/catalogue-test-worker.mjs", "./lib/catalogue-test-playout.mjs",
+  "./lib/catalogue-test-metadata.mjs", "./lib/catalogue-test-https-metadata.mjs"];
 for (const name of modules) await import(name);
 console.log(JSON.stringify({ passed: true, networkBlocked: true, processStartBlocked: true, liveEntryCalled: false }));
 `;

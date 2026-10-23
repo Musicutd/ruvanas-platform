@@ -599,6 +599,53 @@ test("dashboard and safe session views never disclose transport secrets, private
   assert.notEqual(catalogueTestSourceFingerprint(source()), catalogueTestSourceFingerprint({ ...source(), sourcePort: 8198 }));
 });
 
+test("owner dashboard adds a read-only HTTPS player snapshot without enabling tests or changing source settings", async () => {
+  const f = fixture(), sessionId = await armed(f), saved = f.data.tests.find(row => row.id === sessionId);
+  saved.status = "RUNNING";
+  saved.events = [{ id: "sourceevent2", kind: "TRACK_AUDIO_SENT", trackId: saved.plan.items[0].trackId, occurredAt: NOW, details: { audioBytesSent: 4096 } },
+    { id: "sourceevent1", kind: "SOURCE_AUTHENTICATED", occurredAt: new Date(NOW.getTime() - 1000), details: {} }];
+  const before = copy(f.data), dashboard = await catalogueTestDashboard(f.db, options(f));
+  assert.equal(dashboard.startEnabled, false);
+  assert.equal(dashboard.listening.enabled, true);
+  assert.equal(dashboard.listening.listenerUrl, f.data.station.streamConfig.streamUrl);
+  assert.equal(dashboard.listening.track.title, saved.plan.items[0].title);
+  assert.deepEqual(f.data, before, "Dashboard inspection is non-mutating");
+  assert.deepEqual(dashboard.latest.events.map(event => event.kind), ["SOURCE_AUTHENTICATED", "TRACK_AUDIO_SENT"]);
+  const eventReads = f.calls.reads.filter(call => call.args.include?.events);
+  assert.ok(eventReads.length > 0);
+  for (const read of eventReads) {
+    assert.equal(read.args.include.events.take, 100);
+    assert.deepEqual(read.args.include.events.orderBy, [{ occurredAt: "desc" }, { id: "desc" }]);
+  }
+});
+
+test("dashboard timestamps observations after delayed reads and rechecks lease expiry without extending test authority", async () => {
+  for (const readDurationMs of [1_000, 46_000]) {
+    const f = fixture(), sessionId = await armed(f), saved = f.data.tests.find(row => row.id === sessionId);
+    saved.status = "RUNNING";
+    saved.events = [{ kind: "TRACK_AUDIO_SENT", trackId: saved.plan.items[0].trackId,
+      occurredAt: new Date(NOW.getTime() + 500), details: { audioBytesSent: 4096 } }];
+    const before = copy(f.data), originalTransaction = f.db.$transaction;
+    let clockTime = NOW;
+    f.db.$transaction = async (...args) => {
+      const result = await originalTransaction(...args);
+      clockTime = new Date(NOW.getTime() + readDurationMs);
+      return result;
+    };
+    const dashboard = await catalogueTestDashboard(f.db, { actorSession: f.actor, startEnabled: true, clock: () => clockTime });
+    assert.equal(dashboard.listening.checkedAt, clockTime.toISOString());
+    assert.deepEqual(f.data, before, "A fresh status timestamp never extends a deadline, lease or owner permission");
+    if (readDurationMs === 1_000) {
+      assert.equal(dashboard.listening.enabled, true);
+      assert.equal(dashboard.listening.track.title, saved.plan.items[0].title);
+    } else {
+      assert.equal(dashboard.workerReady, false);
+      assert.equal(dashboard.startEnabled, false);
+      assert.equal(dashboard.listening.enabled, false);
+    }
+  }
+});
+
 test("an older armed or running test remains visible above a newer prepared review", async () => {
   for (const status of ["ARMED", "RUNNING"]) {
     const f = fixture(), first = await prepared(f), second = await prepared(f);
@@ -785,4 +832,67 @@ test("legacy profile-free saved five-minute grants remain valid and cannot be up
   assert.equal(loaded.profileId, "FIVE_MINUTES"); assert.equal(loaded.durationSeconds, 300);
   row.durationSeconds = 3600;
   await rejected(loadAuthorizedCatalogueTest(f.db, { sessionId: saved.id, now: NOW, allowPrepared: true }), "TEST_PROFILE_INVALID");
+});
+
+const handoverOptions = (f, more = {}) => options(f, { profileId: "FIVE_MINUTES", testMode: "HANDOVER_90_SECONDS", ...more });
+
+test("handover preparation and reload bind its mode and 90-second audio plan without creating or publishing a schedule", async () => {
+  const f = fixture(), before = copy(f.data);
+  const preview = await catalogueTestDashboard(f.db, handoverOptions(f));
+  assert.equal(preview.preview.testMode, "HANDOVER_90_SECONDS");
+  assert.equal(preview.preview.targetSeconds, 300);
+  assert.equal(preview.preview.audioDurationSeconds, 90);
+  assert.deepEqual(f.data, before);
+  const saved = await prepareCatalogueTest(f.db, handoverOptions(f)), row = f.data.tests[0];
+  assert.equal(saved.durationSeconds, 300); assert.equal(saved.testMode, "HANDOVER_90_SECONDS");
+  assert.equal(row.authorization.testMode, "HANDOVER_90_SECONDS");
+  assert.equal(row.plan.testMode, "HANDOVER_90_SECONDS");
+  assert.equal(row.plan.audioDurationSeconds, 90);
+  assert.equal(row.plan.targetSeconds, 300);
+  assert.deepEqual(row.plan.items.map(item => item.playDurationSeconds), [30, 30, 30]);
+  await armCatalogueTest(f.db, options(f, { sessionId: saved.id, startEnabled: true, publicExposureAccepted: true }));
+  const loaded = await loadAuthorizedCatalogueTest(f.db, { sessionId: saved.id, now: NOW });
+  assert.equal(loaded.testMode, "HANDOVER_90_SECONDS"); assert.equal(loaded.audioDurationSeconds, 90);
+  assert.equal(loaded.durationSeconds, 300); assert.equal(loaded.authorization.maximumSeconds, 300);
+  assert.equal(loaded.deadlineAt.toISOString(), "2026-10-21T12:05:00.000Z");
+  assert.deepEqual(loaded.tracks.map(item => item.durationSeconds), [30, 30, 30]);
+  assert.deepEqual(f.data.station, before.station);
+  assert.ok(f.calls.writes.every(call => ["onlineRadioCatalogueTest", "auditLog"].includes(call.model)));
+});
+
+test("handover stored mode, clip count, audio budget and original maximum cannot be altered even with a rehashed plan", async () => {
+  for (const [change, code] of [
+    [row => { delete row.authorization.testMode; }, "TEST_PLAN_CHANGED"],
+    [row => { row.authorization.testMode = "OTHER"; }, "TEST_MODE_INVALID"],
+    [row => { delete row.plan.testMode; }, "TEST_PLAN_CHANGED"],
+    [row => { row.plan.audioDurationSeconds = 300; }, "TEST_PLAN_CHANGED"],
+    [row => { row.durationSeconds = 90; row.plan.targetSeconds = 90; }, "TEST_PLAN_CHANGED"],
+    [row => { row.plan.items.pop(); }, "TEST_PLAN_CHANGED"],
+    [row => { row.plan.items[0].playDurationSeconds = 29; row.plan.items[1].playDurationSeconds = 31; }, "TEST_PLAN_CHANGED"],
+    [row => { row.plan.items[1] = copy(row.plan.items[0]); }, "TEST_PLAN_CHANGED"],
+  ]) {
+    const f = fixture(), saved = await prepareCatalogueTest(f.db, handoverOptions(f));
+    change(f.data.tests[0]); rehashTestPlan(f.data.tests[0]);
+    await rejected(loadAuthorizedCatalogueTest(f.db, { sessionId: saved.id, now: NOW, allowPrepared: true }), code);
+  }
+  const normal = fixture(), saved = await prepared(normal);
+  normal.data.tests[0].plan.audioDurationSeconds = 90; rehashTestPlan(normal.data.tests[0]);
+  await rejected(loadAuthorizedCatalogueTest(normal.db, { sessionId: saved.id, now: NOW, allowPrepared: true }), "TEST_PLAN_CHANGED");
+});
+
+test("handover is unavailable for the hour profile, preserves permission checks and cannot restart a stopped test", async () => {
+  for (const testMode of [null, "", "OTHER", {}, 90]) {
+    const f = fixture(); await rejected(prepareCatalogueTest(f.db, options(f, { testMode })), "TEST_MODE_INVALID");
+    assert.equal(f.calls.reads.length, 0);
+  }
+  const hour = hourFixture(); await rejected(prepareCatalogueTest(hour.db, hourOptions(hour, { testMode: "HANDOVER_90_SECONDS" })), "TEST_MODE_INVALID");
+  assert.equal(hour.calls.reads.length, 0);
+  const f = fixture(), saved = await prepareCatalogueTest(f.db, handoverOptions(f));
+  await rejected(armCatalogueTest(f.db, options(f, { sessionId: saved.id, publicExposureAccepted: true })), "TEST_START_NOT_ENABLED");
+  await rejected(armCatalogueTest(f.db, options(f, { sessionId: saved.id, startEnabled: true, publicExposureAccepted: false })), "TEST_PUBLIC_EXPOSURE_CONFIRMATION_REQUIRED");
+  f.data.tracks[0].rightsReviewStatus = "PENDING";
+  await rejected(loadAuthorizedCatalogueTest(f.db, { sessionId: saved.id, now: NOW, allowPrepared: true }), "TEST_TRACK_APPROVAL_CHANGED");
+  f.data.tracks[0].rightsReviewStatus = "APPROVED";
+  await stopCatalogueTest(f.db, options(f, { sessionId: saved.id }));
+  await rejected(loadAuthorizedCatalogueTest(f.db, { sessionId: saved.id, now: NOW, allowPrepared: true }), "TEST_AUTHORIZATION_INACTIVE");
 });
