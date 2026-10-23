@@ -4,6 +4,7 @@ import { getAdminUser } from "@/lib/requireAdmin";
 import AdminStationSetupForm from "./AdminStationSetupForm";
 import AdminStreamingProfiles from "./AdminStreamingProfiles";
 import CatalogueStreamTest from "./CatalogueStreamTest";
+import ContinuousAutoDj from "./ContinuousAutoDj";
 
 export default async function AdminStationSetupPage({ params }) {
   const user = await getAdminUser();
@@ -62,6 +63,7 @@ export default async function AdminStationSetupPage({ params }) {
         Super Admin controls the private Centova or generic HTTP stream. Save the connection, then activate the station only after a live-source check succeeds. Leave a password blank to keep it unchanged.
       </p>
 
+      {station.id === "cmvcnbwi20008hr23sd76psi8" && <ContinuousAutoDj stationId={station.id} />}
       <AdminStationSetupForm
         stationId={station.id}
         stationName={station.name}
@@ -70,7 +72,12 @@ export default async function AdminStationSetupPage({ params }) {
         hasStreamConfig={Boolean(station.streamConfig?.streamUrl)}
         initialData={initialData}
       />
-      {station.id === "cmvcnbwi20008hr23sd76psi8" && <CatalogueStreamTest stationId={station.id} />}
+      {station.id === "cmvcnbwi20008hr23sd76psi8" && <>
+        <details style={{ margin: "24px 0" }}>
+          <summary style={{ cursor: "pointer", minHeight: 44 }}>Advanced diagnostics — timed tests, not continuous AutoDJ</summary>
+          <CatalogueStreamTest stationId={station.id} />
+        </details>
+      </>}
       <AdminStreamingProfiles stationId={station.id} channels={channels} destinations={destinations} liveSources={liveSources} />
     </div>
   );

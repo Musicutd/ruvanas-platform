@@ -122,7 +122,8 @@ function fixture() {
           let count = 0; for (const row of readData().tests) if (matches(row, args.where)) { Object.assign(row, copy(args.data)); count += 1; }
           return { count }; },
       },
-      auditLog: { async create(args) { calls.writes.push({ model: "auditLog", method: "create", args: copy(args) });
+      auditLog: { async findUnique(args) { return copy(readData().audits.find(row => row.id === args.where.id) || null); },
+        async create(args) { calls.writes.push({ model: "auditLog", method: "create", args: copy(args) });
         if (hooks.audit) await hooks.audit(args); readData().audits.push(copy(args.data)); return copy(args.data); } },
     };
     return db;
@@ -311,6 +312,42 @@ test("preparation cannot replace an already armed or running station test", asyn
     assert.equal(f.data.tests.length, 1);
     assert.equal(f.calls.writes.length, 0);
   }
+});
+
+test("continuous START prevents bounded-test preparation even without a currently running lease", async () => {
+  for (const signature of [undefined, "invalid-signature", "a".repeat(64)]) {
+    const f = fixture();
+    f.data.station.streamConfig.encoderLeaseOwner = null;
+    f.data.station.streamConfig.encoderLeaseUntil = null;
+    f.data.audits.push({ id: "test-radio-continuous-control-v1", details: { command: { action: "START" }, signature } });
+    const before = copy(f.data);
+    await rejected(prepared(f), "TEST_ALREADY_ACTIVE");
+    assert.deepEqual(f.data, before);
+    assert.equal(f.calls.writes.length, 0);
+    assert.equal(f.calls.transactions.at(-1).isolationLevel, "Serializable");
+  }
+});
+
+test("continuous START appearing after preparation prevents bounded arming without persisting a misleading audit", async () => {
+  const f = fixture(), session = await prepared(f);
+  f.data.audits.push({ id: "test-radio-continuous-control-v1", details: { command: { action: "START" } } });
+  const before = copy(f.data);
+  f.calls.writes.length = 0;
+  await rejected(armCatalogueTest(f.db, options(f, { sessionId: session.id, startEnabled: true, publicExposureAccepted: true })), "TEST_ALREADY_ACTIVE");
+  assert.deepEqual(f.data, before);
+  assert.equal(f.data.tests[0].status, "PREPARED");
+  assert.equal(f.data.tests[0].requestedAt, null);
+  assert.equal(f.calls.writes.length, 0);
+  assert.equal(f.calls.transactions.at(-1).isolationLevel, "Serializable");
+});
+
+test("a stopped continuous command does not itself block a separately authorized bounded test", async () => {
+  const f = fixture();
+  f.data.audits.push({ id: "test-radio-continuous-control-v1", details: { command: { action: "STOP" } } });
+  const session = await prepared(f);
+  const armedSession = await armCatalogueTest(f.db, options(f, { sessionId: session.id, startEnabled: true, publicExposureAccepted: true }));
+  assert.equal(armedSession.status, "ARMED");
+  assert.equal(f.data.station.streamConfig.outboundAutoDjEnabled, false);
 });
 
 test("arming is off by default and explicit public-stream exposure confirmation is mandatory", async () => {
