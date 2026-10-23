@@ -5,6 +5,7 @@ import { catalogueTestOwnerSessionValid } from "../lib/catalogue-test-service.mj
 import { readPrivatePreviewBody } from "../lib/private-preview-request.mjs";
 import { CATALOGUE_TEST_REASON_LABELS, TEST_RADIO_CATALOGUE_TEST } from "../lib/online-radio-catalogue-test.mjs";
 import { getCatalogueTestProfile } from "../lib/catalogue-test-profiles.mjs";
+import { catalogueTestMode } from "../lib/catalogue-test-modes.mjs";
 
 const source = await readFile(new URL("../app/api/admin/stations/[stationId]/catalogue-test/route.js", import.meta.url), "utf8");
 const executable = source.replace(/^import[\s\S]*?;\r?\n/gm, "").replace(/^export /gm, "");
@@ -14,7 +15,7 @@ function fixture({ role = "SUPER_ADMIN", env = {}, error = null } = {}) {
     authMethod: "PASSWORD", revokedAt: null, expiresAt: new Date(Date.now() + 600_000) };
   const operation = action => async (_db, options) => { calls.push({ action, options }); if (error) throw error; return { id: "cmtest000000000001", status: action === "prepare" ? "PREPARED" : "ARMED" }; };
   const dependencies = { NextResponse: { json: (body, options = {}) => Response.json(body, options) }, prisma: {},
-    getCurrentSession: async () => session, catalogueTestOwnerSessionValid, TEST_RADIO_CATALOGUE_TEST, CATALOGUE_TEST_REASON_LABELS, readPrivatePreviewBody, getCatalogueTestProfile,
+    getCurrentSession: async () => session, catalogueTestOwnerSessionValid, TEST_RADIO_CATALOGUE_TEST, CATALOGUE_TEST_REASON_LABELS, readPrivatePreviewBody, getCatalogueTestProfile, catalogueTestMode,
     catalogueTestDashboard: operation("inspect"), prepareCatalogueTest: operation("prepare"), armCatalogueTest: operation("arm"), stopCatalogueTest: operation("stop"), process: { env } };
   const routes = new Function(...Object.keys(dependencies), `${executable}\nreturn {GET,POST};`)(...Object.values(dependencies));
   const params = stationId => ({ params: Promise.resolve({ stationId: stationId || TEST_RADIO_CATALOGUE_TEST.stationId }) });
@@ -74,6 +75,35 @@ test("owner can inspect and prepare only named profiles; arm and stop cannot alt
     assert.equal((await f.routes.GET(new Request(`https://www.ruvanas.com/api/test?${query}`), f.params())).status, 400);
   }
   assert.equal(f.calls.length, before);
+});
+
+test("handover type is prepare-only and constrained to the five-minute owner profile", async () => {
+  const f = fixture(), testMode = "HANDOVER_90_SECONDS";
+  assert.equal((await f.routes.GET(new Request(`https://www.ruvanas.com/api/test?profileId=FIVE_MINUTES&testMode=${testMode}`), f.params())).status, 200);
+  assert.equal(f.calls.at(-1).options.testMode, testMode);
+  assert.equal((await f.routes.POST(f.request({ action: "prepare", profileId: "FIVE_MINUTES", testMode }), f.params())).status, 200);
+  assert.equal(f.calls.at(-1).options.testMode, testMode);
+  const before = f.calls.length;
+  for (const query of ["profileId=ONE_HOUR&testMode=HANDOVER_90_SECONDS", "testMode=unknown", "testMode=", "testMode=STANDARD&testMode=HANDOVER_90_SECONDS"]) {
+    assert.equal((await f.routes.GET(new Request(`https://www.ruvanas.com/api/test?${query}`), f.params())).status, 400);
+  }
+  for (const body of [{ action: "prepare", profileId: "ONE_HOUR", testMode }, { action: "prepare", testMode: null },
+    { action: "prepare", testMode: "UNKNOWN" }, { action: "prepare", testMode, audioDurationSeconds: 900 },
+    { action: "arm", sessionId: "cmtest000000000001", testMode }, { action: "stop", sessionId: "cmtest000000000001", testMode }]) {
+    assert.equal((await f.routes.POST(f.request(body), f.params())).status, 400);
+  }
+  assert.equal(f.calls.length, before);
+});
+
+test("handover UI describes a diagnostic rather than claiming actual weekly-plan integration", async () => {
+  const ui = await readFile(new URL("../app/admin/stations/[stationId]/setup/CatalogueStreamTest.js", import.meta.url), "utf8");
+  assert.match(ui, /useState\("STANDARD"\)/);
+  assert.match(ui, /90-second handover diagnostic/);
+  assert.match(ui, /up to five minutes including preparation/);
+  assert.match(ui, /not a saved weekly-planner programme/);
+  assert.match(ui, /setProfileId\("FIVE_MINUTES"\)/);
+  assert.match(ui, /state\?\.preview\?\.testMode/);
+  assert.match(ui, /state\?\.latest\?\.testMode/);
 });
 
 test("hour selector defaults to five minutes and saved duration controls explicit start", async () => {

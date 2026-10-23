@@ -541,3 +541,48 @@ test("hour source-byte, unique-item and no-repeat limits remain finite and per-f
   const standard = buildOnlineRadioCatalogueTestPlan(fixture());
   assert.equal(standard.profileId, "FIVE_MINUTES"); assert.equal(standard.targetSeconds, 300);
 });
+
+function handoverFixture() {
+  const input = fixture();
+  Object.assign(input.authorization, { profileId: "FIVE_MINUTES", maximumSeconds: 300, testMode: "HANDOVER_90_SECONDS" });
+  return input;
+}
+
+test("handover scenario selects exactly three approved 30-second excerpts under unchanged five-minute authority", () => {
+  const input = handoverFixture(), before = structuredClone(input), plan = buildOnlineRadioCatalogueTestPlan(input);
+  assert.equal(plan.ready, true);
+  assert.equal(plan.testMode, "HANDOVER_90_SECONDS");
+  assert.equal(plan.targetSeconds, 300); assert.equal(plan.totalSeconds, 90); assert.equal(plan.audioDurationSeconds, 90);
+  assert.equal(plan.stopAt, "2026-10-21T12:05:00.000Z");
+  assert.deepEqual(plan.items.map(item => item.playDurationSeconds), [30, 30, 30]);
+  assert.deepEqual(plan.items.map(item => item.startOffsetSeconds), [0, 30, 60]);
+  assert.equal(new Set(plan.items.map(item => item.trackId)).size, 3);
+  assert.deepEqual(input, before);
+  const dto = safeCatalogueTestPlan(plan);
+  assert.equal(dto.testMode, "HANDOVER_90_SECONDS"); assert.equal(dto.audioDurationSeconds, 90);
+});
+
+test("handover requires its exact named profile and cannot widen or shorten the permission window", () => {
+  for (const input of [mutate(hourFixture(), value => { value.authorization.testMode = "HANDOVER_90_SECONDS"; }),
+    mutate(handoverFixture(), value => { delete value.authorization.profileId; }),
+    mutate(handoverFixture(), value => { delete value.authorization.maximumSeconds; }),
+    mutate(handoverFixture(), value => { value.authorization.testMode = "unknown"; })]) expectDenied(input, "AUTHORIZATION_SCOPE_INVALID");
+  for (const durationSeconds of [90, 299, 301]) expectDenied({ ...handoverFixture(), durationSeconds }, "INVALID_DURATION");
+  expectDenied({ ...handoverFixture(), serviceExpiresAt: new Date(NOW.getTime() + 299_999) }, "AUTHORIZATION_EXPIRED");
+  assert.equal(buildOnlineRadioCatalogueTestPlan(fixture()).totalSeconds, 300);
+  assert.equal(buildOnlineRadioCatalogueTestPlan(hourFixture()).totalSeconds, 3600);
+});
+
+test("handover refuses too few distinct usable recordings and preserves normal rights/provider/file constraints", () => {
+  expectDenied({ ...handoverFixture(), tracks: [track(1), track(2)] }, "HANDOVER_AUDIO_REQUIRED");
+  expectDenied({ ...handoverFixture(), tracks: [track(1), track(2), track(3, 29)] }, "HANDOVER_AUDIO_REQUIRED");
+  const duplicateAsset = handoverFixture(); duplicateAsset.tracks[2].mediaAssetId = duplicateAsset.tracks[1].mediaAssetId;
+  duplicateAsset.tracks[2].mediaAsset = structuredClone(duplicateAsset.tracks[1].mediaAsset);
+  expectDenied(duplicateAsset, "HANDOVER_AUDIO_REQUIRED");
+  for (const change of [value => { value.rightsReviewStatus = "PENDING"; }, value => { value.permittedTerritories = "US"; },
+    value => { value.permittedUses = ["RETAIL"]; }, value => { value.catalogueProvider = "PROMO_ONLY"; }]) {
+    const input = handoverFixture(); input.tracks.forEach(change); expectDenied(input, "NO_RIGHTS_APPROVED_AUDIO");
+  }
+  const large = handoverFixture(); large.tracks.forEach(value => { value.mediaAsset.sizeBytes = 40n * 1024n ** 2n; });
+  expectDenied(large, "PLAN_TOO_LARGE");
+});
