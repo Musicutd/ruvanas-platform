@@ -5,13 +5,15 @@ import { fileURLToPath } from "node:url";
 
 // Temporary, exact-version correction for Next's Node-middleware handoff.
 // Never silently apply this to a different release or an otherwise edited file.
-export const NEXT_MIDDLEWARE_PATCH_VERSION = "15.5.27";
+// Re-reviewed for the 15.5.28 security backport: next-server.js and
+// body-streams.js are byte-identical to 15.5.27; the upload race remains.
+export const NEXT_MIDDLEWARE_PATCH_VERSION = "15.5.28";
 export const NEXT_SERVER_ORIGINAL_SHA256 = "7c97c35f81d4171ef0d5f16e18e3fe1a8e5c0bcaabf6810abdc2e92ce814a104";
 const STRICT_PREFIX = '"use strict";\n';
 const ORIGINAL_CALL = "                    requestData.body.finalize();";
 const PATCHED_CALL = "                    await ruvanasFinalizeMiddlewareBody(requestData.body, requestData.signal, params.request.originalRequest);";
-const HELPER_BEGIN = "// BEGIN RUVANAS NEXT 15.5.27 BOUNDED MIDDLEWARE FINALIZE\n";
-const HELPER_END = "\n// END RUVANAS NEXT 15.5.27 BOUNDED MIDDLEWARE FINALIZE\n";
+const HELPER_BEGIN = "// BEGIN RUVANAS NEXT 15.5.28 BOUNDED MIDDLEWARE FINALIZE\n";
+const HELPER_END = "\n// END RUVANAS NEXT 15.5.28 BOUNDED MIDDLEWARE FINALIZE\n";
 const sha256 = (source) => crypto.createHash("sha256").update(source).digest("hex");
 
 // Kept self-contained because its exact source is injected into Next's CJS

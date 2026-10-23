@@ -62,7 +62,8 @@ test("patch pins Next version, exact original SHA and the single await handoff",
 
 test("patch is idempotent and rejects other versions, edits and partial patches", () => {
   assert.equal(patchNextMiddlewareSource(patched.source, installedVersion).changed, false);
-  assert.throws(() => patchNextMiddlewareSource(installedSource, "15.5.28"), /unreviewed Next version/);
+  assert.throws(() => patchNextMiddlewareSource(installedSource, "15.5.27"), /unreviewed Next version/);
+  assert.throws(() => patchNextMiddlewareSource(installedSource, "15.5.29"), /unreviewed Next version/);
   assert.throws(() => patchNextMiddlewareSource(installedSource + "\n", installedVersion), /checksum/);
   assert.throws(() => patchNextMiddlewareSource(patched.source.replace("300_000", "900_000"), installedVersion), /checksum/);
   assert.throws(() => patchNextMiddlewareSource(patched.source.replace("await ruvanasFinalizeMiddlewareBody(requestData.body", "ruvanasFinalizeMiddlewareBody(requestData.body"), installedVersion), /patched call differs/);
