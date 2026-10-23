@@ -2,6 +2,7 @@
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { continuousDatabaseRoute } from '../lib/test-radio-continuous-worker.mjs';
 
 const directory = path.dirname(fileURLToPath(import.meta.url));
 const applicationRoot = path.dirname(directory);
@@ -26,7 +27,10 @@ const modules = ["./scripts/online-radio-encoder-live.mjs", "./lib/online-radio-
   "./lib/online-radio-accounted-transport.mjs", "./lib/online-radio-catalogue-policy.mjs",
   "./lib/online-radio-delivery-ledger.mjs", "./lib/online-radio-source-session.mjs",
   "./scripts/catalogue-test-worker.mjs", "./lib/catalogue-test-playout.mjs",
-  "./lib/catalogue-test-metadata.mjs", "./lib/catalogue-test-https-metadata.mjs"];
+  "./lib/catalogue-test-metadata.mjs", "./lib/catalogue-test-https-metadata.mjs",
+  "./scripts/test-radio-continuous-worker.mjs", "./lib/test-radio-continuous-worker.mjs",
+  "./lib/test-radio-continuous-policy.mjs", "./lib/test-radio-continuous-service.mjs",
+  "./lib/test-radio-continuous-playout.mjs"];
 for (const name of modules) await import(name);
 console.log(JSON.stringify({ passed: true, networkBlocked: true, processStartBlocked: true, liveEntryCalled: false }));
 `;
@@ -121,7 +125,7 @@ export async function runEncoderNoAudio({ environment = process.env, spawnProces
   parentSignal?.addEventListener("abort", stop, { once: true });
   if (parentSignal?.aborted) stop();
   const base = { service: "ONLINE_RADIO_ENCODER", mode: "HELD_OFF_AIR", streamingStarted: false,
-    databaseAccessed: false, cloudAccessed: false, deployedCommit: safeNoAudioCommit(environment.RENDER_GIT_COMMIT) };
+    databaseAccessed: false, cloudAccessed: false, databaseRoute: continuousDatabaseRoute(environment.DATABASE_URL), deployedCommit: safeNoAudioCommit(environment.RENDER_GIT_COMMIT) };
   try {
     writeLog({ ...base, event: "no_audio_verification_started" });
     const verification = await verifyEncoderNoAudio({ environment, spawnProcess, signal: controller.signal, timeoutMs });

@@ -11,9 +11,10 @@ COPY scripts/patch-next-middleware-finalize.mjs ./scripts/
 RUN npm ci
 
 COPY lib ./lib
-COPY scripts/online-radio-encoder-worker.mjs scripts/online-radio-encoder-live.mjs scripts/online-radio-source-report.mjs scripts/online-radio-encoder-no-audio.mjs scripts/catalogue-test-worker.mjs scripts/check-online-radio-liquidsoap.mjs ./scripts/
+COPY scripts/online-radio-encoder-worker.mjs scripts/online-radio-encoder-live.mjs scripts/online-radio-source-report.mjs scripts/online-radio-encoder-no-audio.mjs scripts/catalogue-test-worker.mjs scripts/test-radio-continuous-worker.mjs scripts/check-online-radio-liquidsoap.mjs ./scripts/
 RUN node scripts/check-online-radio-liquidsoap.mjs
 RUN node scripts/catalogue-test-worker.mjs --check
+RUN node scripts/test-radio-continuous-worker.mjs --check
 
 USER node
 # A deploy or resume alone cannot transmit audio. Serving is a separate command
