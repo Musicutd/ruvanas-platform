@@ -117,7 +117,7 @@ export default function RetailStreamConnectionForm({ initialSetup }) {
           <button type="button" className={styles.secondary} disabled={busy} onClick={reload}>Reload saved status</button>
         </div>
       </form>
-      <p className={styles.footnote}>No activation, channel preparation, live-source test or broadcasting controls are available on this screen. Registration and other subscribers’ channels are unchanged.</p>
+      <p className={styles.footnote}>This connection form only saves provider details. Use the separate shared programme section to review music, hosting and any activation requirements. Registration and other subscribers’ channels are unchanged.</p>
     </section>
   </>;
 }

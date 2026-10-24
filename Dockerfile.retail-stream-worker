@@ -1,0 +1,14 @@
+FROM node:22-bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY package.json package-lock.json ./
+COPY prisma ./prisma
+COPY scripts/patch-next-middleware-finalize.mjs ./scripts/
+RUN npm ci
+COPY lib ./lib
+COPY scripts/retail-stream-worker.mjs ./scripts/
+RUN node scripts/retail-stream-worker.mjs --check
+USER node
+# Publication never starts music. Operations must allocate approved capacity,
+# and an owner must approve the subscriber's programme before --serve can run.
+CMD ["node", "scripts/retail-stream-worker.mjs", "--check"]

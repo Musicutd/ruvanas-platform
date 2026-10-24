@@ -5,10 +5,11 @@ import { getAdminUser } from "@/lib/requireAdmin";
 import { loadRetailStreamSetup } from "@/lib/retail-stream-setup-service.mjs";
 import { safeRetailStreamSetupView } from "@/lib/retail-stream-setup-ui.mjs";
 import RetailStreamConnectionForm from "./RetailStreamConnectionForm";
+import RetailStreamPlayoutPanel from "./RetailStreamPlayoutPanel";
 import styles from "./retail-stream.module.css";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "Retail connection draft | Ruvanas administration" };
+export const metadata = { title: "Retail stream setup | Ruvanas administration" };
 
 export default async function RetailStreamSetupPage({ params }) {
   const actor = await getAdminUser();
@@ -24,11 +25,11 @@ export default async function RetailStreamSetupPage({ params }) {
   }
   return <main className={styles.page}>
     <Link href="/admin/organisations" className={styles.back}>← Existing organisations</Link>
-    <header className={styles.header}><p className={styles.eyebrow}>SUPER ADMIN · RETAIL DRAFT SETUP</p>
+    <header className={styles.header}><p className={styles.eyebrow}>SUPER ADMIN · RETAIL STREAM SETUP</p>
       <h1>{setup ? `${setup.organisation.name} · shared Retail stream` : "Retail connection needs review"}</h1>
-      <p>Save this subscriber’s provider details once for one shared programme across its shops. This screen prepares a private draft only; it does not connect a provider, copy the music catalogue or allocate infrastructure.</p>
+      <p>Save this subscriber’s provider details once, choose music from the existing catalogue, then review hosting and activation for one shared programme across its shops. Saving connection details or music does not start audio.</p>
     </header>
-    {setup ? <RetailStreamConnectionForm key={setup.organisation.id} initialSetup={setup} /> : <section className={styles.error} role="alert">
+    {setup ? <><RetailStreamConnectionForm key={setup.organisation.id} initialSetup={setup} /><RetailStreamPlayoutPanel key={`playout-${setup.organisation.id}`} organisationId={setup.organisation.id} /></> : <section className={styles.error} role="alert">
       <h2>Setup is unavailable</h2><p>The existing organisation, Retail permission or draft state could not be verified. Reload or review the organisation before continuing. No account, plan or streaming connection has been changed.</p>
     </section>}
   </main>;

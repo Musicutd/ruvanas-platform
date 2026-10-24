@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 import vm from "node:vm";
 import { CONTINUOUS_TEST_RADIO_ID, continuousRadioPlayerView, continuousRadioStartBody, replaceContinuousRadioAudio } from "../lib/test-radio-continuous-player.mjs";
 import { TEST_RADIO_LISTENER_URL } from "../lib/catalogue-test-player.mjs";
+import { isManagedRetailStreamDraftStation } from "../lib/retail-stream-draft-boundary.mjs";
 
 function fixture() {
   return { stationId: CONTINUOUS_TEST_RADIO_ID, enabled: true, sourceReady: true, startAllowed: true, status: "STREAMING",
@@ -148,6 +149,7 @@ test("real setup page renders the Stop panel before connection settings and leav
   vm.runInNewContext(code, { module, exports: module.exports, require: name => {
     if (name === "@/lib/prisma") return { prisma };
     if (name === "@/lib/requireAdmin") return { getAdminUser: async () => ({ role: "SUPER_ADMIN" }) };
+    if (name === "@/lib/retail-stream-draft-boundary.mjs") return { isManagedRetailStreamDraftStation };
     if (name === "next/navigation") return { redirect: () => { throw new Error("UNEXPECTED_REDIRECT"); }, notFound: () => { throw new Error("UNEXPECTED_NOT_FOUND"); } };
     if (components[name]) return components[name];
     return require(name.startsWith("@babel/runtime/") ? `next/dist/compiled/${name}` : name);
