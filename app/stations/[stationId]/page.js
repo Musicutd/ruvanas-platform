@@ -7,6 +7,7 @@ import { subscriberProductForStationFamily } from "@/lib/product-access.mjs";
 import { requireSubscriberProduct } from "@/lib/subscriber-product-access";
 import { onlineDraftSubscription } from "@/lib/private-preview-online-draft.mjs";
 import { resolveTestRadioSubscriberWorkspace } from "@/lib/test-radio-subscriber-access.mjs";
+import { isManagedRetailStreamDraftStation } from "@/lib/retail-stream-draft-boundary.mjs";
 
 export default async function StationDetailsPage({ params }) {
   const context = await getActiveOrganisationContext({ subscription: { include: { plan: true, billingContract: true } }, enterpriseSecurityPolicy: true });
@@ -34,6 +35,22 @@ export default async function StationDetailsPage({ params }) {
 
   if (!station) {
     notFound();
+  }
+
+  if (isManagedRetailStreamDraftStation(station)) {
+    await requireSubscriberProduct("RETAIL");
+    return <main style={styles.page}>
+      <SkipLink />
+      <header style={styles.header}><a href="/dashboard/retail" style={styles.brand}>RUVANAS</a><a href="/dashboard/retail" style={styles.backLink}>Retail</a></header>
+      <section style={styles.content} id="main-content">
+        <p style={styles.eyebrow}>RETAIL · PRIVATE CONNECTION DRAFT</p>
+        <h1 style={styles.title}>{station.name}</h1>
+        <p style={styles.subtitle}>This managed Retail streaming connection is restricted. It is not a subscriber listening channel or a public player.</p>
+        <section style={styles.statusCard}><div><p style={styles.cardLabel}>Recorded station status</p><h2 style={styles.status}>{station.status.replaceAll("_", " ")}</h2>
+          <p>Connection review and any future activation are separate administrator steps. This page does not test a live stream or change shop playback.</p></div></section>
+        <a href="/dashboard/retail" style={styles.setupButton}>Return to Retail</a>
+      </section>
+    </main>;
   }
 
   const productKey = subscriberProductForStationFamily(station.productFamily);

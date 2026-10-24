@@ -4,6 +4,7 @@ import { encryptSecret } from "@/lib/crypto";
 import { requirePlatformAdmin } from "@/lib/access-control";
 import { accessDenied } from "@/lib/api-response";
 import { normalizeStreamHealthSettings, normalizeStreamProviderKey } from "@/lib/stream-source-health.mjs";
+import { isManagedRetailStreamDraftStation, RETAIL_STREAM_DRAFT_PROTECTED_MESSAGE } from "@/lib/retail-stream-draft-boundary.mjs";
 
 function badRequest(error) {
   return NextResponse.json({ error }, { status: 400 });
@@ -131,6 +132,7 @@ export async function POST(request, { params }) {
         id: true,
         organisationId: true,
         productFamily: true,
+        slug: true,
         streamConfig: { select: { sourcePasswordEncrypted: true } }
       }
     });
@@ -144,6 +146,9 @@ export async function POST(request, { params }) {
           status: 404
         }
       );
+    }
+    if (isManagedRetailStreamDraftStation(station)) {
+      return NextResponse.json({ error: RETAIL_STREAM_DRAFT_PROTECTED_MESSAGE }, { status: 409 });
     }
     if (outboundAutoDjEnabled && (station.productFamily !== "ONLINE" || providerKey !== "CENTOVA_CAST" || sourcePort === null || !sourcePassword && !station.streamConfig?.sourcePasswordEncrypted)) {
       return badRequest("Ruvanas AutoDJ output requires an Online Radio station, the exact Centova live-source port and a source password. Enter a live-source username only if Centova supplies one.");

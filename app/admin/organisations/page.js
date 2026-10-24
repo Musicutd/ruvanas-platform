@@ -221,6 +221,7 @@ export default async function AdminOrganisationsPage() {
         description="Customer accounts contain their brands, locations, stations, channels and team members."
       >
         <div style={styles.headerActions}>
+          {canManageEntitlements ? <Link href="/admin/retail-stream" style={styles.addButton}>Retail pilot setup</Link> : null}
           {canManageEntitlements ? <Link href="/admin/test-data-reset" style={styles.resetButton}>Reset all test data</Link> : null}
           <Link href="/admin/organisations/new" style={styles.addButton}>Add organisation</Link>
         </div>
@@ -379,6 +380,11 @@ export default async function AdminOrganisationsPage() {
                     </td>
 
                     <td style={styles.tableCellFeature}>
+                      {canManageEntitlements && resolveEntitlements(organisation.subscription).retailRadioEnabled ? (
+                        <p><Link href={`/admin/organisations/${encodeURIComponent(organisation.id)}/retail-stream`}>
+                          Retail connection draft
+                        </Link></p>
+                      ) : null}
                       <TrialOrganisationDeleteControl
                         organisationId={organisation.id}
                         organisationName={organisation.name}

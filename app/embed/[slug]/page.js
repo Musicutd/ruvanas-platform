@@ -1,13 +1,14 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import PublicRadioPlayer from "@/app/components/PublicRadioPlayer";
+import { isManagedRetailStreamDraftStation } from "@/lib/retail-stream-draft-boundary.mjs";
 
 export const dynamic = "force-dynamic";
 export const metadata = { robots: { index: false, follow: false } };
 
 export default async function PublicEmbedPage({ params }) {
   const { slug } = await params;
-  const station = await prisma.station.findFirst({ where: { slug, status: "ACTIVE", publicPlayerEnabled: true }, select: { id: true } });
-  if (!station) notFound();
+  const station = await prisma.station.findFirst({ where: { slug, status: "ACTIVE", publicPlayerEnabled: true }, select: { id: true, organisationId: true, productFamily: true, slug: true } });
+  if (!station || isManagedRetailStreamDraftStation(station)) notFound();
   return <main style={{ minHeight: "100vh", background: "#0c1525" }}><PublicRadioPlayer slug={slug} compact /></main>;
 }

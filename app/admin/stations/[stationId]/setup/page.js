@@ -6,6 +6,7 @@ import AdminStreamingProfiles from "./AdminStreamingProfiles";
 import CatalogueStreamTest from "./CatalogueStreamTest";
 import ContinuousAutoDj from "./ContinuousAutoDj";
 import TestRadioWeeklyPlanner from "./TestRadioWeeklyPlanner";
+import { isManagedRetailStreamDraftStation } from "@/lib/retail-stream-draft-boundary.mjs";
 
 export default async function AdminStationSetupPage({ params }) {
   const user = await getAdminUser();
@@ -23,6 +24,9 @@ export default async function AdminStationSetupPage({ params }) {
 
   if (!station) {
     notFound();
+  }
+  if (isManagedRetailStreamDraftStation(station)) {
+    redirect(`/admin/organisations/${encodeURIComponent(station.organisationId)}/retail-stream`);
   }
 
   const [channels, destinations, liveSources] = await Promise.all([

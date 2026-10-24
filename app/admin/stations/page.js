@@ -5,6 +5,7 @@ import PageHeader from "@/app/components/PageHeader";
 import EmptyState from "@/app/components/EmptyState";
 import { interfaceMessages } from "@/lib/interface-guidance.mjs";
 import { getAdminUser } from "@/lib/requireAdmin";
+import { isManagedRetailStreamDraftStation } from "@/lib/retail-stream-draft-boundary.mjs";
 
 export default async function AdminStationsPage() {
   const adminUser = await getAdminUser();
@@ -75,7 +76,9 @@ export default async function AdminStationsPage() {
                     </td>
 
                     <td style={styles.tableCell}>
-                      {station.streamConfig ? (
+                      {isManagedRetailStreamDraftStation(station) ? (
+                        <span style={styles.notConfigured}>Private draft · not live</span>
+                      ) : station.streamConfig ? (
                         <span style={styles.configured}>Configured</span>
                       ) : (
                         <span style={styles.notConfigured}>Pending manual configuration</span>
@@ -89,7 +92,10 @@ export default async function AdminStationsPage() {
                     </td>
 
                     <td style={styles.tableCell}>
-                      {adminUser?.role === "SUPER_ADMIN" ? <Link
+                      {adminUser?.role === "SUPER_ADMIN" && isManagedRetailStreamDraftStation(station) ? <Link
+                        href={`/admin/organisations/${encodeURIComponent(station.organisationId)}/retail-stream`}
+                        style={styles.setupLink}
+                      >Retail draft setup</Link> : adminUser?.role === "SUPER_ADMIN" ? <Link
                         href={`/admin/stations/${station.id}/setup`}
                         style={styles.setupLink}
                       >

@@ -3,12 +3,14 @@ import { prisma } from "@/lib/prisma";
 import { requireOrganisationProductAccess, ORGANISATION_MANAGER_ROLES } from "@/lib/access-control";
 import { normalizePublicPlayerSettings } from "@/lib/public-player.mjs";
 import { subscriberProductForStationFamily } from "@/lib/product-access.mjs";
+import { isManagedRetailStreamDraftStation } from "@/lib/retail-stream-draft-boundary.mjs";
 
 export async function PATCH(request, { params }) {
   try {
     const { stationId } = await params;
     const station = await prisma.station.findUnique({ where: { id: String(stationId || "") }, select: { id: true, organisationId: true, status: true, slug: true, productFamily: true, streamConfig: { select: { streamUrl: true } } } });
     if (!station) return NextResponse.json({ error: "Station not found." }, { status: 404 });
+    if (isManagedRetailStreamDraftStation(station)) return NextResponse.json({ error: "This managed Retail connection is a private draft." }, { status: 409 });
     if (station.productFamily === "CORRECTIONS") return NextResponse.json({ error: "Public listening is not available for Ruvanas Inside." }, { status: 403 });
     const product = subscriberProductForStationFamily(station.productFamily);
     const access = await requireOrganisationProductAccess(station.organisationId, product, ORGANISATION_MANAGER_ROLES);

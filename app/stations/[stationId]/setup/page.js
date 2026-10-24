@@ -4,6 +4,8 @@ import { getActiveOrganisationContext } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import SkipLink from "@/app/components/SkipLink";
 import ContextHelp from "@/app/components/ContextHelp";
+import { requireSubscriberProduct } from "@/lib/subscriber-product-access";
+import { isManagedRetailStreamDraftStation } from "@/lib/retail-stream-draft-boundary.mjs";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Station setup status | Ruvanas" };
@@ -14,9 +16,20 @@ export default async function StationSetupPage({ params }) {
   const { stationId } = await params;
   const station = await prisma.station.findFirst({
     where: { id: stationId, organisationId: context.membership.organisationId },
-    select: { id: true, name: true, status: true, streamConfig: { select: { id: true } } }
+    select: { id: true, organisationId: true, name: true, slug: true, productFamily: true, status: true, streamConfig: { select: { id: true } } }
   });
   if (!station) notFound();
+
+  if (isManagedRetailStreamDraftStation(station)) {
+    await requireSubscriberProduct("RETAIL");
+    return <main style={styles.page}><SkipLink /><section style={styles.card} id="main-content">
+      <Link href={`/stations/${station.id}`} style={styles.link}>← Back to Retail connection</Link>
+      <p style={styles.eyebrow}>RETAIL · PRIVATE CONNECTION DRAFT</p>
+      <h1 style={styles.title}>{station.name}</h1>
+      <p style={styles.copy}>This managed Retail connection is restricted. Its recorded station status is {station.status.replaceAll("_", " ")}. It is not available for subscriber listening or public publishing.</p>
+      <p style={styles.note}>Connection review and any future activation are separate administrator steps. This page does not test a live stream or change shop playback.</p>
+    </section></main>;
+  }
 
   return <main style={styles.page}><SkipLink /><section style={styles.card} id="main-content">
     <Link href={`/stations/${station.id}`} style={styles.link}>← Back to station</Link>

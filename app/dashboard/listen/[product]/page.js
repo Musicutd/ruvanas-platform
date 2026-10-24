@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { audioPillar, firstListenablePillarStation, pillarListenHref, secureListenerUrl } from "@/lib/pillar-audio.mjs";
 import { requireSubscriberProduct } from "@/lib/subscriber-product-access";
+import { isManagedRetailStreamDraftStation } from "@/lib/retail-stream-draft-boundary.mjs";
 import styles from "../../radio/listen/radio-listen.module.css";
 
 export const dynamic = "force-dynamic";
@@ -17,14 +18,16 @@ export default async function PillarListenPage({ params, searchParams }) {
   const { context } = await requireSubscriberProduct(product);
   const stations = await prisma.station.findMany({
     where: { organisationId: context.membership.organisationId, productFamily: product },
-    select: { id: true, name: true, slug: true, productFamily: true, status: true, publicPlayerEnabled: true, streamConfig: { select: { streamUrl: true } } },
+    select: { id: true, organisationId: true, name: true, slug: true, productFamily: true, status: true, publicPlayerEnabled: true, streamConfig: { select: { streamUrl: true } } },
     orderBy: { createdAt: "asc" }
   });
+  const managedRetailDraftPresent = product === "RETAIL" && stations.some(isManagedRetailStreamDraftStation);
+  const listenableStations = product === "RETAIL" ? stations.filter((item) => !isManagedRetailStreamDraftStation(item)) : stations;
   const query = await searchParams;
   const requestedId = typeof query?.stationId === "string" ? query.stationId : null;
   const station = requestedId
-    ? stations.find((item) => item.id === requestedId)
-    : firstListenablePillarStation(stations, product) || stations[0] || null;
+    ? listenableStations.find((item) => item.id === requestedId)
+    : firstListenablePillarStation(listenableStations, product) || listenableStations[0] || null;
   if (requestedId && !station) notFound();
 
   const streamUrl = secureListenerUrl(station?.streamConfig?.streamUrl);
@@ -45,13 +48,14 @@ export default async function PillarListenPage({ params, searchParams }) {
           : <p className={styles.notice}>This is a signed-in listening check. It does not activate the station or publish a public player.</p>}
       </> : <>
         <p className={styles.notice}>No HTTPS browser-listening stream is ready for this {pillar.label} channel yet. Ruvanas Super Admin adds the streaming details. This page does not change AutoDJ or any schedule.</p>
+        {managedRetailDraftPresent && !station ? <p>The managed Retail connection is a private draft, not a live listening channel. Its provider URL is not available here.</p> : null}
         {product === "RETAIL" ? <p>Shop players may still play through their protected device connection. <Link href="/dashboard/players">Check your shop players →</Link></p> : null}
       </>}
       <p><Link href={pillar.autoDjHref}>Open AutoDJ settings →</Link></p>
     </section>
-    {stations.length > 1 ? <nav className={styles.stations} aria-label={`${pillar.label} channels`}>
+    {listenableStations.length > 1 ? <nav className={styles.stations} aria-label={`${pillar.label} channels`}>
       <h2>Other channels</h2>
-      {stations.filter((item) => item.id !== station?.id).map((item) => <Link key={item.id} href={pillarListenHref(product, item.id)}>{item.name}{secureListenerUrl(item.streamConfig?.streamUrl) ? " · listen" : " · setup needed"}</Link>)}
+      {listenableStations.filter((item) => item.id !== station?.id).map((item) => <Link key={item.id} href={pillarListenHref(product, item.id)}>{item.name}{secureListenerUrl(item.streamConfig?.streamUrl) ? " · listen" : " · setup needed"}</Link>)}
     </nav> : null}
   </main>;
 }

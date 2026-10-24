@@ -6,6 +6,7 @@ import { resolveEntitlements } from "@/lib/entitlements.mjs";
 import { subscriberProductAccess, subscriberProductForStationFamily } from "@/lib/product-access.mjs";
 import { probeStationStream } from "@/lib/stream-source-health-service";
 import { runSerializableTransaction } from "@/lib/transaction-retry.mjs";
+import { isManagedRetailStreamDraftStation, RETAIL_STREAM_DRAFT_PROTECTED_MESSAGE } from "@/lib/retail-stream-draft-boundary.mjs";
 
 export async function POST(_request, { params }) {
   const access = await requirePlatformAdmin();
@@ -24,6 +25,7 @@ export async function POST(_request, { params }) {
     }
   });
   if (!station) return NextResponse.json({ error: "Station not found." }, { status: 404 });
+  if (isManagedRetailStreamDraftStation(station)) return NextResponse.json({ error: RETAIL_STREAM_DRAFT_PROTECTED_MESSAGE }, { status: 409 });
   if (station.productFamily === "CORRECTIONS") return NextResponse.json({ error: "Corrections playback needs facility policy and private-delivery approval before activation." }, { status: 409 });
   const onlineChannelMissing = station.productFamily === "ONLINE" && !station.channels.some((channel) => channel.status === "ACTIVE");
   if (station.status === "ACTIVE" && !onlineChannelMissing) return NextResponse.json({ success: true, status: "ACTIVE" });
