@@ -19,6 +19,23 @@ function fixture() {
 }
 const approval = (state, extra = {}) => ui.testRadioWeeklyApprovalBody({ state, form: ui.testRadioWeeklyForm(state), reviewHash: state.draft?.reviewHash, reviewed: true, overridesAcknowledged: true, ...extra });
 
+test("draft status distinguishes approval from unsaved edits and a newer saved draft without changing authority", () => {
+  const state = fixture();
+  assert.match(ui.testRadioWeeklyDraftStatus(state).label, /awaiting admin approval/);
+  state.approved = { enabled: true, versionId: state.draft.id, version: 3, channelId: CHANNEL_ID };
+  assert.equal(ui.testRadioWeeklySavedApproved(state), true);
+  assert.equal(ui.testRadioWeeklyDraftStatus(state).label, "Approved version 3");
+  assert.match(ui.testRadioWeeklyDraftStatus(state).detail, /not proof of live audio/);
+  assert.equal(ui.testRadioWeeklyDraftStatus(state, true).label, "Unsaved changes");
+  assert.equal(approval(state, { draftOnly: true }), null);
+  for (const override of [{ enabled: false }, { versionId: "different-id" }, { channelId: "different-channel" }]) {
+    assert.equal(ui.testRadioWeeklySavedApproved({ ...state, approved: { ...state.approved, ...override } }), false);
+  }
+  assert.equal(ui.testRadioWeeklySavedApproved({ ...state, stationId: "other" }), false);
+  assert.equal(ui.testRadioWeeklyDraftStatus({ ...state, draft: null }).label, "No saved draft");
+  assert.equal(ui.testRadioWeeklyDraftStatus(null).label, "No saved draft");
+});
+
 test("loads the latest saved canonical draft without replacing it with a blank plan", () => {
   const state = fixture(), form = ui.testRadioWeeklyForm(state);
   assert.equal(form.name, "Existing weekly plan"); assert.equal(form.channelId, CHANNEL_ID); assert.equal(form.timezone, "Europe/Malta");
@@ -96,6 +113,10 @@ test("real UI renders truthful review, escapes catalogue text, offers safe stop 
   assert.match(review, /not proof of live audio/); assert.match(review, /Priority override needs review/); assert.match(review, /No scheduled programme/);
   assert.match(review, /next seven days/); assert.match(review, /next 31 days/);
   assert.match(review, /&lt;img/); assert.doesNotMatch(review, /<img|<audio|autoplay/i);
+  state.approved = { enabled: true, versionId: state.draft.id, channelId: CHANNEL_ID };
+  const approvedReview = renderToStaticMarkup(React.createElement(module.exports.TestRadioWeeklyReview, { state, draftOnly: true }));
+  assert.match(approvedReview, /already has administrator approval/);
+  assert.doesNotMatch(approvedReview, /must separately review and approve/);
   const shell = renderToStaticMarkup(React.createElement(module.exports.default, { stationId: ui.TEST_RADIO_PLANNER_STATION_ID }));
   assert.match(shell, /Disable scheduled takeovers — keep AutoDJ/); assert.match(shell, /Listeners may hear the change/); assert.match(shell, /US\$15/);
   assert.match(shell, /Saving or previewing never puts a new version on air/); assert.match(shell, /draft-only access/);
