@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 import vm from "node:vm";
 import { PREVIEW_ONLINE_DRAFT_CATALOGUE_PLAN, previewTesterOverrides } from "../lib/private-preview-account-policy.mjs";
 import { TEST_RADIO_CONTINUOUS as P, continuousSourceFingerprint, signContinuousCommand } from "../lib/test-radio-continuous-policy.mjs";
-import { CONTINUOUS_CONTROL_ID, loadAuthorizedContinuousRadio } from "../lib/test-radio-continuous-service.mjs";
+import { CONTINUOUS_CONTROL_ID, CONTINUOUS_OBSERVATION_ID, loadAuthorizedContinuousRadio } from "../lib/test-radio-continuous-service.mjs";
 import { CONTINUOUS_SCHEDULE as S, parseContinuousSchedule } from "../lib/test-radio-continuous-schedule-policy.mjs";
 import { continuousScheduleDashboard, approveContinuousSchedule, loadAuthorizedContinuousSchedule } from "../lib/test-radio-continuous-schedule-service.mjs";
 import { TEST_RADIO_SUBSCRIBER_STATION_ID, isTestRadioSubscriberSession, isTestRadioSubscriberContext, resolveTestRadioSubscriberWorkspace } from "../lib/test-radio-subscriber-access.mjs";
@@ -150,6 +150,25 @@ test("catalogue and recipe preview expose only real approved metadata, with accu
   assert.equal(f.d.writes.length, 0);
   f.d.tracks[0].rightsReviewStatus = "REJECTED";
   assert.equal((await subscriberCatalogue(f.db, f.options)).total, 2);
+});
+
+test("subscriber status exposes only allowlisted source metadata without writes or playback permissions", async () => {
+  const f = fixture(), grant = f.d.audits.get(CONTINUOUS_CONTROL_ID).details.command;
+  Object.assign(f.d.station.streamConfig, { encoderLeaseOwner: `${P.leasePrefix}fixture`, encoderLeaseUntil: new Date(NOW.getTime() + 30_000) });
+  f.d.audits.set(CONTINUOUS_OBSERVATION_ID, { details: { grantId: grant.id, leaseOwner: f.d.station.streamConfig.encoderLeaseOwner,
+    state: "STREAMING", phase: "RANDOM", trackId: f.d.tracks[0].id, title: "Title 1", artist: "Artist 1", audioBytesSent: 128,
+    observedAt: NOW.toISOString(), sourceStartedAt: NOW.toISOString(), secret: "DO_NOT_LEAK" } });
+  const before = clone(f.d.audits), result = await subscriberSchedule(f.db, f.options);
+  assert.equal(result.nowNext.source.confirmed, true);
+  assert.equal(result.nowNext.source.phase, "RANDOM");
+  assert.equal(result.canApprove, false);
+  assert.equal(result.sources[0].eligibleTrackCount, 2);
+  assert.equal(result.sources[0].eligibleDurationSeconds, 360);
+  assert.deepEqual(result.sources[0].unavailableGenreCodes, []);
+  assert.doesNotMatch(JSON.stringify(result.nowNext), /DO_NOT_LEAK|grantId|leaseOwner|storageKey|sourcePassword|listenerUrl|https?:/);
+  assert.deepEqual(f.d.audits, before); assert.equal(f.d.writes.length, 0);
+  const stale = await subscriberSchedule(f.db, { ...f.options, now: new Date(NOW.getTime() + 16_000) });
+  assert.equal(stale.nowNext.source.confirmed, false); assert.equal(stale.nowNext.source.track, null);
 });
 test("recipe save creates isolated canonical draft records once and never changes controls or existing templates", async () => {
   const f = fixture(), controls = clone(f.d.audits), original = clone(f.d.modes[0]);

@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 import vm from "node:vm";
 import * as ui from "../lib/test-radio-weekly-planner-ui.mjs";
 import * as deskUi from "../lib/test-radio-playlist-desk-ui.mjs";
+import * as plannerWarnings from "../lib/test-radio-planner-warnings.mjs";
 const CHANNEL_ID = "c000000000000000000000001", PLAYLIST_ID = "c000000000000000000000002";
 
 function fixture() {
@@ -102,6 +103,8 @@ test("real UI renders truthful review, escapes catalogue text, offers safe stop 
   const module = { exports: {} };
   vm.runInNewContext(code, { module, exports: module.exports, require: name => {
     if (name === "@/lib/test-radio-weekly-planner-ui.mjs") return ui;
+    if (name === "@/lib/test-radio-planner-warnings.mjs") return plannerWarnings;
+    if (name === "@/app/dashboard/programming/TestRadioNowNext") return { __esModule: true, default: () => React.createElement("div", null, "Read-only Now & Next") };
     if (name === "@/lib/test-radio-playlist-desk-ui.mjs") return deskUi;
     if (name === "./TestRadioPlaylistDesk") return { __esModule: true, default: () => React.createElement("div", null, "Playlist desk") };
     if (name === "./test-radio-planner.module.css") return { __esModule: true, default: new Proxy({}, { get: (_target, key) => String(key) }) };

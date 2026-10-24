@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { TEST_RADIO_PLANNER_STATION_ID, testRadioWeeklyEmptyItem, testRadioWeeklyForm, testRadioWeeklySaveBody,
   testRadioWeeklyFormSnapshot, testRadioWeeklyApprovalBody, testRadioWeeklyDays, testRadioWeeklySavedApproved, testRadioWeeklyDraftStatus } from "@/lib/test-radio-weekly-planner-ui.mjs";
 import { deskRecipeProgramme, mergeDeskRecipeSources } from "@/lib/test-radio-playlist-desk-ui.mjs";
+import { testRadioPlannerWarnings } from "@/lib/test-radio-planner-warnings.mjs";
+import TestRadioNowNext from "@/app/dashboard/programming/TestRadioNowNext";
 import TestRadioPlaylistDesk from "./TestRadioPlaylistDesk";
 import styles from "./test-radio-planner.module.css";
 
@@ -44,15 +46,15 @@ export default function TestRadioWeeklyPlanner({ stationId, draftOnly = false })
   const unsaved = testRadioWeeklyFormSnapshot(form) !== baseline;
   const draftStatus = testRadioWeeklyDraftStatus(state, unsaved);
   const clearReview = () => { setReviewHash(null); setReviewOpen(false); setAcknowledged(false); };
-  const adopt = useCallback((body, channelId = "") => {
+  const adopt = useCallback((body, channelId = "", requestAgeMs = 15_000) => {
     if (body.stationId !== TEST_RADIO_PLANNER_STATION_ID) throw new Error("Only Test Radio can use these controls.");
     const next = testRadioWeeklyForm(body, channelId);
     draftSaveAttempt.current = null;
-    setState(body); setForm(next); setBaseline(testRadioWeeklyFormSnapshot(next)); setReviewHash(null); setReviewOpen(false); setAcknowledged(false); setSelectedIndex(0);
+    setState({ ...body, nowNext: body.nowNext ? { ...body.nowNext, requestAgeMs } : null }); setForm(next); setBaseline(testRadioWeeklyFormSnapshot(next)); setReviewHash(null); setReviewOpen(false); setAcknowledged(false); setSelectedIndex(0);
   }, []);
   const load = useCallback(async (channelId = "") => {
     if (stationId !== TEST_RADIO_PLANNER_STATION_ID || actionPending.current) return;
-    const read = ++sequence.current;
+    const read = ++sequence.current, requestedAt = Date.now();
     abortRead.current?.abort(); const controller = new AbortController(); abortRead.current = controller;
     setBusy("load"); setError("");
     const timeout = setTimeout(() => controller.abort(), 20_000);
@@ -60,7 +62,7 @@ export default function TestRadioWeeklyPlanner({ stationId, draftOnly = false })
       const response = await fetch(`${endpoint}${channelId ? `?channelId=${encodeURIComponent(channelId)}` : ""}`, { credentials: "same-origin", cache: "no-store", signal: controller.signal });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || "The Test Radio weekly plan could not be loaded.");
-      if (read === sequence.current) adopt(body, channelId);
+      if (read === sequence.current) adopt(body, channelId, Math.max(0, Date.now() - requestedAt));
     } catch (caught) {
       if (read === sequence.current) { setError(caught.name === "AbortError" ? "Loading timed out. Refresh the weekly plan before making changes." : caught.message); setReviewHash(null); setReviewOpen(false); setAcknowledged(false); }
     } finally { clearTimeout(timeout); if (read === sequence.current) setBusy(""); }
@@ -137,6 +139,7 @@ export default function TestRadioWeeklyPlanner({ stationId, draftOnly = false })
   }
   const editIndex = Math.min(selectedIndex, Math.max(0, form.items.length - 1)), item = form.items[editIndex];
   const playlistName = sourceId => state?.sources?.find(source => source.id === sourceId)?.name || "Choose saved playlist";
+  const plannerWarnings = draftOnly && state ? testRadioPlannerWarnings(form, state.sources).filter(warning => warning.code !== "DRAFT_REVIEW_HORIZON") : [];
   if (stationId !== TEST_RADIO_PLANNER_STATION_ID) return null;
   return <section aria-labelledby="test-radio-weekly-title" className={styles.workspace}>
     <header className={styles.header}>
@@ -146,6 +149,7 @@ export default function TestRadioWeeklyPlanner({ stationId, draftOnly = false })
     </header>
     <div className={styles.guide}><span><b>1</b> Choose or build a playlist</span><span><b>2</b> Place it in your week</span><span><b>3</b> {draftOnly ? "Save draft → administrator review" : "Save → review → approve"}</span></div>
     <div className={styles.body}>
+      {draftOnly && <TestRadioNowNext stationId={stationId} snapshot={state?.nowNext} />}
       <div id={draftOnly ? "workspace-simple" : undefined}><TestRadioPlaylistDesk stationId={stationId} draftOnly={draftOnly} onSourcesChanged={updateRecipeSources} onAddToWeek={addRecipeToWeek} canAddToWeek={state?.canEdit === true && !busy && form.items.length < 200} /></div>
       <section id={draftOnly ? "workspace-planner" : undefined} className={styles.weekSection} aria-labelledby="weekly-editor-title">
         <div className={styles.toolbar}><h3 id="weekly-editor-title">Your weekly programmes</h3><span className={styles.tag}>{form.timezone}</span><button type="button" disabled={Boolean(busy)} onClick={() => refresh()}>Refresh saved plan</button></div>
@@ -158,6 +162,13 @@ export default function TestRadioWeeklyPlanner({ stationId, draftOnly = false })
           {(state.warnings || []).map((warning, index) => <p key={index} role="note" className={styles.notice}>{warning}</p>)}
           <form onSubmit={event => command("save", event)}>
             <div className={styles.twoFields} style={{ marginBottom: 18 }}><label>Plan name<input required maxLength={120} disabled={Boolean(busy) || !state.canEdit} value={form.name} onChange={event => { clearReview(); setForm({ ...form, name: event.target.value }); }} /></label><label>Test Radio channel<select required disabled={Boolean(busy)} value={form.channelId} onChange={event => refresh(event.target.value)}><option value="">Choose channel</option>{(state.channels || []).map(channel => <option key={channel.id} value={channel.id}>{channel.name}</option>)}</select></label></div>
+            {draftOnly && <section className={styles.plannerChecks} aria-labelledby="test-radio-planner-checks"><h4 id="test-radio-planner-checks">Draft planning checks</h4>
+              <p className={styles.hint}>Checks cover the next 31 calendar days and the music currently available. They do not change the approved week or replace administrator review.</p>
+              {plannerWarnings.length ? <ul>{plannerWarnings.map((warning, index) => <li key={`${warning.code}:${index}`} className={warning.severity === "BLOCKING" ? styles.error : styles.notice}>
+                <strong>{warning.severity === "BLOCKING" ? "Needs attention" : "Planning note"}</strong><p>{warning.message}</p>
+                {(warning.itemIndexes || []).filter(position => form.items[position]).map(position => <button type="button" key={position} disabled={Boolean(busy)} onClick={() => { setSelectedIndex(position); setFocusRequest(value => value + 1); }}>Review programme {position + 1}</button>)}
+              </li>)}</ul> : <p className={styles.hint}>No issues found by these draft checks. This is not approval or proof of uninterrupted audio.</p>}
+            </section>}
             <div className={styles.editLayout}>
               <section aria-label="Programme draft agenda">
                 <p className={styles.sectionLabel}>Select a programme to edit</p>

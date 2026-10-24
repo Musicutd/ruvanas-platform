@@ -7,6 +7,7 @@ import { webcrypto } from "node:crypto";
 import * as weekly from "../lib/test-radio-weekly-planner-ui.mjs";
 import * as desk from "../lib/test-radio-playlist-desk-ui.mjs";
 import * as onlineUi from "../lib/online-radio-workspace.mjs";
+import * as plannerWarnings from "../lib/test-radio-planner-warnings.mjs";
 
 const require = createRequire(import.meta.url), React = require("react");
 const { renderToStaticMarkup } = require("react-dom/server"), babel = require("next/dist/compiled/babel/core");
@@ -30,6 +31,8 @@ async function component(file, { hooks = React, fetch = () => { throw new Error(
       if (name === "@/lib/test-radio-weekly-planner-ui.mjs") return weekly;
       if (name === "@/lib/test-radio-playlist-desk-ui.mjs") return desk;
       if (name === "@/lib/online-radio-workspace.mjs") return onlineUi;
+      if (name === "@/lib/test-radio-planner-warnings.mjs") return plannerWarnings;
+      if (name === "@/app/dashboard/programming/TestRadioNowNext") return { __esModule: true, default: () => React.createElement("div", null, "Read-only Now & Next") };
       if (name === "@/app/admin/stations/[stationId]/setup/TestRadioWeeklyPlanner") return { __esModule: true, default: props => React.createElement("div", { "data-subscriber-planner": String(props.draftOnly), "data-station": props.stationId }, "Draft weekly planner") };
       if (name === "./TestRadioPlaylistDesk") return { __esModule: true, default: props => React.createElement("div", { "data-draft-only": String(props.draftOnly) }, "Playlist desk") };
       if (name.endsWith(".module.css")) return css;
