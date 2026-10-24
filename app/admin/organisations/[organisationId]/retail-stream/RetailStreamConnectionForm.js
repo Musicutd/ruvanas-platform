@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { retailStreamConnectionForm, retailStreamDraftRequest, retailStreamSetupNotice, safeRetailStreamSetupView } from "@/lib/retail-stream-setup-ui.mjs";
+import { RETAIL_PILOT_HOST_CORRECTION as hostCorrection, isRetailPilotHostCorrectionTarget } from "@/lib/retail-stream-host-correction.mjs";
 import styles from "./retail-stream.module.css";
 
 export default function RetailStreamConnectionForm({ initialSetup }) {
@@ -9,14 +10,55 @@ export default function RetailStreamConnectionForm({ initialSetup }) {
   const [busy, setBusy] = useState(false), [message, setMessage] = useState(null), [uncertain, setUncertain] = useState(false);
   const [acknowledged, setAcknowledged] = useState(false);
   const password = useRef(null), pending = useRef(false), controller = useRef(null), mounted = useRef(true);
+  const [hostCorrectionConfirmed, setHostCorrectionConfirmed] = useState(false);
   useEffect(() => {
     mounted.current = true;
     return () => { mounted.current = false; controller.current?.abort(); };
   }, []);
   const existing = Boolean(setup.station && setup.connection), credentialConfigured = setup.connection?.credentialConfigured === true;
   const canSave = setup.canSaveDraft === true && !busy && !uncertain;
+  const canCorrectHost = setup.canSaveDraft === true && credentialConfigured && setup.station?.status === "DRAFT" &&
+    isRetailPilotHostCorrectionTarget(setup.organisation.id, setup.connection);
   const update = event => { setForm(previous => ({ ...previous, [event.target.name]: event.target.value })); setMessage(null); };
   function reload() { if (!pending.current) window.location.reload(); }
+
+  async function correctHost() {
+    if (pending.current || !canSave || !canCorrectHost || !hostCorrectionConfirmed) return;
+    pending.current = true; setBusy(true); setMessage(null); setHostCorrectionConfirmed(false);
+    const abort = new AbortController(); controller.current = abort;
+    const timeout = setTimeout(() => abort.abort(), 20_000);
+    try {
+      const response = await fetch(`/api/admin/organisations/${encodeURIComponent(setup.organisation.id)}/retail-stream`, {
+        method: "PATCH", credentials: "same-origin", cache: "no-store", signal: abort.signal,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ expectedCurrentHost: hostCorrection.fromHost, confirmation: hostCorrection.confirmation })
+      });
+      const body = await response.json();
+      if (!response.ok) {
+        if (mounted.current) {
+          if (response.status >= 500 || ["RETAIL_STREAM_SETUP_CONCURRENT_CHANGE", "RETAIL_STREAM_SETUP_PERSISTENCE_UNAVAILABLE"].includes(body?.code)) setUncertain(true);
+          setMessage({ type: "error", text: retailStreamSetupNotice(body?.code) });
+        }
+        return;
+      }
+      const saved = safeRetailStreamSetupView(body.setup, setup.organisation.id);
+      if (body.saved !== true || saved.station?.id !== setup.station.id || saved.station.status !== "DRAFT" ||
+          !saved.connection?.credentialConfigured || saved.connection.serverHost !== hostCorrection.toHost ||
+          Object.keys(setup.connection).some(key => key !== "serverHost" && saved.connection[key] !== setup.connection[key])) throw new Error("UNCONFIRMED_CORRECTION");
+      if (mounted.current) {
+        setSetup(saved); setForm(retailStreamConnectionForm(saved));
+        setMessage({ type: "success", text: "Test Retail’s source hostname is corrected. The stored password, ports and listening address are unchanged. Retail remains off; no worker or paid service was started." });
+      }
+    } catch {
+      if (mounted.current) {
+        setUncertain(true);
+        setMessage({ type: "error", text: "The hostname correction could not be confirmed. Reload saved status before another attempt; it may already have completed. Nothing here starts broadcasting." });
+      }
+    } finally {
+      clearTimeout(timeout); pending.current = false; controller.current = null;
+      if (mounted.current) setBusy(false);
+    }
+  }
 
   async function save(event) {
     event.preventDefault();
@@ -96,6 +138,12 @@ export default function RetailStreamConnectionForm({ initialSetup }) {
       <h2 id="retail-stream-connection-fields">Centova connection details</h2>
       <p className={styles.intro}>Use the subscriber’s own provider account. Platform storage and catalogue credentials stay with Ruvanas; no music files are copied for this setup.</p>
       {existing && <p className={styles.notice}>The saved destination is read-only here. Its source password is kept unchanged. Changing the provider destination or password requires a separate administrator review.</p>}
+      {canCorrectHost && <section className={styles.notice} aria-labelledby="retail-host-correction-title">
+        <h3 id="retail-host-correction-title">Correct Test Retail’s source hostname</h3>
+        <p>Streamerr ticket #{hostCorrection.ticket} confirms <strong>{hostCorrection.toHost}</strong>, port {hostCorrection.port}. This replaces the saved hostname <strong>{hostCorrection.fromHost}</strong> only.</p>
+        <label className={styles.confirm}><input type="checkbox" checked={hostCorrectionConfirmed} disabled={!canSave} onChange={event => setHostCorrectionConfirmed(event.target.checked)} /><span>I confirm this hostname correction for Test Retail only. Keep its password, ports and listening address unchanged and Retail audio off.</span></label>
+        <button type="button" disabled={!canSave || !hostCorrectionConfirmed} onClick={correctHost}>Correct Test Retail hostname — audio stays off</button>
+      </section>}
       <form onSubmit={save} autoComplete="off">
         <fieldset disabled={!canSave} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
           <div className={styles.formGrid}>

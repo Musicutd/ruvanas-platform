@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import vm from "node:vm";
 import * as ui from "../lib/retail-stream-setup-ui.mjs";
+import * as hostCorrection from "../lib/retail-stream-host-correction.mjs";
 
 const ORG = "org-retail-a", SECRET = "SYNTHETIC_SECRET_DO_NOT_DISPLAY  ";
 const setup = (saved = false) => ({ organisation: { id: ORG, name: "Retail <pilot>" }, canSaveDraft: true, blockedReason: null,
@@ -62,6 +63,7 @@ async function load(file, { hooks = React, mock = {}, fetch = () => { throw new 
       if (Object.hasOwn(mock, name)) return mock[name];
       if (name === "react") return hooks;
       if (name === "@/lib/retail-stream-setup-ui.mjs") return ui;
+      if (name === "@/lib/retail-stream-host-correction.mjs") return hostCorrection;
       if (name === "./RetailStreamPlayoutPanel") return () => null;
       if (name === "next/link") return ({ children, ...props }) => h("a", props, children);
       if (name.endsWith(".module.css")) return css;
@@ -236,4 +238,53 @@ test("pilot entry denies non-Super-Admin sessions before searching accounts", as
     await assert.rejects(() => Page(), error => error.href === (actor ? "/admin/organisations" : "/login"));
     assert.equal(calls, 0);
   }
+});
+
+function pilotSetup() {
+  const target = hostCorrection.RETAIL_PILOT_HOST_CORRECTION;
+  return { ...setup(true), organisation: { id: target.organisationId, name: "Test Retail" },
+    connection: { ...setup(true).connection, serverHost: target.fromHost, centovaUsername: target.centovaUsername,
+      serverPort: target.port, sourcePort: target.port, streamUrl: target.streamUrl } };
+}
+
+test("hostname correction is shown only for the exact saved pilot and keeps general target editing locked", async () => {
+  const Form = (await load(`${root}RetailStreamConnectionForm.js`)).default, value = pilotSetup();
+  const html = renderToStaticMarkup(h(Form, { initialSetup: value }));
+  assert.match(html, /Streamerr ticket #74460/); assert.match(html, /Correct Test Retail hostname/);
+  assert.match(html, /name="serverHost"[^>]*readonly=""/); assert.doesNotMatch(html, /type="password"/);
+  for (const changed of [{ ...value, organisation: { id: "other", name: "Other" } },
+    { ...value, connection: { ...value.connection, sourcePort: 8282 } },
+    { ...value, connection: { ...value.connection, serverHost: hostCorrection.RETAIL_PILOT_HOST_CORRECTION.toHost } }]) {
+    assert.doesNotMatch(renderToStaticMarkup(h(Form, { initialSetup: changed })), /Correct Test Retail hostname/);
+  }
+});
+
+test("confirmed hostname correction sends no password and refreshes only the scoped saved connection", async () => {
+  const value = pilotSetup(), target = hostCorrection.RETAIL_PILOT_HOST_CORRECTION, calls = [], state = hookHarness();
+  const saved = { ...value, connection: { ...value.connection, serverHost: target.toHost } };
+  const Form = (await load(`${root}RetailStreamConnectionForm.js`, { hooks: state.hooks, fetch: async (url, options) => {
+    calls.push({ url, options }); return { ok: true, json: async () => ({ saved: true, setup: saved }) };
+  } })).default;
+  const render = () => { state.reset(); return Form({ initialSetup: value }); };
+  const button = () => nodes(render()).find(node => node.type === "button" && String(node.props.children).startsWith("Correct Test Retail hostname"));
+  assert.equal(button().props.disabled, true); await button().props.onClick(); assert.equal(calls.length, 0);
+  const confirmation = nodes(render()).find(node => node.type === "input" && node.props.type === "checkbox");
+  confirmation.props.onChange({ target: { checked: true } }); assert.equal(button().props.disabled, false);
+  await button().props.onClick();
+  assert.equal(calls.length, 1); assert.equal(calls[0].url, `/api/admin/organisations/${target.organisationId}/retail-stream`);
+  assert.equal(calls[0].options.method, "PATCH"); assert.equal(calls[0].options.credentials, "same-origin");
+  assert.deepEqual(JSON.parse(calls[0].options.body), { expectedCurrentHost: target.fromHost, confirmation: target.confirmation });
+  assert.equal(state.slots[0].connection.serverHost, target.toHost); assert.equal(state.slots[0].connection.sourcePort, 8330);
+  assert.match(state.slots[3].text, /Retail remains off/); assert.equal(button(), undefined);
+});
+
+test("uncertain hostname correction is not retried and does not claim success", async () => {
+  const value = pilotSetup(), state = hookHarness(); let calls = 0;
+  const Form = (await load(`${root}RetailStreamConnectionForm.js`, { hooks: state.hooks, fetch: async () => { calls += 1; throw new Error(SECRET); } })).default;
+  const render = () => { state.reset(); return Form({ initialSetup: value }); };
+  const button = () => nodes(render()).find(node => node.type === "button" && String(node.props.children).startsWith("Correct Test Retail hostname"));
+  nodes(render()).find(node => node.type === "input" && node.props.type === "checkbox").props.onChange({ target: { checked: true } });
+  await button().props.onClick(); await button().props.onClick();
+  assert.equal(calls, 1); assert.equal(state.slots[4], true); assert.match(state.slots[3].text, /Reload saved status/);
+  assert.doesNotMatch(state.slots[3].text, /SYNTHETIC_SECRET|is corrected/);
 });

@@ -17,12 +17,16 @@ function harness(options = {}) {
     getAdmin: async () => ({ ok: true, user: { id: "admin-1", role: "SUPER_ADMIN" } }),
     loadSetup: async args => { calls.push(["load", args]); return safeSetup(); },
     saveSetup: async args => { calls.push(["save", args]); return { saved: true, unchanged: false, setup: safeSetup() }; },
+    correctSourceHost: async args => { calls.push(["correct", args]); return { saved: true, setup: safeSetup() }; },
     ...options
   });
   return { calls, ...handlers };
 }
 function post(body = {}, headers = {}, raw = false) {
   return new Request(url, { method: "POST", headers: { "content-type": "application/json", origin, ...headers }, body: raw ? body : JSON.stringify(body) });
+}
+function patch(body = { expectedCurrentHost: "pollux.shoutcast.com", confirmation: "CORRECT_TEST_RETAIL_HOST_ONLY" }, headers = {}) {
+  return new Request(url, { method: "PATCH", headers: { "content-type": "application/json", origin, ...headers }, body: JSON.stringify(body) });
 }
 
 test("setup GET requires Super Admin and returns uncached safe data", async () => {
@@ -37,6 +41,7 @@ test("unauthenticated and non Super Admin actors never reach the service", async
     const h = harness({ getAdmin: async () => access });
     assert.ok([401, 403].includes((await h.GET(new Request(url), context)).status));
     assert.ok([401, 403].includes((await h.POST(post(), context)).status));
+    assert.ok([401, 403].includes((await h.PATCH(patch(), context)).status));
     assert.deepEqual(h.calls, []);
   }
 });
@@ -94,4 +99,29 @@ test("origin configuration rejects URL credentials and only permits explicit loc
   for (const value of ["http://www.ruvanas.com", "https://a:b@www.ruvanas.com", "https://www.ruvanas.com/path", "https://www.ruvanas.com/?token=x", "https://www.ruvanas.com/#x", undefined, "null", "http://localhost:3000"]) assert.equal(retailSetupOrigin(value), null);
   assert.equal(retailSetupOrigin("http://localhost:3000", { allowLocalHttp: true }), "http://localhost:3000");
   assert.equal(retailSetupOrigin("http://attacker.example.com", { allowLocalHttp: true }), null);
+});
+
+test("hostname correction uses the same owner/origin boundary and only the scoped correction service", async () => {
+  const h = harness(), response = await h.PATCH(patch(), context);
+  assert.equal(response.status, 200); assert.deepEqual(await response.json(), { saved: true, setup: safeSetup() });
+  assert.deepEqual(h.calls, [["correct", { actorUserId: "admin-1", organisationId: "org-retail",
+    input: { expectedCurrentHost: "pollux.shoutcast.com", confirmation: "CORRECT_TEST_RETAIL_HOST_ONLY" } }]]);
+  for (const headers of [{ origin: "" }, { origin: "https://attacker.example.com" }, { "sec-fetch-site": "cross-site" }]) {
+    const blocked = harness(); assert.equal((await blocked.PATCH(patch(undefined, headers), context)).status, 403); assert.equal(blocked.calls.length, 0);
+  }
+  for (const key of ["organisationId", "stationId", "serverHost", "sourcePassword", "sourcePort", "outboundAutoDjEnabled", "plan"]) {
+    const blocked = harness(); assert.equal((await blocked.PATCH(patch({ expectedCurrentHost: "pollux.shoutcast.com", confirmation: "CORRECT_TEST_RETAIL_HOST_ONLY", [key]: "override" }), context)).status, 400);
+    assert.equal(blocked.calls.length, 0);
+  }
+});
+
+test("hostname correction response rejects foreign/enabled setups and never exposes raw errors or credentials", async () => {
+  for (const result of [{ saved: false }, { saved: true, setup: { ...safeSetup(), canStart: true } },
+    { saved: true, setup: { ...safeSetup(), organisation: { id: "foreign", name: "Elsewhere" } } }]) {
+    const h = harness({ correctSourceHost: async () => result }); assert.equal((await h.PATCH(patch(), context)).status, 503);
+  }
+  const failure = harness({ correctSourceHost: async () => { throw new Error("PRIVATE_DIAGNOSTIC"); } });
+  assert.doesNotMatch(await (await failure.PATCH(patch(), context)).text(), /PRIVATE_DIAGNOSTIC/);
+  const extra = harness({ correctSourceHost: async () => ({ saved: true, setup: { ...safeSetup(), sourcePasswordEncrypted: "PRIVATE_CIPHER" } }) });
+  assert.doesNotMatch(await (await extra.PATCH(patch(), context)).text(), /PRIVATE_CIPHER|Encrypted/);
 });

@@ -1,8 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { loadRetailStreamSetup, saveRetailStreamSetup, retailStreamStationSlug, RetailStreamSetupError,
+import { loadRetailStreamSetup, saveRetailStreamSetup, correctRetailPilotSourceHost, retailStreamStationSlug, RetailStreamSetupError,
   retailStreamSetupMessage } from "../lib/retail-stream-setup-service.mjs";
+import { RETAIL_PILOT_HOST_CORRECTION as HOST } from "../lib/retail-stream-host-correction.mjs";
 
 const NOW = new Date("2026-10-24T09:00:00Z"), ORG = "org-retail-a", ADMIN = "admin-owner";
 const CIPHER = `${"11".repeat(12)}:${"22".repeat(16)}:${"33".repeat(32)}`;
@@ -59,7 +60,10 @@ function fixture({ existing = false } = {}) {
       },
       studioBroadcastDestination: { findMany: async args => { state.queries.push({ model: "StudioBroadcastDestination", ...clone(args) });
         return work.destinations.slice().sort((a, b) => a.id.localeCompare(b.id)).slice(0, args.take).map(row => project(row, args.select)); } },
-      auditLog: { create: async args => { write("AuditLog", args); work.audits.push(clone(args.data)); return clone(args.data); } }
+      auditLog: {
+        findUnique: async args => project(work.audits.find(row => row.id === args.where.id), args.select),
+        create: async args => { write("AuditLog", args); work.audits.push(clone(args.data)); return clone(args.data); }
+      }
     };
   }
   const db = { $transaction(operation, options) {
@@ -264,4 +268,100 @@ test("bounded inventories refuse overflow and the service imports no real databa
   const source = await readFile(new URL("../lib/retail-stream-setup-service.mjs", import.meta.url), "utf8");
   const forbidden = /\bprocess\s*\.|\bfetch\s*\(|new\s+PrismaClient|@prisma\/client|@aws-sdk|\bspawn\s*\(|node:(?:net|http|https|dns|fs)/;
   assert.equal(forbidden.test(source), false, "Service must use injected persistence and encryption only, never real external clients.");
+});
+
+function correctionFixture() {
+  const f = fixture({ existing: true });
+  f.state.data.organisations[0].id = HOST.organisationId;
+  f.state.data.organisations[0].subscription.organisationId = HOST.organisationId;
+  Object.assign(f.state.data.stations[0], { organisationId: HOST.organisationId, slug: retailStreamStationSlug(HOST.organisationId) });
+  Object.assign(f.state.data.configs[0], { serverHost: HOST.fromHost, serverPort: HOST.port, sourcePort: HOST.port,
+    centovaUsername: HOST.centovaUsername, streamUrl: HOST.streamUrl });
+  const inspected = [];
+  f.correct = (extra = {}) => correctRetailPilotSourceHost(f.db, { ...f.options, organisationId: HOST.organisationId,
+    input: { expectedCurrentHost: HOST.fromHost, confirmation: HOST.confirmation },
+    inspectSource: async source => { inspected.push(clone(source)); return { sourceDns: "PUBLIC", sourceCredential: "NOT_TESTED", audioTested: false }; }, ...extra });
+  return { ...f, inspected };
+}
+
+test("confirmed pilot hostname correction changes only the host and keeps all other data and encrypted credentials intact", async () => {
+  const f = correctionFixture();
+  f.state.data.stations.push(station({ id: "cmvcnbwi20008hr23sd76psi8", organisationId: "org-radio", slug: "test-radio", productFamily: "ONLINE", status: "ACTIVE" }));
+  f.state.data.configs.push(config("cmvcnbwi20008hr23sd76psi8", { serverHost: HOST.toHost, sourcePort: 8282, serverPort: 8282,
+    centovaUsername: "ruvanastestradio", sourceConnectionStatus: "CONNECTED", encoderLeaseOwner: "test-radio-worker", encoderLeaseUntil: NOW }));
+  const before = clone(f.state.data), result = await f.correct();
+  assert.equal(result.saved, true); assert.equal(result.unchanged, false);
+  assert.deepEqual(f.state.data.configs[0], { ...before.configs[0], serverHost: HOST.toHost });
+  assert.deepEqual(f.state.data.configs[1], before.configs[1]);
+  assert.deepEqual(f.state.data.stations, before.stations); assert.deepEqual(f.state.data.organisations, before.organisations);
+  assert.deepEqual(f.encrypted, []); assert.equal(f.inspected.length, 1);
+  assert.doesNotMatch(JSON.stringify(f.inspected), /Encrypted|11111111|22222222|33333333/);
+  const write = f.state.writes.find(row => row.model === "StationStreamConfig.updateMany");
+  assert.deepEqual(write.data, { serverHost: HOST.toHost });
+  assert.equal(write.where.sourcePasswordEncrypted, CIPHER); assert.equal(write.where.serverHost, HOST.fromHost);
+  assert.equal(write.where.sourcePort, 8330); assert.equal(write.where.serverPort, 8330);
+  assert.equal(write.where.centovaUsername, HOST.centovaUsername); assert.equal(write.where.bitrateKbps, 128);
+  assert.equal(f.state.data.audits[0].action, "RETAIL_SOURCE_HOST_CORRECTED");
+  assert.deepEqual(f.state.data.audits[0].details, { fromHost: HOST.fromHost, toHost: HOST.toHost, providerTicket: "74460",
+    sourceCredentialChanged: false, portsChanged: false, outputEnabled: false, workerAllocated: false });
+  assert.doesNotMatch(JSON.stringify(result), /Encrypted|11111111|22222222|33333333/);
+  const writes = f.state.writes.length; await f.correct();
+  assert.equal(f.state.writes.length, writes); assert.equal(f.state.data.audits.length, 1); assert.equal(f.inspected.length, 1);
+});
+
+test("pilot correction rejects unrelated tenants, unsupported fields, target changes and missing confirmation", async () => {
+  for (const input of [{ expectedCurrentHost: HOST.fromHost }, { expectedCurrentHost: HOST.toHost, confirmation: HOST.confirmation },
+    { expectedCurrentHost: HOST.fromHost, confirmation: "" }, { expectedCurrentHost: HOST.fromHost, confirmation: HOST.confirmation, serverHost: "attacker.example.com" },
+    { expectedCurrentHost: HOST.fromHost, confirmation: HOST.confirmation, sourcePassword: "replace" }]) {
+    const f = correctionFixture(); await assert.rejects(f.correct({ input }), code("INPUT_INVALID")); assert.equal(f.state.writes.length, 0);
+  }
+  const other = fixture({ existing: true });
+  await assert.rejects(correctRetailPilotSourceHost(other.db, { ...other.options,
+    input: { expectedCurrentHost: HOST.fromHost, confirmation: HOST.confirmation } }), code("HOST_CORRECTION_NOT_ALLOWED"));
+  for (const change of [{ serverHost: "elsewhere.example.com" }, { serverPort: 8282 }, { sourcePort: 8282 }, { centovaUsername: "ruvanastestradio" },
+    { streamUrl: "https://different.example.com/stream" }, { sourceUsername: "someone" }, { sourcePasswordEncrypted: null }, { outputCodec: "AAC" }]) {
+    const f = correctionFixture(); Object.assign(f.state.data.configs[0], change); const before = clone(f.state.data);
+    await assert.rejects(f.correct(), code("HOST_CORRECTION_NOT_ALLOWED")); assert.deepEqual(f.state.data, before); assert.equal(f.inspected.length, 0);
+  }
+});
+
+test("pilot correction rechecks current owner and rejects all live, leased, historical or authorised outputs", async () => {
+  for (const role of ["OWNER", "SUPPORT", "ADMIN", null]) {
+    const f = correctionFixture(); f.state.data.users[0].role = role;
+    await assert.rejects(f.correct(), code("ADMIN_REQUIRED")); assert.equal(f.inspected.length, 0);
+  }
+  for (const stationChange of [{ status: "ACTIVE" }, { productFamily: "ONLINE" }, { publicPlayerEnabled: true }, { stationWebsiteEnabled: true }, { listenerRequestsEnabled: true }]) {
+    const f = correctionFixture(); Object.assign(f.state.data.stations[0], stationChange);
+    await assert.rejects(f.correct(), code("PROFILE_REVIEW_REQUIRED")); assert.equal(f.state.writes.length, 0);
+  }
+  for (const change of [{ outboundAutoDjEnabled: true }, { probeEnabled: true }, { encoderLeaseOwner: "worker" }, { encoderLeaseUntil: NOW },
+    { sourceConnectionStatus: "CONNECTED" }, { lastHeartbeatAt: NOW }, { lastConnectedAt: NOW }, { lastError: "STOP_UNCONFIRMED" }]) {
+    const f = correctionFixture(); Object.assign(f.state.data.configs[0], change);
+    await assert.rejects(f.correct(), code("PROFILE_REVIEW_REQUIRED")); assert.equal(f.state.writes.length, 0);
+  }
+  for (const kind of ["control", "assignment"]) {
+    const f = correctionFixture(); f.state.data.audits.push({ id: `retail-playout:${kind}:station-retail-a`, details: { command: { action: "START" } } });
+    await assert.rejects(f.correct(), code("HOST_CORRECTION_NOT_ALLOWED")); assert.equal(f.state.writes.length, 0); assert.equal(f.inspected.length, 0);
+  }
+});
+
+test("pilot correction rejects public-DNS failure, provider alias collisions, CAS races and audit failure atomically", async () => {
+  for (const inspectSource of [undefined, async () => { throw new Error("PRIVATE_DIAGNOSTIC"); }, async () => ({ sourceDns: "REJECTED" }),
+    async () => ({ sourceDns: "PUBLIC", sourceCredential: "TESTED", audioTested: true })]) {
+    const f = correctionFixture(); await assert.rejects(f.correct({ inspectSource }), code("HOST_CORRECTION_DNS_UNAVAILABLE"));
+    assert.equal(f.state.data.configs[0].serverHost, HOST.fromHost); assert.equal(f.state.writes.length, 0);
+  }
+  for (const host of [HOST.toHost, HOST.fromHost, "88.198.70.25"]) {
+    const f = correctionFixture(); f.state.data.destinations.push({ id: "another-channel", organisationId: "other", stationId: null, type: "SHOUTCAST", host, port: HOST.port });
+    await assert.rejects(f.correct(), code("SOURCE_ALREADY_ASSIGNED")); assert.equal(f.state.writes.length, 0);
+    const stationCollision = correctionFixture();
+    stationCollision.state.data.stations.push(station({ id: "other-stream", organisationId: "other", slug: "other-stream", productFamily: "ONLINE" }));
+    stationCollision.state.data.configs.push(config("other-stream", { serverHost: host, sourcePort: HOST.port }));
+    await assert.rejects(stationCollision.correct(), { code: "RETAIL_STREAM_SOURCE_ALREADY_ASSIGNED" });
+    assert.equal(stationCollision.state.writes.length, 0);
+  }
+  for (const [setting, value, expected] of [["rejectCas", true, "CONCURRENT_CHANGE"], ["failAt", "AuditLog", "PERSISTENCE_UNAVAILABLE"]]) {
+    const f = correctionFixture(), before = clone(f.state.data); f.state[setting] = value;
+    await assert.rejects(f.correct(), code(expected)); assert.deepEqual(f.state.data, before); assert.equal(f.state.writes.length, 0);
+  }
 });
