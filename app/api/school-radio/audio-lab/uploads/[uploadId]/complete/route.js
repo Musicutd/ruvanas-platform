@@ -27,7 +27,7 @@ const schema = z.object({
   deviceLabel: z.string().trim().max(200).optional().nullable(),
   checksumSha256: z.string().regex(/^[a-f0-9]{64}$/).optional().nullable(),
   targetTrackId: z.string().cuid().optional().nullable(),
-  editDecision: z.record(z.unknown()).default({})
+  editDecision: z.record(z.string(), z.unknown()).default({})
 });
 
 function multitrackVersionState(project, tracks) {

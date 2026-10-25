@@ -65,6 +65,7 @@ async function load(file, { hooks = React, mock = {}, fetch = () => { throw new 
       if (name === "@/lib/retail-stream-setup-ui.mjs") return ui;
       if (name === "@/lib/retail-stream-host-correction.mjs") return hostCorrection;
       if (name === "./RetailStreamProgrammePanels") return () => null;
+      if (name === "./RetailScheduleReviewPanel") return () => null;
       if (name === "next/link") return ({ children, ...props }) => h("a", props, children);
       if (name.endsWith(".module.css")) return css;
       return require(name.startsWith("@babel/runtime/") ? `next/dist/compiled/${name}` : name);
@@ -208,6 +209,25 @@ test("the real organisation page accepts the service first-use null connection w
   } })).default;
   const html = renderToStaticMarkup(await Page({ params: Promise.resolve({ organisationId: ORG }) }));
   assert.match(html, /First-use Retail form/); assert.match(html, /data-can-save="true"/); assert.doesNotMatch(html, /Setup is unavailable/);
+});
+
+test("the owner schedule review mounts only for the exact Test Retail organisation", async () => {
+  const retailPilotId = "cmvmeq5880005lf2knwtw1b93";
+  for (const organisationId of [retailPilotId, ORG]) {
+    const value = setup(); value.organisation.id = organisationId;
+    const reads = [], mounts = [];
+    const Page = (await load(`${root}page.js`, { mock: {
+      "next/navigation": navigation, "@/lib/requireAdmin": { getAdminUser: async () => ({ id: "super-admin", role: "SUPER_ADMIN" }) },
+      "@/lib/prisma": { prisma: {} }, "@/lib/retail-stream-setup-service.mjs": { loadRetailStreamSetup: async (_db, scope) => { reads.push(scope); return value; } },
+      "./RetailStreamConnectionForm": () => null,
+      "./RetailScheduleReviewPanel": props => { mounts.push(props.organisationId); return h("div", { "data-schedule-review": props.organisationId }, "Owner schedule review"); }
+    } })).default;
+    const html = renderToStaticMarkup(await Page({ params: Promise.resolve({ organisationId }) }));
+    assert.equal(reads.length, 1); assert.equal(reads[0].organisationId, organisationId); assert.equal(reads[0].actorUserId, "super-admin");
+    assert.deepEqual(mounts, organisationId === retailPilotId ? [retailPilotId] : []);
+    if (organisationId === retailPilotId) assert.match(html, /Owner schedule review/);
+    else assert.doesNotMatch(html, /Owner schedule review|data-schedule-review/);
+  }
 });
 
 test("pilot entry resolves only an existing unique Retail membership and never creates or selects an active organisation", async () => {

@@ -34,6 +34,10 @@ function loadUI(file, context = fixture(accountPolicy.PREVIEW_ONLINE_DRAFT_CATAL
   const mocked = {
     "@/lib/private-preview-account-policy.mjs": accountPolicy,
     "@/lib/test-radio-subscriber-access.mjs": { resolveTestRadioSubscriberWorkspace: async () => null },
+    "@/lib/retail-subscriber-access.mjs": { resolveRetailSubscriberWorkspace: async (_database, current) => {
+      assert.equal(current.user.privatePreviewAccess.pillars.includes("RETAIL"), false);
+      return null;
+    } },
     "@/lib/product-access.mjs": productAccess,
     "@/lib/entitlements.mjs": entitlementPolicy,
     "@/lib/online-radio-workspace.mjs": radioWorkspace,

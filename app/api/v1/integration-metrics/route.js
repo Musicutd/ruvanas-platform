@@ -11,7 +11,7 @@ import {
 } from "@/lib/integration-metrics.mjs";
 
 const API_LIMIT = 60;
-const dimensionSchema = z.record(z.union([z.string(), z.number()])).optional().nullable();
+const dimensionSchema = z.record(z.string(), z.union([z.string(), z.number()])).optional().nullable();
 const metricSchema = z.object({
   externalId: z.string().trim().min(1).max(160),
   locationId: z.string().cuid(),

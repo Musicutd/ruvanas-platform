@@ -29,6 +29,14 @@ function setup(file, { resolved = workspace, requestedStationId = stationId } = 
     "@/lib/auth": { getActiveOrganisationContext: async include => { assert.equal(include.enterpriseSecurityPolicy, true); return context; } },
     "@/lib/prisma": { prisma: db },
     "@/lib/test-radio-subscriber-access.mjs": { resolveTestRadioSubscriberWorkspace: async (database, ctx) => { assert.equal(database, db); assert.equal(ctx, context); return resolved; } },
+    "@/lib/retail-subscriber-access.mjs": { resolveRetailSubscriberWorkspace: async (database, ctx) => {
+      assert.equal(database, db); assert.equal(ctx, context);
+      assert.deepEqual(ctx.session.user.privatePreviewAccess.pillars, ["ONLINE"]);
+      return null;
+    } },
+    "@/lib/retail-stream-draft-boundary.mjs": { isManagedRetailStreamDraftStation: current => {
+      assert.equal(current.productFamily, "ONLINE"); return false;
+    } },
     "@/lib/entitlements.mjs": { resolveEntitlements: () => entitlements },
     "@/lib/subscriber-product-access": { requireSubscriberProduct: async (product, include) => {
       assert.equal(product, "ONLINE"); if (include) assert.equal(include.enterpriseSecurityPolicy, true); return { context, entitlements }; } },

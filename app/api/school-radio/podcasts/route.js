@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 const schema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("CREATE_SERIES"), title: z.string().trim().min(2).max(160), description: z.string().trim().max(1500).optional().nullable(), programmeId: z.string().cuid().optional().nullable() }),
   z.object({ action: z.literal("CREATE_EPISODE"), seriesId: z.string().cuid(), episodeId: z.string().cuid(), accessibleDescription: z.string().trim().max(2000).optional().nullable() }),
-  z.object({ action: z.literal("SAVE_EDITOR"), podcastEpisodeId: z.string().cuid(), languageCode: z.string().trim().min(2).max(12), transcriptSegments: z.array(z.record(z.unknown())).max(500), chapters: z.array(z.record(z.unknown())).max(100), accessibleDescription: z.string().trim().max(2000).optional().nullable(), submitTranscript: z.boolean().default(false) }),
+  z.object({ action: z.literal("SAVE_EDITOR"), podcastEpisodeId: z.string().cuid(), languageCode: z.string().trim().min(2).max(12), transcriptSegments: z.array(z.record(z.string(), z.unknown())).max(500), chapters: z.array(z.record(z.string(), z.unknown())).max(100), accessibleDescription: z.string().trim().max(2000).optional().nullable(), submitTranscript: z.boolean().default(false) }),
   z.object({ action: z.literal("APPROVE_TRANSCRIPT"), podcastEpisodeId: z.string().cuid() }),
   z.object({ action: z.literal("PUBLISH"), podcastEpisodeId: z.string().cuid(), publicationScope: z.enum(["INTERNAL_ONLY", "PUBLIC"]).default("INTERNAL_ONLY") }),
   z.object({ action: z.literal("UNPUBLISH"), podcastEpisodeId: z.string().cuid(), reason: z.string().trim().min(8).max(1000) })

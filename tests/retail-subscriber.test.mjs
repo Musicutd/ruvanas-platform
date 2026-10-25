@@ -11,6 +11,7 @@ import { retailSubscriberCatalogue, retailSubscriberLibrary, retailSubscriberPre
   retailSubscriberPublicError } from "../lib/retail-subscriber-service.mjs";
 import { retailSubscriberCommand, retailSubscriberQuery, retailSubscriberErrorStatus } from "../lib/retail-subscriber-request.mjs";
 import { privatePreviewTesterRequestAllowed } from "../lib/private-preview-tester-policy.mjs";
+import { retailDiagnosticAuditId } from "../lib/retail-schedule-draft-policy.mjs";
 
 const NOW = new Date("2026-10-25T08:00:00Z"), BEFORE = new Date("2026-10-20T00:00:00Z"), EXPIRES = new Date("2026-11-23T12:00:00Z");
 const ORG = P.organisationId, USER = "retail-tester", ADMIN = "platform-owner", ENV = { SECRET_ENCRYPTION_KEY: "11".repeat(32) };
@@ -72,7 +73,7 @@ async function fixture() {
       d.modes.find(m => m.id === data.musicModeId).smartPlaylist = row; d.writes.push({ model: "SmartPlaylist", data: clone(data) }); return clone(row); } },
     programmeSchedule: {
       findFirst: async ({ where }) => { assert.equal(where.organisationId, ORG); assert.equal(where.channelId, d.channels[0]?.id);
-        return d.schedule ? clone({ ...d.schedule, versions: d.versions.slice(-1) }) : null; },
+        return d.schedule ? clone({ ...d.schedule, versions: [...d.versions].sort((a, b) => b.version - a.version) }) : null; },
       create: async ({ data }) => { d.schedule = { id: `c${String(++next).padStart(24, "0")}`, ...clone(data) };
         d.writes.push({ model: "ProgrammeSchedule", data: clone(data) }); return clone(d.schedule); }
     },
@@ -242,6 +243,25 @@ test("copy-on-write leaves existing ACTIVE playlists, timestamps and live contro
   await retailSubscriberSaveSchedule(f.db, { ...f.options, input: f.week() });
   assert.deepEqual(f.d.modes[0], original); assert.equal(f.d.modes[1].status, "DRAFT"); assert.deepEqual(f.d.station.streamConfig, source);
   for (const [id, record] of audits) assert.deepEqual(f.d.audits.get(id), record);
+});
+
+test("owner diagnostic drafts and publication preserve the subscriber week and global version numbering", async () => {
+  const f = await fixture(); await retailSubscriberCreateRecipe(f.db, { ...f.options, input: { ...recipe, requestId: ID } });
+  await retailSubscriberPrepareWorkspace(f.db, { ...f.options, input: { action: "prepare", requestId: ID } });
+  const first = await retailSubscriberSaveSchedule(f.db, { ...f.options, input: f.week() }), original = clone(f.d.versions[0]);
+  const diagnostic = { ...clone(original), id: "diagnostic-version", version: 2, items: original.items.map(item => ({ ...item, id: "diagnostic-item", versionId: "diagnostic-version", label: "Short owner test" })) };
+  f.d.versions.push(diagnostic);
+  f.d.audits.set(retailDiagnosticAuditId(diagnostic.id), { organisationId: ORG, entityType: "ProgrammeScheduleVersion", entityId: diagnostic.id,
+    action: "RETAIL_SCHEDULE_DIAGNOSTIC_DRAFT", details: { stationId: STATION, versionId: diagnostic.id, preservedDraftVersionId: original.id } });
+  assert.equal((await retailSubscriberSchedule(f.db, f.options)).draft.id, original.id);
+  diagnostic.status = "PUBLISHED"; diagnostic.isActive = true;
+  assert.equal((await retailSubscriberSchedule(f.db, f.options)).draft.id, original.id);
+  const saved = await retailSubscriberSaveSchedule(f.db, { ...f.options, input: { ...f.week(), requestId: OTHER, baseVersionId: first.draft.id } });
+  assert.equal(saved.draft.version, 3); assert.deepEqual(f.d.versions[0], original); assert.equal(f.d.versions[1].isActive, true);
+  const retry = await retailSubscriberSaveSchedule(f.db, { ...f.options, input: { ...f.week(), requestId: OTHER, baseVersionId: first.draft.id } });
+  assert.equal(retry.savedVersionId, saved.savedVersionId); assert.equal(f.d.versions.length, 3);
+  f.d.versions[2].status = "PUBLISHED"; f.d.versions[2].isActive = true;
+  assert.equal((await retailSubscriberSchedule(f.db, f.options)).draft.id, saved.savedVersionId);
 });
 test("successful save retries must still pass the current signed music permission", async () => {
   const f = await fixture(), input = { ...recipe, requestId: ID };

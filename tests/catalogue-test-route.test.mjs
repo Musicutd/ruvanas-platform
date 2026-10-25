@@ -128,7 +128,10 @@ test("uncertain mutation errors never promise no start or reveal driver credenti
 test("owner panel is test-scoped and does not autoplay, auto-arm or imply private Centova", async () => {
   const ui = await readFile(new URL("../app/admin/stations/[stationId]/setup/CatalogueStreamTest.js", import.meta.url), "utf8");
   const page = await readFile(new URL("../app/admin/stations/[stationId]/setup/page.js", import.meta.url), "utf8");
-  assert.match(page, /station\.id === "cmvcnbwi20008hr23sd76psi8" && <CatalogueStreamTest/);
+  const guarded = page.match(/station\.id === "cmvcnbwi20008hr23sd76psi8" && <>([\s\S]*?)<\/>\}/)?.[1];
+  assert.ok(guarded, "Advanced test diagnostics must stay inside the exact Test Radio station guard.");
+  assert.match(guarded, /<details\b[\s\S]*<CatalogueStreamTest stationId=\{station\.id\}/);
+  assert.equal((page.match(/<CatalogueStreamTest\b/g) || []).length, 1);
   assert.match(ui, /Preparing sends no audio/); assert.match(ui, /publicly reachable/);
   assert.match(ui, /!state\.startEnabled \|\| !exposureAccepted/);
   assert.doesNotMatch(ui, /<audio|autoPlay|navigator\.mediaDevices/);

@@ -4,7 +4,7 @@ import { retailStreamStationSlug } from "../lib/retail-stream-setup-service.mjs"
 import { inspectRetailSource } from "../lib/retail-stream-connection-check.mjs";
 import { loadRetailPlayoutReadiness, prepareRetailPlayout, startRetailPlayout, stopRetailPlayout, loadAuthorizedRetailPlayout,
   claimRetailPlayoutLease, renewRetailPlayoutLease, releaseRetailPlayoutLease, reserveRetailPlayoutBytes,
-  recordRetailPlayoutObservation, listRetailWorkerAssignments } from "../lib/retail-stream-playout-service.mjs";
+  recordRetailPlayoutObservation, listRetailWorkerAssignments, loadOwnerAuthorizedRetailPlayout } from "../lib/retail-stream-playout-service.mjs";
 
 const NOW = new Date("2026-10-24T14:00:00Z"), ORG = "retail-org-a", STATION = "retail-station-a", ADMIN = "owner-admin", WORKER = "srv-retail-pool";
 const clone = value => structuredClone(value), reason = value => ({ code: `RETAIL_PLAYOUT_${value}` });
@@ -79,6 +79,15 @@ function fixture() {
 }
 async function running(f) { await f.prepare(); const start = await f.start(); const lease = await claimRetailPlayoutLease(f.db, { ...f.scope, grantId: start.grantId });
   return { ...f.scope, grantId: start.grantId, leaseOwner: lease.leaseOwner }; }
+
+test("owner schedule authorization derives the existing worker assignment without changing a running stream", async () => {
+  const f = fixture(); await running(f); const before = clone(f.state);
+  const result = await loadOwnerAuthorizedRetailPlayout(f.db, { ...f.options, stationId: STATION });
+  assert.equal(result.assignment.workerId, WORKER); assert.equal(result.grant.workerId, WORKER); assert.equal(result.tracks.length, 2);
+  assert.deepEqual(f.state.writes, before.writes); assert.deepEqual(f.state.configs, before.configs); assert.deepEqual(f.state.audits, before.audits);
+  await assert.rejects(loadOwnerAuthorizedRetailPlayout(f.db, { ...f.options, stationId: STATION, actorUserId: "subscriber" }), reason("OWNER_REQUIRED"));
+  await assert.rejects(loadOwnerAuthorizedRetailPlayout(f.db, { ...f.options, stationId: "foreign" }), reason("CAPACITY_CONFLICT"));
+});
 
 test("programme preparation is audit-only and saved connection remains off with no new channel or encoder", async () => {
   const f = fixture(), original = clone(f.state.configs);

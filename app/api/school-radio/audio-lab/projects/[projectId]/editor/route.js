@@ -12,10 +12,10 @@ export const dynamic = "force-dynamic";
 
 const requestSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("INITIALIZE"), takeId: z.string().cuid() }),
-  z.object({ action: z.literal("SAVE"), state: z.record(z.unknown()), reason: z.string().trim().max(120).optional() }),
-  z.object({ action: z.literal("QUEUE_RENDER"), state: z.record(z.unknown()), preset: z.enum(["SCHOOL_RADIO_MP3", "SPEECH_MP3", "WAV_MASTER"]) }),
-  z.object({ action: z.literal("QUEUE_CLEANUP_PREVIEW"), state: z.record(z.unknown()) }),
-  z.object({ action: z.literal("QUEUE_MASTER_PREVIEW"), state: z.record(z.unknown()) })
+  z.object({ action: z.literal("SAVE"), state: z.record(z.string(), z.unknown()), reason: z.string().trim().max(120).optional() }),
+  z.object({ action: z.literal("QUEUE_RENDER"), state: z.record(z.string(), z.unknown()), preset: z.enum(["SCHOOL_RADIO_MP3", "SPEECH_MP3", "WAV_MASTER"]) }),
+  z.object({ action: z.literal("QUEUE_CLEANUP_PREVIEW"), state: z.record(z.string(), z.unknown()) }),
+  z.object({ action: z.literal("QUEUE_MASTER_PREVIEW"), state: z.record(z.string(), z.unknown()) })
 ]);
 
 export async function GET(_request, { params }) {

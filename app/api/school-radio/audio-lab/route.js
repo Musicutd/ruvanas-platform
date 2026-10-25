@@ -20,7 +20,7 @@ const autosaveSchema = z.object({
   programmeId: z.string().cuid().optional().nullable(),
   episodeId: z.string().cuid().optional().nullable(),
   studentGroupId: z.string().cuid().optional().nullable(),
-  editDecision: z.record(z.unknown()).default({}),
+  editDecision: z.record(z.string(), z.unknown()).default({}),
   reason: z.string().trim().max(120).optional().nullable()
 });
 
