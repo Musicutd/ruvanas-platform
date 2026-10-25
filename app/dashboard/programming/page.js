@@ -20,6 +20,8 @@ import SimplePlaylistWorkspace from "./SimplePlaylistWorkspace";
 import OnlineRadioLibraryWorkspace from "./OnlineRadioLibraryWorkspace";
 import TestRadioSubscriberWorkspace from "./TestRadioSubscriberWorkspace";
 import { resolveTestRadioSubscriberWorkspace } from "@/lib/test-radio-subscriber-access.mjs";
+import RetailSubscriberWorkspace from "./RetailSubscriberWorkspace";
+import { resolveRetailSubscriberWorkspace } from "@/lib/retail-subscriber-access.mjs";
 import styles from "./programming.module.css";
 
 export const dynamic = "force-dynamic";
@@ -37,6 +39,12 @@ export default async function SubscriberProgrammingPage({ searchParams }) {
     <SkipLink />
     <header className={styles.header}><a href="/dashboard/radio" className={styles.brand}>RUVANAS</a><a href="/dashboard/radio" className={styles.back}>Back to Online Radio</a></header>
     <section className={styles.shell} id="main-content"><TestRadioSubscriberWorkspace stationId={testRadioWorkspace.stationId} /></section>
+  </main>;
+  const retailWorkspace = await resolveRetailSubscriberWorkspace(prisma, context);
+  if (retailWorkspace) return <main className={styles.page}>
+    <SkipLink />
+    <header className={styles.header}><a href="/dashboard/retail" className={styles.brand}>RUVANAS</a><a href="/dashboard/retail" className={styles.back}>Back to Retail</a></header>
+    <section className={styles.shell} id="main-content"><RetailSubscriberWorkspace stationId={retailWorkspace.stationId} /></section>
   </main>;
   const onlineOnly = entitlements.onlineRadioEnabled && ![
     entitlements.retailRadioEnabled, entitlements.schoolRadioEnabled, entitlements.healthRadioEnabled,

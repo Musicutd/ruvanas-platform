@@ -10,6 +10,7 @@ import { isPrivatePreviewTester, readPrivatePreviewPolicy } from "@/lib/private-
 import { isPreviewOnlineDraftAccessMode, previewTesterAccessMode } from "@/lib/private-preview-account-policy.mjs";
 import { prisma } from "@/lib/prisma";
 import { resolveTestRadioSubscriberWorkspace } from "@/lib/test-radio-subscriber-access.mjs";
+import { resolveRetailSubscriberWorkspace } from "@/lib/retail-subscriber-access.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +36,7 @@ export default async function DashboardLayout({ children }) {
   const entitlements = resolveEntitlements(organisation.subscription);
   const previewCatalogueMetadata = previewDraftOnly && entitlements.sandboxCatalogueMetadata === true;
   const testRadioWorkspace = await resolveTestRadioSubscriberWorkspace(prisma, context);
+  const retailWorkspace = await resolveRetailSubscriberWorkspace(prisma, context);
   const firstStation = organisation.stations.find((station) => station.status === "ACTIVE")
     || organisation.stations[0]
     || null;
@@ -61,6 +63,7 @@ export default async function DashboardLayout({ children }) {
     >
       {previewTester ? <aside style={{ padding: 16, background: "#fff5d6", color: "#172033", borderBottom: "1px solid #d5b66b" }}>
         {testRadioWorkspace ? "Test Radio planning workspace: browse approved catalogue details and save playlists, templates and weekly drafts. Your drafts do not change the current broadcast. On-air approval and streaming settings stay admin-only; uploads, downloads and public registration remain closed. "
+          : retailWorkspace ? "Retail planning workspace: browse your approved catalogue, build playlists and prepare one weekly plan for all your shops. Drafts do not start or change the stream. On-air approval and streaming settings stay administrator-only; uploads, downloads and public registration remain closed. "
           : previewCatalogueMetadata ? "Editable Online Radio test workspace with Malta catalogue metadata. Browse rights-filtered FOCUSED track details for Malta and save private drafts. Live broadcasting, uploads, downloads, audio playback, publishing, paid actions and public registration are blocked. "
           : previewDraftOnly ? "Editable Online Radio test workspace. Save station, playlist and weekly planner drafts only. Live broadcasting, uploads, downloads, paid actions and public registration are blocked. "
           : "Read-only tester sandbox. Editing, uploads, downloads and publishing are unavailable. "}<a href="/preview-dashboard">Your assigned pillars</a>
