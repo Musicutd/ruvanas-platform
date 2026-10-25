@@ -6,7 +6,7 @@ import styles from "./retail-stream.module.css";
 
 const usd = value => value == null ? "Not yet available" : `US$${value.toFixed(2)}`;
 
-export default function RetailStreamPlayoutPanel({ organisationId }) {
+export default function RetailStreamPlayoutPanel({ organisationId, accessRevision = 0 }) {
   const [view, setView] = useState(null), [busy, setBusy] = useState(false), [message, setMessage] = useState(null);
   const [territory, setTerritory] = useState(""), [genres, setGenres] = useState([]), [accepted, setAccepted] = useState(false);
   const [uncertain, setUncertain] = useState(false), [observedNow, setObservedNow] = useState(() => new Date());
@@ -14,7 +14,7 @@ export default function RetailStreamPlayoutPanel({ organisationId }) {
   const pending = useRef(false), mounted = useRef(true), controller = useRef(null);
   const endpoint = `/api/admin/organisations/${encodeURIComponent(organisationId)}/retail-playout`;
 
-  async function request(action = null) {
+  async function request(action = null, { preserveDraft = false } = {}) {
     if (pending.current) return;
     if (action === "stop" && stopAccepted !== true) return;
     let input;
@@ -50,7 +50,7 @@ export default function RetailStreamPlayoutPanel({ organisationId }) {
       const next = safeRetailPlayoutView(body.readiness, organisationId);
       if (mounted.current) {
         setView(next); setObservedNow(new Date()); setUncertain(false);
-        setTerritory(next.prepared?.territory || ""); setGenres(next.prepared?.genreCodes || []);
+        if (!preserveDraft) { setTerritory(next.prepared?.territory || ""); setGenres(next.prepared?.genreCodes || []); }
         if (action) setMessage({ type: "success", text: action === "prepare"
           ? "Music selection saved. Retail audio has not been started."
           : action === "start" ? "Start requested. Check the source report and listen separately before treating the stream as verified."
@@ -77,6 +77,9 @@ export default function RetailStreamPlayoutPanel({ organisationId }) {
     const timer = setInterval(() => setObservedNow(new Date()), 1000);
     return () => { mounted.current = false; clearTimeout(initialRead); controller.current?.abort(); clearInterval(timer); };
   }, [organisationId]);
+  useEffect(() => {
+    if (accessRevision > 0) void request(null, { preserveDraft: true });
+  }, [accessRevision]);
   const summary = view ? retailSourceSummary(view, observedNow) : null;
   const canEdit = view?.canPrepare === true && !view.enabled && !busy && !uncertain;
   const selectionChanged = Boolean(view?.prepared) && (territory !== view.prepared.territory ||

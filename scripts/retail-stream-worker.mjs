@@ -8,6 +8,35 @@ import { retailWorkerMode, retailWorkerCode, retailPrivateDatabase, runRetailOut
 import { subscriberAudioWait as wait, subscriberAudioBounded as bounded } from "../lib/subscriber-stream-audio-runtime.mjs";
 
 const fail = code => Object.assign(new Error(code), { code });
+/** A deployable, long-running off mode. No environment inspection, database,
+ * storage, lease or source connection occurs, even if live flags are present.
+ * Changing from standby to serving always requires a new explicit command.
+ */
+export async function standbyRetailStreams({ signal: parentSignal, heartbeatMs = 60000,
+  log = data => console.log(JSON.stringify(data)) } = {}) {
+  if (!Number.isInteger(heartbeatMs) || heartbeatMs < 1 || heartbeatMs > 60000 || typeof log !== "function")
+    throw fail("RETAIL_WORKER_STANDBY_OPTIONS_INVALID");
+  const shutdown = new AbortController();
+  const stop = () => shutdown.abort();
+  const report = event => log({ service: "RETAIL_SHARED_AUDIO", mode: "STANDBY", event,
+    streamingStarted: false, cloudAccessed: false });
+  process.once("SIGTERM", stop); process.once("SIGINT", stop);
+  parentSignal?.addEventListener("abort", stop, { once: true }); if (parentSignal?.aborted) stop();
+  try {
+    if (!shutdown.signal.aborted) report("standby_ready");
+    while (!shutdown.signal.aborted) {
+      await wait(heartbeatMs, shutdown.signal);
+      if (!shutdown.signal.aborted) report("standby_heartbeat");
+    }
+  } finally {
+    stop();
+    process.removeListener("SIGTERM", stop); process.removeListener("SIGINT", stop);
+    parentSignal?.removeEventListener("abort", stop);
+    report("standby_stopped");
+  }
+  return { mode: "STANDBY", streamingStarted: false, cloudAccessed: false, stopped: true };
+}
+
 export async function serveRetailStreams({ env = process.env, signal: parentSignal } = {}) {
   const configuration = retailWorkerMode(["--serve"], env);
   if (!retailPrivateDatabase(env.DATABASE_URL)) throw fail("RETAIL_WORKER_PRIVATE_DATABASE_REQUIRED");
@@ -105,6 +134,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
   try {
     const mode = retailWorkerMode(process.argv.slice(2), process.env);
     if (mode.mode === "CHECK_ONLY") console.log(JSON.stringify({ service: "RETAIL_SHARED_AUDIO", mode: mode.mode, streamingStarted: false, cloudAccessed: false }));
+    else if (mode.mode === "STANDBY") await standbyRetailStreams();
     else await serveRetailStreams();
   } catch (error) { console.error(JSON.stringify({ service: "RETAIL_SHARED_AUDIO", code: retailWorkerCode(error) })); process.exitCode = 1; }
 }

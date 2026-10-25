@@ -64,7 +64,7 @@ async function load(file, { hooks = React, mock = {}, fetch = () => { throw new 
       if (name === "react") return hooks;
       if (name === "@/lib/retail-stream-setup-ui.mjs") return ui;
       if (name === "@/lib/retail-stream-host-correction.mjs") return hostCorrection;
-      if (name === "./RetailStreamPlayoutPanel") return () => null;
+      if (name === "./RetailStreamProgrammePanels") return () => null;
       if (name === "next/link") return ({ children, ...props }) => h("a", props, children);
       if (name.endsWith(".module.css")) return css;
       return require(name.startsWith("@babel/runtime/") ? `next/dist/compiled/${name}` : name);

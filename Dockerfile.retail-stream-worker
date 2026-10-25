@@ -11,4 +11,5 @@ RUN node scripts/retail-stream-worker.mjs --check
 USER node
 # Publication never starts music. Operations must allocate approved capacity,
 # and an owner must approve the subscriber's programme before --serve can run.
-CMD ["node", "scripts/retail-stream-worker.mjs", "--check"]
+# Standby stays alive for deployment checks but never opens a cloud connection.
+CMD ["node", "scripts/retail-stream-worker.mjs", "--standby"]

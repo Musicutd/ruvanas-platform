@@ -62,15 +62,16 @@ function load({ hooks = React, fetch = () => { throw new Error("Unexpected netwo
 }
 function hooksFor(value) {
   let cursor = 0;
+  const effects = [];
   const slots = [value, false, null, value?.prepared?.territory || "", value?.prepared?.genreCodes || [], false, false, new Date(), false];
-  const hooks = { ...React, useEffect() {}, useState(initial) { const index = cursor++; if (!(index in slots)) slots[index] = typeof initial === "function" ? initial() : initial;
+  const hooks = { ...React, useEffect(fn, dependencies) { effects.push({ fn, dependencies }); }, useState(initial) { const index = cursor++; if (!(index in slots)) slots[index] = typeof initial === "function" ? initial() : initial;
     return [slots[index], next => { slots[index] = typeof next === "function" ? next(slots[index]) : next; }]; }, useRef(initial) { const index = cursor++; return slots[index] ||= { current: initial }; } };
-  return { slots, hooks, reset: () => { cursor = 0; } };
+  return { slots, hooks, effects, reset: () => { cursor = 0; effects.length = 0; } };
 }
 const nodes = tree => !tree || typeof tree !== "object" ? [] : [tree, ...React.Children.toArray(tree.props?.children).flatMap(nodes)];
 function fixture(value, fetch) {
   const state = hooksFor(value), Panel = load({ hooks: state.hooks, fetch });
-  const render = () => { state.reset(); return Panel({ organisationId: ORG }); };
+  const render = (props = {}) => { state.reset(); return Panel({ organisationId: ORG, ...props }); };
   return { ...state, render, html: () => renderToStaticMarkup(render()), button: text => nodes(render()).find(node => node.type === "button" && node.props.children === text) };
 }
 
@@ -157,4 +158,15 @@ test("Stop remains reachable after initial readiness fails, requires confirmatio
   assert.match(state.slots[2].text, /Stop request accepted/); assert.match(state.slots[2].text, /disconnection is not yet confirmed/);
   assert.doesNotMatch(state.html(), /PRIVATE_SECRET|audio stopped/);
   assert.equal(state.button("Stop this Retail stream").props.disabled, true);
+});
+
+test("pilot access approval refreshes only readiness and preserves an unsaved music selection", async () => {
+  const calls = [], state = fixture(readiness(), async (url, options) => { calls.push({ url, options });
+    return { ok: true, json: async () => ({ readiness: readiness(true) }) }; });
+  state.slots[3] = "GB"; state.slots[4] = ["dance"]; state.slots[5] = true;
+  state.render({ accessRevision: 1 }); state.effects.find(effect => effect.dependencies?.length === 1 && effect.dependencies[0] === 1).fn();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(calls.length, 1); assert.equal(calls[0].options.method, "GET"); assert.equal(calls[0].options.body, undefined);
+  assert.equal(state.slots[3], "GB"); assert.deepEqual(state.slots[4], ["dance"]); assert.equal(state.slots[5], false);
+  assert.equal(state.button("Start this Retail stream").props.disabled, true);
 });
