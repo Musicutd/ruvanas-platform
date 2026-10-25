@@ -6,6 +6,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { retailWorkerMode, retailWorkerCode, retailPrivateDatabase, runRetailOutputSession } from "../lib/retail-stream-worker.mjs";
 import { subscriberAudioWait as wait, subscriberAudioBounded as bounded } from "../lib/subscriber-stream-audio-runtime.mjs";
+import { runRetailTimedTest, spawnRetailTestChild } from "../lib/retail-stream-test-runner.mjs";
 
 const fail = code => Object.assign(new Error(code), { code });
 /** A deployable, long-running off mode. No environment inspection, database,
@@ -132,9 +133,21 @@ export async function serveRetailStreams({ env = process.env, signal: parentSign
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   try {
-    const mode = retailWorkerMode(process.argv.slice(2), process.env);
-    if (mode.mode === "CHECK_ONLY") console.log(JSON.stringify({ service: "RETAIL_SHARED_AUDIO", mode: mode.mode, streamingStarted: false, cloudAccessed: false }));
-    else if (mode.mode === "STANDBY") await standbyRetailStreams();
-    else await serveRetailStreams();
+    const args = process.argv.slice(2);
+    if (args.some(arg => arg.startsWith("--test-until"))) {
+      const shutdown = new AbortController(), stop = () => shutdown.abort();
+      process.once("SIGTERM", stop); process.once("SIGINT", stop);
+      try {
+        await runRetailTimedTest({ args, signal: shutdown.signal,
+          spawnWorker: () => spawnRetailTestChild({ scriptPath: path.resolve(process.argv[1]) }),
+          standby: () => standbyRetailStreams({ signal: shutdown.signal }),
+          log: data => console.log(JSON.stringify(data)) });
+      } finally { process.removeListener("SIGTERM", stop); process.removeListener("SIGINT", stop); }
+    } else {
+      const mode = retailWorkerMode(args, process.env);
+      if (mode.mode === "CHECK_ONLY") console.log(JSON.stringify({ service: "RETAIL_SHARED_AUDIO", mode: mode.mode, streamingStarted: false, cloudAccessed: false }));
+      else if (mode.mode === "STANDBY") await standbyRetailStreams();
+      else await serveRetailStreams();
+    }
   } catch (error) { console.error(JSON.stringify({ service: "RETAIL_SHARED_AUDIO", code: retailWorkerCode(error) })); process.exitCode = 1; }
 }
