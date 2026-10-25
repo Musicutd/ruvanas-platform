@@ -47,9 +47,9 @@ export async function serveRetailStreams({ env = process.env, signal: parentSign
   if (endpoint.protocol !== "https:" || !/^[a-f0-9]{32}\.r2\.cloudflarestorage\.com$/.test(endpoint.hostname) ||
     endpoint.port || endpoint.username || endpoint.password || !["/", ""].includes(endpoint.pathname) || endpoint.search || endpoint.hash)
     throw fail("RETAIL_WORKER_STORAGE_ENDPOINT_INVALID");
-  const [{ PrismaClient }, { S3Client, GetObjectCommand }, service, transport, { decryptSecret }] = await Promise.all([
+  const [{ PrismaClient }, { S3Client, GetObjectCommand }, service, transport, { decryptSecret }, metadata] = await Promise.all([
     import("@prisma/client"), import("@aws-sdk/client-s3"), import("../lib/retail-stream-playout-service.mjs"),
-    import("../lib/subscriber-stream-transport.mjs"), import("../lib/crypto.js")
+    import("../lib/subscriber-stream-transport.mjs"), import("../lib/crypto.js"), import("../lib/retail-stream-https-metadata.mjs")
   ]);
   const require = createRequire(import.meta.url);
   const ffmpegPath = path.join(path.dirname(require.resolve("ffmpeg-static/package.json")), process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg");
@@ -99,6 +99,8 @@ export async function serveRetailStreams({ env = process.env, signal: parentSign
         try {
           await runRetailOutputSession({ db, service, assignment, workerId: configuration.workerId, env, signal, openMediaSession, ffmpegPath,
             connect: options => transport.connectSubscriberStreamSource({ ...options, password: decryptSecret(options.source.sourcePasswordEncrypted) }),
+            createMetadataUpdater: options => metadata.createRetailHttpsMetadataUpdater({ ...options, enabled: true,
+              password: decryptSecret(options.source.sourcePasswordEncrypted) }),
             log: (event, details) => log(assignment.stationId, event, details) });
           attempt = 0;
         } catch (error) {

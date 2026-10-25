@@ -1,17 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { retailWorkerMode, retailPrivateDatabase, retailWorkerCode, runRetailOutputSession } from '../lib/retail-stream-worker.mjs';
+import { RETAIL_METADATA_STATION_ID } from '../lib/retail-stream-https-metadata.mjs';
 
 const failure = code => Object.assign(new Error(code), { code });
 const assignment = suffix => ({ organisationId: `org-${suffix}`, stationId: `station-${suffix}`, workerId: 'srv-retail-pool', slot: suffix,
   monthlyBudgetUsd: 15, monthlyComputeUsd: 7, monthlyOtherReserveUsd: .5, bandwidthUsdPerGB: .15, maxBitrateKbps: 128 });
 const abortWait = signal => new Promise((_, reject) => { if (signal.aborted) return reject(signal.reason); signal.addEventListener('abort', () => reject(signal.reason), { once: true }); });
 
-function fixture(suffix = 'a') {
+function fixture(suffix = 'a', { metadata = false } = {}) {
   const assigned = assignment(suffix), stop = new AbortController();
+  if (metadata) assigned.stationId = RETAIL_METADATA_STATION_ID;
   const calls = [], observations = [], logs = [], allocations = [], files = new Set(), sent = [];
   let opened = 0, connected = 0, closed = 0, revoked = false, sourceChanged = false, budgetDenied = false, uncertain = false, released;
-  const tracks = [1, 2].map(n => ({ track: { id: `${suffix}-track-${n}`, mediaAsset: { id: `${suffix}-asset-${n}` } }, fingerprint: `${suffix}-${n}`, durationSeconds: 5 }));
+  const tracks = [1, 2].map(n => ({ track: { id: `${suffix}-track-${n}`, title: `Song ${n}`, artist: 'Artist', mediaAsset: { id: `${suffix}-asset-${n}` } }, fingerprint: `${suffix}-${n}`, durationSeconds: 5 }));
   const grant = { id: `grant-${suffix}`, sourceFingerprint: `source-${suffix}` };
   const approval = { grant, station: { id: assigned.stationId, organisationId: assigned.organisationId, name: `Retail ${suffix}` },
     source: { serverHost: `retail-${suffix}.example.com`, sourcePort: 8330 }, tracks, assignment: assigned };
@@ -165,4 +167,68 @@ test('cache cleanup failure still quarantines the lease after confirming audio s
   assert.ok(f.closed > 0); assert.equal(f.released.stopConfirmed, false);
   const stopped = f.logs.find(row => row.event === 'source_stopped');
   assert.equal(stopped.audioStopConfirmed, true); assert.equal(stopped.cacheCleanupConfirmed, false);
+});
+
+test('Retail title delivery starts only on confirmed audio events and follows both random and scheduled tracks', async () => {
+  const f = fixture('a', { metadata: true }), titles = []; let factories = 0;
+  await runRetailOutputSession({ ...f.options,
+    createMetadataUpdater: ({ stationId, connection }) => {
+      factories++; assert.equal(stationId, RETAIL_METADATA_STATION_ID); assert.equal(connection.authenticated, true);
+      return async ({ metadata, signal }) => { signal.throwIfAborted(); titles.push(metadata); return true; };
+    },
+    runAudio: async ({ nextTrack, connection, emit, signal }) => {
+      const first = await nextTrack({ signal }), second = await nextTrack({ signal });
+      try {
+        assert.equal(factories, 1); assert.equal(titles.length, 0);
+        const started = (track, phase, bytes = 384) => emit({ type: 'TRACK_AUDIO_STARTED', trackId: track.id, audioBytesSent: bytes,
+          phase, presentationAt: new Date().toISOString(), sourceLatenessMs: 0 });
+        started(first, 'RANDOM'); await new Promise(resolve => setImmediate(resolve)); assert.equal(titles.length, 0);
+        await connection.write(Buffer.alloc(384));
+        started(first, 'RANDOM', 0); await new Promise(resolve => setImmediate(resolve)); assert.equal(titles.length, 0);
+        started(first, 'RANDOM'); await new Promise(resolve => setImmediate(resolve));
+        assert.equal(titles[0].trackId, first.id);
+        await connection.write(Buffer.alloc(384)); started(second, 'SCHEDULED'); await new Promise(resolve => setImmediate(resolve));
+        assert.equal(titles[1].trackId, second.id);
+        await connection.write(Buffer.alloc(384)); started(first, 'RANDOM'); await new Promise(resolve => setImmediate(resolve));
+        assert.equal(titles[2].trackId, first.id);
+        assert.ok(titles.every(title => title.displayTitle.startsWith('Artist — Song ')));
+        return { stopConfirmed: true };
+      } finally { await first.dispose(); await second.dispose(); }
+    }
+  });
+  assert.equal(titles.length, 3); assert.equal(f.logs.filter(row => row.code === 'RETAIL_METADATA_VERIFIED').length, 3);
+  assert.equal(f.logs.find(row => row.event === 'source_stopped').metadataCleanupConfirmed, true);
+});
+
+test('a slow or failing title request never blocks audio and is cancelled during shutdown', async () => {
+  for (const failureMode of ['slow', 'throw', 'factory']) {
+    const f = fixture('a', { metadata: true }); let calls = 0, metadataSignal;
+    await runRetailOutputSession({ ...f.options,
+      createMetadataUpdater: () => {
+        if (failureMode === 'factory') throw new Error('source-password=private');
+        return async ({ signal }) => {
+          calls++; metadataSignal = signal;
+          if (failureMode === 'throw') throw new Error('source-password=private');
+          return await new Promise(resolve => signal.addEventListener('abort', () => resolve(false), { once: true }));
+        };
+      },
+      runAudio: async options => {
+        await basicAudio(options);
+        await options.connection.write(Buffer.alloc(384));
+        assert.equal(options.signal.aborted, false); assert.equal(f.sent.length, 2);
+        return { stopConfirmed: true };
+      }
+    });
+    assert.equal(calls, failureMode === 'factory' ? 0 : 1);
+    if (failureMode === 'slow') assert.equal(metadataSignal.aborted, true);
+    assert.equal(f.released.stopConfirmed, true); assert.doesNotMatch(JSON.stringify(f.logs), /source-password|private/);
+  }
+});
+
+test('metadata factory is never invoked for another Retail station or the Test Radio destination', async () => {
+  for (const stationId of ['station-a', 'cmvcnbwi20008hr23sd76psi8']) {
+    const f = fixture(); f.options.assignment.stationId = stationId;
+    await runRetailOutputSession({ ...f.options, createMetadataUpdater: () => assert.fail('must remain exact Test Retail'), runAudio: basicAudio });
+    assert.equal(f.logs.some(row => row.event === 'song_title'), false);
+  }
 });
