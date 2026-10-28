@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { RETAIL_PLANNER_STATION_ID, retailWeeklyEmptyItem, retailWeeklyForm, retailWeeklySaveBody,
-  retailWeeklyFormSnapshot, retailWeeklyDays, retailWeeklySavedApproved, retailWeeklyDraftStatus } from "@/lib/retail-weekly-planner-ui.mjs";
+  retailWeeklyFormSnapshot, retailWeeklyDays, retailWeeklySavedApproved, retailWeeklyDraftStatus,
+  retailHalfHourChoices, retailProgrammeTimes, retailDurationToEnd, retailOneOffDateTime, retailPlaylistGenreSummary } from "@/lib/retail-weekly-planner-ui.mjs";
 import { deskRecipeProgramme, mergeDeskRecipeSources } from "@/lib/retail-playlist-desk-ui.mjs";
 import { testRadioPlannerWarnings as planningWarnings } from "@/lib/test-radio-planner-warnings.mjs";
 import RetailPlaylistDesk from "./RetailPlaylistDesk";
@@ -10,6 +11,13 @@ import styles from "./retail-planner.module.css";
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const ENDPOINT = "/api/programming/test-retail/schedule";
+
+export function RetailTimeSelect({ value, onChange, label }) {
+  return <label>{label}<select required value={value} onChange={event => onChange(event.target.value)}>
+    {!value && <option value="">Choose time</option>}
+    {retailHalfHourChoices(value).map(choice => <option key={choice.value} value={choice.value}>{choice.label}</option>)}
+  </select></label>;
+}
 
 export function RetailWeeklyReview({ state }) {
   const [view, setView] = useState("cards"), days = retailWeeklyDays(state);
@@ -28,7 +36,7 @@ export function RetailWeeklyReview({ state }) {
   </section>;
 }
 
-export default function RetailWeeklyPlanner({ stationId }) {
+export default function RetailWeeklyPlanner({ stationId, view = "all", onShowPlanner, onShowPlaylists }) {
   const [state, setState] = useState(null), [form, setForm] = useState(() => retailWeeklyForm(null));
   const [baseline, setBaseline] = useState(() => retailWeeklyFormSnapshot(retailWeeklyForm(null)));
   const [busy, setBusy] = useState(""), [error, setError] = useState(""), [message, setMessage] = useState("");
@@ -88,9 +96,10 @@ export default function RetailWeeklyPlanner({ stationId }) {
     const replaceEmpty = form.items.length === 1 && !form.items[0].sourceId;
     setState(previous => mergeDeskRecipeSources(previous, [recipe])); setSelectedIndex(replaceEmpty ? 0 : form.items.length);
     setForm(previous => ({ ...previous, items: replaceEmpty ? [item] : [...previous.items, item] })); setReviewOpen(false); setError("");
-    setMessage(`Added “${recipe.name}” to your unsaved week. Choose its day and time, then save.`); setFocusRequest(value => value + 1);
+    setMessage(`Added “${recipe.name}” to your unsaved week. Choose its day and time, then save.`); onShowPlanner?.(); setFocusRequest(value => value + 1);
   }
   const editIndex = Math.min(selectedIndex, Math.max(0, form.items.length - 1)), item = form.items[editIndex];
+  const programmeTimes = retailProgrammeTimes(item), selectedPlaylist = state?.sources?.find(source => source.id === item?.sourceId);
   const playlistName = id => state?.sources?.find(source => source.id === id)?.name || "Choose saved playlist";
   const warnings = state ? planningWarnings(form, state.sources).filter(warning => warning.code !== "DRAFT_REVIEW_HORIZON") : [];
   if (stationId !== RETAIL_PLANNER_STATION_ID) return null;
@@ -98,9 +107,9 @@ export default function RetailWeeklyPlanner({ stationId }) {
     <header className={styles.header}><p className={styles.eyebrow}>RETAIL · SUBSCRIBER PLANNING</p><div className={styles.headline}><h2 id="retail-weekly-title">One music plan for all your shops</h2><span className={styles.pill}>Drafts for administrator approval</span></div><p>Build a playlist, place it in your week, then save your draft. This workspace does not start music or change the current stream.</p></header>
     <div className={styles.guide}><span><b>1</b> Build or load a playlist</span><span><b>2</b> Choose its day and time</span><span><b>3</b> Save → administrator review</span></div>
     <div className={styles.body}>
-      <div id="workspace-simple"><RetailPlaylistDesk stationId={stationId} onSourcesChanged={updateRecipeSources} onAddToWeek={addRecipeToWeek} canAddToWeek={state?.canEdit === true && !busy && form.items.length < 200} /></div>
-      <section id="workspace-planner" className={styles.weekSection} aria-labelledby="retail-weekly-editor-title">
-        <div className={styles.toolbar}><h3 id="retail-weekly-editor-title">Your weekly programmes</h3><span className={styles.tag}>{form.timezone}</span><button type="button" disabled={Boolean(busy)} onClick={() => refresh()}>Refresh saved plan</button></div>
+      <div id="workspace-simple" hidden={view === "schedule"}><RetailPlaylistDesk stationId={stationId} onSourcesChanged={updateRecipeSources} onAddToWeek={addRecipeToWeek} canAddToWeek={state?.canEdit === true && !busy && form.items.length < 200} /></div>
+      <section id="workspace-planner" hidden={view === "playlists"} className={styles.weekSection} aria-labelledby="retail-weekly-editor-title">
+        <div className={styles.toolbar}><h3 id="retail-weekly-editor-title">Your weekly programmes</h3><span className={styles.tag}>{form.timezone}</span>{view === "schedule" && onShowPlaylists && <button type="button" onClick={onShowPlaylists}>Choose genres / build playlist</button>}<button type="button" disabled={Boolean(busy)} onClick={() => refresh()}>Refresh saved plan</button></div>
         {error && <p role="alert" className={styles.error}>{error}</p>}{message && <p role="status" className={styles.success}>{message}</p>}{!state && !error && <p role="status">Loading your Retail plans and playlists…</p>}
         {state && <>
           <div className={styles.approvalStrip} role="status"><div><strong>Live schedule status is managed separately by your administrator.</strong><small>Saved drafts stay separate from the approved programme. This is planning status, not a live audio report.</small></div><span className={styles.tag}>{draftStatus.label}</span></div>
@@ -116,11 +125,18 @@ export default function RetailWeeklyPlanner({ stationId }) {
               </section>
               <div className={styles.editor}><h3>Edit programme {editIndex + 1}</h3><fieldset disabled={Boolean(busy) || state.canEdit !== true}><div className={styles.formStack}>
                 <label>Programme name<input required maxLength={160} value={item.label} onChange={event => changeItem(editIndex, "label", event.target.value)} /></label>
-                <label>Saved music playlist<select required value={item.sourceId} onChange={event => changeItem(editIndex, "sourceId", event.target.value)}><option value="">Choose playlist</option>{(state.sources || []).map(source => <option key={source.id} value={source.id}>{source.name}</option>)}</select></label>
-                <div className={styles.twoFields}><label>Repeat<select value={item.recurrence} onChange={event => changeItem(editIndex, "recurrence", event.target.value)}><option value="WEEKLY">Every week</option><option value="ONE_OFF">One time only</option></select></label><label>Length in minutes<input required type="number" min="1" max="1440" value={item.durationMinutes} onChange={event => changeItem(editIndex, "durationMinutes", event.target.value)} /></label></div>
-                {item.recurrence === "WEEKLY" ? <div className={styles.twoFields}><label>Day<select ref={programmeTiming} value={item.weekday} onChange={event => changeItem(editIndex, "weekday", Number(event.target.value))}>{DAYS.map((day, weekday) => <option key={day} value={weekday}>{day}</option>)}</select></label><label>Start time<input required type="time" value={item.startTime} onChange={event => changeItem(editIndex, "startTime", event.target.value)} /></label></div> : <label>Start date and time<input ref={programmeTiming} required type="datetime-local" value={item.startsAt} onChange={event => changeItem(editIndex, "startsAt", event.target.value)} /></label>}
-                <p className={styles.hint}>Times use {form.timezone}. Only an administrator can approve scheduled starts and returns to automatic music.</p>
-              </div><details className={styles.disclosure}><summary>Advanced: overlap priority</summary><p>A higher number wins during overlaps. Equal-priority overlaps need correction before approval.</p><label>Priority<input type="number" min="0" max="100" value={item.priority} onChange={event => changeItem(editIndex, "priority", event.target.value)} /></label></details><button type="button" className={styles.quiet} disabled={form.items.length === 1} onClick={() => { setReviewOpen(false); setForm({ ...form, items: form.items.filter((_, position) => position !== editIndex) }); setSelectedIndex(Math.max(0, editIndex - 1)); }}>Remove programme</button></fieldset></div>
+                <label>Music for this time<select required value={item.sourceId} onChange={event => changeItem(editIndex, "sourceId", event.target.value)}><option value="">Choose a saved genre mix</option>{(state.sources || []).map(source => <option key={source.id} value={source.id}>{source.name}</option>)}</select></label>
+                {selectedPlaylist && <p className={styles.hint}><strong>Genres: {retailPlaylistGenreSummary(selectedPlaylist, state.genres)}</strong><br />Create another genre mix in Playlists to choose different music for this time.</p>}
+                <div className={styles.twoFields}><label>Repeat<select value={item.recurrence} onChange={event => changeItem(editIndex, "recurrence", event.target.value)}><option value="WEEKLY">Every week</option><option value="ONE_OFF">One time only</option></select></label>
+                  {item.recurrence === "WEEKLY" ? <label>Day<select ref={programmeTiming} value={item.weekday} onChange={event => changeItem(editIndex, "weekday", Number(event.target.value))}>{DAYS.map((day, weekday) => <option key={day} value={weekday}>{day}</option>)}</select></label> : <label>Date<input ref={programmeTiming} required type="date" value={(item.startsAt || "").split("T")[0]} onChange={event => changeItem(editIndex, "startsAt", retailOneOffDateTime(item, { date: event.target.value }))} /></label>}
+                </div>
+                <div className={styles.twoFields}>
+                  <RetailTimeSelect label="Start time" value={programmeTimes.startTime} onChange={value => changeItem(editIndex, item.recurrence === "WEEKLY" ? "startTime" : "startsAt", item.recurrence === "WEEKLY" ? value : retailOneOffDateTime(item, { time: value }))} />
+                  <RetailTimeSelect label="End time" value={programmeTimes.endTime} onChange={value => changeItem(editIndex, "durationMinutes", retailDurationToEnd(programmeTimes.startTime, value))} />
+                </div>
+                <p className={styles.hint} role="status">{programmeTimes.durationMinutes !== null ? `${programmeTimes.startTime}–${programmeTimes.endTime}${programmeTimes.nextDay ? " the next day" : ""} · ${programmeTimes.durationMinutes} minutes.` : "Choose a valid programme length."} Half-hour choices keep timing simple; existing precise times are preserved. An end time at or before the start finishes the next day.</p>
+                <p className={styles.hint}>Times use {form.timezone}. After approval, a programme starts at its scheduled time and random AutoDJ fills unscheduled time. Review the saved week for exact dates, overlaps and clock changes.</p>
+              </div><details className={styles.disclosure}><summary>Advanced: precise length and overlap priority</summary><label>Length in minutes<input required type="number" min="1" max="1440" value={item.durationMinutes} onChange={event => changeItem(editIndex, "durationMinutes", event.target.value)} /></label><p>Length is elapsed minutes. On a clock-change day, review the saved week for the actual local end time.</p><p>A higher number wins during overlaps. Equal-priority overlaps need correction before approval.</p><label>Priority<input type="number" min="0" max="100" value={item.priority} onChange={event => changeItem(editIndex, "priority", event.target.value)} /></label></details><button type="button" className={styles.quiet} disabled={form.items.length === 1} onClick={() => { setReviewOpen(false); setForm({ ...form, items: form.items.filter((_, position) => position !== editIndex) }); setSelectedIndex(Math.max(0, editIndex - 1)); }}>Remove programme</button></fieldset></div>
             </div>
             {!state.canEdit && <p role="note" className={styles.notice}>Editing is unavailable. Your administrator can check the planning channel and catalogue permission.</p>}
             <div className={styles.weekActions}><p role="status">{draftStatus.detail}</p><button type="submit" className={styles.primary} disabled={Boolean(busy) || !state.canEdit || !form.channelId || !state.sources?.length}>{busy === "save" ? "Saving…" : "Save draft — no on-air change"}</button><button type="button" disabled={Boolean(busy) || unsaved || Boolean(error) || !state.draft?.preview} onClick={() => setReviewOpen(true)}>Review saved week</button></div>
@@ -128,7 +144,7 @@ export default function RetailWeeklyPlanner({ stationId }) {
         </>}
         {reviewOpen && state?.draft && <RetailWeeklyReview state={state} />}
       </section>
-      <details className={styles.disclosure}><summary>How draft scheduling works</summary><p><strong>Save draft → review saved week → ask your administrator to approve.</strong> Saving and previewing do not change the on-air version. Streaming and on-air approval remain administrator-only.</p><label>Planner time zone<input value={form.timezone} readOnly={Boolean(state?.schedule)} disabled={Boolean(busy) || !state?.canEdit} onChange={event => { setReviewOpen(false); setForm({ ...form, timezone: event.target.value }); }} /></label><p>The time zone is fixed after the first save. Clock-change ambiguities must be reviewed.</p></details>
+      <details className={styles.disclosure} hidden={view === "playlists"}><summary>How draft scheduling works</summary><p><strong>Save draft → review saved week → ask your administrator to approve.</strong> Saving and previewing do not change the on-air version. Streaming and on-air approval remain administrator-only.</p><label>Planner time zone<input value={form.timezone} readOnly={Boolean(state?.schedule)} disabled={Boolean(busy) || !state?.canEdit} onChange={event => { setReviewOpen(false); setForm({ ...form, timezone: event.target.value }); }} /></label><p>The time zone is fixed after the first save. Clock-change ambiguities must be reviewed.</p></details>
     </div>
   </section>;
 }

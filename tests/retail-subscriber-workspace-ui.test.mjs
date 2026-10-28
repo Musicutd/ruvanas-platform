@@ -35,6 +35,7 @@ async function component(file, { hooks = React, fetch = () => { throw new Error(
       if (name === "@/lib/test-radio-planner-warnings.mjs") return plannerWarnings;
       if (name === "./RetailWeeklyPlanner") return { __esModule: true, default: props => React.createElement("div", { "data-retail-planner": props.stationId }, "Draft weekly planner") };
       if (name === "./RetailPlaylistDesk") return { __esModule: true, default: () => React.createElement("div", null, "Playlist desk") };
+      if (name === "./RetailCommercialDesk") return { __esModule: true, default: () => React.createElement("div", null, "Commercial draft desk") };
       if (name === "next/link") return { __esModule: true, default: props => React.createElement("a", props) };
       if (name.endsWith(".module.css")) return css;
       return require(name.startsWith("@babel/runtime/") ? `next/dist/compiled/${name}` : name);

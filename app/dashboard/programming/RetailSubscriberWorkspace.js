@@ -2,10 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import RetailWeeklyPlanner from "./RetailWeeklyPlanner";
+import RetailCommercialDesk from "./RetailCommercialDesk";
 import { RETAIL_PLANNER_STATION_ID } from "@/lib/retail-weekly-planner-ui.mjs";
 import { musicDuration } from "@/lib/online-radio-workspace.mjs";
 import styles from "./online-radio-library.module.css";
-import pageStyles from "./programming.module.css";
+
+import retailStyles from "./retail-control-tabs.module.css";
 
 export function retailCataloguePath({ query = "", genre = "", offset = 0 } = {}) {
   const parameters = new URLSearchParams({ limit: "50", offset: String(Number.isInteger(offset) && offset >= 0 && offset <= 2000 ? offset : 0) });
@@ -94,7 +96,7 @@ export function retailPlanningWorkspace(body) {
   return { stationId: body.stationId, channelId: body.channelId, channels: body.channels.map(({ id, name, status }) => ({ id, name, status })), canPrepare: body.canPrepare };
 }
 
-export function RetailPlanningWorkspace({ stationId }) {
+export function RetailPlanningWorkspace({ stationId, view = "all", onShowPlanner, onShowPlaylists }) {
   const [workspace, setWorkspace] = useState(null), [busy, setBusy] = useState(""), [error, setError] = useState("");
   const attempt = useRef(null), sequence = useRef(0), controller = useRef(null), pending = useRef(false);
   async function load(prepare = false) {
@@ -117,7 +119,7 @@ export function RetailPlanningWorkspace({ stationId }) {
   }
   useEffect(() => { void load(); return () => { sequence.current += 1; controller.current?.abort(); }; }, [stationId]);
   if (stationId !== RETAIL_PLANNER_STATION_ID) return null;
-  if (workspace?.channelId) return <RetailWeeklyPlanner stationId={stationId} />;
+  if (workspace?.channelId) return <RetailWeeklyPlanner stationId={stationId} view={view} onShowPlanner={onShowPlanner} onShowPlaylists={onShowPlaylists} />;
   return <section id="workspace-simple" className={styles.panel} aria-labelledby="retail-prepare-title">
     <h2 id="retail-prepare-title">Prepare your playlists and weekly planner</h2>
     <p>Use one shared music plan for all your shops. Preparing this workspace creates a private draft area; it does not start streaming or change your plan.</p>
@@ -130,12 +132,48 @@ export function RetailPlanningWorkspace({ stationId }) {
   </section>;
 }
 
+export const RETAIL_WORKSPACE_TABS = Object.freeze([
+  { id: "autodj", label: "AutoDJ", hash: "workspace-autodj", panel: "retail-panel-autodj" },
+  { id: "schedule", label: "Music schedule", hash: "workspace-planner", panel: "retail-panel-planning" },
+  { id: "playlists", label: "Playlists", hash: "workspace-simple", panel: "retail-panel-planning" },
+  { id: "commercials", label: "Commercials", hash: "workspace-commercials", panel: "retail-panel-commercials" },
+  { id: "library", label: "Music library", hash: "workspace-library", panel: "retail-panel-library" }
+]);
+
+export function RetailAutoDjOverview({ onChoose }) {
+  return <section className={retailStyles.autodj} aria-labelledby="retail-autodj-title">
+    <div className={retailStyles.autodjMain}><p className={retailStyles.eyebrow}>YOUR EVERYDAY MUSIC</p><h2 id="retail-autodj-title">Let the music keep going.</h2>
+      <p>AutoDJ plays a random mix from your administrator-approved catalogue selection. One shared programme serves all your shops.</p>
+      <ol className={retailStyles.flow}><li><b>01</b><span><strong>Random music</strong><small>Between scheduled programmes</small></span></li><li><b>02</b><span><strong>Your scheduled mix</strong><small>Starts at its approved time</small></span></li><li><b>03</b><span><strong>Back to random</strong><small>Automatically when the programme ends</small></span></li></ol>
+      <div className={retailStyles.actions}><button type="button" onClick={() => onChoose("schedule")}>Schedule a genre mix</button><button type="button" className={retailStyles.secondary} onClick={() => onChoose("library")}>Browse music</button></div>
+    </div>
+    <aside className={retailStyles.autodjSide}><span className={retailStyles.badge}>Continuous AutoDJ</span><h3>No need to fill every hour</h3><p>Leave gaps in the music schedule for random AutoDJ. Use timed programmes for a different mood, such as morning Pop or afternoon Rock.</p><hr /><p><strong>Planning leaves your stream playing.</strong><br />New playlists and schedules are drafts until approved by your administrator.</p><p className={retailStyles.hint}>This explains the playback behaviour. It is not a live connection report or a start/stop control.</p></aside>
+  </section>;
+}
+
 export default function RetailSubscriberWorkspace({ stationId }) {
+  const [activeTab, setActiveTab] = useState("autodj"), tabs = useRef({});
+  useEffect(() => {
+    const adoptHash = () => { const tab = RETAIL_WORKSPACE_TABS.find(item => `#${item.hash}` === window.location.hash); if (tab) setActiveTab(tab.id); };
+    adoptHash(); window.addEventListener("hashchange", adoptHash);
+    return () => window.removeEventListener("hashchange", adoptHash);
+  }, []);
+  function choose(id, focus = false) {
+    const tab = RETAIL_WORKSPACE_TABS.find(item => item.id === id); if (!tab) return;
+    setActiveTab(id); window.history.replaceState(null, "", `#${tab.hash}`);
+    if (focus) tabs.current[id]?.focus();
+  }
+  function keyNavigate(event, index) {
+    const next = event.key === "ArrowRight" ? (index + 1) % RETAIL_WORKSPACE_TABS.length : event.key === "ArrowLeft" ? (index + RETAIL_WORKSPACE_TABS.length - 1) % RETAIL_WORKSPACE_TABS.length : event.key === "Home" ? 0 : event.key === "End" ? RETAIL_WORKSPACE_TABS.length - 1 : -1;
+    if (next >= 0) { event.preventDefault(); choose(RETAIL_WORKSPACE_TABS[next].id, true); }
+  }
   if (stationId !== RETAIL_PLANNER_STATION_ID) return null;
-  return <>
-    <div className={pageStyles.hero}><div><p className={pageStyles.eyebrow}>RETAIL · MUSIC FOR ALL YOUR SHOPS</p><h1>Your shops. Your music. Your week.</h1><p className={pageStyles.intro}>Browse the catalogue, build reusable playlists and prepare one weekly plan for all your shops. Your drafts stay separate from on-air scheduling until an administrator reviews them.</p></div><div className={pageStyles.safetyNote}><strong>Draft planning</strong><span>Saving a playlist or week does not start or interrupt your stream.</span></div></div>
-    <nav className={styles.heading} aria-label="Test Retail planning steps" style={{ marginBottom: 24 }}><a className={styles.primary} href="#workspace-library">1 · Music library</a><a className={styles.primary} href="#workspace-simple">2 · Playlists</a><a className={styles.primary} href="#workspace-planner">3 · Weekly planner</a></nav>
-    <RetailSubscriberCatalogue stationId={stationId} />
-    <RetailPlanningWorkspace stationId={stationId} />
-  </>;
+  return <div className={retailStyles.shell}>
+    <div className={retailStyles.workspaceHeader}><div><p className={retailStyles.eyebrow}>RETAIL · ONE PROGRAMME FOR ALL YOUR SHOPS</p><h1>The right music. At the right time.</h1><p className={retailStyles.intro}>Keep everyday music simple. Plan a mood for each part of the day and choose when your shop messages should play.</p></div><div className={retailStyles.draftNote}><strong>Your stream keeps playing</strong><span>Changes here are drafts. On-air approval stays with your administrator.</span></div></div>
+    <div className={retailStyles.tabs} role="tablist" aria-label="Retail music and messages">{RETAIL_WORKSPACE_TABS.map((tab, index) => <button key={tab.id} ref={node => { tabs.current[tab.id] = node; }} type="button" role="tab" id={`retail-tab-${tab.id}`} aria-controls={tab.panel} aria-selected={activeTab === tab.id} tabIndex={activeTab === tab.id ? 0 : -1} onClick={() => choose(tab.id)} onKeyDown={event => keyNavigate(event, index)}>{tab.label}</button>)}</div>
+    <div id="retail-panel-autodj" role="tabpanel" aria-labelledby="retail-tab-autodj" hidden={activeTab !== "autodj"}><RetailAutoDjOverview onChoose={choose} /></div>
+    <div id="retail-panel-planning" role="tabpanel" aria-labelledby={`retail-tab-${activeTab === "playlists" ? "playlists" : "schedule"}`} hidden={!["schedule", "playlists"].includes(activeTab)}><RetailPlanningWorkspace stationId={stationId} view={activeTab === "playlists" ? "playlists" : "schedule"} onShowPlanner={() => choose("schedule")} onShowPlaylists={() => choose("playlists")} /></div>
+    <div id="retail-panel-commercials" role="tabpanel" aria-labelledby="retail-tab-commercials" hidden={activeTab !== "commercials"}><RetailCommercialDesk stationId={stationId} /></div>
+    <div id="retail-panel-library" role="tabpanel" aria-labelledby="retail-tab-library" hidden={activeTab !== "library"}><RetailSubscriberCatalogue stationId={stationId} /></div>
+  </div>;
 }
