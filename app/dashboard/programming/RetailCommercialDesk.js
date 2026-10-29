@@ -47,7 +47,7 @@ export default function RetailCommercialDesk({ stationId }) {
   if (stationId !== RETAIL_PLANNER_STATION_ID) return null;
   return <section className={styles.commercials} aria-labelledby="retail-commercial-title">
     <header className={styles.commercialHeader}><div><p className={styles.eyebrow}>SHOP MESSAGES & COMMERCIALS</p><h2 id="retail-commercial-title">A message at the right moment.</h2><p>Choose the spots in each break, then set how often it should play. All shops on this shared stream will hear the same programme.</p></div><button type="button" disabled={Boolean(busy)} onClick={() => { if (!dirty || window.confirm("Discard unsaved commercial changes and reload the saved draft?")) { setMessage(""); void load(); } }}>Refresh saved draft</button></header>
-    <div className={styles.notice}><strong>Commercial planning · not on air</strong><br />These rules can be saved as a draft. Commercial playback still needs to be connected and approved by your administrator before any spot can air. Music keeps playing as it does now.</div>
+    <div className={styles.notice}><strong>Commercial drafts · administrator approval required</strong><br />Saving here does not change the commercial plan on air. Your administrator reviews each saved version before the Retail stream can use it. Music keeps playing while you edit.</div>
     {error && <div role="alert" className={styles.error}>{error}</div>}{message && <div role="status" className={styles.success}>{message}</div>}
     {!data ? <p role="status">{busy ? "Loading approved spots and your draft…" : "Refresh to load your saved commercial plan."}</p> : <form onSubmit={save}>
       {(data.warnings || []).map((warning, position) => <p className={styles.notice} role="note" key={position}>{warning}</p>)}

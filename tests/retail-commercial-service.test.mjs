@@ -93,7 +93,7 @@ test("foreign, unapproved, expired and changed audio cannot silently enter draft
   const expired = { ...f.input, rules: [{ ...f.input.rules[0], endsOn: "2026-10-27" }] };
   await assert.rejects(saveRetailCommercialDraft(fixture().db, { ...f.options, input: expired }), { code: "RETAIL_COMMERCIAL_RULE_EXPIRED" });
 });
-test("read-only owner review is isolated and cannot approve or change live audio", async () => {
+test("read-only owner review is isolated and cannot approve unverified audio", async () => {
   const f = fixture(); await saveRetailCommercialDraft(f.db, { ...f.options, input: f.input });
   const owner = await retailCommercialOwnerReview(f.db, { actorUserId: "admin", organisationId: ORG, now: NOW });
   assert.equal(owner.canApprove, false); assert.equal(owner.reviewOnly, true); assert.equal(owner.draft.version, 1);

@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { retailWorkerMode, retailWorkerCode, retailPrivateDatabase, runRetailOutputSession } from "../lib/retail-stream-worker.mjs";
 import { subscriberAudioWait as wait, subscriberAudioBounded as bounded } from "../lib/subscriber-stream-audio-runtime.mjs";
 import { runRetailTimedTest, spawnRetailTestChild } from "../lib/retail-stream-test-runner.mjs";
+import { retailCommercialMediaIdentity, downloadRetailCommercialMedia } from "../lib/retail-commercial-media.mjs";
 
 const fail = code => Object.assign(new Error(code), { code });
 /** A deployable, long-running off mode. No environment inspection, database,
@@ -69,7 +70,8 @@ export async function serveRetailStreams({ env = process.env, signal: parentSign
     const files = new Set(); let fileBytes = 0;
     return {
       async prepare(entry, operationSignal) {
-        const asset = entry.track.mediaAsset, identity = transport.subscriberMediaIdentity(asset);
+        const asset = entry.track.mediaAsset, isCommercial = entry.contentKind === "COMMERCIAL";
+        const identity = isCommercial ? retailCommercialMediaIdentity(asset) : transport.subscriberMediaIdentity(asset);
         while (files.size >= 3 || fileBytes + identity.sizeBytes > 150 * 1024 * 1024) {
           operationSignal.throwIfAborted(); signal.throwIfAborted(); await wait(25, operationSignal);
         }
@@ -83,7 +85,7 @@ export async function serveRetailStreams({ env = process.env, signal: parentSign
           const downloadSignal = AbortSignal.any([signal, operationSignal, AbortSignal.timeout(30000)]);
           const object = await storage.send(new GetObjectCommand({ Bucket: env.R2_BUCKET_NAME, Key: asset.storageKey }), { abortSignal: downloadSignal });
           if (!object.Body || Number(object.ContentLength) !== identity.sizeBytes) { object.Body?.destroy?.(); throw fail("RETAIL_WORKER_MEDIA_SIZE_MISMATCH"); }
-          await transport.downloadSubscriberMedia(object.Body, filePath, asset, { signal: downloadSignal });
+          await (isCommercial ? downloadRetailCommercialMedia : transport.downloadSubscriberMedia)(object.Body, filePath, asset, { signal: downloadSignal });
           return { id: entry.track.id, mediaAssetId: asset.id, filePath, durationSeconds: entry.durationSeconds, dispose };
         } catch (error) { await dispose(); throw error; }
       },

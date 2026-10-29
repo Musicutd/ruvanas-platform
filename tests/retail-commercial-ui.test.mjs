@@ -56,7 +56,7 @@ test("opening Commercials only reads its exact Retail draft endpoint and never s
   h.render(Component); await h.load();
   assert.equal(calls.length, 1); assert.equal(calls[0].url, endpoint); assert.equal(calls[0].options.body, undefined);
   assert.equal(calls[0].options.cache, "no-store");
-  const tree = h.render(Component); assert.match(text(tree), /Commercial planning · not on air/); assert.match(text(tree), /Music keeps playing/);
+  const tree = h.render(Component); assert.match(text(tree), /Commercial drafts · administrator approval required/); assert.match(text(tree), /Music keeps playing/);
   assert.equal(button(tree, "Save commercial draft").props.disabled, true);
   assert.equal(nodes(tree).some(n => n.type === "audio" || n.props?.autoPlay), false);
   assert.equal(h.render(Component, { stationId: "other" }), null);
