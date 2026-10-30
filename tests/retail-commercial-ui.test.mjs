@@ -38,6 +38,7 @@ async function component(h, fetch) {
       if (name === "react") return h.hooks;
       if (name === "@/lib/retail-weekly-planner-ui.mjs") return weekly;
       if (name === "@/lib/retail-commercial-ui.mjs") return commercial;
+      if (name === "./RetailCommercialUpload") return { __esModule: true, default: props => React.createElement("section", { "data-retail-upload": props.stationId }, "Upload commercial for approval") };
       if (name.endsWith(".module.css")) return css;
       return require(name.startsWith("@babel/runtime/") ? `next/dist/compiled/${name}` : name);
     } });

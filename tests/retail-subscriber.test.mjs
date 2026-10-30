@@ -11,6 +11,7 @@ import { retailSubscriberCatalogue, retailSubscriberLibrary, retailSubscriberPre
   retailSubscriberPublicError } from "../lib/retail-subscriber-service.mjs";
 import { retailSubscriberCommand, retailSubscriberQuery, retailSubscriberErrorStatus } from "../lib/retail-subscriber-request.mjs";
 import { privatePreviewTesterRequestAllowed } from "../lib/private-preview-tester-policy.mjs";
+import { catalogueRequestSizePolicy } from "../lib/catalogue-request-limits.mjs";
 import { retailDiagnosticAuditId } from "../lib/retail-schedule-draft-policy.mjs";
 
 const NOW = new Date("2026-10-25T08:00:00Z"), BEFORE = new Date("2026-10-20T00:00:00Z"), EXPIRES = new Date("2026-11-23T12:00:00Z");
@@ -131,6 +132,23 @@ test("exact route exceptions permit only metadata and reviewed draft commands", 
   }
   for (const path of ["/api/catalogue/music", "/api/programming/simple", "/api/programming/test-radio/library", "/api/stations", "/api/media/upload", "/api/admin/organisations/x/retail-stream/playout"]) assert.equal(allowed(path, "POST"), false);
   assert.equal(allowed("/api/catalogue/music", "GET"), false);
+});
+
+test("commercial uploads are an exact Retail exception, never a music or approval permission", async () => {
+  const f = await fixture(), path = "/api/programming/test-retail/commercial-audio";
+  const allowed = (session, pathname, method) => privatePreviewTesterRequestAllowed({ session, now: NOW, pathname, method });
+  for (const method of ["GET", "HEAD", "POST"]) assert.equal(allowed(f.context.session, path, method), true);
+  for (const method of ["PATCH", "PUT", "DELETE"]) assert.equal(allowed(f.context.session, path, method), false);
+  for (const variant of [path + "/approve", path + "/", path + "-music", "/api/media/upload", "/api/admin/catalogue/upload"]) {
+    assert.equal(allowed(f.context.session, variant, "POST"), false);
+    assert.equal(catalogueRequestSizePolicy(variant, "POST").maxBytes, variant === "/api/admin/catalogue/upload" ? 55 * 1024 * 1024 : 10 * 1024 * 1024);
+  }
+  for (const mutate of [s => { s.user.email = "radio@manuelchircop.com"; }, s => { s.activeOrganisationId = "other"; },
+    s => { s.expiresAt = NOW; }, s => { s.user.privatePreviewAccess.enabled = false; }]) {
+    const session = clone(f.context.session); mutate(session); assert.equal(allowed(session, path, "POST"), false);
+  }
+  assert.equal(catalogueRequestSizePolicy(path, "POST").maxBytes, 21 * 1024 * 1024);
+  assert.equal(catalogueRequestSizePolicy(path, "GET").maxBytes, 10 * 1024 * 1024);
 });
 test("catalogue and library work without planning channel or START, and GETs never write", async () => {
   const f = await fixture(); f.d.audits.delete(`retail-playout:control:${STATION}`);

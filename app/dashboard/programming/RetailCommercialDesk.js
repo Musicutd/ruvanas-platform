@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { RETAIL_PLANNER_STATION_ID, retailHalfHourChoices } from "@/lib/retail-weekly-planner-ui.mjs";
 import { RETAIL_COMMERCIAL_DAYS as DAYS, emptyRetailCommercialRule, emptyRetailCommercialForm, retailCommercialForm,
   retailCommercialSnapshot, retailCommercialView, retailCommercialIssues, retailCommercialSummary, retailCommercialPattern, retailCommercialSaveBody } from "@/lib/retail-commercial-ui.mjs";
+import RetailCommercialUpload from "./RetailCommercialUpload";
 import styles from "./retail-control-tabs.module.css";
 
 const ENDPOINT = "/api/programming/test-retail/commercials";
@@ -46,13 +47,14 @@ export default function RetailCommercialDesk({ stationId }) {
   }
   if (stationId !== RETAIL_PLANNER_STATION_ID) return null;
   return <section className={styles.commercials} aria-labelledby="retail-commercial-title">
-    <header className={styles.commercialHeader}><div><p className={styles.eyebrow}>SHOP MESSAGES & COMMERCIALS</p><h2 id="retail-commercial-title">A message at the right moment.</h2><p>Choose the spots in each break, then set how often it should play. All shops on this shared stream will hear the same programme.</p></div><button type="button" disabled={Boolean(busy)} onClick={() => { if (!dirty || window.confirm("Discard unsaved commercial changes and reload the saved draft?")) { setMessage(""); void load(); } }}>Refresh saved draft</button></header>
+    <header className={styles.commercialHeader}><div><p className={styles.eyebrow}>SHOP MESSAGES & COMMERCIALS</p><h2 id="retail-commercial-title">A message at the right moment.</h2><p>Upload your own shop audio, then choose approved spots and when they should play. All shops on this shared stream will hear the same programme.</p></div><button type="button" disabled={Boolean(busy)} onClick={() => { if (!dirty || window.confirm("Discard unsaved commercial changes and reload the saved draft?")) { setMessage(""); void load(); } }}>Refresh saved draft</button></header>
     <div className={styles.notice}><strong>Commercial drafts · administrator approval required</strong><br />Saving here does not change the commercial plan on air. Your administrator reviews each saved version before the Retail stream can use it. Music keeps playing while you edit.</div>
+    <RetailCommercialUpload stationId={stationId} />
     {error && <div role="alert" className={styles.error}>{error}</div>}{message && <div role="status" className={styles.success}>{message}</div>}
     {!data ? <p role="status">{busy ? "Loading approved spots and your draft…" : "Refresh to load your saved commercial plan."}</p> : <form onSubmit={save}>
       {(data.warnings || []).map((warning, position) => <p className={styles.notice} role="note" key={position}>{warning}</p>)}
       <div className={styles.fieldGrid}><label>Commercial plan name<input maxLength={120} required disabled={Boolean(busy)} value={form.name} onChange={event => { setForm({ ...form, name: event.target.value }); setMessage(""); }} /></label><div className={styles.summary}><strong>{dirty ? "Unsaved changes" : data.draft ? `Saved draft ${data.draft.version}` : "No saved commercial draft"}</strong><p>Times use Europe/Malta. Only already approved spots are available here.</p></div></div>
-      {!spots.length && <div className={styles.empty}><strong>No approved commercial recordings yet.</strong><p>Your administrator needs to add and approve the shop announcements or advertising audio. Your music catalogue is separate. You can explore the controls now; select an approved spot before saving a break.</p></div>}
+      {!spots.length && <div className={styles.empty}><strong>No approved commercial recordings yet.</strong><p>Upload your commercials or shop announcements above. After your administrator approves a recording, refresh the saved draft to select it here. Your music catalogue stays separate.</p></div>}
       <div className={styles.commercialLayout}>
         <aside><h3>Your commercial breaks</h3><ol className={styles.commercialList}>{form.rules.map((entry, position) => <li key={position}><button type="button" disabled={Boolean(busy)} aria-pressed={index === position} onClick={() => setSelected(position)}><strong>{entry.name || `Break ${position + 1}`}</strong><small>{MODES.find(mode => mode.id === entry.mode)?.title} · {entry.spotIds.length} spots</small></button></li>)}</ol><button type="button" className={styles.subtle} style={{ marginTop: 12 }} disabled={Boolean(busy) || form.rules.length >= 20} onClick={addRule}>+ Add commercial break</button></aside>
         {rule ? <fieldset disabled={Boolean(busy)} className={styles.commercialEditor}>
