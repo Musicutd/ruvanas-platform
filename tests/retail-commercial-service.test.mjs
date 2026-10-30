@@ -55,7 +55,8 @@ test("exact Retail subscriber scope is checked before any catalogue reads or wri
 test("saved drafts are durable, ordered and unconnected to all live output controls", async () => {
   const f = fixture(), saved = await saveRetailCommercialDraft(f.db, { ...f.options, input: f.input });
   assert.equal(saved.draft.version, 1); assert.deepEqual(saved.draft.rules[0].spotIds, ["spot-b", "spot-a"]);
-  assert.equal(saved.playbackConnected, false); assert.equal(saved.adminApprovalRequired, true); assert.equal(saved.draftOnly, true);
+  assert.equal(saved.playbackConnected, false); assert.equal(saved.adminApprovalRequired, false); assert.equal(saved.draftOnly, true);
+  assert.equal(saved.subscriberApprovalRequired, true); assert.equal(saved.scheduleApprovalRequired, "SUBSCRIBER");
   assert.equal(saved.draft.needsReview, false); assert.deepEqual((await retailCommercialDraft(f.db, f.options)).draft, saved.draft);
   assert.equal(f.d.writes.length, 1); assert.equal(f.d.writes[0].action, "TEST_RETAIL_COMMERCIAL_DRAFT_SAVED");
   assert.equal(saved.spots.some(spot => "fingerprint" in spot || "mediaAssetId" in spot || "storageKey" in spot), false);

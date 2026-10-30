@@ -15,7 +15,7 @@ const { renderToStaticMarkup } = require("react-dom/server");
 const stationId = weekly.RETAIL_PLANNER_STATION_ID, endpoint = "/api/programming/test-retail/commercials";
 const firstId = `retail-commercial-${"a".repeat(40)}`, nextId = `retail-commercial-${"b".repeat(40)}`;
 const baseRule = () => ({ name: "Shop offers", mode: "EVERY_SONGS", spotIds: ["spot-a", "spot-b"], weekdays: [1, 2, 3, 4, 5], everySongs: 3, startsOn: null, endsOn: null });
-const dto = () => ({ stationId, draftOnly: true, playbackConnected: false, adminApprovalRequired: true,
+const dto = () => ({ stationId, draftOnly: true, playbackConnected: false, adminApprovalRequired: false, subscriberApprovalRequired: true, scheduleApprovalRequired: "SUBSCRIBER",
   spots: [{ id: "spot-a", name: "Welcome", version: 1, durationSeconds: 20 }, { id: "spot-b", name: "Offer", version: 1, durationSeconds: 30 }], warnings: [],
   draft: { id: firstId, version: 1, name: "Shop messages", timezone: "Europe/Malta", rules: [baseRule()], savedAt: "2026-10-28T10:00:00Z", needsReview: false, unavailableSpotIds: [], expiredRuleNames: [] } });
 const css = { __esModule: true, default: new Proxy({}, { get: (_target, key) => String(key) }) };
@@ -39,6 +39,7 @@ async function component(h, fetch) {
       if (name === "@/lib/retail-weekly-planner-ui.mjs") return weekly;
       if (name === "@/lib/retail-commercial-ui.mjs") return commercial;
       if (name === "./RetailCommercialUpload") return { __esModule: true, default: props => React.createElement("section", { "data-retail-upload": props.stationId }, "Upload commercial for approval") };
+      if (name === "./RetailCommercialScheduleApproval") return { __esModule: true, default: props => React.createElement("section", { "data-schedule-review": props.stationId }, "Review saved schedule") };
       if (name.endsWith(".module.css")) return css;
       return require(name.startsWith("@babel/runtime/") ? `next/dist/compiled/${name}` : name);
     } });
@@ -57,7 +58,7 @@ test("opening Commercials only reads its exact Retail draft endpoint and never s
   h.render(Component); await h.load();
   assert.equal(calls.length, 1); assert.equal(calls[0].url, endpoint); assert.equal(calls[0].options.body, undefined);
   assert.equal(calls[0].options.cache, "no-store");
-  const tree = h.render(Component); assert.match(text(tree), /Commercial drafts · administrator approval required/); assert.match(text(tree), /Music keeps playing/);
+  const tree = h.render(Component); assert.match(text(tree), /Your commercials · your approval/); assert.match(text(tree), /Music keeps playing/);
   assert.equal(button(tree, "Save commercial draft").props.disabled, true);
   assert.equal(nodes(tree).some(n => n.type === "audio" || n.props?.autoPlay), false);
   assert.equal(h.render(Component, { stationId: "other" }), null);
@@ -68,7 +69,7 @@ test("DTO copies only safe fields and rejects foreign scope or runtime capabilit
   body.draft.workerLease = "secret-lease";
   const safe = commercial.retailCommercialView(body);
   assert.doesNotMatch(JSON.stringify(safe), /secret|private\/audio|private.invalid/);
-  for (const patch of [{ stationId: "other" }, { draftOnly: false }, { playbackConnected: true }, { adminApprovalRequired: false }, { spots: [...body.spots, body.spots[0]] }])
+  for (const patch of [{ stationId: "other" }, { draftOnly: false }, { playbackConnected: true }, { adminApprovalRequired: true }, { subscriberApprovalRequired: false }, { spots: [...body.spots, body.spots[0]] }])
     assert.throws(() => commercial.retailCommercialView({ ...body, ...patch }));
   assert.equal(commercial.retailCommercialSaveBody(commercial.retailCommercialForm(safe), { requestId: "request", baseVersionId: firstId }).baseVersionId, firstId);
 });
@@ -136,6 +137,21 @@ test("an in-flight save ignores duplicate clicks", async () => {
   finish(); await first;
 });
 
+test("approving a recording refreshes selectable spots without discarding unsaved commercial timing", async () => {
+  const h = harness(); let reads = 0;
+  const Component = await component(h, async (_url, options = {}) => {
+    assert.equal(options.body, undefined); const body = dto();
+    if (++reads > 1) { body.spots.push({ id: "spot-new", name: "New approved offer", version: 1, durationSeconds: 25 }); body.draft = { ...body.draft, id: nextId, version: 2, name: "Other tab draft" }; }
+    return reply(body);
+  });
+  h.render(Component); await h.load(); changeName(h.render(Component));
+  nodes(h.render(Component)).find(node => typeof node.props?.onApproved === "function").props.onApproved(); await new Promise(setImmediate);
+  const tree = h.render(Component); assert.equal(input(tree, "Commercial plan name").props.value, "Edited shop messages");
+  assert.match(text(tree), /New approved offer/); assert.equal(button(tree, "Save commercial draft").props.disabled, false);
+  const approvalPanel = nodes(tree).find(node => node.props?.savedDraftId);
+  assert.equal(approvalPanel.props.savedDraftId, firstId); assert.equal(approvalPanel.props.hasUnsavedChanges, true);
+});
+
 test("changed approved audio can be revalidated without altering the saved rule", async () => {
   const current = dto(); current.draft.needsReview = true; current.draft.unavailableSpotIds = ["spot-a"];
   current.warnings = ["Some saved spots have changed. Save a new draft."];
@@ -173,5 +189,6 @@ test("new commercial endpoint is allowed only for the exact Retail pilot and nev
   for (const method of ["GET", "HEAD", "POST"]) assert.equal(allowed(endpoint, method), true);
   for (const method of ["PUT", "PATCH", "DELETE"]) assert.equal(allowed(endpoint, method), false);
   for (const email of ["radio@manuelchircop.com", "another@manuelchircop.com"]) { const foreign = structuredClone(session); foreign.user.email = email; assert.equal(allowed(endpoint, "POST", foreign), false); }
-  for (const pathname of [`${endpoint}/approve`, `${endpoint}/publish`, "/api/promotions", "/api/programming/test-radio/schedule"]) assert.equal(allowed(pathname, "POST"), false);
+  assert.equal(allowed(`${endpoint}/approve`, "POST"), true);
+  for (const pathname of [`${endpoint}/publish`, "/api/promotions", "/api/programming/test-radio/schedule"]) assert.equal(allowed(pathname, "POST"), false);
 });

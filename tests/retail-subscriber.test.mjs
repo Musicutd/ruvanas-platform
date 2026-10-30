@@ -150,6 +150,25 @@ test("commercial uploads are an exact Retail exception, never a music or approva
   assert.equal(catalogueRequestSizePolicy(path, "POST").maxBytes, 21 * 1024 * 1024);
   assert.equal(catalogueRequestSizePolicy(path, "GET").maxBytes, 10 * 1024 * 1024);
 });
+
+test("subscriber recording and commercial approvals are exact tenant-bound exceptions", async () => {
+  const f = await fixture(), base = "/api/programming/test-retail/";
+  const routes = [["commercial-audio/review", ["POST"]], ["commercial-audio/preview", ["GET", "HEAD"]], ["commercials/approve", ["GET", "HEAD", "POST"]]];
+  const allowed = (session, pathname, method) => privatePreviewTesterRequestAllowed({ session, now: NOW, pathname, method });
+  for (const [suffix, methods] of routes) {
+    for (const method of ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"]) assert.equal(allowed(f.context.session, base + suffix, method), methods.includes(method));
+    for (const variant of [base + suffix + "/", base + suffix + "/start", base + suffix + "-all"]) assert.equal(allowed(f.context.session, variant, "POST"), false);
+    for (const mutate of [s => { s.user.email = "radio@manuelchircop.com"; }, s => { s.activeOrganisationId = "other"; },
+      s => { s.expiresAt = NOW; }, s => { s.user.privatePreviewAccess.enabled = false; }]) {
+      const session = clone(f.context.session); mutate(session);
+      for (const method of methods) assert.equal(allowed(session, base + suffix, method), false);
+    }
+  }
+  for (const path of [base + "schedule/approve", "/api/media/asset/stream", "/api/admin/promos/x/versions/y/review"]) {
+    assert.equal(allowed(f.context.session, path, "POST"), false);
+    assert.equal(allowed(f.context.session, path, "GET"), false);
+  }
+});
 test("catalogue and library work without planning channel or START, and GETs never write", async () => {
   const f = await fixture(); f.d.audits.delete(`retail-playout:control:${STATION}`);
   const before = clone(f.d), catalogue = await retailSubscriberCatalogue(f.db, { ...f.options, query: {} });

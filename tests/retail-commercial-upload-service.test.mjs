@@ -62,7 +62,8 @@ test("subscriber uploads create measured private review-only recordings compatib
   const f = fixture(), result = await uploadRetailCommercial(f.db, f.options), row = result.uploads[0];
   assert.equal(result.organisationId, ORG); assert.equal(result.stationId, STATION); assert.equal(result.playbackConnected, false);
   assert.equal(row.status, "IN_REVIEW"); assert.equal(row.qcStatus, "PENDING"); assert.equal(row.durationSeconds, 30);
-  assert.equal(row.submittedAt, NOW.toISOString()); assert.equal(row.reviewedAt, null); assert.equal(result.adminApprovalRequired, true);
+  assert.equal(row.submittedAt, NOW.toISOString()); assert.equal(row.reviewedAt, null); assert.equal(result.adminApprovalRequired, false);
+  assert.equal(result.subscriberApprovalRequired, true); assert.equal(result.scheduleApprovalRequired, "SUBSCRIBER");
   const media = [...f.d.media.values()][0], promo = [...f.d.promos.values()][0], v = [...f.d.versions.values()][0];
   assert.equal(media.licensedCatalogue, false); assert.equal(promo.currentApprovedVersionId, null); assert.equal(v.submittedById, "retail-user");
   assert.equal(retailCommercialMediaIdentity({ ...media, checksumSha256: v.checksumSha256 }).sizeBytes, f.input.buffer.length);

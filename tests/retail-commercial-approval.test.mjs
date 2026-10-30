@@ -2,14 +2,25 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { RETAIL_SUBSCRIBER_ORGANISATION_ID as ORG, RETAIL_SUBSCRIBER_STATION_ID as STATION } from "../lib/retail-subscriber-access.mjs";
-import { reviewRetailCommercialApproval, approveRetailCommercialDraft, loadRetailCommercialSchedule, retailCommercialApprovalError } from "../lib/retail-commercial-approval.mjs";
+import { reviewRetailCommercialApproval, approveRetailCommercialDraft, loadRetailCommercialSchedule, retailCommercialApprovalError,
+  reviewRetailSubscriberCommercialApproval, approveRetailSubscriberCommercialDraft } from "../lib/retail-commercial-approval.mjs";
+import { PREVIEW_TESTER_PLAN, previewTesterOverrides } from "../lib/private-preview-account-policy.mjs";
 
 const BEFORE = new Date("2026-10-28T09:00:00Z"), NOW = new Date("2026-10-29T10:00:00Z");
 const REQUEST = "31400821-cc19-4c1d-bd7a-c723b8d35415", SECOND = "31400821-cc19-4c1d-bd7a-c723b8d35416";
 const hash = v => createHash("sha256").update(JSON.stringify(v)).digest("hex"), clone = structuredClone;
 const actor = { actorUserId: "admin", organisationId: ORG, now: NOW };
 function fixture() {
-  const d = { audits: new Map(), writes: [], reads: [], adminRole: "SUPER_ADMIN", station: { id: STATION, organisationId: ORG, productFamily: "RETAIL" },
+  const expiresAt = new Date("2026-11-23T13:00:00Z");
+  const subscription = { organisationId: ORG, plan: clone(PREVIEW_TESTER_PLAN), status: "TRIAL", billingContract: null, currentPeriodEnd: expiresAt,
+    complimentaryAccessActive: false, schoolPublicPublishingEnabled: false, retailMediaEnabled: false, digitalSignageEnabled: false, ...previewTesterOverrides(["RETAIL"]) };
+  const organisation = { id: ORG, subscription, enterpriseSecurityPolicy: null }, membership = { organisationId: ORG, role: "OWNER", organisation };
+  const user = { id: "retail-user", email: "retail@manuelchircop.com", role: "OWNER", memberships: [membership], privatePreviewAccess: {
+    userId: "retail-user", organisationId: ORG, pillars: ["RETAIL"], enabled: true, passwordEnabled: true, expiresAt } };
+  const context = { user, memberships: [membership], membership, session: { id: "retail-session", userId: user.id, user,
+    activeOrganisationId: ORG, authMethod: "PREVIEW_PASSWORD", revokedAt: null, expiresAt } };
+  const d = { subscriber: clone(user), audits: new Map(), writes: [], reads: [], adminRole: "SUPER_ADMIN", station: { id: STATION, organisationId: ORG, productFamily: "RETAIL",
+      status: "DRAFT", publicPlayerEnabled: false, stationWebsiteEnabled: false, listenerRequestsEnabled: false, audiencePolicy: "INTERNAL" },
     rows: ["a", "b"].map((s, i) => ({ id: `spot-${s}`, version: 1, status: "APPROVED", qcStatus: "PASSED", reviewedAt: BEFORE, updatedAt: BEFORE,
       durationSeconds: 30, checksumSha256: s.repeat(64), promoAssetId: `promo-${s}`, mediaAssetId: `media-${s}`,
       promoAsset: { id: `promo-${s}`, name: `Retail spot ${s}`, organisationId: ORG, status: "ACTIVE", currentApprovedVersionId: `spot-${s}` },
@@ -24,7 +35,8 @@ function fixture() {
     return id;
   };
   const db = {
-    user: { findUnique: async ({ where }) => { d.reads.push("user"); return { id: where.id, role: where.id === "admin" ? d.adminRole : "OWNER" }; } },
+    user: { findUnique: async ({ where }) => { d.reads.push("user"); return where.id === "retail-user" ? clone(d.subscriber) : { id: where.id, role: where.id === "admin" ? d.adminRole : "OWNER" }; } },
+    channel: { findMany: async () => [] },
     station: { findFirst: async ({ where }) => { assert.deepEqual(where, { id: STATION, organisationId: ORG }); d.reads.push("station"); return clone(d.station); } },
     promoVersion: { findMany: async ({ where, select, take }) => {
       assert.equal(where.promoAsset.organisationId, ORG); assert.equal(where.mediaAsset.organisationId, ORG); d.reads.push(select.checksumSha256 ? "media" : "metadata");
@@ -51,7 +63,10 @@ function fixture() {
   const approve = async (extra = {}) => { const r = await review(); return approveRetailCommercialDraft(db, { ...actor, draftId: r.draft.id, reviewHash: r.reviewHash,
     baseApprovalId: r.baseApprovalId, requestId: REQUEST, ...extra }); };
   const load = (extra = {}) => loadRetailCommercialSchedule(db, { authorized, now: NOW, ...extra });
-  return { db, d, draft, authorized, review, approve, load };
+  const subscriberReview = () => reviewRetailSubscriberCommercialApproval(db, { context, now: NOW });
+  const subscriberApprove = async (extra = {}) => { const r = await subscriberReview(); return approveRetailSubscriberCommercialDraft(db, { context, now: NOW,
+    input: { draftId: r.draft.id, reviewHash: r.reviewHash, baseApprovalId: r.baseApprovalId, requestId: REQUEST, responsibilityConfirmed: true, ...extra } }); };
+  return { db, d, context, draft, authorized, review, approve, load, subscriberReview, subscriberApprove };
 }
 
 test("only the exact Retail owner may review or approve; reads do not mutate anything", async () => {
@@ -144,4 +159,74 @@ test("expired dates and missing checksums block approval, while an empty draft c
   const denied = await missing.review(); assert.equal(denied.canApprove, false); assert.match(denied.warnings.join(" "), /verified audio/);
   missing.draft(2, []); const off = await missing.approve();
   assert.equal(off.accepted, true); assert.equal((await missing.load()).reasonCode, "RETAIL_COMMERCIAL_APPROVED_OFF");
+});
+
+test("subscriber explicitly approves own saved commercials without administrator powers or playback controls", async () => {
+  const f = fixture(), review = await f.subscriberReview();
+  assert.equal(review.adminApprovalRequired, false); assert.equal(review.subscriberApprovalRequired, true);
+  assert.equal(review.scheduleApprovalRequired, "SUBSCRIBER"); assert.equal(f.d.writes.length, 0);
+  assert.equal((await f.load()).enabled, false);
+  const result = await f.subscriberApprove(), live = await f.load();
+  assert.equal(result.accepted, true); assert.equal(result.canApprove, false); assert.equal(live.enabled, true);
+  assert.equal(f.d.writes.length, 1); assert.equal(f.d.writes[0].actorUserId, "retail-user");
+  assert.equal(f.d.writes[0].details.schemaVersion, 2); assert.equal(f.d.writes[0].details.approvalAuthority, "SUBSCRIBER");
+  assert.equal(f.d.writes[0].details.responsibilityConfirmed, true);
+  await assert.rejects(approveRetailCommercialDraft(f.db, { ...actor, actorUserId: "retail-user", draftId: review.draft.id,
+    reviewHash: review.reviewHash, baseApprovalId: null, requestId: SECOND }), { code: "RETAIL_COMMERCIAL_ACCESS_DENIED" });
+});
+
+test("subscriber approval rejects foreign or revoked identity and needs explicit responsibility", async () => {
+  for (const change of [c => { c.user.email = "other@example.com"; }, c => { c.session.activeOrganisationId = "foreign"; },
+    c => { c.membership.role = "MANAGER"; }, c => { c.session.expiresAt = NOW; }]) {
+    const f = fixture(); change(f.context);
+    await assert.rejects(f.subscriberReview(), { code: "RETAIL_COMMERCIAL_ACCESS_DENIED" }); assert.equal(f.d.writes.length, 0);
+  }
+  const f = fixture();
+  for (const delta of [{ responsibilityConfirmed: false }, { organisationId: "foreign" }, { actorUserId: "admin" }, { stationId: "radio" }]) {
+    await assert.rejects(f.subscriberApprove(delta), { code: "RETAIL_COMMERCIAL_REQUEST_INVALID" });
+  }
+  f.d.subscriber.privatePreviewAccess.enabled = false;
+  await assert.rejects(f.subscriberApprove(), { code: "RETAIL_COMMERCIAL_ACCESS_DENIED" }); assert.equal(f.d.writes.length, 0);
+});
+
+test("subscriber approval CAS and retries preserve immutable history alongside prior admin approvals", async () => {
+  const f = fixture(); await f.approve(); f.draft(2);
+  const review = await f.subscriberReview(), command = { draftId: review.draft.id, reviewHash: review.reviewHash,
+    baseApprovalId: review.baseApprovalId, requestId: REQUEST, responsibilityConfirmed: true };
+  const results = await Promise.allSettled([approveRetailSubscriberCommercialDraft(f.db, { context: f.context, now: NOW, input: command }),
+    approveRetailSubscriberCommercialDraft(f.db, { context: f.context, now: NOW, input: { ...command, requestId: SECOND } })]);
+  assert.equal(results.filter(r => r.status === "fulfilled").length, 1); assert.equal(f.d.writes.length, 2);
+  assert.equal((await f.load()).enabled, true); assert.equal((await f.review()).approval.sequence, 2);
+  const retry = await approveRetailSubscriberCommercialDraft(f.db, { context: f.context, now: NOW, input: command });
+  assert.equal(retry.replayed, true); assert.equal(f.d.writes.length, 2);
+  f.draft(3, []); await f.subscriberApprove({ requestId: SECOND });
+  const old = await approveRetailSubscriberCommercialDraft(f.db, { context: f.context, now: NOW, input: command });
+  assert.equal(old.approvedRevision.sequence, 2); assert.equal(old.approval.sequence, 3);
+  assert.equal((await f.load()).reasonCode, "RETAIL_COMMERCIAL_APPROVED_OFF");
+});
+
+test("worker revalidates subscriber approval principal and expires authority without changing music", async () => {
+  for (const change of [u => { u.email = "other@example.com"; }, u => { u.role = "SUPER_ADMIN"; },
+    u => { u.memberships[0].role = "MANAGER"; }, u => { u.privatePreviewAccess.enabled = false; },
+    u => { u.privatePreviewAccess.organisationId = "foreign"; }, u => { u.privatePreviewAccess.expiresAt = NOW; },
+    u => { u.memberships[0].organisation.subscription.plan.promoUploadEnabled = true; }, u => { u.memberships.push(clone(u.memberships[0])); }]) {
+    const f = fixture(); await f.subscriberApprove(); change(f.d.subscriber);
+    const rejected = await f.load(); assert.equal(rejected.enabled, false); assert.equal(rejected.reasonCode, "RETAIL_COMMERCIAL_APPROVAL_INVALID");
+    assert.equal(f.d.writes.length, 1);
+  }
+  const f = fixture(); await f.subscriberApprove();
+  const expires = new Date(NOW.getTime() + 8000); f.d.subscriber.privatePreviewAccess.expiresAt = expires;
+  f.d.subscriber.memberships[0].organisation.subscription.currentPeriodEnd = expires;
+  assert.equal((await f.load()).validUntil, expires.toISOString());
+});
+
+test("subscriber authority cannot be added to legacy admin records or removed from new approvals", async () => {
+  for (const corrupt of [r => { delete r.details.responsibilityConfirmed; }, r => { r.details.schemaVersion = 1; },
+    r => { r.details.approvalAuthority = "ADMIN"; }]) {
+    const f = fixture(); await f.subscriberApprove(); const row = [...f.d.audits.values()].find(r => r.entityType === "RetailCommercialApproval");
+    corrupt(row); assert.equal((await f.load()).enabled, false);
+  }
+  const f = fixture(); await f.approve();
+  const row = [...f.d.audits.values()].find(r => r.entityType === "RetailCommercialApproval"); row.details.approvalAuthority = "SUBSCRIBER";
+  assert.equal((await f.load()).enabled, false);
 });

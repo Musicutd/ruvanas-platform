@@ -28,11 +28,11 @@ function fixture() {
     privatePreviewAccess: { userId: "synthetic-retail-user", organisationId: ORG, pillars: ["RETAIL"], enabled: true, passwordEnabled: true, expiresAt: expires } };
   const session = { id: "synthetic-session", userId: user.id, user, authMethod: "PREVIEW_PASSWORD", activeOrganisationId: ORG, expiresAt: expires, revokedAt: null };
   const d = { context: { user, session, membership, memberships: [membership] }, media: new Map(), promos: new Map(), versions: new Map(), audits: new Map(),
-    objects: new Map(), puts: 0, deletes: 0, queries: 0, next: 0 };
+    objects: new Map(), puts: 0, gets: 0, deletes: 0, queries: 0, next: 0 };
   const count = () => { d.queries++; };
   const validMedia = where => [...d.media.values()].filter(x => x.organisationId === where.organisationId && x.libraryType === where.libraryType && where.status.in.includes(x.status));
   const selectVersions = where => { assert.equal(where.promoAsset.organisationId, ORG); assert.equal(where.mediaAsset.organisationId, ORG);
-    return [...d.versions.values()].filter(v => (!where.mediaAssetId || v.mediaAssetId === where.mediaAssetId) &&
+    return [...d.versions.values()].filter(v => (!where.id || v.id === where.id) && (!where.mediaAssetId || v.mediaAssetId === where.mediaAssetId) &&
       (!where.sourceReference || v.sourceReference.startsWith(where.sourceReference.startsWith))).map(v => ({ ...clone(v),
         promoAsset: clone(d.promos.get(v.promoAssetId)), mediaAsset: clone(d.media.get(v.mediaAssetId)) })); };
   const db = {
@@ -42,14 +42,19 @@ function fixture() {
     mediaAsset: { aggregate: async ({ where }) => { count(); return { _sum: { sizeBytes: validMedia(where).reduce((n, x) => n + x.sizeBytes, 0n) } }; },
       count: async ({ where }) => { count(); return validMedia(where).length; },
       findUnique: async ({ where }) => { count(); return clone([...d.media.values()].find(x => where.storageKey ? x.storageKey === where.storageKey : x.id === where.id) || null); },
-      create: async ({ data }) => { count(); const row = { id: `media-${++d.next}`, ...clone(data) }; d.media.set(row.id, row); return clone(row); },
+      create: async ({ data }) => { count(); const row = { id: `media-${++d.next}`, createdAt: new Date(), updatedAt: new Date(), ...clone(data) }; d.media.set(row.id, row); return clone(row); },
       update: async ({ where, data }) => { count(); const row = { ...d.media.get(where.id), ...clone(data) }; d.media.set(row.id, row); return clone(row); } },
-    promoAsset: { create: async ({ data }) => { count(); const row = { id: `promo-${++d.next}`, status: "ACTIVE", currentApprovedVersionId: null, ...clone(data) }; d.promos.set(row.id, row); return clone(row); } },
+    promoAsset: { create: async ({ data }) => { count(); const row = { id: `promo-${++d.next}`, status: "ACTIVE", currentApprovedVersionId: null, ...clone(data) }; d.promos.set(row.id, row); return clone(row); },
+      updateMany: async ({ where, data }) => { count(); assert.equal(where.organisationId, ORG); const row = d.promos.get(where.id);
+        if (!row || row.currentApprovedVersionId !== where.currentApprovedVersionId) return { count: 0 }; Object.assign(row, clone(data)); return { count: 1 }; } },
     promoVersion: { findMany: async ({ where, take }) => { count(); return selectVersions(where).slice(0, take); },
       findFirst: async ({ where }) => { count(); return selectVersions(where)[0] || null; },
-      create: async ({ data }) => { count(); const row = { id: `version-${++d.next}`, ...clone(data) }; d.versions.set(row.id, row); return clone(row); } },
+      create: async ({ data }) => { count(); const row = { id: `version-${++d.next}`, reviewedAt: null, reviewedById: null, updatedAt: new Date(), processingJobs: [], ...clone(data) }; d.versions.set(row.id, row); return clone(row); },
+      updateMany: async ({ where, data }) => { count(); assert.equal(where.promoAsset.organisationId, ORG); assert.equal(where.mediaAsset.organisationId, ORG); const row = d.versions.get(where.id);
+        if (!row || row.status !== where.status || row.qcStatus !== where.qcStatus || +row.updatedAt !== +where.updatedAt || row.reviewedAt !== where.reviewedAt || row.reviewedById !== where.reviewedById) return { count: 0 };
+        Object.assign(row, clone(data)); return { count: 1 }; } },
     auditLog: { findUnique: async ({ where }) => { count(); return clone(d.audits.get(where.id) || null); },
-      create: async ({ data }) => { count(); assert.equal(d.audits.has(data.id), false); d.audits.set(data.id, clone(data)); return clone(data); } },
+      create: async ({ data }) => { count(); assert.equal(d.audits.has(data.id), false); const row = { createdAt: new Date(), ...clone(data) }; d.audits.set(data.id, row); return clone(row); } },
     $executeRaw: async (_sql, ...values) => { count(); assert.equal(values[0], `retail-commercial-upload:${ORG}`); return 1; },
     $transaction: async (operation, options) => { assert.equal(options.isolationLevel, "Serializable"); return operation(db); }
   };
@@ -57,6 +62,11 @@ function fixture() {
     const data = command.input; assert.equal(data.Bucket, "synthetic-private-retail");
     assert.match(data.Key, new RegExp(`^organisations/${ORG}/promos/announcement/[a-f0-9]{64}\\.wav$`));
     if (data.Body) { d.puts++; assert.equal(data.Body.length, 32_044); d.objects.set(data.Key, Buffer.from(data.Body)); }
+    else if (data.Range) {
+      d.gets++; const match = /^bytes=(\d+)-(\d+)$/.exec(data.Range); assert.ok(match);
+      const bytes = d.objects.get(data.Key).subarray(Number(match[1]), Number(match[2]) + 1);
+      return { ContentLength: bytes.length, Body: new ReadableStream({ start(controller) { controller.enqueue(bytes); controller.close(); } }) };
+    }
     else { d.deletes++; d.objects.delete(data.Key); }
     return {};
   } } };
@@ -75,10 +85,14 @@ async function main() {
   assert.equal(globalThis.prisma, undefined, "CLEAN_GLOBAL_REQUIRED");
   const appRequire = createRequire(path.join(ROOT, "package.json")), server = path.join(ROOT, ".next/server");
   const routePath = path.join(server, "app/api/programming/test-retail/commercial-audio/route.js");
+  const reviewPath = path.join(server, "app/api/programming/test-retail/commercial-audio/review/route.js");
+  const previewPath = path.join(server, "app/api/programming/test-retail/commercial-audio/preview/route.js");
   const source = await readFile(routePath, "utf8"), ids = parseRouteChunkIds(source), runtime = appRequire(path.join(server, "webpack-runtime.js"));
+  const reviewSource = await readFile(reviewPath, "utf8"), reviewIds = parseRouteChunkIds(reviewSource);
+  const previewSource = await readFile(previewPath, "utf8"), previewIds = parseRouteChunkIds(previewSource);
   const previousX = runtime.X; runtime.X = () => ({});
-  try { appRequire(routePath); } finally { runtime.X = previousX; }
-  for (const id of ids) await runtime.e(id);
+  try { appRequire(routePath); appRequire(reviewPath); appRequire(previewPath); } finally { runtime.X = previousX; }
+  for (const id of new Set([...ids, ...reviewIds, ...previewIds])) await runtime.e(id);
   const findModule = needle => { const matches = Object.entries(runtime.m).filter(([, factory]) => factory.toString().includes(needle));
     assert.equal(matches.length, 1, `MODULE_NOT_UNIQUE:${needle}`); return Number(matches[0][0]); };
   // Next minifies webpack export names. Locate the small boundary modules by
@@ -86,6 +100,8 @@ async function main() {
   // the route; the compiled request, service and native audio-probe code remain.
   const authId = findModule('randomBytes(32).toString("hex")'), r2Id = findModule('"Cloudflare R2"');
   const entryId = findModule('pathname:"/api/programming/test-retail/commercial-audio"');
+  const reviewEntryId = findModule('pathname:"/api/programming/test-retail/commercial-audio/review"');
+  const previewEntryId = findModule('pathname:"/api/programming/test-retail/commercial-audio/preview"');
   const exportNames = id => {
     const body = runtime.m[id].toString().match(/\.d\([^,]+,\{([^}]+)\}\)/)?.[1];
     assert.ok(body, "COMPILED_EXPORTS_REQUIRED");
@@ -122,16 +138,49 @@ async function main() {
     const uploaded = await handlers.POST(uploadRequest()); assert.equal(uploaded.status, 200, `POST: ${await uploaded.clone().text()}`);
     const body = await uploaded.json(), view = retailCommercialUploadView(body); assert.equal(view.uploads.length, 1);
     assert.equal(view.uploads[0].durationSeconds, 2); assert.equal(view.uploads[0].status, "IN_REVIEW"); assert.equal(view.uploads[0].qcStatus, "PENDING");
-    assert.equal(view.playbackConnected, false); assert.equal(view.adminApprovalRequired, true);
+    assert.equal(view.playbackConnected, false); assert.equal(view.adminApprovalRequired, false); assert.equal(view.subscriberApprovalRequired, true);
     const repeated = await handlers.POST(uploadRequest()); assert.equal(repeated.status, 200); assert.equal((await repeated.json()).duplicate, true);
     const final = retailCommercialUploadView(await (await handlers.GET(new Request(ADDRESS))).json()); assert.equal(final.uploads.length, 1);
     assert.equal(f.d.puts, 1); assert.equal(f.d.deletes, 0); assert.equal(f.d.versions.size, 1); assert.equal(networkAttempts, 0);
     const native = appRequire("ffprobe-static").path; assert.equal(probes.length, 2); assert.ok(probes.every(p => p === native && existsSync(p)));
     assert.equal([...f.d.promos.values()][0].currentApprovedVersionId, null);
+    const preview = runtime(previewEntryId).routeModule.userland;
+    const previewUrl = `${ADDRESS}/preview?versionId=${final.uploads[0].id}`;
+    f.d.context = null;
+    assert.equal((await preview.GET(new Request(previewUrl))).status, 403); assert.equal(f.d.gets, 0);
+    f.d.context = allowedContext;
+    assert.equal((await preview.GET(new Request(previewUrl, { headers: { "sec-fetch-site": "cross-site" } }))).status, 403);
+    const head = await preview.HEAD(new Request(previewUrl, { method: "HEAD" })); assert.equal(head.status, 200);
+    assert.equal(head.body, null); assert.equal(head.headers.get("content-length"), "32044"); assert.equal(f.d.gets, 0);
+    const listening = await preview.GET(new Request(previewUrl, { headers: { range: "bytes=0-15", "sec-fetch-site": "same-origin" } }));
+    assert.equal(listening.status, 206); assert.match(listening.headers.get("cache-control"), /private, no-store/);
+    assert.equal(listening.headers.get("cross-origin-resource-policy"), "same-origin"); assert.equal(listening.headers.has("location"), false);
+    assert.deepEqual(Buffer.from(await listening.arrayBuffer()), createSyntheticWav().subarray(0, 16)); assert.equal(f.d.gets, 1);
+    const review = runtime(reviewEntryId).routeModule.userland.POST;
+    const reviewRequest = (details, origin = "https://www.ruvanas.com") => new Request(`${ADDRESS}/review`, { method: "POST",
+      headers: { origin, "content-type": "application/json" }, body: JSON.stringify(details) });
+    const decision = { versionId: final.uploads[0].id, decision: "APPROVE", rightsConfirmed: true };
+    assert.equal((await review(reviewRequest(decision, "https://foreign.invalid"))).status, 403);
+    assert.equal((await review(reviewRequest({ ...decision, rightsConfirmed: false }))).status, 400);
+    f.d.context = null;
+    const deniedReview = reviewRequest(decision); assert.equal((await review(deniedReview)).status, 403); assert.equal(deniedReview.bodyUsed, false);
+    f.d.context = allowedContext;
+    const reviewed = await review(reviewRequest(decision)); assert.equal(reviewed.status, 200, `REVIEW: ${await reviewed.clone().text()}`);
+    const reviewBody = await reviewed.json(), approved = retailCommercialUploadView(reviewBody);
+    assert.equal(reviewBody.reviewedId, decision.versionId); assert.equal(reviewBody.decision, "APPROVE");
+    assert.equal(approved.uploads[0].status, "APPROVED"); assert.equal(approved.uploads[0].qcStatus, "PASSED");
+    assert.equal([...f.d.promos.values()][0].currentApprovedVersionId, decision.versionId);
+    const retried = await review(reviewRequest(decision)); assert.equal(retried.status, 200); assert.equal((await retried.json()).duplicate, true);
+    assert.equal(f.d.puts, 1); assert.equal(f.d.deletes, 0); assert.equal(networkAttempts, 0);
     return { check: "RETAIL_COMMERCIAL_COMPILED_UPLOAD_ROUTE", status: "PASS", routeHandlersInvoked: true, syntheticAudioOnly: true,
       compiledRouteSha256: createHash("sha256").update(source).digest("hex"), buildId: (await readFile(path.join(ROOT, ".next/BUILD_ID"), "utf8")).trim(),
       getStatus: 200, postStatus: 200, measuredSeconds: 2, approvalStatus: "IN_REVIEW", qcStatus: "PENDING", duplicateDidNotUploadAgain: true,
+      compiledReviewRouteSha256: createHash("sha256").update(reviewSource).digest("hex"), subscriberReviewStatus: 200,
+      explicitSubscriberApproval: "APPROVED", explicitSubscriberQc: "PASSED", repeatedReviewIdempotent: true,
+      compiledPreviewRouteSha256: createHash("sha256").update(previewSource).digest("hex"), privatePreviewHeadStatus: 200,
+      privatePreviewRangeStatus: 206, privatePreviewDeniedBeforeStorage: true, privatePreviewSyntheticBytesVerified: true,
       networkAttempts, realDbQueries: 0, realR2Requests: 0, simulatedQueries: f.d.queries, simulatedR2Puts: f.d.puts,
+      simulatedR2Gets: f.d.gets,
       ffprobeInvocations: probes.length, packagedFfprobeVerified: true, musicOrSettingsChanged: false };
   } finally {
     childProcess.execFile = originalExec; delete globalThis.prisma; globalThis.fetch = original.fetch; net.Socket.prototype.connect = original.connect;

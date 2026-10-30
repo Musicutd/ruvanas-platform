@@ -13,7 +13,7 @@ const stationId = weekly.RETAIL_PLANNER_STATION_ID, endpoint = ui.RETAIL_COMMERC
 const limits = { maxFileBytes: 20 * 1024 * 1024, maxDurationSeconds: 300, maxUploads: 50 };
 const recording = (patch = {}) => ({ id: "version-1", promoAssetId: "promo-1", name: "Weekend offer", mediaType: "COMMERCIAL", version: 1,
   status: "IN_REVIEW", qcStatus: "PENDING", durationSeconds: 31, sizeBytes: 150000, submittedAt: "2026-10-30T16:00:00Z", reviewedAt: null, ...patch });
-const dto = (uploads = []) => ({ stationId, canUpload: true, adminApprovalRequired: true, playbackConnected: false, uploads, limits, usedBytes: 0, storageLimitBytes: 100 * 1024 * 1024 });
+const dto = (uploads = []) => ({ stationId, organisationId: "cmvmeq5880005lf2knwtw1b93", canUpload: true, adminApprovalRequired: false, subscriberApprovalRequired: true, scheduleApprovalRequired: "SUBSCRIBER", playbackConnected: false, uploads, limits, usedBytes: 0, storageLimitBytes: 100 * 1024 * 1024 });
 const reply = (body, ok = true) => ({ ok, json: async () => structuredClone(body) });
 const css = { __esModule: true, default: new Proxy({}, { get: (_target, key) => String(key) }) };
 function harness() {
@@ -58,7 +58,7 @@ test("opening subscriber uploads only reads the exact Retail endpoint and expose
   h.render(Component); await h.load();
   assert.equal(calls.length, 1); assert.equal(calls[0].url, endpoint); assert.equal(calls[0].options.body, undefined); assert.equal(calls[0].options.cache, "no-store");
   const tree = h.render(Component); assert.match(text(tree), /Upload a commercial or announcement/); assert.match(text(tree), /Music catalogue uploads remain managed by Ruvanas/);
-  assert.equal(button(tree, "Upload for approval").props.disabled, true); assert.equal(nodes(tree).some(node => node.type === "audio" || node.props?.autoPlay), false);
+  assert.equal(button(tree, "Upload recording").props.disabled, true); assert.equal(nodes(tree).some(node => node.type === "audio" || node.props?.autoPlay), false);
   assert.equal(h.render(Component, { stationId: "other" }), null); await h.load(); assert.equal(calls.length, 1);
 });
 
@@ -66,12 +66,12 @@ test("upload DTO strips private paths and rejects foreign scope or expanded capa
   const data = dto([recording({ storageKey: "private/audio", playbackUrl: "https://secret.invalid", sourcePassword: "secret" })]);
   data.credentials = "secret"; const safe = ui.retailCommercialUploadView(data);
   assert.doesNotMatch(JSON.stringify(safe), /private\/audio|secret/);
-  for (const patch of [{ stationId: "other" }, { adminApprovalRequired: false }, { playbackConnected: true }, { uploads: [recording(), recording()] },
+  for (const patch of [{ stationId: "other" }, { organisationId: "other" }, { adminApprovalRequired: true }, { subscriberApprovalRequired: false }, { scheduleApprovalRequired: "ADMIN" }, { playbackConnected: true }, { uploads: [recording(), recording()] },
     { limits: { ...limits, maxFileBytes: 50 * 1024 * 1024 } }, { uploads: [recording({ reviewedAt: "not-a-date" })] },
     { uploads: [recording({ status: "PUBLISHED" })] }, { usedBytes: -1 }]) assert.throws(() => ui.retailCommercialUploadView({ ...data, ...patch }));
 });
 
-test("subscriber sends only file and declared commercial details, then waits for administrator approval", async () => {
+test("subscriber sends only file and declared commercial details, then waits for their explicit recording approval", async () => {
   const h = harness(), calls = [], Component = await component(h, async (url, options = {}) => {
     calls.push({ url, options }); return reply(options.body ? { ...dto([recording()]), uploadedId: "version-1", duplicate: false } : dto());
   });
@@ -82,10 +82,11 @@ test("subscriber sends only file and declared commercial details, then waits for
   assert.equal(post.options.body.get("name"), "Weekend offer"); assert.equal(post.options.body.get("mediaType"), "COMMERCIAL");
   assert.equal(post.options.body.get("rightsConfirmed"), "true"); assert.equal(post.options.body.get("file").name, "offer.mp3");
   assert.match(post.options.body.get("requestId"), /^[a-f0-9-]{36}$/);
-  const tree = h.render(Component); assert.match(text(tree), /Uploaded for administrator approval/); assert.match(text(tree), /Awaiting approval/);
+  const tree = h.render(Component); assert.match(text(tree), /Review and approve your recording/); assert.match(text(tree), /Awaiting your approval/);
   assert.equal(field(tree, "Recording name").props.value, ""); assert.equal(field(tree, "I have permission").props.checked, false);
-  assert.equal(button(tree, "Upload for approval").props.disabled, true);
-  assert.equal(nodes(tree).some(node => node.type === "button" && /Approve|Start|Play|Publish/.test(text(node))), false);
+  assert.equal(button(tree, "Upload recording").props.disabled, true);
+  assert.equal(button(tree, "Approve recording").props.disabled, true);
+  assert.equal(nodes(tree).some(node => node.type === "button" && /Start|Publish/.test(text(node))), false);
 });
 
 test("invalid files and missing permission never create upload requests", async () => {
@@ -129,14 +130,80 @@ test("refreshing upload approval status keeps an unsent file and form intact", a
   h.render(Component); await h.load(); fill(h, Component);
   await button(h.render(Component), "Refresh upload status").props.onClick(); await new Promise(setImmediate);
   const tree = h.render(Component); assert.equal(field(tree, "Recording name").props.value, "Weekend offer"); assert.equal(field(tree, "I have permission").props.checked, true);
-  assert.match(text(tree), /Approved for planning/); assert.equal(button(tree, "Upload for approval").props.disabled, false);
+  assert.match(text(tree), /Approved for planning/); assert.equal(button(tree, "Upload recording").props.disabled, false);
 });
 
 test("upload allowance and approval statuses do not silently grant on-air access", async () => {
-  assert.equal(ui.retailCommercialUploadStatus(recording({ status: "APPROVED", qcStatus: "PENDING" })).label, "Awaiting approval");
+  assert.equal(ui.retailCommercialUploadStatus(recording({ status: "APPROVED", qcStatus: "PENDING" })).label, "Awaiting your approval");
   assert.equal(ui.retailCommercialUploadStatus(recording({ status: "REJECTED" })).label, "Not approved");
   assert.equal(ui.retailCommercialUploadStatus(recording({ status: "SUPERSEDED" })).label, "Replaced");
   const h = harness(), calls = [], Component = await component(h, async (url, options) => { calls.push({ url, options }); return reply({ ...dto(), canUpload: false }); });
   h.render(Component); await h.load(); fill(h, Component); await submit(h.render(Component)); assert.equal(calls.length, 1);
-  assert.match(text(h.render(Component)), /New uploads are currently unavailable/); assert.equal(button(h.render(Component), "Upload for approval").props.disabled, true);
+  assert.match(text(h.render(Component)), /New uploads are currently unavailable/); assert.equal(button(h.render(Component), "Upload recording").props.disabled, true);
+});
+
+test("private preview needs an explicit click, uses only the scoped route and never autoplays", async () => {
+  const h = harness(), calls = [], Component = await component(h, async (url, options) => { calls.push({ url, options }); return reply(dto([recording({ playbackUrl: "https://foreign.invalid" })])); });
+  h.render(Component); await h.load(); assert.equal(nodes(h.render(Component)).some(node => node.type === "audio"), false);
+  button(h.render(Component), "Listen privately").props.onClick(); const player = nodes(h.render(Component)).find(node => node.type === "audio");
+  assert.equal(player.props.src, `${endpoint}/preview?versionId=version-1`); assert.equal(player.props.preload, "none"); assert.equal(player.props.controls, true); assert.equal(player.props.autoPlay, undefined);
+  assert.equal(calls.length, 1); button(h.render(Component), "Close private preview").props.onClick(); assert.equal(nodes(h.render(Component)).some(node => node.type === "audio"), false);
+  assert.throws(() => ui.retailCommercialRecordingPreviewPath({ id: "../../foreign" }));
+});
+
+test("private preview controls match the resolver's pending or approved recording states", async () => {
+  const h = harness(), uploads = [recording(), recording({ id: "approved", status: "APPROVED", qcStatus: "PASSED" }),
+    recording({ id: "rejected", status: "REJECTED", qcStatus: "FAILED" }), recording({ id: "superseded", status: "SUPERSEDED", qcStatus: "PASSED" }),
+    recording({ id: "failed-review", status: "IN_REVIEW", qcStatus: "FAILED" }), recording({ id: "unfinished-approval", status: "APPROVED", qcStatus: "PENDING" })];
+  const Component = await component(h, async () => reply(dto(uploads))); h.render(Component); await h.load();
+  const tree = h.render(Component); assert.equal(nodes(tree).filter(node => node.type === "button" && text(node) === "Listen privately").length, 2);
+  assert.equal(nodes(tree).some(node => node.type === "audio"), false);
+});
+
+test("recording approval requires explicit responsibility and sends only the exact recording decision", async () => {
+  const h = harness(), calls = []; let approved = 0;
+  const Component = await component(h, async (url, options = {}) => {
+    calls.push({ url, options }); return reply(options.body ? { ...dto([recording({ status: "APPROVED", qcStatus: "PASSED" })]), reviewedId: "version-1", decision: "APPROVE" } : dto([recording()]));
+  });
+  const props = { stationId, onApproved: () => approved++ }; h.render(Component, props); await h.load();
+  button(h.render(Component, props), "Approve recording").props.onClick(); await new Promise(setImmediate); assert.equal(calls.length, 1);
+  field(h.render(Component, props), "I have checked").props.onChange({ target: { checked: true } });
+  button(h.render(Component, props), "Approve recording").props.onClick(); await new Promise(setImmediate);
+  assert.equal(calls[1].url, `${endpoint}/review`); assert.equal(calls[1].options.method, "POST");
+  assert.deepEqual(JSON.parse(calls[1].options.body), { versionId: "version-1", decision: "APPROVE", rightsConfirmed: true }); assert.equal(approved, 1);
+  assert.match(text(h.render(Component, props)), /Approved for planning/); assert.match(text(h.render(Component, props)), /approve the saved commercial schedule separately/);
+  assert.equal(button(h.render(Component, props), "Approve recording"), undefined);
+});
+
+test("rejecting requires a reason and never substitutes a recording approval", async () => {
+  assert.throws(() => ui.retailCommercialRecordingReviewBody(recording(), "REJECT", {}));
+  assert.throws(() => ui.retailCommercialRecordingReviewBody(recording({ status: "APPROVED" }), "APPROVE", { rightsConfirmed: true }));
+  const h = harness(), calls = [], Component = await component(h, async (url, options = {}) => {
+    calls.push({ url, options }); return reply(options.body ? { ...dto([recording({ status: "REJECTED", qcStatus: "FAILED" })]), reviewedId: "version-1", decision: "REJECT" } : dto([recording()]));
+  });
+  h.render(Component); await h.load(); assert.equal(button(h.render(Component), "Reject recording").props.disabled, true);
+  assert.equal(field(h.render(Component), "Review note").props.type, "text");
+  assert.equal(nodes(h.render(Component)).some(node => node.type === "textarea"), false);
+  field(h.render(Component), "Review note").props.onChange({ target: { value: "Replace the out-of-date price." } });
+  button(h.render(Component), "Reject recording").props.onClick(); await new Promise(setImmediate);
+  assert.deepEqual(JSON.parse(calls[1].options.body), { versionId: "version-1", decision: "REJECT", notes: "Replace the out-of-date price." });
+  assert.match(text(h.render(Component)), /Recording rejected/); assert.equal(button(h.render(Component), "Approve recording"), undefined);
+});
+
+test("in-flight recording review blocks repeats and upload refresh; uncertain results do not grant approval", async () => {
+  const h = harness(), calls = []; let finish;
+  const Component = await component(h, async (url, options = {}) => { calls.push({ url, options }); if (!options.body) return reply(dto([recording()])); await new Promise(resolve => { finish = resolve; }); return reply({ ...dto([recording()]), reviewedId: "different", decision: "APPROVE" }); });
+  h.render(Component); await h.load(); field(h.render(Component), "I have checked").props.onChange({ target: { checked: true } });
+  button(h.render(Component), "Approve recording").props.onClick(); button(h.render(Component), "Approve recording").props.onClick(); button(h.render(Component), "Refresh upload status").props.onClick();
+  assert.equal(calls.length, 2); assert.equal(button(h.render(Component), "Approve recording").props.disabled, true);
+  finish(); await new Promise(setImmediate); assert.match(text(h.render(Component)), /review result is uncertain/); assert.match(text(h.render(Component)), /Awaiting your approval/);
+});
+
+test("a recording review conflict preserves the pending item until fresh server evidence is available", async () => {
+  const h = harness(); let reads = 0;
+  const Component = await component(h, async (_url, options = {}) => options.body ? reply({ error: "Recording changed; refresh its status." }, false) : reply(dto([recording(++reads > 1 ? { status: "REJECTED", qcStatus: "FAILED" } : {})])));
+  h.render(Component); await h.load(); field(h.render(Component), "I have checked").props.onChange({ target: { checked: true } });
+  button(h.render(Component), "Approve recording").props.onClick(); await new Promise(setImmediate);
+  assert.match(text(h.render(Component)), /Recording changed/); assert.match(text(h.render(Component)), /Awaiting your approval/);
+  button(h.render(Component), "Refresh upload status").props.onClick(); await new Promise(setImmediate); assert.match(text(h.render(Component)), /Not approved/);
 });
