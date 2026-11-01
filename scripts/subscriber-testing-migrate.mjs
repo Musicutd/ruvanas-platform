@@ -7,9 +7,10 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawn } from "node:child_process";
 import { readFile, readdir } from "node:fs/promises";
 import { readPreviewMigrationCatalog, PREVIEW_ACCESS_MIGRATION, PREVIEW_ACCESS_MIGRATION_CHECKSUM } from "./private-preview-access-migrate.mjs";
-import { catalogueTestMigrationMode, catalogueTestMigrationPreflight, catalogueTestHistoryDigest,
+import { catalogueTestMigrationMode, catalogueTestHistoryDigest,
   CATALOGUE_TEST_MIGRATION, CATALOGUE_TEST_MIGRATION_CHECKSUM, CATALOGUE_TEST_PRIOR_HISTORY_DIGEST } from "./catalogue-test-migrate.mjs";
 import { CATALOGUE_TEST_HOUR_MIGRATION, CATALOGUE_TEST_HOUR_MIGRATION_CHECKSUM } from "./catalogue-test-hour-migrate.mjs";
+import { readPrivatePreviewPolicy } from "../lib/private-preview-policy.mjs";
 
 export const SUBSCRIBER_TESTING_MIGRATION = "20261208000000_private_preview_subscriber_testing";
 export const SUBSCRIBER_TESTING_MIGRATION_CHECKSUM = "8187e1c2e9c2496142e964d708cc9bad4406212fb0afa94ab1c8abc3bd65736d";
@@ -27,6 +28,31 @@ const SAFE = new Set(["MIGRATION_ARGUMENTS_INVALID", "MIGRATION_CATALOG_CHANGED"
 const hash = value => createHash("sha256").update(value).digest("hex");
 const refusal = code => ({ ok: false, code });
 const fail = code => { throw Object.assign(new Error(code), { code }); };
+
+// These additive columns do not change playback authority or either encoder.
+// Unlike the historical live-test migration, approved streams need not be off.
+// The exact website identity remains mandatory: workers cannot run this guard.
+export function subscriberTestingMigrationPreflight(env = {}) {
+  if (env.RUVANAS_ENVIRONMENT !== "PRIVATE_PREVIEW" || env.RENDER_SERVICE_ID !== "srv-da03b5lbedkc739q74k0" ||
+    env.RUVANAS_PUBLIC_URL !== "https://www.ruvanas.com") return refusal("MIGRATION_HOST_REQUIRED");
+  const preview = readPrivatePreviewPolicy(env);
+  if (!preview.enabled || !preview.valid) return refusal("MIGRATION_PREVIEW_POLICY_REQUIRED");
+  if (env.NODE_TLS_REJECT_UNAUTHORIZED !== undefined && env.NODE_TLS_REJECT_UNAUTHORIZED !== "1" ||
+    env.PGSSLMODE !== undefined && !["require", "verify-ca", "verify-full"].includes(env.PGSSLMODE)) return refusal("MIGRATION_TLS_RELAXATION_FORBIDDEN");
+  try {
+    const raw = env.DATABASE_URL;
+    if (typeof raw !== "string" || !raw || raw !== raw.trim()) return refusal("MIGRATION_DATABASE_REQUIRED");
+    const url = new URL(raw), keys = [...url.searchParams.keys()];
+    const allowedKeys = new Set(["schema", "sslmode", "sslaccept", "connection_limit", "pool_timeout", "connect_timeout"]);
+    if (!["postgres:", "postgresql:"].includes(url.protocol) || url.hostname !== "dpg-db5kurijnfac73arripg-a" ||
+      url.pathname !== "/ruvanas_private_preview_20261011" || url.port && url.port !== "5432" || url.hash ||
+      !url.username || !url.password || keys.length !== new Set(keys).size || keys.some(key => !allowedKeys.has(key)) ||
+      url.searchParams.has("schema") && url.searchParams.get("schema") !== "public") return refusal("MIGRATION_DATABASE_REQUIRED");
+    if (url.searchParams.has("sslmode") && !["require", "verify-ca", "verify-full"].includes(url.searchParams.get("sslmode")) ||
+      url.searchParams.has("sslaccept") && url.searchParams.get("sslaccept") !== "strict") return refusal("MIGRATION_TLS_RELAXATION_FORBIDDEN");
+  } catch { return refusal("MIGRATION_DATABASE_REQUIRED"); }
+  return { ok: true };
+}
 
 function checkedCatalog(catalog) {
   if (!Array.isArray(catalog) || catalog.length !== 131 || new Set(catalog.map(row => row?.name)).size !== 131 ||
@@ -128,7 +154,7 @@ function deployOfficial({ root, env }) {
 export async function runSubscriberTestingMigration({ mode = "check", env = process.env, root = ROOT,
   connect = databaseFactory, deploy = deployOfficial, clock = { setTimeout, clearTimeout } } = {}) {
   if (!["check", "apply"].includes(mode)) return refusal("MIGRATION_ARGUMENTS_INVALID");
-  const policy = catalogueTestMigrationPreflight(env);
+  const policy = subscriberTestingMigrationPreflight(env);
   if (!policy.ok) return policy;
   let db, result;
   const bounded = (operation, ms, late = null) => new Promise((resolveResult, reject) => {
@@ -146,7 +172,7 @@ export async function runSubscriberTestingMigration({ mode = "check", env = proc
     const before = decideSubscriberTestingMigration(catalog, await bounded(() => readSnapshot(db), 16000));
     if (!before.ok) fail(before.code);
     if (mode === "apply" && before.action === "APPLY") {
-      if (!catalogueTestMigrationPreflight(env).ok) fail("MIGRATION_PREFLIGHT_CHANGED");
+      if (!subscriberTestingMigrationPreflight(env).ok) fail("MIGRATION_PREFLIGHT_CHANGED");
       if (JSON.stringify(await readPreviewMigrationCatalog(root)) !== JSON.stringify(catalog) || await schemaConfiguration(root) !== configuration) fail("MIGRATION_FILES_CHANGED");
       const fresh = decideSubscriberTestingMigration(catalog, await bounded(() => readSnapshot(db), 16000));
       if (!fresh.ok || fresh.action !== "APPLY") fail(fresh.ok ? "MIGRATION_STATE_CHANGED" : fresh.code);

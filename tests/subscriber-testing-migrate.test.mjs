@@ -7,7 +7,7 @@ import { readPreviewMigrationCatalog, PREVIEW_ACCESS_MIGRATION, PREVIEW_ACCESS_M
 import { CATALOGUE_TEST_MIGRATION, CATALOGUE_TEST_MIGRATION_CHECKSUM } from "../scripts/catalogue-test-migrate.mjs";
 import { CATALOGUE_TEST_HOUR_MIGRATION, CATALOGUE_TEST_HOUR_MIGRATION_CHECKSUM } from "../scripts/catalogue-test-hour-migrate.mjs";
 import { SUBSCRIBER_TESTING_MIGRATION as NEW, SUBSCRIBER_TESTING_MIGRATION_CHECKSUM as HASH,
-  decideSubscriberTestingMigration, runSubscriberTestingMigration } from "../scripts/subscriber-testing-migrate.mjs";
+  decideSubscriberTestingMigration, runSubscriberTestingMigration, subscriberTestingMigrationPreflight } from "../scripts/subscriber-testing-migrate.mjs";
 
 const ENV = { NODE_ENV: "production", RUVANAS_ENVIRONMENT: "PRIVATE_PREVIEW", RENDER_SERVICE_ID: "srv-da03b5lbedkc739q74k0",
   RUVANAS_PUBLIC_URL: "https://www.ruvanas.com", RUVANAS_PRIVATE_PREVIEW_ENABLED: "1", RUVANAS_PRIVATE_PREVIEW_PUBLIC_SITE: "1",
@@ -95,13 +95,35 @@ test("default check is read-only; apply rechecks, deploys once, postverifies and
   assert.equal(f.calls.deployments, 1);
 });
 
-test("host, closed registration, database, TLS and unchanged output gates are checked before connecting", async () => {
+test("host, closed registration, database and TLS are checked before connecting", async () => {
   for (const patch of [{ RENDER_SERVICE_ID: "retail-worker" }, { RUVANAS_PUBLIC_URL: "https://other.example" },
-    { RUVANAS_PRIVATE_PREVIEW_ENABLED: "0" }, { RUVANAS_AUTODJ_ALLOW_LIVE: "true" }, { NODE_TLS_REJECT_UNAUTHORIZED: "0" },
+    { RUVANAS_PRIVATE_PREVIEW_ENABLED: "0" }, { NODE_TLS_REJECT_UNAUTHORIZED: "0" },
     { DATABASE_URL: ENV.DATABASE_URL.replace("dpg-db5kurijnfac73arripg-a", "other.example") }]) {
     const f = database(), result = await runSubscriberTestingMigration({ ...f.options, env: { ...ENV, ...patch }, mode: "apply" });
     assert.equal(result.ok, false); assert.equal(f.calls.connections, 0); assert.equal(f.calls.deployments, 0);
     assert.doesNotMatch(JSON.stringify(result), /never-print-this|postgresql/);
+  }
+});
+
+test("the additive website migration permits existing live flags without changing them and rejects both encoder hosts", async () => {
+  const env = { ...ENV, RUVANAS_CATALOGUE_TEST_START_ENABLED: "true", RUVANAS_CATALOGUE_TEST_ALLOW_LIVE: "true",
+    RUVANAS_AUTODJ_ALLOW_LIVE: "true", RUVANAS_AUTODJ_TIMED_OUTPUT_ACCEPTED: "true" };
+  const unchanged = clone(env);
+  assert.deepEqual(subscriberTestingMigrationPreflight(env), { ok: true });
+  const f = database();
+  assert.equal((await runSubscriberTestingMigration({ ...f.options, env, mode: "apply" })).status, "APPLIED");
+  assert.equal(f.calls.deployments, 1); assert.deepEqual(env, unchanged);
+  for (const service of ["srv-damhnbv40ujc73b00lgg", "srv-dbeoq2vb9u1s73aeom1g", "another-web-service"]) {
+    const worker = database();
+    const result = await runSubscriberTestingMigration({ ...worker.options, env: { ...env, RENDER_SERVICE_ID: service }, mode: "apply" });
+    assert.equal(result.code, "MIGRATION_HOST_REQUIRED"); assert.equal(worker.calls.connections, 0); assert.equal(worker.calls.deployments, 0);
+  }
+  for (const patch of [{ DATABASE_URL: env.DATABASE_URL.replace("dpg-db5kurijnfac73arripg-a", "foreign.example") },
+    { DATABASE_URL: env.DATABASE_URL + "&sslmode=disable" }, { NODE_TLS_REJECT_UNAUTHORIZED: "0" },
+    { RUVANAS_PRIVATE_PREVIEW_ENABLED: "0" }, { RENDER_SERVICE_ID: undefined }]) {
+    const denied = database();
+    assert.equal((await runSubscriberTestingMigration({ ...denied.options, env: { ...env, ...patch }, mode: "apply" })).ok, false);
+    assert.equal(denied.calls.connections, 0); assert.equal(denied.calls.deployments, 0);
   }
 });
 
