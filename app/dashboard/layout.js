@@ -60,6 +60,7 @@ export default async function DashboardLayout({ children }) {
       userName={context.user.name || context.user.email}
       membershipRole={context.membership.role}
       listenHrefs={listenHrefs}
+      retailWorkspace={Boolean(retailWorkspace)}
     >
       {previewTester ? <aside style={{ padding: 16, background: "#fff5d6", color: "#172033", borderBottom: "1px solid #d5b66b" }}>
         {testRadioWorkspace ? "Test Radio planning workspace: browse approved catalogue details and save playlists, templates and weekly drafts. Your drafts do not change the current broadcast. On-air approval and streaming settings stay admin-only; uploads, downloads and public registration remain closed. "

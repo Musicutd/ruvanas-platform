@@ -83,6 +83,12 @@
 .featuredLink:hover, .featuredLink:focus-visible { background: var(--rv-surface-hover); }
 .featuredActive { background: var(--rv-surface-muted); box-shadow: inset 3px 0 #f4b942; }
 .featuredNav b { color: var(--rv-accent-text); }
+.shopSetup { margin: 0 0 14px; border-top: 1px solid var(--rv-border-soft); padding-top: 10px; }
+.shopSetup summary { min-height: 44px; box-sizing: border-box; padding: 12px 11px; color: var(--rv-text-muted); cursor: pointer; font-size: 13px; font-weight: 850; }
+.shopSetup summary:hover { color: var(--rv-text); }
+.shopSetup summary:focus-visible { outline: 3px solid #6ea8fe; outline-offset: 2px; border-radius: 8px; }
+.shopSetup p { padding: 0 11px; margin: 0 0 8px; color: var(--rv-text-subtle); font-size: 11px; line-height: 1.5; }
+.shopSetup b { color: var(--rv-accent-text); }
 .allToolsButton { width: 100%; min-height: 42px; display: flex; align-items: center; justify-content: space-between; border: 1px solid var(--rv-border); border-radius: 9px; background: var(--rv-surface-muted); color: var(--rv-text); cursor: pointer; font: inherit; font-size: 13px; font-weight: 850; padding: 0 11px; text-align: left; }
 .allToolsButton:hover { border-color: #f4b942; }
 .allToolsButton span { color: var(--rv-accent-text); font-size: 18px; }

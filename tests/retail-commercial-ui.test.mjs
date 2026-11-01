@@ -142,12 +142,14 @@ test("approving a recording refreshes selectable spots without discarding unsave
   const Component = await component(h, async (_url, options = {}) => {
     assert.equal(options.body, undefined); const body = dto();
     if (++reads > 1) { body.spots.push({ id: "spot-new", name: "New approved offer", version: 1, durationSeconds: 25 }); body.draft = { ...body.draft, id: nextId, version: 2, name: "Other tab draft" }; }
+    else { body.spots = []; body.warnings = ["No approved commercial audio is available yet."]; }
     return reply(body);
   });
-  h.render(Component); await h.load(); changeName(h.render(Component));
+  h.render(Component); await h.load(); assert.match(text(h.render(Component)), /No approved commercial audio is available yet/); changeName(h.render(Component));
   nodes(h.render(Component)).find(node => typeof node.props?.onApproved === "function").props.onApproved(); await new Promise(setImmediate);
   const tree = h.render(Component); assert.equal(input(tree, "Commercial plan name").props.value, "Edited shop messages");
   assert.match(text(tree), /New approved offer/); assert.equal(button(tree, "Save commercial draft").props.disabled, false);
+  assert.doesNotMatch(text(tree), /No approved commercial audio is available yet/);
   const approvalPanel = nodes(tree).find(node => node.props?.savedDraftId);
   assert.equal(approvalPanel.props.savedDraftId, firstId); assert.equal(approvalPanel.props.hasUnsavedChanges, true);
 });

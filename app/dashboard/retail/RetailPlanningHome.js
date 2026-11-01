@@ -6,17 +6,19 @@ export default function RetailPlanningHome({ stationName }) {
   return <main id="main-content" className={styles.page}><div className={styles.container}>
     <header className={styles.hero}>
       <p className={styles.eyebrow}>YOUR RETAIL RADIO · {stationName || "TEST RETAIL"}</p>
-      <h1>One music plan for all your shops</h1>
-      <p>Explore your approved music catalogue, build playlists and upload your own commercials or shop announcements. You approve your commercial recordings and their schedules; weekly music programmes still go to your administrator for review.</p>
-      <div className={styles.heroActions}><Link href={`${workspace}#workspace-library`}>Open music library →</Link><Link href={`${workspace}#workspace-commercials`}>Upload a commercial →</Link><Link href={`${workspace}#workspace-planner`}>Weekly planner →</Link></div>
-      <div className={styles.nextStep}><div><span>YOUR WORKSPACE</span><strong>Music library → Playlists → Weekly planner</strong><p>One shared Retail programme. You can prepare music before adding individual shop locations.</p></div><Link href={`${workspace}#workspace-simple`}>Build a playlist →</Link></div>
+      <h1>Your music. Your messages. All your shops.</h1>
+      <p>One shared radio programme for your shops. Listen, choose music or plan a message from here.</p>
+      <div className={styles.heroActions}><Link href="/dashboard/listen/retail">▶ Listen now</Link><Link href={`${workspace}#workspace-commercials`}>Manage commercials →</Link></div>
+      <p className={styles.planningHint}>You can listen and plan here without setting up a shop device first.</p>
     </header>
     <section className={styles.quickTasks} aria-labelledby="retail-planning-tasks"><h2 id="retail-planning-tasks">What would you like to do?</h2><div className={`${styles.taskGrid} ${styles.planningTasks}`}>
-      <Link href={`${workspace}#workspace-library`}><span aria-hidden="true">♫</span><strong>Music library</strong><small>Search approved songs, artists and genres</small></Link>
-      <Link href={`${workspace}#workspace-simple`}><span aria-hidden="true">☷</span><strong>Playlists & templates</strong><small>Generate a mix or load a saved playlist</small></Link>
-      <Link href={`${workspace}#workspace-planner`}><span aria-hidden="true">▦</span><strong>Weekly planner</strong><small>Save programmes as a draft for review</small></Link>
-      <Link href={`${workspace}#workspace-commercials`}><span aria-hidden="true">◉</span><strong>Commercials & announcements</strong><small>Upload, review and approve your shop messages</small></Link>
+      <Link href="/dashboard/listen/retail"><span aria-hidden="true">▶</span><strong>Listen</strong><small>Open your shop radio player</small></Link>
+      <Link href={`${workspace}#workspace-autodj`}><span aria-hidden="true">♫</span><strong>Music & AutoDJ</strong><small>Browse music and plan genre mixes</small></Link>
+      <Link href={`${workspace}#workspace-planner`}><span aria-hidden="true">▦</span><strong>Weekly planner</strong><small>Choose music for a day and time</small></Link>
+      <Link href={`${workspace}#workspace-commercials`}><span aria-hidden="true">◉</span><strong>Commercials</strong><small>Upload a message and choose when it plays</small></Link>
     </div></section>
-    <section className={styles.shopsPanel} aria-labelledby="retail-shared-plan"><h2 id="retail-shared-plan">Review before your commercials go on air</h2><p>Saving a draft does not change your stream. You explicitly approve your own commercial recordings and saved commercial schedules. Your administrator manages weekly music approval, the streaming connection and shop access.</p><Link href="/dashboard/locations">View shop locations →</Link></section>
+    <nav className={styles.libraryLinks} aria-label="More music choices"><Link href={`${workspace}#workspace-library`}>Browse music library →</Link><Link href={`${workspace}#workspace-simple`}>Playlists & templates →</Link></nav>
+    <section className={styles.simpleApproval} aria-labelledby="retail-shared-plan"><h2 id="retail-shared-plan">You decide when your messages go on air</h2><p>Approve your recording, choose its timing, then approve the saved commercial schedule. Saving a draft alone does not change the stream. Weekly music plans still need administrator approval.</p></section>
+    <details className={styles.moreDetails}><summary>Set up a shop device</summary><div className={styles.setupHelp}><p>Use this when you are ready to connect a device in a shop. It is separate from listening here or planning music and commercials.</p><Link href="/dashboard/players">Open shop device setup →</Link><Link href="/dashboard/locations">Manage shop locations →</Link></div></details>
   </div></main>;
 }

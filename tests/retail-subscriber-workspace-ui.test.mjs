@@ -142,8 +142,9 @@ test("Retail weekly times preserve saved DST instants and reject ambiguous new t
 test("exact Retail planning home has library, playlists and week entry points instead of shop prerequisites", async () => {
   const module = await component("app/dashboard/retail/RetailPlanningHome.js");
   const markup = renderToStaticMarkup(React.createElement(module.default, { stationName: "Test Retail" }));
-  for (const anchor of ["workspace-library", "workspace-simple", "workspace-planner", "workspace-commercials"]) assert.match(markup, new RegExp(`/dashboard/programming\\?product=RETAIL#${anchor}`));
-  assert.match(markup, /Upload a commercial/); assert.match(markup, /Commercials &amp; announcements/);
-  assert.match(markup, /One music plan for all your shops/); assert.match(markup, /administrator/);
-  assert.doesNotMatch(markup, /first shop ready|Listen live|Set up AutoDJ|<audio|\/admin\//);
+  for (const anchor of ["workspace-library", "workspace-simple", "workspace-autodj", "workspace-planner", "workspace-commercials"]) assert.match(markup, new RegExp(`/dashboard/programming\\?product=RETAIL#${anchor}`));
+  assert.match(markup, /href="\/dashboard\/listen\/retail"/);
+  assert.match(markup, /without setting up a shop device first/); assert.match(markup, /administrator approval/);
+  assert.match(markup, /<details[^>]*><summary>Set up a shop device/);
+  assert.doesNotMatch(markup, /<details[^>]*open|first shop ready|Listen live|Set up AutoDJ|<audio|<form|\/admin\//);
 });

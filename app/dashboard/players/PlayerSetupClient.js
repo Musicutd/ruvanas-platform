@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import WorkflowProgress from "@/app/components/WorkflowProgress";
 import { playerWorkflowSteps, safeWorkflowMessage } from "@/lib/guided-workflows.mjs";
+import RetailPlayerSetup from "./RetailPlayerSetup";
 
 const READINESS_REFRESH_MS = 15_000;
 
@@ -18,7 +19,7 @@ function readinessLabel(code) {
   return String(code || "WAITING").replaceAll("_", " ");
 }
 
-export default function PlayerSetupClient({ players, zones, canManage, configured, limit }) {
+export default function PlayerSetupClient({ players, zones, canManage, configured, limit, retail = false }) {
   const router = useRouter();
   const [form, setForm] = useState({ name: "", zoneId: zones[0]?.id || "" });
   const [replacement, setReplacement] = useState({ playerId: "", note: "", replacementName: "", confirmed: false });
@@ -110,6 +111,14 @@ export default function PlayerSetupClient({ players, zones, canManage, configure
       setError("The code could not be copied automatically. Select it and copy it manually.");
     }
   }
+
+  if (retail) return <RetailPlayerSetup
+    players={playerRows} activePlayers={activePlayers} zones={zones} canManage={canManage}
+    configured={currentConfigured} limit={limit} form={form} setForm={setForm}
+    replacement={replacement} setReplacement={setReplacement} busy={busy} error={error}
+    enrolment={enrolment} refreshing={refreshing} refreshReadiness={refreshReadiness}
+    createPlayer={createPlayer} replacePlayer={replacePlayer} copyEnrolmentCode={copyEnrolmentCode}
+  />;
 
   return <>
     <section style={styles.summary}>

@@ -7,6 +7,7 @@ import { subscriberPlayerReadiness } from "@/lib/subscriber-player-readiness.mjs
 import ContextHelp from "@/app/components/ContextHelp";
 import SkipLink from "@/app/components/SkipLink";
 import PlayerSetupClient from "./PlayerSetupClient";
+import { resolveRetailSubscriberWorkspace } from "@/lib/retail-subscriber-access.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -26,15 +27,16 @@ export default async function SubscriberPlayersPage() {
   const configured = players.filter((player) => player.status !== "DISABLED").length;
   const zones = organisation.locations.flatMap((location) => location.zones.map((zone) => ({ id: zone.id, name: zone.name, locationName: location.name })));
   const serviceEnabled = organisation.subscription ? resolveEntitlements(organisation.subscription).serviceEnabled : true;
+  const retailWorkspace = await resolveRetailSubscriberWorkspace(prisma, context, { now });
 
   return <main style={styles.page}>
     <SkipLink />
-    <header style={styles.header}><a href="/dashboard" style={styles.brand}>RUVANAS</a><a href="/dashboard" style={styles.back}>Back to dashboard</a></header>
+    <header style={styles.header}><a href={retailWorkspace ? "/dashboard/retail" : "/dashboard"} style={styles.brand}>RUVANAS</a><a href={retailWorkspace ? "/dashboard/retail" : "/dashboard"} style={styles.back}>{retailWorkspace ? "Back to Retail" : "Back to dashboard"}</a></header>
     <section style={styles.content} id="main-content">
-      <p style={styles.eyebrow}>CLIENT PLAYER SETUP</p>
-      <h1 style={styles.heading}>Players & devices</h1>
-      <p style={styles.subtitle}>Prepare one secure enrolled player for each subscribed location or listening area, and replace a device without sharing its player identity.</p>
-      <ContextHelp
+      <p style={styles.eyebrow}>{retailWorkspace ? "RETAIL · SHOP SETUP" : "CLIENT PLAYER SETUP"}</p>
+      <h1 style={styles.heading}>{retailWorkspace ? "Shop devices" : "Players & devices"}</h1>
+      <p style={styles.subtitle}>{retailWorkspace ? "Connect a dedicated player when you are ready to set up a shop. Listening and planning are available separately." : "Prepare one secure enrolled player for each subscribed location or listening area, and replace a device without sharing its player identity."}</p>
+      {!retailWorkspace && <ContextHelp
         title="Help with your first player"
         introduction="Use one enrolled player for each subscribed location or listening area. The setup page checks the real device connection and playback evidence for you."
         items={[
@@ -44,7 +46,7 @@ export default async function SubscriberPlayersPage() {
         ]}
         articleHref="/dashboard/help#shop-players"
         articleLabel="Open the player guide"
-      />
+      />}
       {!serviceEnabled ? <p style={styles.warning}>Player setup is currently unavailable for this subscription.</p> : null}
       <PlayerSetupClient
         players={players.map((player) => ({
@@ -59,6 +61,7 @@ export default async function SubscriberPlayersPage() {
         canManage={serviceEnabled && canManageSubscriberPlayers(context.membership.role)}
         configured={configured}
         limit={allowance.limit}
+        retail={Boolean(retailWorkspace)}
       />
     </section>
   </main>;

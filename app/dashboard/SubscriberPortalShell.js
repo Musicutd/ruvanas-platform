@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { SubscriberThemeContext } from "./SubscriberThemeContext";
 import { AUDIO_PILLARS, dashboardAudioPillar } from "@/lib/pillar-audio.mjs";
+import { retailSubscriberShortcuts } from "@/lib/retail-subscriber-navigation.mjs";
 import styles from "./subscriber-portal-shell.module.css";
 
 const THEME_STORAGE_KEY = "ruvanas:subscriber-theme";
@@ -14,7 +15,7 @@ function matchesPath(pathname, href) {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export default function SubscriberPortalShell({ navigation, organisationName, userName, membershipRole, listenHrefs = {}, children }) {
+export default function SubscriberPortalShell({ navigation, organisationName, userName, membershipRole, listenHrefs = {}, retailWorkspace = false, children }) {
   const pathname = usePathname();
   const availableListenProducts = Object.keys(listenHrefs);
   const currentPillar = dashboardAudioPillar(pathname);
@@ -29,18 +30,25 @@ export default function SubscriberPortalShell({ navigation, organisationName, us
   const topLevelItems = navigation.flatMap((section) => section.items.filter((item) => item.topLevel));
   const productItems = navigation.find((section) => section.id === "products")?.items || [];
   const allItems = navigation.flatMap((section) => section.items);
+  const retailShortcuts = retailSubscriberShortcuts({ navigation, enabled: retailWorkspace });
+  const homeHref = retailShortcuts?.home.href || "/dashboard";
+  const homeActive = pathname === homeHref;
   const featuredItems = [
     productItems.length === 1 ? productItems[0] : null,
     allItems.find((item) => item.id === "retailMusic") || allItems.find((item) => item.id === "simplePlaylists"),
     allItems.find((item) => item.id === "studio")
   ].filter((item) => item && item.available !== false);
+  const dailyItems = retailShortcuts?.everyday || featuredItems;
+  // Retail tabs follow hashchange, including when another daily task is
+  // selected from this same page. A native anchor preserves that behaviour.
+  const DailyLink = retailShortcuts ? "a" : Link;
   const activeSectionId = navigation.find((section) => section.items.some((item) => !item.topLevel && item.available !== false && matchesPath(pathname, item.href)))?.id;
   const [expandedSections, setExpandedSections] = useState(() => new Set([activeSectionId].filter(Boolean)));
 
   useEffect(() => {
-    setShowAllTools(Boolean(activeSectionId));
+    setShowAllTools(retailWorkspace ? false : Boolean(activeSectionId));
     setExpandedSections(new Set([activeSectionId].filter(Boolean)));
-  }, [activeSectionId, pathname]);
+  }, [activeSectionId, pathname, retailWorkspace]);
 
   useEffect(() => {
     setOpen(false);
@@ -99,7 +107,7 @@ export default function SubscriberPortalShell({ navigation, organisationName, us
     <SubscriberThemeContext.Provider value={theme}>
     <div className={styles.portal} data-theme={theme} data-ruvanas-subscriber-root>
       <header className={styles.topbar}>
-        <Link href="/dashboard" className={styles.brand}>RUVANAS</Link>
+        <Link href={homeHref} className={styles.brand}>RUVANAS</Link>
         <button
           type="button"
           className={styles.menuButton}
@@ -137,12 +145,12 @@ export default function SubscriberPortalShell({ navigation, organisationName, us
           </div>
           <nav aria-label="Subscriber portal">
             <Link
-              href="/dashboard"
-              className={pathname === "/dashboard" ? styles.activeHome : styles.home}
-              aria-current={pathname === "/dashboard" ? "page" : undefined}
+              href={homeHref}
+              className={homeActive ? styles.activeHome : styles.home}
+              aria-current={homeActive ? "page" : undefined}
               onClick={() => setOpen(false)}
             >
-              <span>Overview</span><b aria-hidden="true">⌂</b>
+              <span>{retailShortcuts ? "Retail home" : "Overview"}</span><b aria-hidden="true">⌂</b>
             </Link>
             {listenHref ? <Link href={listenHref} className={styles.listenSidebar} target="_blank" rel="noopener noreferrer" onClick={() => setOpen(false)}>▶ Listen to {listenLabel}</Link> : null}
             {topLevelItems.map((item) => {
@@ -159,22 +167,33 @@ export default function SubscriberPortalShell({ navigation, organisationName, us
                 </Link>
               );
             })}
-            {featuredItems.length ? <div className={styles.featuredNav} role="group" aria-label="Quick access">
-              <p>Quick access</p>
-              {featuredItems.map((item) => <Link
+            {dailyItems.length ? <div className={styles.featuredNav} role="group" aria-label="Quick access">
+              <p>{retailShortcuts ? "Everyday tasks" : "Quick access"}</p>
+              {dailyItems.map((item) => <DailyLink
                 href={item.href}
                 key={item.id || item.href}
-                className={matchesPath(pathname, item.href.split("#")[0]) ? styles.featuredActive : styles.featuredLink}
+                className={!retailShortcuts && matchesPath(pathname, item.href.split("#")[0]) ? styles.featuredActive : styles.featuredLink}
+                onClick={() => setOpen(false)}
+              >{item.label}<b aria-hidden="true">→</b></DailyLink>)}
+            </div> : null}
+            {retailShortcuts?.setup.length ? <details className={styles.shopSetup}>
+              <summary>Shop setup</summary>
+              <p>Connect a shop device when you need one. Your music and commercials are above.</p>
+              {retailShortcuts.setup.map((item) => <Link
+                href={item.href}
+                key={item.id}
+                className={matchesPath(pathname, item.href) ? styles.featuredActive : styles.featuredLink}
+                aria-current={matchesPath(pathname, item.href) ? "page" : undefined}
                 onClick={() => setOpen(false)}
               >{item.label}<b aria-hidden="true">→</b></Link>)}
-            </div> : null}
+            </details> : null}
             <button
               type="button"
               className={styles.allToolsButton}
               aria-expanded={showAllTools}
               aria-controls="subscriber-all-tools"
               onClick={() => setShowAllTools((value) => !value)}
-            >All tools <span aria-hidden="true">{showAllTools ? "−" : "+"}</span></button>
+            >{retailShortcuts ? "More tools & account" : "All tools"} <span aria-hidden="true">{showAllTools ? "−" : "+"}</span></button>
             <div id="subscriber-all-tools" hidden={!showAllTools}>
               {navigation.map((section) => {
                 const expanded = expandedSections.has(section.id);

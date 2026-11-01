@@ -27,7 +27,7 @@ export default function RetailCommercialDesk({ stationId }) {
     pending.current = true;
     const read = ++sequence.current; abort.current?.abort(); const controller = new AbortController(); abort.current = controller;
     const timer = setTimeout(() => controller.abort(), 20000); setBusy("load"); setError("");
-    try { const response = await fetch(ENDPOINT, { credentials: "same-origin", cache: "no-store", signal: controller.signal }); const body = await response.json(); if (!response.ok) throw new Error(body.error || "Commercials could not be loaded."); if (read === sequence.current) { if (preserveDraft) { const next = retailCommercialView(body); setData(previous => previous ? { ...previous, spots: next.spots } : next); } else adopt(body); } }
+    try { const response = await fetch(ENDPOINT, { credentials: "same-origin", cache: "no-store", signal: controller.signal }); const body = await response.json(); if (!response.ok) throw new Error(body.error || "Commercials could not be loaded."); if (read === sequence.current) { if (preserveDraft) { const next = retailCommercialView(body); setData(previous => previous ? { ...previous, spots: next.spots, warnings: next.warnings } : next); } else adopt(body); } }
     catch (caught) { if (read === sequence.current) setError(caught.name === "AbortError" ? "Loading timed out. Try Refresh saved draft." : caught.message); }
     finally { clearTimeout(timer); if (read === sequence.current) { pending.current = false; setBusy(""); } }
   }
