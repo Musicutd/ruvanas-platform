@@ -5,6 +5,9 @@ import { publicRequestOrigin } from "../lib/origin-policy.mjs";
 import * as policy from "../lib/private-preview-policy.mjs";
 import { privatePreviewTesterRequestAllowed } from "../lib/private-preview-tester-policy.mjs";
 import { catalogueRequestSizePolicy } from "../lib/catalogue-request-limits.mjs";
+import { retailTestPlayerBootstrapRequest, retailTestPlayerDeviceRequest } from "../lib/retail-test-player-request.mjs";
+import { isPrivatePreviewSubscriberTestingSession } from "../lib/private-preview-subscriber-testing.mjs";
+import { hashPlayerToken } from "../lib/player-tokens.mjs";
 
 const source = await readFile(new URL("../middleware.js", import.meta.url), "utf8");
 const BASE_ENV = {
@@ -22,7 +25,7 @@ class TestResponse extends Response {
   static json(body, init = {}) { return new TestResponse(JSON.stringify(body), init); }
 }
 
-function middlewareHarness({ session = null, lookupThrows = false } = {}) {
+function middlewareHarness({ session = null, lookupThrows = false, deviceAllowed = false } = {}) {
   let loads = 0;
   let lookups = 0;
   // Execute the actual middleware body with only Next's response adapter and
@@ -32,25 +35,30 @@ function middlewareHarness({ session = null, lookupThrows = false } = {}) {
   assert.equal(source.split(importStatement).length, 2);
   const body = source.replace(/^import [^\n]+;\r?\n/gm, "")
     .replace(importStatement, "const prisma = await loadPrisma();")
+    .replace('const { prisma: deviceDb } = await import("@/lib/prisma");', "const deviceDb = {};")
+    .replace('const { loadRetailTestPlayerByTokenHash } = await import("@/lib/retail-test-player-access.mjs");', "")
     .replace("export async function middleware", "async function middleware")
     .replace("export const config", "const config");
   const names = ["NextResponse", "publicRequestOrigin", "privatePreviewTesterRequestAllowed", "getSessionFromToken", "SESSION_COOKIE",
     "readPrivatePreviewPolicy", "isPrivatePreviewPublicPath", "isPrivatePreviewRegistrationPath", "privatePreviewSessionLanding",
-    "isPrivatePreviewAdminSession", "isPrivatePreviewOwnerBootstrapSession", "loadPrisma", "crypto", "catalogueRequestSizePolicy"];
+    "isPrivatePreviewAdminSession", "isPrivatePreviewOwnerBootstrapSession", "loadPrisma", "crypto", "catalogueRequestSizePolicy",
+    "retailTestPlayerBootstrapRequest", "retailTestPlayerDeviceRequest", "hashPlayerToken", "loadRetailTestPlayerByTokenHash", "isPrivatePreviewSubscriberTestingSession"];
   const values = [TestResponse, publicRequestOrigin, privatePreviewTesterRequestAllowed,
     async () => { lookups += 1; if (lookupThrows) throw new Error("No public session query allowed"); return session; },
     "ruvanas_session", policy.readPrivatePreviewPolicy, policy.isPrivatePreviewPublicPath, policy.isPrivatePreviewRegistrationPath,
     policy.privatePreviewSessionLanding, policy.isPrivatePreviewAdminSession, policy.isPrivatePreviewOwnerBootstrapSession,
-    async () => { loads += 1; return {}; }, { randomUUID: () => "synthetic-request-id" }, catalogueRequestSizePolicy];
+    async () => { loads += 1; return {}; }, { randomUUID: () => "synthetic-request-id" }, catalogueRequestSizePolicy,
+    retailTestPlayerBootstrapRequest, retailTestPlayerDeviceRequest, hashPlayerToken, async () => deviceAllowed ? { subscriberTestStream: {} } : null,
+    isPrivatePreviewSubscriberTestingSession];
   const run = new Function(...names, `${body}\nreturn middleware;`)(...values);
   return { run, get loads() { return loads; }, get lookups() { return lookups; } };
 }
 
-function request(pathname, { method = "GET", origin = "https://www.ruvanas.com", headers = {}, cookie = true } = {}) {
+function request(pathname, { method = "GET", origin = "https://www.ruvanas.com", headers = {}, cookie = true, deviceCookie = false } = {}) {
   const url = new URL(pathname, origin);
   return { url: url.href, nextUrl: url, method,
     headers: new Headers({ host: url.host, ...headers }),
-    cookies: { get: () => cookie ? { value: "a".repeat(64) } : undefined } };
+    cookies: { get: name => name === "ruvanas_player" ? (deviceCookie ? { value: "p".repeat(43) } : undefined) : cookie ? { value: "a".repeat(64) } : undefined } };
 }
 
 async function withEnv(overrides, action) {
@@ -118,7 +126,7 @@ test("anonymous private app, API and assets remain protected; public-looking unk
       assert.equal(response.headers.get("x-test-rewrite"), null);
     }
     assert.equal((await harness.run(request("/api/admin/private-preview/testers", { cookie: false }))).status, 401);
-    for (const path of ["/_next/static/app.js", "/fonts/private.woff", "/images/private.png", "/public-marketing/private.html",
+    for (const path of ["/_next/static/app.js.map", "/fonts/private.woff", "/images/private.png", "/public-marketing/private.html",
       "/public-marketing/%69ndex.html", "/public-marketing/index.html/other", "/how-it-works.json"]) {
       const response = await harness.run(request(path, { cookie: false }));
       assert.ok([307, 404].includes(response.status), path);
@@ -216,4 +224,25 @@ test("invalid public-site flag fails closed even if preview is disabled; legacy 
     assert.equal(denied.headers.get("location"), "https://ruvanas-platform.onrender.com/preview-login");
   });
   assert.equal(harness.loads, 0);
+});
+
+test("Retail player bootstrap and valid device routes retain CSRF and registration closure", async () => {
+  await withEnv({ SESSION_SECRET: 'x'.repeat(32) }, async () => {
+    const noSession = { cookie: false };
+    const anonymous = middlewareHarness({ lookupThrows: true });
+    assert.equal((await anonymous.run(request('/player', noSession))).headers.get('x-test-action'), 'next');
+    assert.equal((await anonymous.run(request('/_next/static/chunks/player.js', noSession))).headers.get('x-test-action'), 'next');
+    assert.equal((await anonymous.run(request('/api/player/enrol', { ...noSession, method:'POST', headers:{origin:'https://www.ruvanas.com'} }))).headers.get('x-test-action'), 'next');
+    const oldWarn = console.warn; console.warn = () => {};
+    try {
+      assert.equal((await anonymous.run(request('/api/player/enrol', { ...noSession, method:'POST', headers:{origin:'https://evil.invalid'} }))).status,403);
+      const valid = middlewareHarness({ deviceAllowed:true });
+      const options = {cookie:false,deviceCookie:true};
+      for (const path of ['/api/player/state','/api/player/manifest']) assert.equal((await valid.run(request(path,options))).headers.get('x-test-action'),'next');
+      for (const path of ['/api/player/media/asset','/api/player/proof-of-play','/api/player/commands','/api/account/test-tier']) assert.equal((await valid.run(request(path,options))).status,401,path);
+      assert.equal((await valid.run(request('/api/player/heartbeat',{...options,method:'POST',headers:{origin:'https://evil.invalid'}}))).status,403);
+      assert.equal((await valid.run(request('/api/auth/register',{...options,method:'POST',headers:{origin:'https://www.ruvanas.com'}}))).status,403);
+      assert.equal((await middlewareHarness().run(request('/api/player/state',options))).status,401);
+    } finally { console.warn = oldWarn; }
+  });
 });

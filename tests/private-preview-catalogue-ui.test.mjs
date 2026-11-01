@@ -7,6 +7,8 @@ import * as accountPolicy from "../lib/private-preview-account-policy.mjs";
 import * as productAccess from "../lib/product-access.mjs";
 import * as entitlementPolicy from "../lib/entitlements.mjs";
 import * as radioWorkspace from "../lib/online-radio-workspace.mjs";
+import * as subscriberTesting from "../lib/private-preview-subscriber-testing.mjs";
+import { subscriberTestingContext } from "./fixtures/private-preview-subscriber-testing.mjs";
 
 const require = createRequire(import.meta.url);
 const React = require("react");
@@ -33,6 +35,7 @@ function loadUI(file, context = fixture(accountPolicy.PREVIEW_ONLINE_DRAFT_CATAL
   const unavailable = () => { throw new Error("UNEXPECTED_TEST_SIDE_EFFECT"); };
   const mocked = {
     "@/lib/private-preview-account-policy.mjs": accountPolicy,
+    "@/lib/private-preview-subscriber-testing.mjs": subscriberTesting,
     "@/lib/test-radio-subscriber-access.mjs": { resolveTestRadioSubscriberWorkspace: async () => null },
     "@/lib/retail-subscriber-access.mjs": { resolveRetailSubscriberWorkspace: async (_database, current) => {
       assert.equal(current.user.privatePreviewAccess.pillars.includes("RETAIL"), false);
@@ -94,6 +97,19 @@ test("tester landing and shell distinguish metadata, drafts and read-only withou
       }
       assert.doesNotMatch(html, /<audio|<video/);
     }
+  }
+});
+
+test("enabled subscriber setup does not incorrectly describe the whole profile as read-only", async () => {
+  const context = subscriberTestingContext({ pillars: ["SCHOOL"], now: new Date() });
+  Object.assign(context.membership.organisation, { stations: [], betaParticipations: [] });
+  for (const file of ["app/dashboard/layout.js", "app/preview-dashboard/page.js"]) {
+    const Page = loadUI(file, context);
+    const html = renderToStaticMarkup(await Page({ children: null }));
+    assert.doesNotMatch(html, /read-only tester sandbox|given you read-only access/i);
+    assert.match(html, /shop locations/i);
+    assert.match(html, /assigned/i);
+    assert.doesNotMatch(html, /<audio|<video/);
   }
 });
 

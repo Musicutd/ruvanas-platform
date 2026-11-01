@@ -1,7 +1,8 @@
 import Link from "next/link";
 import styles from "./retail-control-centre.module.css";
+import RetailTestTierSelector from "./RetailTestTierSelector";
 
-export default function RetailPlanningHome({ stationName }) {
+export default function RetailPlanningHome({ stationName, testTierEnabled = false }) {
   const workspace = "/dashboard/programming?product=RETAIL";
   return <main id="main-content" className={styles.page}><div className={styles.container}>
     <header className={styles.hero}>
@@ -11,6 +12,7 @@ export default function RetailPlanningHome({ stationName }) {
       <div className={styles.heroActions}><Link href="/dashboard/listen/retail">▶ Listen now</Link><Link href={`${workspace}#workspace-commercials`}>Manage commercials →</Link></div>
       <p className={styles.planningHint}>You can listen and plan here without setting up a shop device first.</p>
     </header>
+    {testTierEnabled && <RetailTestTierSelector />}
     <section className={styles.quickTasks} aria-labelledby="retail-planning-tasks"><h2 id="retail-planning-tasks">What would you like to do?</h2><div className={`${styles.taskGrid} ${styles.planningTasks}`}>
       <Link href="/dashboard/listen/retail"><span aria-hidden="true">▶</span><strong>Listen</strong><small>Open your shop radio player</small></Link>
       <Link href={`${workspace}#workspace-autodj`}><span aria-hidden="true">♫</span><strong>Music & AutoDJ</strong><small>Browse music and plan genre mixes</small></Link>

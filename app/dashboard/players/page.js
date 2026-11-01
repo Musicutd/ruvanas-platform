@@ -8,6 +8,8 @@ import ContextHelp from "@/app/components/ContextHelp";
 import SkipLink from "@/app/components/SkipLink";
 import PlayerSetupClient from "./PlayerSetupClient";
 import { resolveRetailSubscriberWorkspace } from "@/lib/retail-subscriber-access.mjs";
+import { subscriberWorkflowRequestAllowed } from "@/lib/private-preview-subscriber-testing.mjs";
+import { annotateRetailTestPlayerReadiness } from "@/lib/retail-test-stream-evidence.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -21,13 +23,15 @@ export default async function SubscriberPlayersPage() {
 
   const now = new Date();
   const organisation = context.membership.organisation;
-  const players = await listSubscriberPlayers(prisma, { organisationId: organisation.id, instant: now });
+  const players = await annotateRetailTestPlayerReadiness(prisma,
+    await listSubscriberPlayers(prisma, { organisationId: organisation.id, instant: now }), { now });
   const allowance = subscriberPlayerAllowance(organisation.subscription, now);
   if (allowance.physicalProduct === false) redirect("/dashboard/account?reason=not-included");
   const configured = players.filter((player) => player.status !== "DISABLED").length;
   const zones = organisation.locations.flatMap((location) => location.zones.map((zone) => ({ id: zone.id, name: zone.name, locationName: location.name })));
   const serviceEnabled = organisation.subscription ? resolveEntitlements(organisation.subscription).serviceEnabled : true;
   const retailWorkspace = await resolveRetailSubscriberWorkspace(prisma, context, { now });
+  const setupAccessEnabled = subscriberWorkflowRequestAllowed(context, { pathname: "/api/player-setup", method: "POST", now });
 
   return <main style={styles.page}>
     <SkipLink />
@@ -58,7 +62,8 @@ export default async function SubscriberPlayersPage() {
           readiness: subscriberPlayerReadiness(player, now)
         }))}
         zones={zones}
-        canManage={serviceEnabled && canManageSubscriberPlayers(context.membership.role)}
+        canManage={setupAccessEnabled && serviceEnabled && canManageSubscriberPlayers(context.membership.role)}
+        setupAccessEnabled={setupAccessEnabled}
         configured={configured}
         limit={allowance.limit}
         retail={Boolean(retailWorkspace)}

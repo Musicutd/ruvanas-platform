@@ -13,6 +13,8 @@ import { retailSubscriberCommand, retailSubscriberQuery, retailSubscriberErrorSt
 import { privatePreviewTesterRequestAllowed } from "../lib/private-preview-tester-policy.mjs";
 import { catalogueRequestSizePolicy } from "../lib/catalogue-request-limits.mjs";
 import { retailDiagnosticAuditId } from "../lib/retail-schedule-draft-policy.mjs";
+import { bindSubscriberTestPlan, createSubscriberTestPlanSnapshot } from "../lib/subscriber-test-plan.mjs";
+import { PUBLIC_PLAN_CATALOGUE } from "../lib/product-plan-catalogue.mjs";
 
 const NOW = new Date("2026-10-25T08:00:00Z"), BEFORE = new Date("2026-10-20T00:00:00Z"), EXPIRES = new Date("2026-11-23T12:00:00Z");
 const ORG = P.organisationId, USER = "retail-tester", ADMIN = "platform-owner", ENV = { SECRET_ENCRYPTION_KEY: "11".repeat(32) };
@@ -200,6 +202,34 @@ test("catalogue retains Retail use, country, tier, rights, duration and private 
     const f = await fixture(); mutate(f.d.tracks[0]); assert.equal((await retailSubscriberCatalogue(f.db, { ...f.options, query: {} })).total, 2);
   }
   const f = await fixture(); f.d.tracks.push(clone(f.d.tracks[0])); assert.equal((await retailSubscriberCatalogue(f.db, { ...f.options, query: {} })).total, 3);
+});
+test("website test tiers intersect the signed catalogue grant without changing core music or live state", async () => {
+  for (const selectedPlan of PUBLIC_PLAN_CATALOGUE.filter(plan => plan.productFamily === "RETAIL")) {
+    const f = await fixture(), subscription = f.context.membership.organisation.subscription;
+    subscription.id = "retail-subscription"; subscription.planId = "original-preview-plan";
+    f.context.user.privatePreviewAccess.subscriberTestingEnabled = true;
+    subscription.subscriberTestPlanSnapshot = createSubscriberTestPlanSnapshot({ plan: { ...selectedPlan, id: selectedPlan.code },
+      userId: USER, organisationId: ORG, basePlanId: subscription.planId, pillars: ["RETAIL"], expiresAt: EXPIRES, now: NOW });
+    const core = track(40); core.mediaAsset.licensedCatalogue = false; f.d.tracks.push(core);
+    const tooHigh = track(41); tooHigh.minimumCatalogueLevel = "PREMIUM"; f.d.tracks.push(tooHigh);
+    const foreignCore = track(42); foreignCore.mediaAsset.licensedCatalogue = false; foreignCore.permittedUses = ["ONLINE_RADIO"]; f.d.tracks.push(foreignCore);
+    const before = clone(f.d);
+    // A database snapshot is not itself website authentication.
+    assert.equal((await retailSubscriberCatalogue(f.db, { ...f.options, query: {} })).total, 4);
+    bindSubscriberTestPlan(subscription, f.context.user, NOW);
+    const view = await retailSubscriberCatalogue(f.db, { ...f.options, query: {} });
+    assert.equal(view.catalogueLevel, selectedPlan.tierNumber < 3 ? "NONE" : "FOCUSED");
+    assert.equal(view.total, selectedPlan.tierNumber < 3 ? 1 : 4);
+    assert.ok(view.tracks.some(row => row.id === core.id));
+    assert.equal(view.tracks.some(row => row.id === tooHigh.id || row.id === foreignCore.id), false);
+    assert.deepEqual(f.d, before);
+    assert.equal(f.d.station.streamConfig.encoderLeaseOwner, "EXISTING_RETAIL_WORKER");
+    // Revoking the feature-test grant restores the existing signed preview
+    // view; it cannot revoke or rewrite the separately approved live source.
+    f.context.user.privatePreviewAccess.subscriberTestingEnabled = false;
+    assert.equal((await retailSubscriberCatalogue(f.db, { ...f.options, query: {} })).total, 4);
+    assert.equal(f.d.writes.length, 0);
+  }
 });
 test("metadata search and pagination are bounded and unknown query fields rejected", async () => {
   const f = await fixture(); assert.equal((await retailSubscriberCatalogue(f.db, { ...f.options, query: { q: "Title 2", limit: "1" } })).tracks[0].id, "track-2");

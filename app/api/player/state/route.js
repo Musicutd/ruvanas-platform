@@ -28,6 +28,14 @@ export async function GET(request) {
       });
     }
 
+    if (player.subscriberTestStream) return NextResponse.json({
+      player: { id: player.id, name: player.name, zone: player.zone.name, location: player.zone.location.name },
+      subscriberTestStream: player.subscriberTestStream,
+      channel: { id: player.subscriberTestStream.channelId, name: player.subscriberTestStream.name, streamUrl: player.subscriberTestStream.streamUrl },
+      heartbeatIntervalSeconds: PLAYER_HEARTBEAT_INTERVAL_SECONDS, manifestUrl: "/api/player/manifest",
+      listenerQuota: { active: listenerAccess.activeCount, limit: listenerAccess.limit }
+    }, { headers: { "Cache-Control": "private, no-store" } });
+
     const assignment = player.zone.channelAssignments[0];
     const channel = assignment?.channel || null;
     const privateFacility = await prisma.correctionsFacility.findFirst({ where: { locationId: player.zone.locationId, location: { organisationId: player.organisationId } }, select: { locationId: true } });

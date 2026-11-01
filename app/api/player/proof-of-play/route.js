@@ -76,6 +76,7 @@ export async function POST(request) {
     if (!player || player.status === "DISABLED") {
       return NextResponse.json({ error: "This player is not enrolled or has been disabled." }, { status: 401 });
     }
+    if (player.subscriberTestStream) return NextResponse.json({ error: "This test player can listen only to its approved Retail stream." }, { status: 403 });
 
     const parsed = batchSchema.safeParse(await request.json());
     if (!parsed.success) {

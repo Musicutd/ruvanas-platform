@@ -6,6 +6,8 @@ import { uploadRetailCommercial, retailCommercialUploads } from "../lib/retail-c
 import { retailCommercialMediaIdentity } from "../lib/retail-commercial-media.mjs";
 import { RETAIL_COMMERCIAL_UPLOAD_LIMITS as LIMITS } from "../lib/retail-commercial-upload-request.mjs";
 import { retailCommercialUploadView } from "../lib/retail-commercial-upload-ui.mjs";
+import { bindSubscriberTestPlan, createSubscriberTestPlanSnapshot } from "../lib/subscriber-test-plan.mjs";
+import { PUBLIC_PLAN_CATALOGUE } from "../lib/product-plan-catalogue.mjs";
 
 const NOW = new Date("2026-10-30T15:00:00Z"), EXPIRES = new Date("2026-11-23T13:00:00Z"), clone = structuredClone;
 const UUID = "31400821-cc19-4c1d-bd7a-c723b8d35415", OTHER = "31400821-cc19-4c1d-bd7a-c723b8d35416";
@@ -79,6 +81,25 @@ test("foreign account, expired or changed membership is denied before storage an
     const f = fixture(); change(f.context); let probed = false;
     await assert.rejects(uploadRetailCommercial(f.db, { ...f.options, measureDuration: async () => { probed = true; return 30; } }), { code: "RETAIL_COMMERCIAL_UPLOAD_ACCESS_DENIED" });
     assert.equal(probed, false); assert.equal(f.d.puts.length, 0); assert.equal(f.d.writes.length, 0);
+  }
+});
+test("free tier testing never raises the separate commercial upload capacity", async () => {
+  for (const selectedPlan of PUBLIC_PLAN_CATALOGUE.filter(plan => plan.productFamily === "RETAIL")) {
+    const f = fixture(), subscription = f.context.membership.organisation.subscription;
+    subscription.id = "retail-subscription"; subscription.planId = "original-preview-plan";
+    f.context.user.privatePreviewAccess.subscriberTestingEnabled = true;
+    subscription.subscriberTestPlanSnapshot = createSubscriberTestPlanSnapshot({ plan: { ...selectedPlan, id: selectedPlan.code },
+      userId: f.context.user.id, organisationId: ORG, basePlanId: subscription.planId, pillars: ["RETAIL"], expiresAt: EXPIRES, now: NOW });
+    bindSubscriberTestPlan(subscription, f.context.user, NOW);
+    const before = clone(subscription), view = await retailCommercialUploads(f.db, f.options);
+    assert.equal(view.storageLimitBytes, LIMITS.maxStorageBytes);
+    assert.equal(view.limits.maxUploads, LIMITS.maxUploads);
+    assert.equal(view.canUpload, true);
+    f.d.extraBytes = BigInt(LIMITS.maxStorageBytes);
+    assert.equal((await retailCommercialUploads(f.db, f.options)).canUpload, false);
+    await assert.rejects(uploadRetailCommercial(f.db, f.options), { code: "RETAIL_COMMERCIAL_UPLOAD_STORAGE_LIMIT" });
+    assert.equal(f.d.puts.length, 0); assert.equal(f.d.writes.length, 0);
+    assert.deepEqual(subscription, before);
   }
 });
 test("server rejects disguised files, client duration, missing rights and excessive measured lengths", async () => {

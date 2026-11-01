@@ -11,6 +11,8 @@ import {
   subscriberPlayerAllowance
 } from "@/lib/subscriber-player-setup.mjs";
 import { subscriberPlayerReadiness } from "@/lib/subscriber-player-readiness.mjs";
+import { subscriberWorkflowRequestAllowed } from "@/lib/private-preview-subscriber-testing.mjs";
+import { annotateRetailTestPlayerReadiness } from "@/lib/retail-test-stream-evidence.mjs";
 
 const ENROLMENT_HOURS = 24;
 const playerSchema = z.object({
@@ -28,14 +30,17 @@ export async function GET() {
 
     const now = new Date();
     const organisation = context.membership.organisation;
-    const players = await listSubscriberPlayers(prisma, { organisationId: organisation.id, instant: now });
+    const players = await annotateRetailTestPlayerReadiness(prisma,
+      await listSubscriberPlayers(prisma, { organisationId: organisation.id, instant: now }), { now });
     const allowance = subscriberPlayerAllowance(organisation.subscription, now);
+    const setupAccessEnabled = subscriberWorkflowRequestAllowed(context, { pathname: "/api/player-setup", method: "POST", now });
     return NextResponse.json({
       ok: true,
       generatedAt: now,
       configured: players.filter((player) => player.status !== "DISABLED").length,
       limit: allowance.limit,
-      canManage: allowance.enabled && canManageSubscriberPlayers(context.membership.role),
+      setupAccessEnabled,
+      canManage: setupAccessEnabled && allowance.enabled && canManageSubscriberPlayers(context.membership.role),
       players: players.map((player) => ({
         id: player.id,
         name: player.name,
@@ -59,6 +64,7 @@ export async function POST(request) {
     if (!canManageSubscriberPlayers(context.membership.role)) {
       return NextResponse.json({ error: "Only organisation owners and managers can prepare shop players." }, { status: 403 });
     }
+    if (!subscriberWorkflowRequestAllowed(context, { pathname: "/api/player-setup", method: "POST" })) return NextResponse.json({ error: "Shop setup is unavailable for this session. Ask your administrator to check tester access." }, { status: 403 });
     const parsed = playerSchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) return NextResponse.json({ error: "Add a player name and choose its location and zone." }, { status: 400 });
 

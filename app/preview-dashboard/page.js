@@ -7,6 +7,7 @@ import { resolveEntitlements } from "@/lib/entitlements.mjs";
 import { SUBSCRIBER_PRODUCT_LIST } from "@/lib/product-access.mjs";
 import { prisma } from "@/lib/prisma";
 import { resolveTestRadioSubscriberWorkspace } from "@/lib/test-radio-subscriber-access.mjs";
+import { isPrivatePreviewSubscriberTestingSession } from "@/lib/private-preview-subscriber-testing.mjs";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Your tester access | Ruvanas", robots: { index: false, follow: false } };
@@ -15,6 +16,7 @@ export default async function PreviewDashboard() {
   const session = context?.session;
   if (!isPrivatePreviewTester(session?.user, readPrivatePreviewPolicy())) notFound();
   const access = session.user.privatePreviewAccess;
+  const subscriberTesting = isPrivatePreviewSubscriberTestingSession(session);
   const subscription = context.membership?.organisation?.subscription;
   const draftOnly = isPreviewOnlineDraftAccessMode(previewTesterAccessMode(subscription?.plan));
   const catalogueMetadata = draftOnly && resolveEntitlements(subscription).sandboxCatalogueMetadata === true;
@@ -25,6 +27,7 @@ export default async function PreviewDashboard() {
     <p>{testRadioWorkspace ? "Your Test Radio workspace includes the existing rights-filtered catalogue, Generate Playlist, Template Builder, Load Playlist and weekly drafts. Saved work is available to the administrator for review; only the administrator can approve a week for broadcast. Your drafts do not start, stop or change the current AutoDJ broadcast. Uploads, downloads, account creation and paid actions remain blocked."
       : catalogueMetadata ? "Your administrator has enabled private Online Radio drafts and rights-filtered FOCUSED catalogue metadata for Malta. Browse approved track details, save private playlist settings and preview your weekly plan. Live broadcasting, uploads, downloads, audio playback, public publishing, account creation and paid actions are blocked. No audio storage or streaming service is provisioned."
       : draftOnly ? "Your administrator has enabled editable Online Radio drafts in your own separate test workspace. You can save a station, playlists and weekly planner drafts. Live broadcasting, uploads, downloads, account creation and paid actions are blocked."
+      : subscriberTesting ? "Your administrator has enabled subscriber setup in your own test workspace. You can manage shop locations, areas and devices within your assigned product and limits. This does not create a paid subscription or approve new streaming."
       : "Your administrator has given you read-only access to the pillars below, in your own separate sandbox. Editing, public publishing, uploads, downloads, account creation and paid actions are unavailable."}</p>
     <p>Access expires {access.expiresAt.toLocaleDateString("en-GB", { timeZone: "Europe/Malta" })}. Contact the administrator to change your access.</p>
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(230px,1fr))", gap: 20, margin: "28px 0" }}>

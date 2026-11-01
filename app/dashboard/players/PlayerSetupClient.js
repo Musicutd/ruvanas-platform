@@ -19,12 +19,14 @@ function readinessLabel(code) {
   return String(code || "WAITING").replaceAll("_", " ");
 }
 
-export default function PlayerSetupClient({ players, zones, canManage, configured, limit, retail = false }) {
+export default function PlayerSetupClient({ players, zones, canManage, configured, limit, retail = false, setupAccessEnabled = true }) {
   const router = useRouter();
   const [form, setForm] = useState({ name: "", zoneId: zones[0]?.id || "" });
   const [replacement, setReplacement] = useState({ playerId: "", note: "", replacementName: "", confirmed: false });
   const [playerRows, setPlayerRows] = useState(players);
   const [currentConfigured, setCurrentConfigured] = useState(configured);
+  const [currentCanManage, setCurrentCanManage] = useState(canManage);
+  const [currentSetupAccess, setCurrentSetupAccess] = useState(setupAccessEnabled);
   const [busy, setBusy] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
@@ -40,16 +42,25 @@ export default function PlayerSetupClient({ players, zones, canManage, configure
   useEffect(() => {
     setPlayerRows(players);
     setCurrentConfigured(configured);
-  }, [players, configured]);
+    setCurrentCanManage(canManage);
+    setCurrentSetupAccess(setupAccessEnabled);
+    if (!canManage) setEnrolment(null);
+  }, [players, configured, canManage, setupAccessEnabled]);
 
   const refreshReadiness = useCallback(async ({ quiet = false } = {}) => {
     if (!quiet) setRefreshing(true);
     try {
       const response = await fetch("/api/player-setup", { cache: "no-store" });
       const data = await response.json();
+      if (response.status === 401 || response.status === 403) {
+        setCurrentCanManage(false); setCurrentSetupAccess(false); setEnrolment(null);
+      }
       if (!response.ok) throw new Error(data.error || "Unable to refresh player readiness.");
       setPlayerRows(data.players);
       setCurrentConfigured(data.configured);
+      setCurrentCanManage(data.canManage === true);
+      setCurrentSetupAccess(data.setupAccessEnabled === true);
+      if (data.canManage !== true) setEnrolment(null);
       if (!quiet) setError("");
     } catch (refreshError) {
       if (!quiet) setError(safeWorkflowMessage(refreshError, "Unable to refresh player readiness."));
@@ -65,6 +76,7 @@ export default function PlayerSetupClient({ players, zones, canManage, configure
 
   async function createPlayer(event) {
     event.preventDefault();
+    if (!currentCanManage) { setError("Shop setup is unavailable for this session."); return; }
     setBusy("create"); setError(""); setEnrolment(null);
     try {
       const response = await fetch("/api/player-setup", {
@@ -85,6 +97,7 @@ export default function PlayerSetupClient({ players, zones, canManage, configure
 
   async function replacePlayer(event) {
     event.preventDefault();
+    if (!currentCanManage) { setError("Shop setup is unavailable for this session."); return; }
     setBusy("replace"); setError(""); setEnrolment(null);
     try {
       const response = await fetch(`/api/player-setup/${replacement.playerId}/replace`, {
@@ -113,7 +126,7 @@ export default function PlayerSetupClient({ players, zones, canManage, configure
   }
 
   if (retail) return <RetailPlayerSetup
-    players={playerRows} activePlayers={activePlayers} zones={zones} canManage={canManage}
+    players={playerRows} activePlayers={activePlayers} zones={zones} canManage={currentCanManage} setupAccessEnabled={currentSetupAccess}
     configured={currentConfigured} limit={limit} form={form} setForm={setForm}
     replacement={replacement} setReplacement={setReplacement} busy={busy} error={error}
     enrolment={enrolment} refreshing={refreshing} refreshReadiness={refreshReadiness}
@@ -123,7 +136,7 @@ export default function PlayerSetupClient({ players, zones, canManage, configure
   return <>
     <section style={styles.summary}>
       <div><span style={styles.label}>Configured players</span><strong>{currentConfigured} / {limit}</strong></div>
-      <div><span style={styles.label}>Management access</span><strong>{canManage ? "Owner / manager" : "View only"}</strong></div>
+      <div><span style={styles.label}>Management access</span><strong>{currentCanManage ? "Owner / manager" : "View only"}</strong></div>
       <div><span style={styles.label}>Device rule</span><strong>One device per player</strong></div>
     </section>
 
@@ -134,12 +147,13 @@ export default function PlayerSetupClient({ players, zones, canManage, configure
       <span>The progress line uses live device evidence. It cannot mark a listening area ready until recent playback is confirmed.</span>
     </aside>
 
-    {canManage && zones.length === 0 ? <section style={styles.emptyState}>
+    {!currentSetupAccess ? <p style={styles.warning}>Shop setup is not enabled for this tester account. Ask your administrator to check subscriber setup access.</p> : null}
+    {currentCanManage && zones.length === 0 ? <section style={styles.emptyState}>
       <strong>No locations or playback areas have been created yet. Create your first location and area before preparing a player.</strong>
       <a href="/dashboard/locations?returnTo=players" style={styles.linkButton}>Create your first location</a>
     </section> : null}
 
-    {canManage && zones.length > 0 ? <section style={styles.card}>
+    {currentCanManage && zones.length > 0 ? <section style={styles.card}>
       <h2 style={styles.title}>Prepare a player</h2>
       <p style={styles.copy}>Create one enrolled player for each location or playback area, within your plan allowance.</p>
       <form onSubmit={createPlayer} style={styles.form}>
@@ -156,7 +170,7 @@ export default function PlayerSetupClient({ players, zones, canManage, configure
       {currentConfigured >= limit ? <p style={styles.warning}>Your configured player allowance is full. Replace an existing player to move a listening area to new hardware.</p> : null}
     </section> : null}
 
-    {canManage && activePlayers.length ? <section style={styles.card}>
+    {currentCanManage && activePlayers.length ? <section style={styles.card}>
       <h2 style={styles.title}>Replace a player device</h2>
       <p style={styles.copy}>This immediately disables the selected device, releases its active stream, and creates a one-time code for its replacement in the same zone.</p>
       <form onSubmit={replacePlayer} style={styles.replaceForm}>

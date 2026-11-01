@@ -4,7 +4,7 @@ import bcrypt from "bcryptjs";
 import {
   authenticatePreviewPassword, createPreviewTester, establishPreviewOwnerPassword,
   listPreviewTesters, PREVIEW_PASSWORD_AUTH_METHOD, PREVIEW_TESTER_LIMIT,
-  updatePreviewTester, validatePreviewPassword
+  updatePreviewTester, updatePreviewSubscriberTesting, validatePreviewPassword
 } from "../lib/private-preview-accounts.mjs";
 import {
   assertPreviewTesterState, isPreviewTesterPlan, normalizePreviewTesterAccessMode,
@@ -139,6 +139,7 @@ test("owner creates isolated multi-pillar tester with zero-cost hidden plan and 
   const created = await create(db);
   assert.deepEqual(created.pillars, ["SCHOOL", "ONLINE"]);
   assert.equal(created.accessMode, "READ_ONLY");
+  assert.equal(created.subscriberTestingEnabled, false);
   assert.equal(created.email, "tester@example.test");
   assert.equal(created.expiresAt.toISOString(), "2026-11-14T10:00:00.000Z");
   assert.equal(db.state.user.length, 2);
@@ -162,6 +163,86 @@ test("owner creates isolated multi-pillar tester with zero-cost hidden plan and 
   assert.doesNotMatch(JSON.stringify(created), /passwordHash|token|Synthetic-test|\$2[ab]\$/i);
   assert.doesNotMatch(JSON.stringify(db.state.auditLog), /Synthetic-test|passwordHash|\$2[ab]\$/);
   assert.ok(db.options.every((config) => config.isolationLevel === "Serializable"));
+});
+
+test("subscriber testing is explicit at creation and ordinary renewals preserve its saved setting", async () => {
+  const db = database();
+  const created = await create(db, { subscriberTestingEnabled: true });
+  assert.equal(created.subscriberTestingEnabled, true);
+  assert.equal(db.state.privatePreviewAccess[0].subscriberTestingEnabled, true);
+  assert.equal(db.state.auditLog.at(-1).details.subscriberTestingEnabled, true);
+  assert.equal((await listPreviewTesters(db, { actorUserId: owner.id, policy }))[0].subscriberTestingEnabled, true);
+  const changed = await updatePreviewTester(db, { actorUserId: owner.id, policy, userId: created.id,
+    pillars: ["RETAIL"], enabled: true, now: NOW });
+  assert.equal(changed.subscriberTestingEnabled, true);
+  assertPreviewTesterState(await db.user.findUnique({ where: { id: created.id } }), { now: NOW });
+  for (const subscriberTestingEnabled of [null, "true", 1, {}, []]) {
+    await rejects(create(db, { email: "another@example.test", subscriberTestingEnabled }), "INVALID_REQUEST");
+  }
+});
+
+test("owner toggles subscriber testing without renewing expiry or changing live-plan/session state", async () => {
+  const db = database(), created = await create(db);
+  db.state.session.push({ id: "existing-tester-session", userId: created.id, revokedAt: null });
+  const before = structuredClone(db.state);
+  const changedAt = new Date(NOW.getTime() + 1000);
+  for (const subscriberTestingEnabled of [true, false]) {
+    const result = await updatePreviewSubscriberTesting(db, { actorUserId: owner.id, policy, userId: created.id,
+      subscriberTestingEnabled, now: changedAt });
+    assert.equal(result.subscriberTestingEnabled, subscriberTestingEnabled);
+    for (const table of ["user", "plan", "organisation", "organisationMember", "subscription", "session", "passwordResetToken"]) {
+      assert.deepEqual(db.state[table], before[table], `${table} is unchanged`);
+    }
+    const { subscriberTestingEnabled: saved, ...grant } = db.state.privatePreviewAccess[0];
+    const { subscriberTestingEnabled: previous, ...original } = before.privatePreviewAccess[0];
+    assert.deepEqual(grant, original);
+    assert.equal(saved, subscriberTestingEnabled);
+    assert.equal(db.state.auditLog.at(-1).action, "PRIVATE_PREVIEW_SUBSCRIBER_TESTING_CHANGED");
+    assert.equal(db.state.auditLog.at(-1).details.previousSubscriberTestingEnabled, !subscriberTestingEnabled);
+    assert.equal(db.state.auditLog.at(-1).details.expiryChanged, false);
+    assert.equal(db.state.auditLog.at(-1).details.planChanged, false);
+  }
+  const auditCount = db.state.auditLog.length;
+  await updatePreviewSubscriberTesting(db, { actorUserId: owner.id, policy, userId: created.id, subscriberTestingEnabled: false, now: changedAt });
+  assert.equal(db.state.auditLog.length, auditCount, "repeating the saved value is idempotent");
+});
+
+test("subscriber testing capability changes revalidate owner, isolation and the unchanged preview contract", async () => {
+  const db = database(), created = await create(db);
+  const options = { actorUserId: owner.id, policy, userId: created.id, subscriberTestingEnabled: true, now: NOW };
+  for (const actorUserId of ["outsider", created.id]) await rejects(updatePreviewSubscriberTesting(db, { ...options, actorUserId }), "FORBIDDEN");
+  await rejects(updatePreviewSubscriberTesting(db, { ...options, userId: owner.id }), "TARGET_UNAVAILABLE");
+  for (const subscriberTestingEnabled of [undefined, null, "true", 1, {}]) {
+    await rejects(updatePreviewSubscriberTesting(db, { ...options, subscriberTestingEnabled }), "INVALID_REQUEST");
+  }
+  const grant = db.state.privatePreviewAccess[0];
+  grant.enabled = false;
+  await rejects(updatePreviewSubscriberTesting(db, options), "TARGET_UNAVAILABLE");
+  grant.enabled = true;
+  await rejects(updatePreviewSubscriberTesting(db, { ...options, now: new Date("2026-11-15T00:00:00Z") }), "TARGET_UNAVAILABLE");
+  db.state.organisationMember.push({ userId: owner.id, organisationId: grant.organisationId, role: "OWNER" });
+  await rejects(updatePreviewSubscriberTesting(db, options), "TARGET_UNAVAILABLE");
+  db.state.organisationMember.pop();
+  db.state.subscription[0].complimentaryAccessActive = true;
+  await rejects(updatePreviewSubscriberTesting(db, options), "TARGET_UNAVAILABLE");
+  db.state.subscription[0].complimentaryAccessActive = false;
+  db.state.plan[0].stationLimit = 100;
+  await rejects(updatePreviewSubscriberTesting(db, options), "TARGET_UNAVAILABLE");
+  assert.equal(db.state.privatePreviewAccess[0].subscriberTestingEnabled, false);
+});
+
+test("subscriber testing revoke works for expired grants; failed audit rolls back the capability", async () => {
+  const db = database(), created = await create(db, { subscriberTestingEnabled: true, password: undefined });
+  const options = { actorUserId: owner.id, policy, userId: created.id, subscriberTestingEnabled: false,
+    now: new Date("2026-11-15T00:00:00Z") };
+  const before = structuredClone(db.state);
+  db.failNextAudit();
+  await rejects(updatePreviewSubscriberTesting(db, options), "PREVIEW_UNAVAILABLE");
+  assert.deepEqual(db.state, before);
+  const revoked = await updatePreviewSubscriberTesting(db, options);
+  assert.equal(revoked.subscriberTestingEnabled, false);
+  assert.equal(revoked.expiresAt.toISOString(), created.expiresAt.toISOString());
+  assert.equal(revoked.passwordEnabled, false);
 });
 
 test("owner identity is reloaded and existing users are never overwritten", async () => {

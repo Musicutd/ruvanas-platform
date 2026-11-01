@@ -2,77 +2,26 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createPlayerToken } from "@/lib/player-tokens.mjs";
 import { playerTokenHash, setPlayerCookie } from "@/lib/player-auth";
+import { enrolPlayerCode } from "@/lib/player-enrolment.mjs";
+import { readPrivatePreviewBody, PREVIEW_RESPONSE_HEADERS as headers } from "@/lib/private-preview-request.mjs";
 
 export async function POST(request) {
   try {
-    const body = await request.json();
+    const expectedOrigin = process.env.RUVANAS_PRIVATE_PREVIEW_ENABLED === "1" ? "https://www.ruvanas.com" : new URL(request.url).origin;
+    if (request.headers.get("origin") !== expectedOrigin || request.headers.get("sec-fetch-site") === "cross-site") {
+      return NextResponse.json({ error: "This request is not permitted." }, { status: 403, headers });
+    }
+    let body;
+    try { body = await readPrivatePreviewBody(request, ["code"]); }
+    catch { return NextResponse.json({ error: "Enter the player enrolment code." }, { status: 400, headers }); }
     const code = typeof body.code === "string" ? body.code.trim() : "";
-
-    if (!code) {
-      return NextResponse.json(
-        { error: "Enter the player enrolment code." },
-        { status: 400 }
-      );
-    }
-
-    const enrolmentTokenHash = playerTokenHash(code);
+    if (!/^[A-Za-z0-9_-]{32,128}$/.test(code)) return NextResponse.json({ error: "Enter the player enrolment code." }, { status: 400, headers });
     const sessionToken = createPlayerToken();
-    const now = new Date();
-
-    const player = await prisma.$transaction(async (tx) => {
-      const pending = await tx.player.findUnique({
-        where: { enrolmentTokenHash }
-      });
-
-      if (
-        !pending ||
-        pending.status === "DISABLED" ||
-        !pending.enrolmentExpiresAt ||
-        pending.enrolmentExpiresAt <= now
-      ) {
-        return null;
-      }
-
-      const enrolled = await tx.player.update({
-        where: { id: pending.id },
-        data: {
-          status: "ONLINE",
-          enrolmentTokenHash: null,
-          enrolmentExpiresAt: null,
-          sessionTokenHash: playerTokenHash(sessionToken),
-          enrolledAt: now,
-          lastHeartbeatAt: now
-        }
-      });
-
-      await tx.auditLog.create({
-        data: {
-          organisationId: pending.organisationId,
-          action: "PLAYER_ENROLLED",
-          entityType: "Player",
-          entityId: pending.id,
-          details: { zoneId: pending.zoneId }
-        }
-      });
-
-      return enrolled;
-    });
-
-    if (!player) {
-      return NextResponse.json(
-        { error: "This enrolment code is invalid, expired, or already used." },
-        { status: 400 }
-      );
-    }
-
-    setPlayerCookie(sessionToken);
-    return NextResponse.json({ ok: true, playerId: player.id });
-  } catch (error) {
-    console.error("Player enrolment error:", error);
-    return NextResponse.json(
-      { error: "Unable to enrol this player." },
-      { status: 500 }
-    );
+    const player = await enrolPlayerCode(prisma, { enrolmentTokenHash: playerTokenHash(code), sessionTokenHash: playerTokenHash(sessionToken) });
+    if (!player) return NextResponse.json({ error: "This enrolment code is invalid, expired, or already used." }, { status: 400, headers });
+    await setPlayerCookie(sessionToken);
+    return NextResponse.json({ ok: true, playerId: player.id }, { headers });
+  } catch {
+    return NextResponse.json({ error: "Unable to enrol this player." }, { status: 503, headers });
   }
 }
-

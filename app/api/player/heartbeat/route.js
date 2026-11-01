@@ -39,6 +39,24 @@ export async function POST(request) {
     const userAgent = request.headers.get("user-agent")?.slice(0, 500) || null;
     const now = new Date();
     const diagnostics = normalizeHeartbeatDiagnostics(await request.json().catch(() => ({})));
+    if (player.subscriberTestStream) {
+      // Test devices report connectivity only. Do not generate royalty/playback
+      // events or external webhooks from a browser's stream diagnostics.
+      await prisma.$transaction(async tx => {
+        await tx.player.update({ where: { id: player.id }, data: { status: "ONLINE", lastHeartbeatAt: now } });
+        const bucketStart = new Date(Math.floor(now.getTime() / 60000) * 60000);
+        const sample = { appVersion: "retail-subscriber-stream-v1", manifestVersion: null,
+          sourceStatus: diagnostics.sourceStatus };
+        await tx.playerHeartbeatSample.upsert({
+          where: { playerId_bucketStart: { playerId: player.id, bucketStart } },
+          create: { organisationId: player.organisationId, playerId: player.id, locationId: player.zone.location.id,
+            zoneId: player.zone.id, kind: "PERIODIC", bucketStart, observedAt: now, ...sample },
+          update: { observedAt: now, ...sample }
+        });
+      });
+      return NextResponse.json({ ok: true, receivedAt: now,
+        listenerQuota: { active: listenerAccess.activeCount, limit: listenerAccess.limit } }, { headers: { "Cache-Control": "private, no-store" } });
+    }
     const previousHealth = effectivePlayerStatus(player, now);
 
     const bucketStart = analyticsHourBucket(now);

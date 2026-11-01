@@ -11,7 +11,7 @@ function destination(returnTo) {
   return null;
 }
 
-export default function LocationsClient({ initialLocations, brands, allowance, canManage, returnTo }) {
+export default function LocationsClient({ initialLocations, brands, allowance, canManage, returnTo, setupAccessEnabled = true }) {
   const router = useRouter();
   const [locations, setLocations] = useState(initialLocations);
   const [form, setForm] = useState(EMPTY_LOCATION);
@@ -92,7 +92,7 @@ export default function LocationsClient({ initialLocations, brands, allowance, c
         <label style={styles.field}>Country code (optional)<input maxLength={2} value={form.countryCode} onChange={(event) => setForm({ ...form, countryCode: event.target.value.toUpperCase() })} placeholder="MT" style={styles.input} /></label>
         <button disabled={busy || full} style={styles.primary}>{busy === "location" ? "Creating…" : "Create location and area"}</button>
       </form>{full ? <p style={styles.warning}>Your location allowance is full. Contact support before adding another location.</p> : null}
-    </section> : <section style={styles.notice}><strong>View-only access</strong><span>An organisation owner or manager can create and rename locations and areas.</span></section>}
+    </section> : <section style={styles.notice}><strong>{setupAccessEnabled ? "View-only access" : "Shop setup is not enabled"}</strong><span>{setupAccessEnabled ? "An organisation owner or manager can create and rename locations and areas." : "Ask your administrator to enable subscriber setup for this tester account. Your existing stream continues separately."}</span></section>}
 
     <section style={styles.list}><h2>Your locations</h2>{!locations.length ? <p style={styles.copy}>No locations have been created yet.</p> : locations.map((location) => <article key={location.id} style={styles.location}>
       <header style={styles.locationHeader}><div><h3 style={styles.locationTitle}>{location.name}</h3><p style={styles.meta}>{location.timezone}{location.city ? ` · ${location.city}` : ""}{location.countryCode ? ` · ${location.countryCode}` : ""}</p></div><span style={styles.badge}>{location.status}</span></header>

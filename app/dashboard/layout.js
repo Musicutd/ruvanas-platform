@@ -11,6 +11,7 @@ import { isPreviewOnlineDraftAccessMode, previewTesterAccessMode } from "@/lib/p
 import { prisma } from "@/lib/prisma";
 import { resolveTestRadioSubscriberWorkspace } from "@/lib/test-radio-subscriber-access.mjs";
 import { resolveRetailSubscriberWorkspace } from "@/lib/retail-subscriber-access.mjs";
+import { isPrivatePreviewSubscriberTestingSession } from "@/lib/private-preview-subscriber-testing.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +33,7 @@ export default async function DashboardLayout({ children }) {
 
   const organisation = context.membership.organisation;
   const previewTester = isPrivatePreviewTester(context.user, readPrivatePreviewPolicy());
+  const subscriberTesting = isPrivatePreviewSubscriberTestingSession(context.session);
   const previewDraftOnly = previewTester && isPreviewOnlineDraftAccessMode(previewTesterAccessMode(organisation.subscription?.plan));
   const entitlements = resolveEntitlements(organisation.subscription);
   const previewCatalogueMetadata = previewDraftOnly && entitlements.sandboxCatalogueMetadata === true;
@@ -67,6 +69,7 @@ export default async function DashboardLayout({ children }) {
           : retailWorkspace ? "Retail workspace: browse approved music, plan your week and manage your private commercials or shop announcements. You approve your own recordings and saved commercial schedules. Uploading or saving a draft does not change the stream. Music programme approval and streaming settings stay administrator-only. Public registration remains closed. "
           : previewCatalogueMetadata ? "Editable Online Radio test workspace with Malta catalogue metadata. Browse rights-filtered FOCUSED track details for Malta and save private drafts. Live broadcasting, uploads, downloads, audio playback, publishing, paid actions and public registration are blocked. "
           : previewDraftOnly ? "Editable Online Radio test workspace. Save station, playlist and weekly planner drafts only. Live broadcasting, uploads, downloads, paid actions and public registration are blocked. "
+          : subscriberTesting ? "Subscriber testing workspace. Manage shop locations and device setup within your assigned limits. Streaming approval, paid actions and public registration remain administrator-controlled. "
           : "Read-only tester sandbox. Editing, uploads, downloads and publishing are unavailable. "}<a href="/preview-dashboard">Your assigned pillars</a>
       </aside> : null}
       {children}

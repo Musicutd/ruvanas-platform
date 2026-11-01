@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getActiveOrganisationContext } from "@/lib/auth";
 import { canManageSubscriberLocations, subscriberLocationAllowance } from "@/lib/subscriber-locations.mjs";
 import LocationsClient from "./LocationsClient";
+import { subscriberWorkflowRequestAllowed } from "@/lib/private-preview-subscriber-testing.mjs";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Locations & Zones | Ruvanas" };
@@ -20,12 +21,15 @@ export default async function SubscriberLocationsPage({ searchParams }) {
   if (!context.membership) redirect("/dashboard");
   const organisation = context.membership.organisation;
   const allowance = subscriberLocationAllowance(organisation.subscription);
-  const returnTo = searchParams?.returnTo === "signage" ? "signage" : searchParams?.returnTo === "players" ? "players" : null;
+  const setupAccessEnabled = subscriberWorkflowRequestAllowed(context, { pathname: "/api/locations", method: "POST" });
+  const query = await searchParams;
+  const returnTo = query?.returnTo === "signage" ? "signage" : query?.returnTo === "players" ? "players" : null;
   return <LocationsClient
     initialLocations={organisation.locations}
     brands={organisation.brands}
     allowance={allowance}
-    canManage={allowance.enabled && canManageSubscriberLocations(context.membership.role)}
+    canManage={setupAccessEnabled && allowance.enabled && canManageSubscriberLocations(context.membership.role)}
+    setupAccessEnabled={setupAccessEnabled}
     returnTo={returnTo}
   />;
 }

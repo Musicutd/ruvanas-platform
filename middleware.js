@@ -4,6 +4,9 @@ import { readPrivatePreviewPolicy, isPrivatePreviewPublicPath, isPrivatePreviewR
 import { privatePreviewTesterRequestAllowed, isPrivatePreviewOnlineDraftSession } from "@/lib/private-preview-tester-policy.mjs";
 import { getSessionFromToken, SESSION_COOKIE } from "@/lib/session-lookup.js";
 import { catalogueRequestSizePolicy } from "@/lib/catalogue-request-limits.mjs";
+import { isPrivatePreviewSubscriberTestingSession } from "@/lib/private-preview-subscriber-testing.mjs";
+import { retailTestPlayerBootstrapRequest, retailTestPlayerDeviceRequest } from "@/lib/retail-test-player-request.mjs";
+import { hashPlayerToken } from "@/lib/player-tokens.mjs";
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 const LEGACY_MATCHER = (path) => path === "/" || path === "/api" || path.startsWith("/api/");
@@ -34,6 +37,15 @@ async function previewSessionFromRequest(request) {
   if (!rawToken || !/^[a-f0-9]{64}$/.test(rawToken)) return null;
   const { prisma } = await import("@/lib/prisma");
   return getSessionFromToken(rawToken, { db: prisma });
+}
+
+async function retailDeviceFromRequest(request) {
+  if (!retailTestPlayerDeviceRequest(request.nextUrl.pathname, request.method)) return false;
+  const token = request.cookies.get("ruvanas_player")?.value;
+  if (!token || !/^[A-Za-z0-9_-]{43}$/.test(token)) return false;
+  const { prisma: deviceDb } = await import("@/lib/prisma");
+  const { loadRetailTestPlayerByTokenHash } = await import("@/lib/retail-test-player-access.mjs");
+  return Boolean(await loadRetailTestPlayerByTokenHash(deviceDb, hashPlayerToken(token, process.env.SESSION_SECRET)));
 }
 
 function previewDenied(request, policy, requestId) {
@@ -160,7 +172,10 @@ export async function middleware(request) {
     }
     const loginEntry = (request.method === "GET" || request.method === "HEAD") &&
       (request.nextUrl.pathname === "/login" || request.nextUrl.pathname === "/preview-login");
-    if (loginEntry || !previewBootstrap(request)) {
+    let retailDeviceAllowed = false;
+    try { retailDeviceAllowed = await retailDeviceFromRequest(request); } catch { /* Fail closed; never grant a stale device cookie. */ }
+    const retailBootstrap = retailTestPlayerBootstrapRequest(request.nextUrl.pathname, request.method);
+    if (!retailBootstrap && !retailDeviceAllowed && (loginEntry || !previewBootstrap(request))) {
       let session = null;
       try {
         session = await previewSessionFromRequest(request);
@@ -188,7 +203,8 @@ export async function middleware(request) {
         if (!staticAsset && !(bootstrap ? bootstrapAllowed :
           privatePreviewTesterRequestAllowed({ session, pathname: path, method: request.method }))) {
           return previewResponse(NextResponse.json({ error: bootstrap ?
-            "Set your admin password in Private access before continuing." : isPrivatePreviewOnlineDraftSession(session) ?
+            "Set your admin password in Private access before continuing." : isPrivatePreviewSubscriberTestingSession(session) ?
+              "This action is not enabled for this test profile. Contact the administrator to review its access." : isPrivatePreviewOnlineDraftSession(session) ?
               "This action is unavailable in draft-only Online Radio testing. Broadcasting, publishing, uploads, downloads and paid actions remain blocked." :
               "This page is not included in your read-only tester access." },
           { status: 403 }), requestId);

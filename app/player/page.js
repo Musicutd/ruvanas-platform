@@ -8,6 +8,7 @@ import {
   updatePlayedInsertionIds
 } from "@/lib/playback-queue.mjs";
 import LiveChannelPlayer from "./LiveChannelPlayer";
+import SubscriberTestStreamPlayer from "./SubscriberTestStreamPlayer";
 import { drainProofBatch } from "@/lib/playback-proof-drain.mjs";
 
 const PLAYBACK_QUEUE_KEY = "ruvanas_proof_of_play_queue_v1";
@@ -220,7 +221,8 @@ export default function PlayerPage() {
     setAccessBlocked(false);
     setAccessBlockedCode(null);
     setState(data);
-    await loadManifest();
+    if (data.subscriberTestStream) setManifest(null);
+    else await loadManifest();
     setLoading(false);
   }, [loadManifest]);
 
@@ -275,7 +277,7 @@ export default function PlayerPage() {
   }, [loadState]);
 
   useEffect(() => {
-    if (!state) return undefined;
+    if (!state || state.subscriberTestStream) return undefined;
     const heartbeat = async () => {
       const response = await fetch("/api/player/heartbeat", {
         method: "POST",
@@ -304,7 +306,7 @@ export default function PlayerPage() {
   }, [state, manifest?.version, flushPlaybackQueue, pollPlayerCommands]);
 
   useEffect(() => {
-    if (!state) return undefined;
+    if (!state || state.subscriberTestStream) return undefined;
     const release = () => {
       fetch("/api/player/heartbeat", {
         method: "DELETE",
@@ -317,10 +319,11 @@ export default function PlayerPage() {
   }, [state]);
 
   useEffect(() => {
+    if (!state || state.subscriberTestStream) return undefined;
     window.addEventListener("online", flushPlaybackQueue);
     flushPlaybackQueue();
     return () => window.removeEventListener("online", flushPlaybackQueue);
-  }, [flushPlaybackQueue]);
+  }, [state?.player?.id, state?.subscriberTestStream?.kind, flushPlaybackQueue]);
 
   useEffect(() => {
     if (!state || !manifest) return undefined;
@@ -408,6 +411,13 @@ export default function PlayerPage() {
     startedPlaybackKey.current = manifest ? `${manifest.version}:${item.scheduleItemId}` : null;
   }, [manifest?.version]);
 
+  const handleSubscriberStreamBlocked = useCallback((data) => {
+    setAccessBlocked(true);
+    setAccessBlockedCode(data.code || "PLAYER_SERVICE_UNAVAILABLE");
+    setState(null); setManifest(null);
+    setMessage(data.error || "This shop device can no longer play. Check the account's test access and device allowance.");
+  }, []);
+
   if (loading) return <main style={styles.page}><p>Connecting player...</p></main>;
 
   if (accessBlocked) {
@@ -444,6 +454,8 @@ export default function PlayerPage() {
       {message ? <p style={styles.error}>{message}</p> : null}
     </section></main>;
   }
+
+  if (state.subscriberTestStream) return <SubscriberTestStreamPlayer initialState={state} requestHeaders={playerHeaders} onAccessBlocked={handleSubscriberStreamBlocked} />;
 
   const activeInsertion = manifest?.insertions?.find((item) => item.scheduleItemId === activeInsertionId) || null;
   const activePlaybackKey = activeInsertion

@@ -7,6 +7,7 @@ import { createPlayerToken } from "@/lib/player-tokens.mjs";
 import { transitionPlayerLifecycle } from "@/lib/player-command-service";
 import { canManageSubscriberPlayers, subscriberPlayerAllowance } from "@/lib/subscriber-player-setup.mjs";
 import { getRequestId } from "@/lib/security-log";
+import { subscriberWorkflowRequestAllowed } from "@/lib/private-preview-subscriber-testing.mjs";
 
 const ENROLMENT_HOURS = 24;
 const replacementSchema = z.object({
@@ -22,13 +23,14 @@ export async function POST(request, { params }) {
     if (!context.membership || !canManageSubscriberPlayers(context.membership.role)) {
       return NextResponse.json({ error: "Only organisation owners and managers can replace shop players." }, { status: 403 });
     }
+    const { playerId } = await params;
+    if (!subscriberWorkflowRequestAllowed(context, { pathname: `/api/player-setup/${playerId}/replace`, method: "POST" })) return NextResponse.json({ error: "Shop setup is unavailable for this session. Ask your administrator to check tester access." }, { status: 403 });
     const allowance = subscriberPlayerAllowance(context.membership.organisation.subscription);
     if (!allowance.enabled || allowance.limit < 1) {
       return NextResponse.json({ error: "Shop-player replacement is unavailable for this subscription." }, { status: 403 });
     }
     const parsed = replacementSchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) return NextResponse.json({ error: "Confirm the replacement and add a reason." }, { status: 400 });
-    const { playerId } = await params;
     const organisationId = context.membership.organisationId;
     const current = await prisma.player.findFirst({
       where: { id: String(playerId || ""), organisationId, status: { not: "DISABLED" } },

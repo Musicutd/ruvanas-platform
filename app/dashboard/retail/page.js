@@ -5,6 +5,7 @@ import { requireSubscriberProduct } from "@/lib/subscriber-product-access";
 import RetailControlCentre from "./RetailControlCentre";
 import RetailPlanningHome from "./RetailPlanningHome";
 import { resolveRetailSubscriberWorkspace } from "@/lib/retail-subscriber-access.mjs";
+import { isPrivatePreviewSubscriberTestingSession } from "@/lib/private-preview-subscriber-testing.mjs";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Retail Control Centre | Ruvanas" };
@@ -12,7 +13,7 @@ export const metadata = { title: "Retail Control Centre | Ruvanas" };
 export default async function RetailRadioDashboard() {
   const { context, entitlements } = await requireSubscriberProduct("RETAIL");
   const workspace = await resolveRetailSubscriberWorkspace(prisma, context);
-  if (workspace) return <RetailPlanningHome stationName={workspace.stationName} />;
+  if (workspace) return <RetailPlanningHome stationName={workspace.stationName} testTierEnabled={isPrivatePreviewSubscriberTestingSession(context.session)} />;
   const organisationId = context.membership.organisationId;
   const now = new Date();
   const [summary, liveStreams] = await Promise.all([

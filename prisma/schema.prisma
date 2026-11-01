@@ -2503,6 +2503,7 @@ model Subscription {
   planId                                     String
   status                                     SubscriptionStatus           @default(TRIAL)
   currentPeriodEnd                           DateTime?
+  subscriberTestPlanSnapshot                 Json?
   retailRadioEnabled                         Boolean?
   schoolRadioEnabled                         Boolean?
   onlineRadioEnabled                         Boolean?
@@ -6874,6 +6875,7 @@ model PrivatePreviewAccess {
   organisationId String?  @unique
   enabled        Boolean  @default(true)
   passwordEnabled Boolean @default(false)
+  subscriberTestingEnabled Boolean @default(false)
   pillars        String[] @default([])
   expiresAt      DateTime?
   createdAt      DateTime @default(now())

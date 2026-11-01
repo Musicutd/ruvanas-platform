@@ -1,6 +1,6 @@
 import { getCurrentSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { createPreviewTester, updatePreviewTester, PrivatePreviewAccountError } from "@/lib/private-preview-accounts.mjs";
+import { createPreviewTester, updatePreviewTester, updatePreviewSubscriberTesting, PrivatePreviewAccountError } from "@/lib/private-preview-accounts.mjs";
 import { isPrivatePreviewAdminSession, readPrivatePreviewPolicy } from "@/lib/private-preview-policy.mjs";
 import { PREVIEW_RESPONSE_HEADERS, readPrivatePreviewBody } from "@/lib/private-preview-request.mjs";
 import { consumeRateLimit, createRateLimitKey } from "@/lib/rate-limit";
@@ -19,11 +19,19 @@ async function handle(request, update) {
     const limit = await consumeRateLimit({ key: createRateLimitKey("preview-tester-management", request, session.userId), limit: 30, windowMs: 60 * 60 * 1000 });
     if (!limit.allowed) return json({ error: "Too many changes. Please wait and try again." }, 429);
     let body;
-    try { body = await readPrivatePreviewBody(request, update ? ["userId", "pillars", "enabled", "password", "accessMode"] : ["email", "name", "password", "pillars", "accessMode"]); }
+    try { body = await readPrivatePreviewBody(request, update ? ["userId", "pillars", "enabled", "password", "accessMode", "action", "subscriberTestingEnabled"] : ["email", "name", "password", "pillars", "accessMode", "subscriberTestingEnabled"]); }
     catch { return json({ error: "Invalid request." }, 400); }
+    const testingChange = update && body.action === "subscriber-testing";
+    if (update && (testingChange
+      ? Object.keys(body).some((key) => !["action", "userId", "subscriberTestingEnabled"].includes(key)) || typeof body.subscriberTestingEnabled !== "boolean"
+      : Object.hasOwn(body, "action") || Object.hasOwn(body, "subscriberTestingEnabled"))) {
+      return json({ error: "Change subscriber testing separately from renewing tester access." }, 400);
+    }
     const options = { ...body, actorUserId: session.userId, policy };
-    const tester = await (update ? updatePreviewTester(prisma, options) : createPreviewTester(prisma, options));
-    securityLog("info", update ? "PRIVATE_PREVIEW_TESTER_UPDATED" : "PRIVATE_PREVIEW_TESTER_CREATED", request, { actorUserId: session.userId });
+    const tester = await (testingChange ? updatePreviewSubscriberTesting(prisma, options)
+      : update ? updatePreviewTester(prisma, options) : createPreviewTester(prisma, options));
+    securityLog("info", testingChange ? "PRIVATE_PREVIEW_SUBSCRIBER_TESTING_CHANGED"
+      : update ? "PRIVATE_PREVIEW_TESTER_UPDATED" : "PRIVATE_PREVIEW_TESTER_CREATED", request, { actorUserId: session.userId });
     return json({ success: true, tester }, update ? 200 : 201);
   } catch (caught) {
     if (caught instanceof PrivatePreviewAccountError && caught.status < 500) return json({ error:

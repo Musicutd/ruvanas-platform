@@ -42,7 +42,7 @@ function PillarChoices({ id, value, onChange, disabled }) {
   );
 }
 
-function TesterEditor({ tester, working, onSave }) {
+function TesterEditor({ tester, working, onSave, onTestingChange }) {
   const [pillars, setPillars] = useState(tester.pillars || []);
   const [accessMode, setAccessMode] = useState(isPreviewOnlineDraftAccessMode(tester.accessMode) ? tester.accessMode : "READ_ONLY");
   const draftAccess = isPreviewOnlineDraftAccessMode(accessMode);
@@ -68,6 +68,15 @@ function TesterEditor({ tester, working, onSave }) {
       <p>Allowed pillars: {SUBSCRIBER_PRODUCT_LIST.filter((pillar) => tester.pillars?.includes(pillar.key))
         .map((pillar) => pillar.label).join(", ") || "None"}.</p>
       <p>Workspace access: {tester.accessMode === "ONLINE_DRAFT_CATALOGUE" ? "Online Radio drafts + Malta catalogue metadata (no audio)" : tester.accessMode === "ONLINE_DRAFT" ? "Editable Online Radio drafts only" : "Read-only"}.</p>
+      <div style={{ border: "1px solid #b6c1d0", borderRadius: 8, padding: 16, marginBottom: 16 }}>
+        <p style={{ marginTop: 0 }}><strong>Subscriber testing: {tester.subscriberTestingEnabled ? "Enabled" : "Off"}</strong></p>
+        <p>Allows supported subscriber actions for this tester’s assigned pillars, within its current plan and limits. This does not select a paid plan, grant music rights, start audio or enable digital displays.</p>
+        <button type="button" disabled={working || (!tester.subscriberTestingEnabled && (!tester.enabled || !expiry || expiry <= new Date()))}
+          onClick={() => onTestingChange({ action: "subscriber-testing", userId: tester.id, subscriberTestingEnabled: !tester.subscriberTestingEnabled })}>
+          {working ? "Please wait…" : tester.subscriberTestingEnabled ? "Turn off subscriber testing" : "Enable subscriber testing"}
+        </button>
+        <p style={{ marginBottom: 0 }}>This separate control keeps the expiry, saved plan, passwords and running streams unchanged.</p>
+      </div>
       <details>
         <summary>Edit this tester’s access</summary>
         <form onSubmit={submit} style={{ marginTop: 16 }}>
@@ -103,6 +112,7 @@ export default function TesterControls({ initialTesters = EMPTY_TESTERS }) {
   const [password, setPassword] = useState("");
   const [pillars, setPillars] = useState([]);
   const [accessMode, setAccessMode] = useState("READ_ONLY");
+  const [subscriberTestingEnabled, setSubscriberTestingEnabled] = useState(false);
   const draftAccess = isPreviewOnlineDraftAccessMode(accessMode);
   const [working, setWorking] = useState(false);
   const [message, setMessage] = useState("");
@@ -117,7 +127,8 @@ export default function TesterControls({ initialTesters = EMPTY_TESTERS }) {
     if (pending.current) return;
     setMessage("");
     setFailed(false);
-    if (!body.pillars.length) {
+    const testingChange = update && body.action === "subscriber-testing";
+    if (!testingChange && !body.pillars?.length) {
       setFailed(true);
       setMessage("Select at least one pillar for this tester.");
       return;
@@ -147,6 +158,7 @@ export default function TesterControls({ initialTesters = EMPTY_TESTERS }) {
       const saved = {
         id: result.tester.id, email: result.tester.email, name: result.tester.name,
         enabled: result.tester.enabled, passwordEnabled: result.tester.passwordEnabled,
+        subscriberTestingEnabled: result.tester.subscriberTestingEnabled === true,
         pillars: result.tester.pillars, accessMode: result.tester.accessMode, expiresAt: result.tester.expiresAt
       };
       setTesters((current) => update
@@ -157,9 +169,12 @@ export default function TesterControls({ initialTesters = EMPTY_TESTERS }) {
         setName("");
         setPillars([]);
         setAccessMode("READ_ONLY");
+        setSubscriberTestingEnabled(false);
         setMessage(saved.passwordEnabled
           ? "Tester created. Send their email username and the password you chose privately. No email has been sent."
           : "Code-only tester created. Use their email in the one-use code controls to issue their access code. No email has been sent.");
+      } else if (testingChange) {
+        setMessage(`Subscriber testing ${saved.subscriberTestingEnabled ? "enabled" : "turned off"}. The expiry, plan, password and running streams are unchanged.`);
       } else {
         setMessage(saved.enabled
           ? "Tester access saved for 30 days. Their previous sessions have been signed out."
@@ -178,14 +193,14 @@ export default function TesterControls({ initialTesters = EMPTY_TESTERS }) {
     event.preventDefault();
     const nextPassword = password;
     setPassword("");
-    saveTester({ email: email.trim().toLowerCase(), name: name.trim(), pillars: draftAccess ? ["ONLINE"] : pillars, accessMode,
+    saveTester({ email: email.trim().toLowerCase(), name: name.trim(), pillars: draftAccess ? ["ONLINE"] : pillars, accessMode, subscriberTestingEnabled,
       ...(passwordEnabled ? { password: nextPassword } : {}) });
   }
 
   return (
     <section style={panelStyle} aria-labelledby="preview-testers-heading" aria-busy={working}>
       <h2 id="preview-testers-heading">Invited tester accounts</h2>
-      <p>Only you, the owner, can create these non-admin accounts. Each tester gets a separate sandbox, not access to your administration or another tester’s data. Read-only is the default; you can explicitly allow private Online Radio drafts, with an optional Malta catalogue metadata view. Metadata access does not enable audio playback. Live broadcasting, uploads, downloads, paid actions and public registration stay closed.</p>
+      <p>Only you, the owner, can create these non-admin accounts. Each tester gets a separate workspace and only its assigned pillars. Base preview access is read-only by default, with optional Online Radio drafts. Subscriber testing is a separate opt-in for supported actions within the assigned plan; it does not change plan limits, music rights or running streams. Public registration stays closed.</p>
       <p>Access expires after 30 days. Up to 20 tester accounts can be created; no account deletion or automatic email is provided here. Temporary one-use codes are issued separately using the tester’s email.</p>
       <form onSubmit={createTester}>
         <fieldset disabled={working || testers.length >= 20} style={{ border: 0, padding: 0, margin: 0 }}>
@@ -210,6 +225,12 @@ export default function TesterControls({ initialTesters = EMPTY_TESTERS }) {
           </> : <p>This tester will sign in only using a one-use code you issue. Create the account first, then use the one-use code controls to issue their code.</p>}
           <AccessModeChoice id="preview-new-tester" value={accessMode} disabled={working} onChange={(mode) => { setAccessMode(mode); if (isPreviewOnlineDraftAccessMode(mode)) setPillars(["ONLINE"]); }} />
           <PillarChoices id="preview-new-tester" value={draftAccess ? ["ONLINE"] : pillars} onChange={setPillars} disabled={working || draftAccess} />
+          <label htmlFor="preview-new-tester-subscriber-testing" style={{ display: "block", marginTop: 20 }}>
+            <input id="preview-new-tester-subscriber-testing" type="checkbox" checked={subscriberTestingEnabled}
+              onChange={(event) => setSubscriberTestingEnabled(event.target.checked)} />{" "}
+            Enable supported subscriber actions within this tester’s assigned plan
+          </label>
+          <p>Leave unticked for base preview access. This does not select a paid tier, enable digital displays or start a stream.</p>
           <button type="submit" disabled={working || (!draftAccess && pillars.length === 0)} style={{ marginTop: 20 }}>
             {working ? "Please wait…" : "Create tester account"}
           </button>
@@ -219,8 +240,8 @@ export default function TesterControls({ initialTesters = EMPTY_TESTERS }) {
       {message ? <p role={failed ? "alert" : "status"} aria-live={failed ? "assertive" : "polite"}>{message}</p> : null}
       <h3 style={{ marginTop: 28 }}>Existing testers ({testers.length} of 20)</h3>
       {testers.length === 0 ? <p>No tester accounts have been created yet.</p> : testers.map((tester) => (
-        <TesterEditor key={`${tester.id}-${tester.enabled}-${tester.passwordEnabled}-${tester.accessMode}-${tester.expiresAt}-${tester.pillars.join(",")}`}
-          tester={tester} working={working} onSave={(body) => saveTester(body, true)} />
+        <TesterEditor key={`${tester.id}-${tester.enabled}-${tester.passwordEnabled}-${tester.accessMode}-${tester.subscriberTestingEnabled}-${tester.expiresAt}-${tester.pillars.join(",")}`}
+          tester={tester} working={working} onSave={(body) => saveTester(body, true)} onTestingChange={(body) => saveTester(body, true)} />
       ))}
     </section>
   );

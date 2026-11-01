@@ -3,9 +3,9 @@
 import { retailPlayerGuidance, retailPlayerStatusLabel } from "@/lib/retail-player-guidance.mjs";
 import styles from "./retail-player-setup.module.css";
 
-export default function RetailPlayerSetup({ players, activePlayers, zones, canManage, configured, limit, form, setForm,
+export default function RetailPlayerSetup({ players, activePlayers, zones, canManage, configured, limit, form, setForm, setupAccessEnabled = true,
   replacement, setReplacement, busy, error, enrolment, refreshing, refreshReadiness, createPlayer, replacePlayer, copyEnrolmentCode }) {
-  const next = retailPlayerGuidance({ players, hasZones: zones.length > 0, canManage });
+  const next = retailPlayerGuidance({ players, hasZones: zones.length > 0, canManage, setupAccessEnabled });
   const createForm = <form onSubmit={createPlayer} className={styles.form}>
     <label>Shop and listening area
       <select value={form.zoneId} onChange={event => setForm({ ...form, zoneId: event.target.value })}>
@@ -56,14 +56,14 @@ export default function RetailPlayerSetup({ players, activePlayers, zones, canMa
         <p>{player.readiness?.summary || "Device status has not been confirmed."}</p>
         <details className={styles.details}><summary>Connection details</summary>
           <ul className={styles.checks}>{(player.readiness?.checklist || []).map(item => <li key={item.key}><span aria-hidden="true">{item.complete ? "✓" : "○"}</span><div><strong>{item.label}</strong><p>{item.detail}</p></div></li>)}</ul>
-          <p className={styles.subtle}>Last device contact: {player.readiness?.lastHeartbeatAt ? new Date(player.readiness.lastHeartbeatAt).toLocaleString() : "Not yet"} · Last playback: {player.readiness?.lastPlaybackAt ? new Date(player.readiness.lastPlaybackAt).toLocaleString() : "Not yet"}</p>
+          <p className={styles.subtle}>Last device contact: {player.readiness?.lastHeartbeatAt ? new Date(player.readiness.lastHeartbeatAt).toLocaleString() : "Not yet"} · {player.readiness?.playbackEvidence === "DEVICE_REPORTED_STREAM_ONLY" ? "Latest stream report" : "Last playback"}: {player.readiness?.lastPlaybackAt ? new Date(player.readiness.lastPlaybackAt).toLocaleString() : "Not yet"}</p>
         </details>
       </article>)}</div>
     </section>}
 
     <details className={styles.advanced}>
       <summary>More device options and help</summary>
-      <p>Each shop player uses one device place in your existing plan. A shop is marked ready only after its device, music connection and recent playback are confirmed.</p>
+      <p>Each shop player uses one device place in your existing plan. Status comes from the connected device and its recent audio reports. A stream playback report does not verify the shop's speakers or individual song delivery.</p>
       {canManage && activePlayers.length > 0 && zones.length > 0 && <details className={styles.details}><summary>Connect another shop device</summary>{createForm}</details>}
       {canManage && activePlayers.length > 0 && <details className={styles.details}>
         <summary>Replace an existing device</summary>
