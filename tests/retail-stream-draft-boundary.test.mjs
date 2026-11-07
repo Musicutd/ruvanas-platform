@@ -36,6 +36,8 @@ async function route(file, imports) {
       if (name === "next/server") return { NextResponse: { json: (body, options) => Response.json(body, options) } };
       if (name === "@/lib/retail-stream-draft-boundary.mjs")
         return { isManagedRetailStreamDraftStation, RETAIL_STREAM_DRAFT_PROTECTED_MESSAGE };
+      if (name === "@/lib/retail-subscriber-listener.mjs")
+        return { loadRetailSubscriberListener: async () => null };
       if (name === "next/link") return ({ children, ...props }) => React.createElement("a", props, children);
       if (name.endsWith(".module.css")) return { __esModule: true, default: new Proxy({}, { get: (_, key) => String(key) }) };
       return require(name.startsWith("@babel/runtime/") ? `next/dist/compiled/${name}` : name);
@@ -166,10 +168,51 @@ test("Retail Listen suppresses exact managed draft output and rejects its direct
     "next/navigation": navigation
   });
   const html = renderToStaticMarkup(await page.default({ params: Promise.resolve({ product: "retail" }), searchParams: Promise.resolve({}) }));
-  assert.match(html, /private draft, not a live listening channel/);
+  assert.match(html, /not currently approved for browser listening/);
   assert.doesNotMatch(html, /<audio|private-stream|SYNTHETIC_PRIVATE_URL|Other channels|Open secure stream directly|Private Retail draft/);
   await assert.rejects(() => page.default({ params: Promise.resolve({ product: "retail" }),
     searchParams: Promise.resolve({ stationId: draft.id }) }), /NOT_FOUND/);
+});
+
+test("approved Retail subscriber listener renders without publishing or activating its managed station", async () => {
+  const draft = managed({ name: "Retail shared stream", streamConfig: { streamUrl: "https://private.example.test/never-expose?credential=SYNTHETIC" },
+    publicPlayerEnabled: false });
+  const context = { membership: { organisationId } };
+  let listenerCalls = 0;
+  const page = await route("app/dashboard/listen/[product]/page.js", {
+    "@/lib/prisma": { prisma: { station: { findMany: async () => [draft] } } },
+    "@/lib/pillar-audio.mjs": pillarAudio,
+    "@/lib/subscriber-product-access": { requireSubscriberProduct: async () => ({ context }) },
+    "@/lib/retail-subscriber-listener.mjs": { loadRetailSubscriberListener: async (_db, supplied) => {
+      assert.equal(supplied, context); listenerCalls++;
+      return { stationId: draft.id, streamUrl: "https://approved.example.test/stream" };
+    } },
+    "next/navigation": { notFound: () => { throw new Error("NOT_FOUND"); } }
+  });
+  for (const query of [{}, { stationId: draft.id }]) {
+    const html = renderToStaticMarkup(await page.default({ params: Promise.resolve({ product: "retail" }), searchParams: Promise.resolve(query) }));
+    assert.match(html, /<audio[^>]+controls[^>]+preload="none"[^>]+src="https:\/\/approved.example.test\/stream"/);
+    assert.match(html, /signed-in listening check/);
+    assert.doesNotMatch(html, /never-expose|SYNTHETIC|not currently approved|public player is available|autoPlay/);
+  }
+  assert.equal(listenerCalls, 2);
+  assert.equal(draft.status, "DRAFT");
+  assert.equal(draft.publicPlayerEnabled, false);
+});
+
+test("Retail listener approval cannot unlock a different managed station ID", async () => {
+  const draft = managed({ name: "Private draft", streamConfig: { streamUrl: "https://private.example.test/stream" } });
+  const page = await route("app/dashboard/listen/[product]/page.js", {
+    "@/lib/prisma": { prisma: { station: { findMany: async () => [draft] } } },
+    "@/lib/pillar-audio.mjs": pillarAudio,
+    "@/lib/subscriber-product-access": { requireSubscriberProduct: async () => ({ context: { membership: { organisationId } } }) },
+    "@/lib/retail-subscriber-listener.mjs": { loadRetailSubscriberListener: async () => ({ stationId: "another-station", streamUrl: "https://approved.example.test/stream" }) },
+    "next/navigation": { notFound: () => { throw new Error("NOT_FOUND"); } }
+  });
+  const html = renderToStaticMarkup(await page.default({ params: Promise.resolve({ product: "retail" }), searchParams: Promise.resolve({}) }));
+  assert.doesNotMatch(html, /<audio|private.example|approved.example/);
+  await assert.rejects(() => page.default({ params: Promise.resolve({ product: "retail" }),
+    searchParams: Promise.resolve({ stationId: "another-station" }) }), /NOT_FOUND/);
 });
 
 test("Retail Listen retains ordinary channel and Online Test Radio listening", async () => {

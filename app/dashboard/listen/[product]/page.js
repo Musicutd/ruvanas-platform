@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { audioPillar, firstListenablePillarStation, pillarListenHref, secureListenerUrl } from "@/lib/pillar-audio.mjs";
 import { requireSubscriberProduct } from "@/lib/subscriber-product-access";
 import { isManagedRetailStreamDraftStation } from "@/lib/retail-stream-draft-boundary.mjs";
+import { loadRetailSubscriberListener } from "@/lib/retail-subscriber-listener.mjs";
 import styles from "../../radio/listen/radio-listen.module.css";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +23,17 @@ export default async function PillarListenPage({ params, searchParams }) {
     orderBy: { createdAt: "asc" }
   });
   const managedRetailDraftPresent = product === "RETAIL" && stations.some(isManagedRetailStreamDraftStation);
-  const listenableStations = product === "RETAIL" ? stations.filter((item) => !isManagedRetailStreamDraftStation(item)) : stations;
+  const approvedRetailListener = managedRetailDraftPresent
+    ? await loadRetailSubscriberListener(prisma, context)
+    : null;
+  // Managed stations keep their draft/public-player fence. Only the separately
+  // approved subscriber listener may supply a URL for this signed-in page.
+  const listenableStations = product === "RETAIL" ? stations.flatMap((item) => {
+    if (!isManagedRetailStreamDraftStation(item)) return [item];
+    if (approvedRetailListener?.stationId !== item.id) return [];
+    return [{ ...item, publicPlayerEnabled: false,
+      streamConfig: { streamUrl: approvedRetailListener.streamUrl } }];
+  }) : stations;
   const query = await searchParams;
   const requestedId = typeof query?.stationId === "string" ? query.stationId : null;
   const station = requestedId
@@ -48,7 +59,7 @@ export default async function PillarListenPage({ params, searchParams }) {
           : <p className={styles.notice}>This is a signed-in listening check. It does not activate the station or publish a public player.</p>}
       </> : <>
         <p className={styles.notice}>No HTTPS browser-listening stream is ready for this {pillar.label} channel yet. Ruvanas Super Admin adds the streaming details. This page does not change AutoDJ or any schedule.</p>
-        {managedRetailDraftPresent && !station ? <p>The managed Retail connection is a private draft, not a live listening channel. Its provider URL is not available here.</p> : null}
+        {managedRetailDraftPresent && !station ? <p>This Retail connection is not currently approved for browser listening. Your administrator can review its playback access.</p> : null}
         {product === "RETAIL" ? <p>Shop players may still play through their protected device connection. <Link href="/dashboard/players">Check your shop players →</Link></p> : null}
       </>}
       <p><Link href={pillar.autoDjHref}>Open AutoDJ settings →</Link></p>
