@@ -2,17 +2,19 @@ import styles from "./home.module.css";
 import { prisma } from "@/lib/prisma";
 import { registrationProducts, registrationProductsFromDatabasePlans } from "@/lib/registration-experience.mjs";
 import { SELF_SERVICE_REGISTRATION_ENABLED } from "@/lib/registration-availability.mjs";
+import { isHomepageProductVisible } from "@/lib/public-homepage-launch.mjs";
 
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-  title: "Ruvanas | Professional Radio Platforms by 21-Three",
+  title: "Ruvanas Retail | Music for your shops by 21-Three",
   description:
-    "Ruvanas, part of 21-Three, provides professional Retail, School, Online, Health, Faith, Organisations and Corrections media platforms.",
+    "Ruvanas Retail brings continuous music, scheduling and shop announcements together, with a Focused Licensed Music Catalogue subject to product-use and territory rights.",
 };
 
 const platforms = [
   {
+    productId: "RETAIL",
     number: "01",
     title: "In-house & Retail Radio",
     text: "Create a consistent branded atmosphere across one shop or an entire estate, with central scheduling, professional playout and location-level control.",
@@ -20,6 +22,7 @@ const platforms = [
     icon: "retail",
   },
   {
+    productId: "SCHOOL",
     number: "02",
     title: "School Radio",
     text: "Give students a creative voice through a purpose-built platform with supervised production, safeguarded publishing and multi-school administration.",
@@ -27,6 +30,7 @@ const platforms = [
     icon: "school",
   },
   {
+    productId: "ONLINE",
     number: "03",
     title: "Complete Online Radio",
     text: "Build a full online station with live and automated programming, public listening, a growing music database and operational tools in one place.",
@@ -34,6 +38,7 @@ const platforms = [
     icon: "broadcast",
   },
   {
+    productId: "HEALTH",
     number: "04",
     title: "Ruvanas Health",
     text: "Help hospitals, health organisations and wellbeing teams operate their own privacy-aware audio, podcasts and digital displays.",
@@ -41,6 +46,7 @@ const platforms = [
     icon: "health",
   },
   {
+    productId: "FAITH",
     number: "05",
     title: "Ruvanas Faith",
     text: "Give churches and ministries one subscriber-operated home for continuous radio, live services, teachings and campus media.",
@@ -48,6 +54,7 @@ const platforms = [
     icon: "faith",
   },
   {
+    productId: "ORGANISATIONS",
     number: "06",
     title: "Ruvanas Organisations",
     text: "Give NGOs, clubs, associations, civic groups and networks one governed home for their own media, events, announcements and displays.",
@@ -55,6 +62,7 @@ const platforms = [
     icon: "organisations",
   },
   {
+    productId: "CORRECTIONS",
     number: "07",
     title: "Ruvanas Inside",
     text: "A governed foundation for private correctional-facility radio and rehabilitation media. Facility controls and secure delivery are being prepared.",
@@ -67,11 +75,11 @@ const services = [
   ["High-quality sound", "Professional audio delivery up to 320 kbps for a clear, reliable listening experience."],
   ["Smart scheduling", "Plan music, programmes, announcements and campaigns by day, time, location or audience."],
   ["Continuous AutoDJ", "Keep every channel moving with synchronized playout, smooth transitions and resilient recovery."],
-  ["Central control", "Manage players, locations, schools, stations and simultaneous streams from one secure workspace."],
+  ["Central control", "Manage your shop locations, listening areas and players from one secure workspace."],
   ["Music & media", "Organise approved music, programmes, jingles and promotional audio in a protected media library."],
   ["Reporting & insight", "Understand activity with listener, player, campaign and proof-of-play reporting."],
   ["Safe collaboration", "Use role-based access, approvals and audit trails designed for teams and supervised environments."],
-  ["Room to grow", "Start with one location or station, then add streams, schools, signage and campaigns as you expand."],
+  ["Room to grow", "Start with one shop, then bring more locations and audio campaigns into your Retail workspace as you expand."],
 ];
 
 const pricingFamilyDefinitions = [
@@ -214,7 +222,8 @@ export default async function HomePage() {
   } catch (error) {
     console.error("Unable to load live pricing; using the verified catalogue defaults:", error);
   }
-  const pricingFamilies = pricingFamilyDefinitions.map((family) => ({
+  const visiblePlatforms = platforms.filter((platform) => isHomepageProductVisible(platform.productId));
+  const pricingFamilies = pricingFamilyDefinitions.filter((family) => isHomepageProductVisible(family.productId)).map((family) => ({
     ...family,
     tiers: approvedProductPlans.find((product) => product.id === family.productId)?.plans || []
   }));
@@ -233,7 +242,7 @@ export default async function HomePage() {
           </a>
 
           <nav className={styles.navLinks} aria-label="Main navigation">
-            <a href="#platforms">Platforms</a>
+            <a href="#platforms">Retail Radio</a>
             <a href="/how-it-works">How it works</a>
             <a href="#services">Services</a>
             <a href="#pricing">Pricing</a>
@@ -242,7 +251,7 @@ export default async function HomePage() {
 
           <div className={styles.navActions}>
             <a className={styles.loginLink} href="/login">Log in</a>
-            <a className={styles.navCta} href="/register/free-access">Use access code <ArrowIcon /></a>
+            <a className={styles.navCta} href="/login">Log in <ArrowIcon /></a>
           </div>
         </div>
       </header>
@@ -251,28 +260,28 @@ export default async function HomePage() {
         <div className={styles.heroGlow} aria-hidden="true" />
         <div className={styles.heroGrid} id="main-content">
           <div className={styles.heroCopy}>
-            <p className={styles.eyebrow}><span /> Audio platforms by 21-Three</p>
-            <h1>Every space deserves its <em>own sound.</em></h1>
+            <p className={styles.eyebrow}><span /> Retail radio by 21-Three</p>
+            <h1>Every shop deserves its <em>own sound.</em></h1>
             <p className={styles.heroLead}>
-              Ruvanas brings professional media within reach—from retail and schools to online stations, health, faith and other organisations.
+              Bring the right music, your shop announcements and a simple weekly plan together—across one shop or all your locations.
             </p>
             <div className={styles.heroActions}>
-              <a className={styles.primaryButton} href="/register/free-access">Create account with code <ArrowIcon /></a>
+              <a className={styles.primaryButton} href="/login">Log in with issued code <ArrowIcon /></a>
               <a className={styles.secondaryButton} href="/how-it-works">See how it works</a>
             </div>
             <div className={styles.heroProof} aria-label="Ruvanas platform highlights">
               <div><strong>320</strong><span>kbps high-quality audio</span></div>
               <div><strong>24/7</strong><span>automated playout</span></div>
-              <div><strong>1–30+</strong><span>simultaneous streams</span></div>
+              <div><strong>One plan</strong><span>music for your shops</span></div>
             </div>
           </div>
 
-          <div className={styles.heroVisual} aria-label="Illustration of the Ruvanas live audio network">
+          <div className={styles.heroVisual} aria-label="Illustrative Retail audio network concept">
             <div className={styles.livePanel}>
               <div className={styles.panelTop}>
                 <div>
-                  <span className={styles.liveBadge}><i /> Live network</span>
-                  <p>Ruvanas master channel</p>
+                  <span className={styles.liveBadge}><i /> Retail audio concept</span>
+                  <p>Your shared Retail programme</p>
                 </div>
                 <span className={styles.qualityBadge}>HQ 320</span>
               </div>
@@ -283,7 +292,7 @@ export default async function HomePage() {
                   <strong>Your brand. Your sound.</strong>
                   <small>Shared channel clock · Smooth mix</small>
                 </div>
-                <button type="button" aria-label="Playing live audio preview" disabled>
+                <button type="button" aria-label="Illustrative audio display; no playback" disabled>
                   <span /><span /><span />
                 </button>
               </div>
@@ -291,39 +300,39 @@ export default async function HomePage() {
                 {waveform.map((height, index) => <span key={index} style={{ "--bar-height": `${height}%` }} />)}
               </div>
               <div className={styles.networkLine}>
-                <span>Live</span><i /><span>Synced</span><i /><span>Protected</span>
+                <span>Music</span><i /><span>Messages</span><i /><span>Your shops</span>
               </div>
             </div>
 
             <div className={`${styles.floatingCard} ${styles.cardRetail}`}>
-              <PlatformIcon type="retail" /><span><strong>Retail</strong>12 locations online</span>
+              <PlatformIcon type="retail" /><span><strong>Retail</strong>One shared programme</span>
             </div>
-            <div className={`${styles.floatingCard} ${styles.cardSchool}`}>
+            {isHomepageProductVisible("SCHOOL") ? <div className={`${styles.floatingCard} ${styles.cardSchool}`}>
               <PlatformIcon type="school" /><span><strong>School</strong>Safeguarded publishing</span>
-            </div>
-            <div className={`${styles.floatingCard} ${styles.cardOnline}`}>
+            </div> : null}
+            {isHomepageProductVisible("ONLINE") ? <div className={`${styles.floatingCard} ${styles.cardOnline}`}>
               <PlatformIcon type="broadcast" /><span><strong>Online</strong>Listeners connected</span>
-            </div>
+            </div> : null}
           </div>
         </div>
       </section>
 
       <section className={styles.introStrip} aria-label="Ruvanas introduction">
-        <p>One professional foundation.</p>
-        <div><span>Retail</span><i /><span>School</span><i /><span>Online</span><i /><span>Health</span><i /><span>Faith</span><i /><span>Organisations</span></div>
+        <p>One music plan for all your shops.</p>
+        <div><span>Music</span><i /><span>Scheduling</span><i /><span>Shop messages</span></div>
       </section>
 
       <section className={styles.section} id="platforms">
         <div className={styles.sectionHeader}>
           <div>
-            <p className={styles.sectionEyebrow}>Six platforms. One standard.</p>
-            <h2>Built around the way you broadcast.</h2>
+            <p className={styles.sectionEyebrow}>Built for Retail</p>
+            <h2>Your brand. Your music. Every location.</h2>
           </div>
-          <p>Choose the platform that fits today, then bring every channel, location and audience together as your ambitions grow.</p>
+          <p>Choose approved music, plan the day and share your own messages through one Retail audio workspace.</p>
         </div>
 
-        <div className={styles.platformGrid}>
-          {platforms.map((platform) => (
+        <div className={`${styles.platformGrid} ${visiblePlatforms.length === 1 ? styles.singlePlatform : ""}`}>
+          {visiblePlatforms.map((platform) => (
             <article className={styles.platformCard} key={platform.title}>
               <div className={styles.platformTop}>
                 <span className={styles.platformIcon}><PlatformIcon type={platform.icon} /></span>
@@ -366,7 +375,7 @@ export default async function HomePage() {
             <p className={styles.sectionEyebrow}>What Ruvanas offers</p>
             <h2>Everything needed to stay on air.</h2>
           </div>
-          <p>From the first uploaded track to a multi-location live network, the platform keeps creative and operational work together.</p>
+          <p>From your music selection to your own shop announcements, keep everyday audio work in one place.</p>
         </div>
         <div className={styles.servicesGrid}>
           {services.map(([title, text], index) => (
@@ -380,9 +389,9 @@ export default async function HomePage() {
 
       <section className={styles.pricingSection} id="pricing">
         <div className={styles.pricingHeader}>
-          <p className={styles.sectionEyebrow}>Plans shaped around your platform</p>
-          <h2>Choose the service you need. Grow when you are ready.</h2>
-          <p>Six specialised product families each have five clear tiers, shared foundations and purpose-built workflows.</p>
+          <p className={styles.sectionEyebrow}>Retail plans</p>
+          <h2>Start with your shop. Grow when you are ready.</h2>
+          <p>Five Retail tiers, each with the Focused Licensed Music Catalogue, subject to product-use and territory rights.</p>
         </div>
 
         <div className={styles.pricingFamilies}>
@@ -404,7 +413,7 @@ export default async function HomePage() {
                     <p className={styles.tierDescription}>{tier.description}</p>
                     <div className={`${styles.price} ${styles.priceLabel}`}><strong>{tier.priceLabel}</strong></div>
                     {SELF_SERVICE_REGISTRATION_ENABLED ? (
-                      <a className={tier.tierNumber === 3 ? styles.priceCtaFeatured : styles.priceCta} href={`/register?platform=${family.id}&tier=${tier.publicSlug}`}>
+                      <a className={tier.tierNumber === 3 ? styles.priceCtaFeatured : styles.priceCta} href="/login">
                         {tier.enterpriseContactRequired ? "Discuss " : "Choose "}{tier.name} <ArrowIcon />
                       </a>
                     ) : <span className={styles.priceCtaDisabled} aria-disabled="true">Registration paused</span>}
@@ -420,9 +429,9 @@ export default async function HomePage() {
 
         <div className={styles.enterprisePlan}>
           <div><p>Enterprise</p><h3>Need a larger or specially configured service?</h3></div>
-          <p>We can tailor streams, listeners, schools, storage, identity, governance, onboarding and support around your organisation.</p>
+          <p>Discuss Retail locations, storage, account access, onboarding and support for your business.</p>
           {SELF_SERVICE_REGISTRATION_ENABLED
-            ? <a href="/register?platform=enterprise">Talk to Ruvanas <ArrowIcon /></a>
+            ? <a href="/login">Talk to Ruvanas <ArrowIcon /></a>
             : <span className={styles.enterpriseRegistrationPaused} aria-disabled="true">Registration paused</span>}
         </div>
         <p className={styles.pricingNote}>Prices are shown in euro and exclude applicable tax. Music licensing, production, media, unusually high delivery volumes and bespoke services may be agreed separately. Final eligibility and service configuration are confirmed during onboarding.</p>
@@ -438,22 +447,22 @@ export default async function HomePage() {
             <p>The idea behind <strong>Ruvanas</strong> began with <strong>Manuel Chircop</strong>, whose connection with radio dates back to <strong>1993</strong>. Over more than three decades in broadcasting, Manuel experienced first-hand how radio evolved from traditional studios and scheduled programming into a world of streaming, automation, digital distribution and on-demand content.</p>
             <p>Alongside that broadcasting experience, more than a decade working within the <strong>retail environment</strong> gave him a different perspective: businesses increasingly needed better ways to manage music, promotions, customer communication and digital media across their physical locations.</p>
             <p>Those two worlds — <strong>broadcasting and retail</strong> — eventually came together.</p>
-            <p>Manuel&apos;s objective was not simply to recreate traditional radio software or build another background-music service. He wanted to develop something relevant to the way organisations communicate today: a modern platform capable of bringing professional audio, broadcasting, content management and digital display technology together in one connected environment.</p>
+            <p>Manuel&apos;s objective was to bring that radio experience into everyday retail: professional music, shop announcements and straightforward planning in one connected audio workspace.</p>
             <p>Working with a team of professional engineers, that idea developed into <strong>Ruvanas</strong>.</p>
           </div>
 
           <section className={styles.storyChapter} aria-labelledby="story-five-worlds">
             <p className={styles.storyChapterNumber}>01</p>
             <div>
-              <h3 id="story-five-worlds">One platform. Six specialised worlds.</h3>
-              <p>Ruvanas has been designed around a shared technology core, but with dedicated experiences for very different types of organisations.</p>
+              <h3 id="story-five-worlds">One Retail workspace. Every shop connected.</h3>
+              <p>Ruvanas Retail brings your music selection, weekly plan and shop messages together, so your locations share the sound of your business.</p>
               <div className={styles.storyProducts}>
-                <article><span>Retail</span><p><strong>Ruvanas Retail</strong> gives retailers, hospitality businesses and other commercial organisations the tools to manage their own in-store audio, promotions, scheduling and multi-location audio.</p></article>
-                <article><span>School</span><p><strong>Ruvanas School</strong> provides schools and educational organisations with a structured environment for school radio, podcasting, media production and supervised student participation.</p></article>
-                <article><span>Radio</span><p><strong>Ruvanas Radio</strong> provides broadcasters and organisations with the technology to create and operate their own online radio services, including automation, live broadcasting, scheduling, podcasts and listener-facing experiences.</p></article>
-                <article><span>Faith</span><p><strong>Ruvanas Faith</strong> brings the traditional concept of Church Radio into a modern digital environment, giving churches, ministries and faith organisations the technology to operate their own radio channels, live services, sermons, podcasts and media networks.</p></article>
-                <article><span>Organisations</span><p><strong>Ruvanas Organisations</strong> gives NGOs, clubs, associations, community groups, civic organisations and networks technology for their own channels, announcements, events, podcasts, sponsors and displays—without becoming a CRM or administration system.</p></article>
-                <article><span>Health</span><p><strong>Ruvanas Health</strong> modernises the concept of Hospital Radio, giving hospitals and health-related organisations the tools to operate their own radio, audio and information services for patients, staff and wider communities.</p></article>
+                {isHomepageProductVisible("RETAIL") ? <article><span>Retail</span><p><strong>Ruvanas Retail</strong> gives retailers, hospitality businesses and other commercial organisations the tools to manage their own in-store audio, promotions, scheduling and multi-location audio.</p></article> : null}
+                {isHomepageProductVisible("SCHOOL") ? <article><span>School</span><p><strong>Ruvanas School</strong> provides schools and educational organisations with a structured environment for school radio, podcasting, media production and supervised student participation.</p></article> : null}
+                {isHomepageProductVisible("ONLINE") ? <article><span>Radio</span><p><strong>Ruvanas Radio</strong> provides broadcasters and organisations with the technology to create and operate their own online radio services, including automation, live broadcasting, scheduling, podcasts and listener-facing experiences.</p></article> : null}
+                {isHomepageProductVisible("FAITH") ? <article><span>Faith</span><p><strong>Ruvanas Faith</strong> brings the traditional concept of Church Radio into a modern digital environment, giving churches, ministries and faith organisations the technology to operate their own radio channels, live services, sermons, podcasts and media networks.</p></article> : null}
+                {isHomepageProductVisible("ORGANISATIONS") ? <article><span>Organisations</span><p><strong>Ruvanas Organisations</strong> gives NGOs, clubs, associations, community groups, civic organisations and networks technology for their own channels, announcements, events, podcasts, sponsors and displays—without becoming a CRM or administration system.</p></article> : null}
+                {isHomepageProductVisible("HEALTH") ? <article><span>Health</span><p><strong>Ruvanas Health</strong> modernises the concept of Hospital Radio, giving hospitals and health-related organisations the tools to operate their own radio, audio and information services for patients, staff and wider communities.</p></article> : null}
               </div>
               <p className={styles.storyPrinciple}>In every case, <strong>Ruvanas provides the platform — the subscriber operates the service.</strong></p>
             </div>
@@ -462,10 +471,10 @@ export default async function HomePage() {
           <section className={styles.storyChapter} aria-labelledby="story-more-than-radio">
             <p className={styles.storyChapterNumber}>02</p>
             <div>
-              <h3 id="story-more-than-radio">More than radio</h3>
-              <p>The long-term vision for Ruvanas goes beyond simply playing audio.</p>
-              <p>The platform is being developed as a complete media environment combining technologies such as <strong>24/7 AutoDJ, intelligent scheduling, live broadcasting, Ruvanas Studio, podcasts, promotions, digital signage, device management, analytics, proof-of-play, multi-location control and rights-aware media management</strong>.</p>
-              <p>By sharing these capabilities across one core platform, Ruvanas can give each sector its own specialised experience without forcing organisations to work with several disconnected systems.</p>
+              <h3 id="story-more-than-radio">Music and messages, working together</h3>
+              <p>Your everyday music continues with AutoDJ, while scheduled programmes and shop announcements give each day its shape.</p>
+              <p>The Retail workspace combines <strong>24/7 AutoDJ, weekly scheduling, Ruvanas Studio, promotions, device management, analytics, proof-of-play, multi-location control and rights-aware media management</strong>.</p>
+              <p>One connected workspace keeps the music plan and your own announcements organised as your business grows.</p>
             </div>
           </section>
 
@@ -495,10 +504,10 @@ export default async function HomePage() {
       <section className={styles.finalCta}>
         <div>
           <p className={styles.sectionEyebrow}>Ready when you are</p>
-          <h2>Give your audience a sound worth remembering.</h2>
+          <h2>Give your shops a sound worth remembering.</h2>
         </div>
         <div className={styles.finalActions}>
-          <a className={styles.primaryButton} href="/register/free-access">Use your free-access code <ArrowIcon /></a>
+          <a className={styles.primaryButton} href="/login">Log in with issued code <ArrowIcon /></a>
           <a className={styles.finalLogin} href="/login">Already a member? Log in</a>
         </div>
       </section>
@@ -508,9 +517,9 @@ export default async function HomePage() {
           <a className={styles.logo} href="#top" aria-label="Ruvanas home">
             <BrandMark /><span className={styles.logoText}>RUVANAS</span>
           </a>
-          <p>Professional media platforms for brands, schools, broadcasters, health, faith and other organisations.</p>
+          <p>Professional music, scheduling and shop announcements for retailers and multi-location businesses.</p>
           <nav aria-label="Footer navigation">
-            <a href="#platforms">Platforms</a><a href="#services">Services</a><a href="#pricing">Pricing</a><a href="/login">Log in</a>
+            <a href="#platforms">Retail Radio</a><a href="#services">Services</a><a href="#pricing">Pricing</a><a href="/login">Log in</a>
           </nav>
         </div>
         <div className={styles.footerBottom}>

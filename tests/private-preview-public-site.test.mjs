@@ -7,13 +7,14 @@ import { PUBLIC_MARKETING_DOCUMENTS, PUBLIC_MARKETING_SOURCE_COMMIT, publicMarke
 import { publicMarketingResponse } from "../lib/private-preview-public-site-response.mjs";
 import { publicPlansForProduct } from "../lib/product-plan-catalogue.mjs";
 import { ruvanasProductGuides } from "../lib/how-ruvanas-works.mjs";
+import { buildPublicHomepage, PUBLIC_HOMEPAGE_PRODUCT_FAMILIES } from "../lib/public-homepage-launch.mjs";
 
 const policy = { enabled: true, valid: true, publicSite: true };
 const root = resolve("assets/private-preview-public-site");
 const origin = "https://www.ruvanas.com";
 const request = (pathname, method = "GET") => new Request(origin + pathname, { method });
 const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
-const retailPricing = /<section class="pricingFamily" id="pricing-retail">[\s\S]*?(?=<section class="pricingFamily" id="pricing-school">)/;
+const retailPricing = /<section class="pricingFamily" id="pricing-retail">[\s\S]*?<\/section>/;
 const retailStory = /<article><span>Retail<\/span><p><strong>Ruvanas Retail<\/strong>[\s\S]*?<\/p><\/article>/;
 const retailGuide = /<section class="product" id="retail">[\s\S]*?(?=<section class="product" id="school">)/;
 const escapeHtml = value => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
@@ -38,7 +39,7 @@ test("public manifest contains only the two frozen internal HTML documents, not 
     "/public-marketing/how-it-works/index.html/", "__proto__", null, undefined]) assert.equal(publicMarketingDocument(pathname), null);
 });
 
-test("reviewed Retail revisions preserve original provenance, other product content and the frozen page safety controls", async () => {
+test("reviewed homepage launch preserves full source, guide provenance and frozen page safety controls", async () => {
   let maskedPrices = 0;
   let loginLinks = 0;
   for (const document of Object.values(PUBLIC_MARKETING_DOCUMENTS)) {
@@ -47,9 +48,17 @@ test("reviewed Retail revisions preserve original provenance, other product cont
     assert.equal(bytes.length, document.bytes);
     assert.equal(hash(bytes), document.sha256);
     assert.doesNotMatch(html, /\r/, "manifest checks exact LF-normalized bytes");
-    assert.equal(document.reviewedRevision, "RETAIL_FOCUSED_AUDIO_ONLY_V1");
-    assert.equal(hash(Buffer.from(unchangedOutsideRetail(html, document.file))), document.unchangedOutsideRetailSha256LF,
-      "only the Retail pricing/story or Retail guide may differ from the reviewed source");
+    if (document.file === "index.html") {
+      assert.equal(document.reviewedRevision, "RETAIL_ONLY_HOMEPAGE_V1");
+      const retained = await readFile(resolve("assets/public-homepage-source/index.html"));
+      assert.equal(hash(retained), document.retainedHomepageSourceSha256LF);
+      assert.equal(document.retainedHomepageSourceSha256LF, "a13287d77e4a9c8cc00dc230279256cf3dc891ea33720420f312fb1a83901c05");
+      assert.equal(buildPublicHomepage(retained.toString("utf8")), html);
+    } else {
+      assert.equal(document.reviewedRevision, "RETAIL_FOCUSED_AUDIO_ONLY_V1");
+      assert.equal(hash(Buffer.from(unchangedOutsideRetail(html, document.file))), document.unchangedOutsideRetailSha256LF,
+        "the existing product guides are unchanged by this homepage launch");
+    }
     const masks = (html.match(/class="maskedPrice" aria-hidden="true"/g) || []).length;
     const links = (html.match(/href="\/login"/g) || []).length;
     assert.equal(masks, document.maskedPrices);
@@ -60,8 +69,28 @@ test("reviewed Retail revisions preserve original provenance, other product cont
     assert.doesNotMatch(html, /href="(?:https?:|\/api\/|[^"#]*(?:register|sign-?up|checkout))/i);
     assert.doesNotMatch(html, /[€£$]\s*\d/);
   }
-  assert.equal(maskedPrices, 35);
+  assert.equal(maskedPrices, 5);
   assert.equal(loginLinks, 7);
+});
+
+test("only Retail is exposed on the homepage while all seven pillar structures remain available for later launches", async () => {
+  assert.deepEqual(PUBLIC_HOMEPAGE_PRODUCT_FAMILIES, ["RETAIL"]);
+  const html = await readFile(join(root, "index.html"), "utf8");
+  const body = html.slice(html.indexOf("<body"));
+  assert.equal((body.match(/class="platformCard"/g) || []).length, 1);
+  assert.deepEqual([...body.matchAll(/id="pricing-([a-z]+)"/g)].map(m => m[1]), ["retail"]);
+  assert.doesNotMatch(body, /School|Ruvanas (?:Health|Faith|Organisations|Inside)|Complete Online Radio|pricing-(?:school|online|health|faith|organisations|corrections)|digital displays?|signage|Seven platforms|Six specialised/i);
+  assert.match(html, /<title>Ruvanas \| Retail Radio<\/title>/);
+  assert.match(body, /href="\/how-it-works\/#retail"/);
+  const retained = await readFile(resolve("assets/public-homepage-source/index.html"), "utf8");
+  const all = ["RETAIL", "SCHOOL", "ONLINE", "HEALTH", "FAITH", "ORGANISATIONS", "CORRECTIONS"];
+  const expanded = buildPublicHomepage(retained, all);
+  assert.equal((expanded.match(/class="platformCard"/g) || []).length, 7);
+  assert.equal((expanded.match(/class="maskedPrice"/g) || []).length, 35);
+  for (const family of all) assert.match(expanded, new RegExp(`id="pricing-${family.toLowerCase()}"`));
+  assert.throws(() => buildPublicHomepage(retained, ["UNKNOWN"]));
+  assert.throws(() => buildPublicHomepage(retained.replace('class="platformCard"', 'class="changed"')));
+  assert.equal(publicMarketingDocument("/public-homepage-source/index.html"), null);
 });
 
 test("frozen Retail cards match the five canonical audio plans with Focused catalogue included and no display offering", async () => {

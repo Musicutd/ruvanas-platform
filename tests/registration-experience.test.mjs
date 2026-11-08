@@ -137,6 +137,8 @@ test("registration UI preserves a guided, accessible and product-aware submissio
   assert.match(styles, /@media \(max-width: 680px\)/);
   assert.match(styles, /prefers-reduced-motion/);
   assert.match(homepage, /registrationProducts/);
-  assert.match(homepage, /tier\.publicSlug/);
+  assert.match(homepage, /pricingFamilyDefinitions\.filter\(\(family\) => isHomepageProductVisible\(family\.productId\)\)/);
+  assert.match(homepage, /href="\/login"/);
+  assert.doesNotMatch(homepage, /\/register(?:\/free-access|\?platform=)/);
   assert.doesNotMatch(homepage, /price: "9\.99"|price: "29"|price: "119"/);
 });
