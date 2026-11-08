@@ -51,7 +51,7 @@ test("the QA matrix proves product isolation, login routing, limits and Licensed
   for (const profile of PRODUCT_QA_PROFILES) {
     const rows = matrix.filter((row) => row.product === profile.product);
     assert.deepEqual(rows.map((row) => row.tierNumber), [1, 2, 3, 4, 5]);
-    assert.deepEqual(rows.map((row) => row.licensedMusicCatalogueLevel), [
+    assert.deepEqual(rows.map((row) => row.licensedMusicCatalogueLevel), profile.product === "RETAIL" ? Array(5).fill("FOCUSED") : [
       "NONE",
       "NONE",
       "FOCUSED",
@@ -71,6 +71,23 @@ test("the QA matrix proves product isolation, login routing, limits and Licensed
       assert.equal(evaluation.entitlements.storageLimitGb, plan.storageLimitGb);
       assert.equal(evaluation.entitlements.maxBitrateKbps, plan.maxBitrateKbps);
     }
+  }
+});
+
+test("Retail QA rejects historical lower or higher catalogue tiers and display offers on every plan", () => {
+  const profile = PRODUCT_QA_PROFILES.find(row => row.product === "RETAIL");
+  for (const plan of PUBLIC_PLAN_CATALOGUE.filter(row => row.productFamily === "RETAIL")) {
+    const correct = evaluateProductQaPlan(plan, profile);
+    assert.equal(correct.passed, true);
+    assert.equal(correct.entitlements.digitalSignageEnabled, false);
+    assert.equal(correct.entitlements.digitalSignageDisplayLimit, 0);
+    for (const licensedMusicCatalogueLevel of ["NONE", "PROFESSIONAL", "PREMIUM"]) {
+      const stale = evaluateProductQaPlan({ ...plan, licensedMusicCatalogueLevel }, profile);
+      assert.equal(stale.passed, false);
+      assert.ok(stale.failures.includes("CATALOGUE_LEVEL_FAILED"));
+      assert.ok(stale.failures.includes("PLAN_CONFIGURATION_DRIFT"));
+    }
+    assert.ok(evaluateProductQaPlan({ ...plan, digitalSignageEnabled: true }, profile).failures.includes("PLAN_CONFIGURATION_DRIFT"));
   }
 });
 

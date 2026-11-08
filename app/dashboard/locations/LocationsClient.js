@@ -11,7 +11,7 @@ function destination(returnTo) {
   return null;
 }
 
-export default function LocationsClient({ initialLocations, brands, allowance, canManage, returnTo, setupAccessEnabled = true }) {
+export default function LocationsClient({ initialLocations, brands, allowance, canManage, returnTo, setupAccessEnabled = true, retailAudioOnly = false }) {
   const router = useRouter();
   const [locations, setLocations] = useState(initialLocations);
   const [form, setForm] = useState(EMPTY_LOCATION);
@@ -36,7 +36,7 @@ export default function LocationsClient({ initialLocations, brands, allowance, c
       const result = await send("/api/locations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) }, "Unable to create the location.");
       setLocations((current) => [...current, result.location].sort((a, b) => a.name.localeCompare(b.name)));
       setForm(EMPTY_LOCATION);
-      setMessage("Location and first area created. They are now available to players and displays.");
+      setMessage(retailAudioOnly ? "Location and first area created. They are now available to audio players." : "Location and first area created. They are now available to players and displays.");
       router.refresh();
     } catch (error) { setMessage(error.message); }
     finally { setBusy(""); }
@@ -64,7 +64,7 @@ export default function LocationsClient({ initialLocations, brands, allowance, c
       const result = await send(url, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) }, "Unable to rename this item.");
       setLocations((current) => current.map((location) => location.id !== locationId ? location : zoneId ? { ...location, zones: location.zones.map((zone) => zone.id === zoneId ? { ...zone, name: result.zone.name } : zone) } : { ...location, name: result.location.name }));
       setRenameValues((current) => ({ ...current, [key]: "" }));
-      setMessage(`${kind} renamed without changing its player or display links.`);
+      setMessage(retailAudioOnly ? `${kind} renamed without changing its player links.` : `${kind} renamed without changing its player or display links.`);
       router.refresh();
     } catch (error) { setMessage(error.message); }
     finally { setBusy(""); }
@@ -78,10 +78,10 @@ export default function LocationsClient({ initialLocations, brands, allowance, c
   return <main style={styles.page}><section style={styles.content}>
     <a href="/dashboard" style={styles.back}>← Dashboard</a>
     <p style={styles.eyebrow}>PHYSICAL SERVICE SETUP</p><h1 style={styles.heading}>Locations & Zones</h1>
-    <p style={styles.lead}>Create each physical site, then add the playback or display areas inside it. Players and screens use these exact areas, so you only set them up once.</p>
+    <p style={styles.lead}>{retailAudioOnly ? "Create each shop, then add the listening areas inside it. Audio players use these areas to connect the right devices to your shared programme." : "Create each physical site, then add the playback or display areas inside it. Players and screens use these exact areas, so you only set them up once."}</p>
     <section style={styles.summary}><div><span>Locations</span><strong>{locations.length} / {allowance.limit}</strong></div><div><span>Areas / zones</span><strong>{zoneCount}</strong></div><div><span>Access</span><strong>{canManage ? "Owner / manager" : "View only"}</strong></div></section>
     {message ? <p role="status" style={message.includes("Unable") || message.includes("not ") ? styles.error : styles.success}>{message}</p> : null}
-    {canManage ? <section style={styles.card}><h2>Create your first or next location</h2><p style={styles.copy}>A first area is required so the location can immediately be selected in Players & Devices and Digital Signage.</p>
+    {canManage ? <section style={styles.card}><h2>Create your first or next location</h2><p style={styles.copy}>{retailAudioOnly ? "Add a first listening area so you can select this shop in Players & Devices." : "A first area is required so the location can immediately be selected in Players & Devices and Digital Signage."}</p>
       <form onSubmit={createLocation} style={styles.form}>
         <label style={styles.field}>Location name<input required minLength={2} maxLength={160} value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Valletta shop" style={styles.input} /></label>
         <label style={styles.field}>First area / zone<input required minLength={2} maxLength={160} value={form.firstZoneName} onChange={(event) => setForm({ ...form, firstZoneName: event.target.value })} placeholder="Main floor" style={styles.input} /></label>

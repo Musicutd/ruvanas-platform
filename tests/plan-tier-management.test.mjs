@@ -35,7 +35,8 @@ test("database tier edits flow into customer-facing plan presentation", () => {
   assert.equal(retail.plans[0].priceLabel, "€25.50 / month");
   assert.equal(retail.plans[0].stationLimit, 2);
   assert.equal(retail.plans[0].storageLimitGb, 8);
-  assert.equal(retail.plans[0].digitalSignageDisplayLimit, 2);
+  assert.equal(retail.plans[0].digitalSignageDisplayLimit, null);
+  assert.equal(retail.plans[0].digitalSignageEnabled, false);
   assert.match(retail.plans[0].catalogueDescription, /Focused Licensed Music Catalogue/);
 });
 

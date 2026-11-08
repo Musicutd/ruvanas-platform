@@ -6,6 +6,7 @@ import {
   formatMonthlyPlanPrice,
   registrationPlanOptions,
   registrationProducts,
+  registrationProductsFromDatabasePlans,
   resolveRegistrationDeepLink
 } from "../lib/registration-experience.mjs";
 
@@ -73,7 +74,7 @@ test("mismatched and invented links fail closed while Tier 5 links remain select
 });
 
 test("plan presentation uses customer-safe Licensed Music Catalogue wording", () => {
-  for (const product of ["RETAIL", "SCHOOL", "ONLINE", "HEALTH", "FAITH", "ORGANISATIONS"]) {
+  for (const product of ["SCHOOL", "ONLINE", "HEALTH", "FAITH", "ORGANISATIONS"]) {
     const plans = registrationPlanOptions(product);
     assert.deepEqual(plans.map((plan) => plan.tierNumber), [1, 2, 3, 4, 5]);
     assert.match(plans[0].catalogueDescription, /not included/i);
@@ -82,12 +83,33 @@ test("plan presentation uses customer-safe Licensed Music Catalogue wording", ()
     assert.match(plans[4].catalogueDescription, /Premium Licensed Music Catalogue/);
     assert.doesNotMatch(JSON.stringify(plans), /supplier|provider credential|wholesale/i);
   }
+  for (const plan of registrationPlanOptions("RETAIL")) {
+    assert.equal(plan.catalogueDescription, "Focused Licensed Music Catalogue, subject to product-use and territory rights.");
+  }
 });
 
-test("Retail registration options include Studio and connected display allowances", () => {
+test("Retail registration options retain Studio tiers without digital display allowances", () => {
   const plans = registrationPlanOptions("RETAIL");
   assert.deepEqual(plans.map((plan) => plan.studioLevel), ["Basic", "Basic", "Pro", "Pro", "Pro"]);
-  assert.deepEqual(plans.map((plan) => plan.digitalSignageDisplayLimit), [1, 3, 10, 30, 100]);
+  assert.deepEqual(plans.map((plan) => plan.digitalSignageDisplayLimit), [null, null, null, null, null]);
+});
+
+test("database-backed Retail registration keeps the Focused policy and existing commercial limits", () => {
+  const databasePlans = PUBLIC_PLAN_CATALOGUE.map(plan => ({ ...plan, id: `plan-${plan.code}` }));
+  const products = registrationProductsFromDatabasePlans(databasePlans);
+  const retail = products.find(product => product.id === "RETAIL");
+  assert.deepEqual(retail.plans.map(plan => plan.stationLimit), [1, 3, 10, 30, 100]);
+  assert.deepEqual(retail.plans.map(plan => plan.storageLimitGb), [5, 15, 100, 200, 2000]);
+  assert.deepEqual(retail.plans.map(plan => plan.maxBitrateKbps), [128, 256, 320, 320, 320]);
+  for (const plan of retail.plans) {
+    assert.equal(plan.licensedMusicCatalogueLevel, "FOCUSED");
+    assert.equal(plan.catalogueDescription, "Focused Licensed Music Catalogue, subject to product-use and territory rights.");
+    assert.equal(plan.digitalSignageDisplayLimit, null);
+    assert.equal(plan.digitalSignageEnabled, false);
+  }
+  const school = products.find(product => product.id === "SCHOOL");
+  assert.equal(school.plans[1].digitalSignageEnabled, true);
+  assert.equal(school.plans[4].licensedMusicCatalogueLevel, "PREMIUM");
 });
 
 test("registration UI preserves a guided, accessible and product-aware submission", async () => {

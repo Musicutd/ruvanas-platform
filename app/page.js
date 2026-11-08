@@ -135,19 +135,12 @@ function planFeatures(plan) {
   ];
   if (plan.productFamily === "RETAIL") {
     const siteLabel = plan.stationLimit === 1 ? "1 site" : `Up to ${plan.stationLimit} sites`;
-    const displayLabel = plan.digitalSignageDisplayLimit === 1
-      ? "1 connected digital display"
-      : `Up to ${plan.digitalSignageDisplayLimit} connected digital displays`;
-    const catalogueLabel = plan.licensedMusicCatalogueLevel === "NONE"
-      ? "Focused Licensed Music Catalogue, subject to product-use and territory rights"
-      : plan.catalogueDescription;
     return [
       { label: siteLabel, included: true },
       { label: `${plan.storageLimitGb} GB media storage`, included: true },
       { label: `High-quality audio up to ${plan.maxBitrateKbps} kbps`, included: true },
       { label: `Ruvanas Studio ${plan.studioLevel}`, included: true },
-      { label: catalogueLabel, included: plan.licensedMusicCatalogueLevel !== "NONE" },
-      { label: displayLabel, included: true }
+      { label: plan.catalogueDescription, included: plan.licensedMusicCatalogueLevel !== "NONE" }
     ];
   }
   return [
@@ -455,7 +448,7 @@ export default async function HomePage() {
               <h3 id="story-five-worlds">One platform. Six specialised worlds.</h3>
               <p>Ruvanas has been designed around a shared technology core, but with dedicated experiences for very different types of organisations.</p>
               <div className={styles.storyProducts}>
-                <article><span>Retail</span><p><strong>Ruvanas Retail</strong> gives retailers, hospitality businesses and other commercial organisations the tools to manage their own in-store audio, promotions, scheduling, digital displays and multi-location media.</p></article>
+                <article><span>Retail</span><p><strong>Ruvanas Retail</strong> gives retailers, hospitality businesses and other commercial organisations the tools to manage their own in-store audio, promotions, scheduling and multi-location audio.</p></article>
                 <article><span>School</span><p><strong>Ruvanas School</strong> provides schools and educational organisations with a structured environment for school radio, podcasting, media production and supervised student participation.</p></article>
                 <article><span>Radio</span><p><strong>Ruvanas Radio</strong> provides broadcasters and organisations with the technology to create and operate their own online radio services, including automation, live broadcasting, scheduling, podcasts and listener-facing experiences.</p></article>
                 <article><span>Faith</span><p><strong>Ruvanas Faith</strong> brings the traditional concept of Church Radio into a modern digital environment, giving churches, ministries and faith organisations the technology to operate their own radio channels, live services, sermons, podcasts and media networks.</p></article>

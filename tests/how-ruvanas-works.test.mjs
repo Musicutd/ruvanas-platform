@@ -41,6 +41,15 @@ test("the guide separates all six products into dedicated tabs", () => {
   }
 });
 
+test("the Retail guide offers Focused catalogue access on every tier and keeps audio workflows", () => {
+  const retail = JSON.stringify(ruvanasProductGuides.find(product => product.id === "retail"));
+  assert.match(retail, /Every Retail tier includes the Focused Licensed Music Catalogue, subject to product-use and territory rights/);
+  assert.doesNotMatch(retail, /digital-signage|Digital Signage|visual playlists|visual and audio devices/);
+  assert.match(retail, /Ruvanas Studio/);
+  assert.match(retail, /promotions/i);
+  assert.match(JSON.stringify(ruvanasProductGuides.find(product => product.id === "health")), /optional signage/);
+});
+
 test("signed-in product guides are limited to the organisation's active product", () => {
   assert.deepEqual(guideIdsForEntitlements({ planProductFamily: "HEALTH" }), ["health"]);
   assert.deepEqual(guideIdsForEntitlements({ planProductFamily: "FAITH" }), ["faith"]);

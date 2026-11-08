@@ -3,6 +3,7 @@ import { before, after, test } from "node:test";
 import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { readPreviewMigrationCatalog, PREVIEW_ACCESS_MIGRATION, PREVIEW_ACCESS_MIGRATION_CHECKSUM } from "../scripts/private-preview-access-migrate.mjs";
 import { CATALOGUE_TEST_MIGRATION, CATALOGUE_TEST_MIGRATION_CHECKSUM } from "../scripts/catalogue-test-migrate.mjs";
 import { CATALOGUE_TEST_HOUR_MIGRATION, CATALOGUE_TEST_HOUR_MIGRATION_CHECKSUM } from "../scripts/catalogue-test-hour-migrate.mjs";
@@ -18,7 +19,9 @@ const clone = structuredClone, row = (name, checksum) => ({ migration_name: name
 let root, catalog, prior;
 before(async () => {
   root = await mkdtemp(path.join(tmpdir(), "ruvanas-subscriber-migrate-"));
-  for (const entry of await readPreviewMigrationCatalog()) {
+  // This historical one-release guard intentionally rejects later migrations.
+  // Its successful fixtures must contain only the release inventory it pinned.
+  for (const entry of (await readPreviewMigrationCatalog()).filter(entry => entry.name <= NEW)) {
     const directory = path.join(root, "prisma/migrations", entry.name); await mkdir(directory, { recursive: true });
     await copyFile(new URL(`../prisma/migrations/${entry.name}/migration.sql`, import.meta.url), path.join(directory, "migration.sql"));
   }
@@ -56,6 +59,17 @@ function database(applied = false) {
   return { state, calls, db, options: { env: clone(ENV), root, connect: async () => { calls.connections++; return db; },
     deploy: async () => { calls.deployments++; state.snapshot = snapshot(true); } } };
 }
+
+test("the historical apply guard refuses the later Retail migration without connecting or deploying", async () => {
+  const currentCatalog = await readPreviewMigrationCatalog();
+  assert.ok(currentCatalog.some(entry => entry.name === "20261209000000_retail_focused_catalogue_audio_only"));
+  assert.equal(decideSubscriberTestingMigration(currentCatalog, snapshot()).code, "MIGRATION_CATALOG_CHANGED");
+  const f = database();
+  const result = await runSubscriberTestingMigration({ ...f.options, mode: "apply",
+    root: fileURLToPath(new URL("../", import.meta.url)) });
+  assert.equal(result.code, "MIGRATION_CATALOG_CHANGED");
+  assert.equal(f.calls.connections, 0); assert.equal(f.calls.deployments, 0);
+});
 
 test("exact 130-row history permits only the pinned additive migration and verified historical EOL variants", () => {
   const decision = decideSubscriberTestingMigration(catalog, snapshot()); assert.equal(decision.action, "APPLY");

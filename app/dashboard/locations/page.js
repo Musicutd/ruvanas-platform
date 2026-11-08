@@ -3,6 +3,7 @@ import { getActiveOrganisationContext } from "@/lib/auth";
 import { canManageSubscriberLocations, subscriberLocationAllowance } from "@/lib/subscriber-locations.mjs";
 import LocationsClient from "./LocationsClient";
 import { subscriberWorkflowRequestAllowed } from "@/lib/private-preview-subscriber-testing.mjs";
+import { resolveEntitlements } from "@/lib/entitlements.mjs";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Locations & Zones | Ruvanas" };
@@ -20,16 +21,18 @@ export default async function SubscriberLocationsPage({ searchParams }) {
   if (!context) redirect("/login");
   if (!context.membership) redirect("/dashboard");
   const organisation = context.membership.organisation;
+  const retailAudioOnly = resolveEntitlements(organisation.subscription).planProductFamily === "RETAIL";
   const allowance = subscriberLocationAllowance(organisation.subscription);
   const setupAccessEnabled = subscriberWorkflowRequestAllowed(context, { pathname: "/api/locations", method: "POST" });
   const query = await searchParams;
-  const returnTo = query?.returnTo === "signage" ? "signage" : query?.returnTo === "players" ? "players" : null;
+  const returnTo = query?.returnTo === "signage" && !retailAudioOnly ? "signage" : query?.returnTo === "players" ? "players" : null;
   return <LocationsClient
     initialLocations={organisation.locations}
     brands={organisation.brands}
     allowance={allowance}
     canManage={setupAccessEnabled && allowance.enabled && canManageSubscriberLocations(context.membership.role)}
     setupAccessEnabled={setupAccessEnabled}
+    retailAudioOnly={retailAudioOnly}
     returnTo={returnTo}
   />;
 }

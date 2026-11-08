@@ -218,8 +218,8 @@ test("website test tiers intersect the signed catalogue grant without changing c
     assert.equal((await retailSubscriberCatalogue(f.db, { ...f.options, query: {} })).total, 4);
     bindSubscriberTestPlan(subscription, f.context.user, NOW);
     const view = await retailSubscriberCatalogue(f.db, { ...f.options, query: {} });
-    assert.equal(view.catalogueLevel, selectedPlan.tierNumber < 3 ? "NONE" : "FOCUSED");
-    assert.equal(view.total, selectedPlan.tierNumber < 3 ? 1 : 4);
+    assert.equal(view.catalogueLevel, "FOCUSED");
+    assert.equal(view.total, 4);
     assert.ok(view.tracks.some(row => row.id === core.id));
     assert.equal(view.tracks.some(row => row.id === tooHigh.id || row.id === foreignCore.id), false);
     assert.deepEqual(f.d, before);

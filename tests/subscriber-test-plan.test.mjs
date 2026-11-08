@@ -34,6 +34,43 @@ test("a free feature snapshot copies the selected plan without altering billing 
   assert.equal(snapshot.basePlanId, subscription.planId);
 });
 
+test("historical Retail test tiers receive the current catalogue offering without rewriting capacities or worker approval", () => {
+  const previousLevels = ["NONE", "NONE", "FOCUSED", "PROFESSIONAL", "PREMIUM"];
+  for (const publicPlan of PUBLIC_PLAN_CATALOGUE.filter(row => row.productFamily === "RETAIL")) {
+    const { context, subscription } = boundFixture();
+    const savedPlan = { ...publicPlan, id: `retail-${publicPlan.tierNumber}`, stationLimit: 17,
+      licensedMusicCatalogueLevel: previousLevels[publicPlan.tierNumber - 1] };
+    const snapshot = createSubscriberTestPlanSnapshot({ plan: savedPlan, userId: context.user.id,
+      organisationId: subscription.organisationId, basePlanId: subscription.planId, pillars: ["RETAIL"],
+      expiresAt: context.user.privatePreviewAccess.expiresAt, now });
+    assert.equal(snapshot.plan.licensedMusicCatalogueLevel, "FOCUSED", "new selections use the current catalogue offering");
+    // Model an already persisted selection, made before Retail's offering changed.
+    snapshot.plan.licensedMusicCatalogueLevel = savedPlan.licensedMusicCatalogueLevel;
+    subscription.subscriberTestPlanSnapshot = snapshot;
+    const original = structuredClone(subscription), workerSubscription = structuredClone(subscription);
+    assert.equal(readSubscriberTestPlan(subscription, now).licensedMusicCatalogueLevel, "FOCUSED");
+    assert.equal(resolveSubscriberTestPlan(subscription, now), null, "stored JSON is not an authenticated grant");
+    bindSubscriberTestPlan(subscription, context.user, now);
+    const entitlements = resolveEntitlements(subscription, now);
+    assert.equal(entitlements.licensedMusicCatalogueLevel, "FOCUSED");
+    assert.equal(entitlements.stationLimit, 17, "existing capacity snapshots remain unchanged");
+    assert.equal(entitlements.digitalSignageEnabled, false);
+    assert.equal(entitlements.outputEnabled, false);
+    assert.equal(resolveEntitlements(workerSubscription, now).licensedMusicCatalogueLevel,
+      resolveEntitlements({ ...subscription, subscriberTestPlanSnapshot: null }, now).licensedMusicCatalogueLevel);
+    assert.deepEqual(subscription, original);
+  }
+});
+
+test("non-Retail snapshot catalogue levels remain unchanged", () => {
+  for (const plan of PUBLIC_PLAN_CATALOGUE.filter(row => row.productFamily !== "RETAIL")) {
+    const snapshot = createSubscriberTestPlanSnapshot({ plan: { ...plan, id: `plan-${plan.code}` },
+      userId: "tester-user", organisationId: "tester-org", basePlanId: "preview-plan",
+      pillars: [plan.productFamily], expiresAt, now });
+    assert.equal(snapshot.plan.licensedMusicCatalogueLevel, plan.licensedMusicCatalogueLevel, plan.code);
+  }
+});
+
 test("selection rejects other products, private/malformed plans, incomplete identity and expired grants", () => {
   const { plan } = fixture();
   const valid = { plan, userId: "retail-user", organisationId: "retail-org", basePlanId: "original-plan", pillars: ["RETAIL"], expiresAt, now };
