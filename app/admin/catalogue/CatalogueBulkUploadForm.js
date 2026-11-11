@@ -92,7 +92,7 @@ export default function CatalogueBulkUploadForm() {
         <strong>Automatic matching</strong>
         <span>The File column is optional when each audio filename starts with the spreadsheet row number or contains the artist and title.</span>
         <span>HTML text such as <code>R&amp;amp;B</code> is decoded and matched to the existing <strong>R&amp;B</strong> genre.</span>
-        <span>New CSV genres are detected automatically and created only when you click Import. Tracks follow your ready-for-programming choice below. Checking files does not save genres or music.</span>
+        <span>New spreadsheet genres are detected automatically and created when their tracks are imported successfully. Tracks follow your ready-for-programming choice below. Checking files does not save genres or music.</span>
         <span>Track lengths are measured from the audio. If a spreadsheet time differs, the verified audio length is used.</span>
       </div>
 
@@ -150,7 +150,12 @@ function Preview({ preview }) {
       <div><strong>3. Review before import</strong><p>{preview.summary.matchedTracks} ready · {preview.summary.invalidRows} need attention · {preview.summary.audioFiles} audio files found</p></div>
       <span style={preview.ready ? styles.ready : styles.notReady}>{preview.ready ? "Ready to import" : "Fix highlighted rows"}</span>
     </div>
-    {newGenres.length ? <div style={styles.info}><strong>New genres — created when you import</strong><span>{newGenres.map(genre => `${genre.name} (${CATALOGUE_TIERS.find(tier => tier.level === genre.minimumCatalogueLevel)?.label || genre.minimumCatalogueLevel})`).join(", ")}</span><span>Tracks stay Draft unless you explicitly select “ready for programming”. Ready tracks still need a Music Mode and published schedule before playback. Existing genre settings and track rights are not changed.</span></div> : null}
+    {newGenres.length ? <div style={styles.info}>
+      <strong>New genres detected — created after successful import</strong>
+      <span>{newGenres.map(genre => `${genre.name} (${CATALOGUE_TIERS.find(tier => tier.level === genre.minimumCatalogueLevel)?.label || genre.minimumCatalogueLevel})`).join(", ")}</span>
+      <span>{preview.ready ? "Each new genre is saved automatically with its imported track." : "These genres are recognised. Resolve the highlighted file or metadata issues, then import the batch to create them."}</span>
+      <span>Tracks stay Draft unless you explicitly select “ready for programming”. Ready tracks still need a Music Mode and published schedule before playback. Existing genre settings and track rights are not changed.</span>
+    </div> : null}
     {preview.unmatchedFiles.length ? <div style={styles.warning}><strong>Audio not used by the spreadsheet:</strong> {preview.unmatchedFiles.join(", ")}</div> : null}
     <div style={styles.tableWrap}><table style={styles.table}><thead><tr><th style={styles.previewHeaderCell}>Row</th><th style={styles.previewHeaderCell}>Audio</th><th style={styles.previewHeaderCell}>Track</th><th style={styles.previewHeaderCell}>Mix / BPM</th><th style={styles.previewHeaderCell}>Verified length</th><th style={styles.previewHeaderCell}>Genre</th><th style={styles.previewHeaderCell}>Check</th></tr></thead><tbody>
       {preview.rows.map((row) => <tr key={row.sheetRow} style={row.errors.length ? styles.badRow : undefined}>

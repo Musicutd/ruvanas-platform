@@ -5,6 +5,7 @@ import test from "node:test";
 import { validateAudioUpload } from "../lib/audio-validation.mjs";
 import { catalogueStorageKey, MAX_CATALOGUE_FILE_SIZE_BYTES } from "../lib/catalogue-upload.mjs";
 import { measureCatalogueAudioDuration } from "../lib/catalogue-audio-duration.mjs";
+import { catalogueTierStorage } from "../lib/catalogue-audience.mjs";
 
 const storageSource = await readFile(new URL("../lib/catalogue-track-storage.js", import.meta.url), "utf8");
 const bulkSource = await readFile(new URL("../app/api/admin/catalogue/bulk-upload/route.js", import.meta.url), "utf8");
@@ -69,7 +70,7 @@ function storageHarness() {
     getR2Storage: () => ({ bucketName: "synthetic-bucket", client }),
     validateAudioUpload, catalogueStorageKey, MAX_CATALOGUE_FILE_SIZE_BYTES,
     resolveNewCatalogueGenres: async () => ({ ids: [], createdNames: [] }),
-    measureCatalogueAudioDuration
+    measureCatalogueAudioDuration, catalogueTierStorage
   };
   const storage = new Function(...Object.keys(deps),
     `${withoutImports(storageSource)}\nreturn { inspectCatalogueAudio, findExistingCatalogueChecksums, storeCatalogueTrack, CatalogueTrackStorageError };`)(...Object.values(deps));
@@ -160,6 +161,17 @@ test("already correct submitted 182- and 192-second lengths remain unchanged in 
     assert.equal(stored.audio.durationSeconds, duration);
     assert.equal(fixture.state.assetWrites[0].durationSeconds, duration);
     assert.equal(fixture.state.audits[0].details.submittedDurationSeconds, duration);
+  }
+});
+
+test("actual upload storage persists ALL without a new enum and preserves internal NONE samples", async () => {
+  for (const level of ["ALL", "NONE", "PREMIUM"]) {
+    const fixture = storageHarness();
+    const stored = await fixture.storage.storeCatalogueTrack({ buffer: silentWav(1), fileName: "synthetic.wav",
+      metadata: { ...metadata(1), minimumCatalogueLevel: level }, actorUserId: "synthetic-admin" });
+    assert.equal(stored.track.minimumCatalogueLevel, level === "ALL" ? "FOCUSED" : level);
+    assert.equal(stored.track.catalogueAllTiers, level === "ALL");
+    assert.equal(fixture.state.audits[0].details.catalogueAllTiers, level === "ALL");
   }
 });
 

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requirePlatformAdmin } from "@/lib/access-control";
 import { accessDenied } from "@/lib/api-response";
-import { catalogueTierSchema, catalogueUseSchema, parseCatalogueAudience } from "@/lib/catalogue-audience.mjs";
+import { catalogueTierSchema, catalogueUseSchema, parseCatalogueAudience, catalogueTierStorage } from "@/lib/catalogue-audience.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -118,6 +118,7 @@ export async function POST(request) {
         data: {
           ...trackData,
           ...audience.data,
+          ...catalogueTierStorage(audience.data.minimumCatalogueLevel),
           album: parsed.data.album || null,
           rightsBasis: "OTHER",
           rightsConfirmedAt: new Date(),
@@ -145,6 +146,7 @@ export async function POST(request) {
             rightsReference: created.rightsReference,
             permittedTerritories: created.permittedTerritories,
             minimumCatalogueLevel: created.minimumCatalogueLevel,
+            catalogueAllTiers: created.catalogueAllTiers,
             permittedUses: created.permittedUses,
             licenceExpiresAt: created.licenceExpiresAt?.toISOString() || null
           }

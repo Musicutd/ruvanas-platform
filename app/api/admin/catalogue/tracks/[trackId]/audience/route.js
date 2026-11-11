@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requirePlatformAdmin } from "@/lib/access-control";
 import { accessDenied } from "@/lib/api-response";
-import { parseCatalogueAudience } from "@/lib/catalogue-audience.mjs";
+import { parseCatalogueAudience, catalogueTierStorage } from "@/lib/catalogue-audience.mjs";
 import { catalogueTerritoriesWithinApprovedScope } from "@/lib/catalogue-territories.mjs";
 import { catalogueLevelAllows } from "@/lib/autodj-genre-entitlements.mjs";
 
@@ -18,30 +18,31 @@ export async function PUT(request, { params }) {
   const audience = parseCatalogueAudience(input);
   if (!audience.ok) return NextResponse.json({ error: audience.error }, { status: 400 });
   if (input?.rightsConfirmed !== true) return NextResponse.json({ error: "Confirm that the recorded licence covers the selected pillars and tier." }, { status: 400 });
+  const audienceData = { ...audience.data, ...catalogueTierStorage(audience.data.minimumCatalogueLevel) };
 
   const { trackId } = await params;
   const track = await prisma.track.findFirst({
     where: { id: trackId, mediaAsset: { libraryType: "RUVANAS_CATALOGUE", organisationId: null } },
-    select: { id: true, minimumCatalogueLevel: true, permittedUses: true, permittedTerritories: true,
+    select: { id: true, minimumCatalogueLevel: true, catalogueAllTiers: true, permittedUses: true, permittedTerritories: true,
       catalogueProvider: true, distributorItems: { select: { permittedTerritories: true, permittedUses: true, minimumCatalogueLevel: true } } }
   });
   if (!track) return NextResponse.json({ error: "Catalogue track not found." }, { status: 404 });
   if (track.catalogueProvider && (!track.distributorItems.length || track.distributorItems.some((item) =>
     !catalogueTerritoriesWithinApprovedScope(audience.data.permittedTerritories, item.permittedTerritories) ||
     audience.data.permittedUses.some((use) => !item.permittedUses.includes(use)) ||
-    !catalogueLevelAllows(audience.data.minimumCatalogueLevel, item.minimumCatalogueLevel)
+    !catalogueLevelAllows(audienceData.minimumCatalogueLevel, item.minimumCatalogueLevel)
   ))) {
     return NextResponse.json({ error: "Choose territories, product uses and a tier within the provider-approved scope. Broader access needs a separate rights review." }, { status: 400 });
   }
 
   const updated = await prisma.$transaction(async (tx) => {
-    const saved = await tx.track.update({ where: { id: track.id }, data: audience.data, select: { id: true, minimumCatalogueLevel: true, permittedUses: true, permittedTerritories: true } });
+    const saved = await tx.track.update({ where: { id: track.id }, data: audienceData, select: { id: true, minimumCatalogueLevel: true, catalogueAllTiers: true, permittedUses: true, permittedTerritories: true } });
     await tx.auditLog.create({ data: {
       actorUserId: access.user.id,
       action: "CATALOGUE_TRACK_AUDIENCE_UPDATED",
       entityType: "Track",
       entityId: track.id,
-      details: { before: { minimumCatalogueLevel: track.minimumCatalogueLevel, permittedUses: track.permittedUses, permittedTerritories: track.permittedTerritories }, after: audience.data }
+      details: { before: { minimumCatalogueLevel: track.minimumCatalogueLevel, catalogueAllTiers: track.catalogueAllTiers, permittedUses: track.permittedUses, permittedTerritories: track.permittedTerritories }, after: audienceData }
     } });
     return saved;
   });

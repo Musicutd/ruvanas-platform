@@ -4654,6 +4654,7 @@ model Track {
   contentWarning        String?
   catalogueProvider     String?
   minimumCatalogueLevel LicensedMusicCatalogueLevel @default(NONE)
+  catalogueAllTiers     Boolean                     @default(false)
   isExplicit            Boolean                     @default(false)
   status                TrackStatus                 @default(DRAFT)
   rightsHolder          String?

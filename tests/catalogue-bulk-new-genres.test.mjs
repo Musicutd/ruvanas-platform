@@ -68,7 +68,8 @@ test("new genre proposals retain row limits, metadata requirements and bad audio
 // object storage or user audio is accessed by these request-level tests.
 const routeSource = (await readFile(new URL("../app/api/admin/catalogue/bulk-upload/route.js",import.meta.url),"utf8"))
   .replace(/import[\s\S]*?from "[^"]+";\r?\n/g,"").replaceAll("export ","");
-function routeHarness({role="SUPER_ADMIN",genreRows=[pop],existingKeys=[],failGenre=false}={}) {
+function routeHarness({role="SUPER_ADMIN",genreRows=[pop],existingKeys=[],failGenre=false,
+  archiveNames=["dance.mp3","pop.mp3"],manifestText=csv}={}) {
   const calls = {genreReads:0,stored:[],audits:0,released:0};
   class StorageError extends Error {} class RequestError extends Error {}
   const dependencies = {
@@ -79,7 +80,7 @@ function routeHarness({role="SUPER_ADMIN",genreRows=[pop],existingKeys=[],failGe
     requirePlatformAdmin:async()=>role?({ok:true,user:{id:"synthetic-owner",role}}):({ok:false}),
     accessDenied:()=>({status:401}),
     CatalogueBulkImportError,
-    extractCatalogueArchive:async()=>["dance.mp3","pop.mp3"].map(name=>({fileName:name,baseName:name,buffer:Buffer.from("ID3synthetic")})),
+    extractCatalogueArchive:async()=>archiveNames.map(name=>({fileName:name,baseName:name.replace(/\\/g,"/").split("/").at(-1),buffer:Buffer.from("ID3synthetic")})),
     matchManifestRowsToAudio,metadataForBulkRow,parseCatalogueBatchSettings,parseCatalogueManifest,
     CatalogueTrackStorageError:StorageError,
     findExistingCatalogueChecksums:async()=>new Set(existingKeys),
@@ -92,7 +93,7 @@ function routeHarness({role="SUPER_ADMIN",genreRows=[pop],existingKeys=[],failGe
   const {POST} = new Function(...Object.keys(dependencies),`${routeSource}\nreturn {POST};`)(...Object.values(dependencies));
   function request(mode="validate",rights=true,publishNow=true) {
     const data = new FormData();
-    data.set("archive",new File(["synthetic zip"],"synthetic.zip")); data.set("manifest",new File([csv],"synthetic.csv"));data.set("mode",mode);
+    data.set("archive",new File(["synthetic zip"],"synthetic.zip")); data.set("manifest",new File([manifestText],"synthetic.csv"));data.set("mode",mode);
     for (const [key,value] of Object.entries(settings)) if(key!=="permittedUses")data.set(key,String(key==="rightsConfirmed"?rights:value));
     if (publishNow == null) data.delete("publishNow"); else data.set("publishNow",String(publishNow));
     data.append("permittedUses","ONLINE_RADIO");return {formData:async()=>data};
@@ -120,6 +121,59 @@ test("actual deliberate Import passes new names only to the existing storage tra
     const draft = routeHarness(); const draftResult = await draft.POST(draft.request("import",true,choice));
     assert.equal(draftResult.status,201);
     assert.ok(draft.calls.stored.every(row=>row.metadata.status==="DRAFT"));
+  }
+});
+
+const christmasManifest = "Artist,Title,BPM,Genre\nA*Teens,Merry Christmas To You,80,Christmas\n";
+const christmasAudio = "ATeens - Merry Christmas To You.mp3";
+
+test("actual Christmas preview matches the sanitized filename but creates no genre or track",async()=>{
+  const h=routeHarness({manifestText:christmasManifest,archiveNames:[christmasAudio]});
+  const result=await h.POST(h.request());
+  assert.equal(result.status,200);
+  assert.equal(result.body.preview.ready,true);
+  assert.equal(result.body.preview.summary.matchedTracks,1);
+  assert.equal(result.body.preview.rows[0].fileName,christmasAudio);
+  assert.equal(result.body.preview.rows[0].durationSource,"VERIFIED_AUDIO");
+  assert.deepEqual(result.body.preview.rows[0].newGenres,[{name:"Christmas",minimumCatalogueLevel:"PREMIUM"}]);
+  assert.deepEqual(result.body.preview.unmatchedFiles,[]);
+  assert.equal(h.calls.stored.length,0);
+  assert.equal(h.calls.audits,0);
+});
+
+test("actual Christmas import passes the new genre and verified audio to storage together",async()=>{
+  const h=routeHarness({manifestText:christmasManifest,archiveNames:[christmasAudio]});
+  const result=await h.POST(h.request("import"));
+  assert.equal(result.status,201);
+  assert.equal(result.body.imported.length,1);
+  assert.equal(h.calls.stored.length,1);
+  const stored=h.calls.stored[0];
+  assert.deepEqual(stored.newGenreNames,["Christmas"]);
+  assert.equal(stored.fileName,christmasAudio);
+  assert.equal(stored.metadata.artist,"A*Teens");
+  assert.equal(stored.metadata.title,"Merry Christmas To You");
+  assert.equal(stored.metadata.durationSeconds,180);
+  assert.equal(h.calls.audits,1);
+  assert.equal(newCatalogueGenreLevel("Christmas"),"PREMIUM");
+});
+
+test("missing or ambiguous Christmas audio prevents every batch write while preserving the new genre proposal",async()=>{
+  for (const [archiveNames,error] of [
+    [["unrelated.mp3"],/No matching audio/],
+    [[christmasAudio,"A-Teens - Merry Christmas To You.mp3"],/More than one/]
+  ]) {
+    const h=routeHarness({
+      manifestText:christmasManifest+"Synthetic artist,Pop example,120,Pop\n",
+      archiveNames:[...archiveNames,"Synthetic artist - Pop example.mp3"]
+    });
+    const result=await h.POST(h.request("import"));
+    assert.equal(result.status,400);
+    assert.equal(result.body.preview.ready,false);
+    assert.equal(result.body.preview.summary.matchedTracks,1);
+    assert.match(result.body.preview.rows[0].errors.join(" "),error);
+    assert.deepEqual(result.body.preview.rows[0].newGenres,[{name:"Christmas",minimumCatalogueLevel:"PREMIUM"}]);
+    assert.equal(h.calls.stored.length,0);
+    assert.equal(h.calls.audits,0);
   }
 });
 

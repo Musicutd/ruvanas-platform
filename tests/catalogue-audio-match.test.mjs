@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { catalogueAudioFileCandidates } from "../lib/catalogue-audio-match.mjs";
+import { catalogueAudioFileCandidates, catalogueAudioMatchesMetadata } from "../lib/catalogue-audio-match.mjs";
 import { matchManifestRowsToAudio } from "../lib/catalogue-bulk-import.mjs";
 import { selectSingleCatalogueRow } from "../lib/catalogue-single-metadata.mjs";
 
@@ -97,4 +97,78 @@ test("folder-specific punctuation matching retains the requested extension", () 
 test("path compatibility preserves directory segment boundaries", () => {
   const files = [file("disc1-Artist/Song.mp3")];
   assert.deepEqual(catalogueAudioFileCandidates("disc1/Artist-Song.mp3", files), []);
+});
+
+test("bulk artist/title matching accepts Windows-removed punctuation in the Christmas filename", () => {
+  const expected = row("", { artist: "A*Teens", title: "Merry Christmas To You" });
+  const audio = file("ATeens - Merry Christmas To You.mp3");
+  const [matched] = matchManifestRowsToAudio([expected], [audio]);
+  assert.equal(matched.file, audio);
+  assert.deepEqual(matched.errors, []);
+  assert.equal(matched.artist, "A*Teens");
+});
+
+test("filename-forbidden punctuation can be omitted from either metadata field", () => {
+  for (const character of '<>:"/\\|?*') {
+    assert.equal(catalogueAudioMatchesMetadata("AB - CD.mp3", `A${character}B`, "CD"), true, character);
+    assert.equal(catalogueAudioMatchesMetadata("AB - CD.mp3", "AB", `C${character}D`), true, character);
+  }
+  assert.equal(catalogueAudioMatchesMetadata("ATeens - Another Song.mp3", "A*Teens", "Merry Christmas To You"), false);
+  assert.equal(catalogueAudioMatchesMetadata("Another Artist - Merry Christmas To You.mp3", "A*Teens", "Merry Christmas To You"), false);
+});
+
+test("single upload selects the Christmas row from several metadata rows", () => {
+  const expected = row("", { artist: "A*Teens", title: "Merry Christmas To You" });
+  const unrelated = row("", { sheetRow: 3, artist: "Another Artist", title: "Another Song" });
+  const result = selectSingleCatalogueRow([unrelated, expected], "ATeens - Merry Christmas To You.mp3");
+  assert.equal(result.ok, true);
+  assert.equal(result.row, expected);
+});
+
+test("bulk punctuation variants remain ambiguous even when one was already used", () => {
+  const files = [file("ATeens - Merry Christmas To You.mp3"), file("A-Teens - Merry Christmas To You.mp3")];
+  const expected = row("", { artist: "A*Teens", title: "Merry Christmas To You", sheetRow: 3 });
+  const [matched] = matchManifestRowsToAudio([expected], files);
+  assert.equal(matched.file, null);
+  assert.match(matched.errors.join(" "), /More than one/);
+  const afterExplicit = matchManifestRowsToAudio([row(files[0].fileName), expected], files);
+  assert.equal(afterExplicit[0].file, files[0]);
+  assert.equal(afterExplicit[1].file, null);
+  assert.match(afterExplicit[1].errors.join(" "), /More than one/);
+});
+
+test("single upload refuses multiple metadata rows that share a sanitized filename", () => {
+  const rows = [
+    row("", { artist: "A*Teens", title: "Merry Christmas To You" }),
+    row("", { artist: "ATeens", title: "Merry Christmas To You", sheetRow: 3 })
+  ];
+  const result = selectSingleCatalogueRow(rows, "ATeens - Merry Christmas To You.mp3");
+  assert.equal(result.ok, false);
+  assert.match(result.error, /More than one/);
+});
+
+test("implicit matching preserves ordinary word boundaries and safe punctuation", () => {
+  for (const artist of ["A Teens", "A-Teens", "A.Teens"]) {
+    const expected = row("", { artist, title: "Merry Christmas To You" });
+    const audio = file("ATeens - Merry Christmas To You.mp3");
+    assert.equal(catalogueAudioMatchesMetadata(audio.fileName, artist, expected.title), false);
+    const [matched] = matchManifestRowsToAudio([expected], [audio]);
+    assert.equal(matched.file, null);
+    assert.match(matched.errors.join(" "), /No matching audio/);
+    const result = selectSingleCatalogueRow([expected, row("", { sheetRow: 3 })], audio.fileName);
+    assert.equal(result.ok, false);
+    assert.match(result.error, /No spreadsheet row/);
+  }
+  assert.equal(catalogueAudioMatchesMetadata("ATeens - MerryChristmas To You.mp3", "A*Teens", "Merry Christmas To You"), false);
+});
+
+test("explicit filenames remain authoritative over sanitized artist/title matches", () => {
+  const expected = row("different.mp3", { artist: "A*Teens", title: "Merry Christmas To You" });
+  const audio = file("ATeens - Merry Christmas To You.mp3");
+  const [matched] = matchManifestRowsToAudio([expected], [audio]);
+  assert.equal(matched.file, null);
+  assert.match(matched.errors.join(" "), /No matching audio/);
+  const result = selectSingleCatalogueRow([expected], audio.fileName);
+  assert.equal(result.ok, false);
+  assert.match(result.error, /No spreadsheet row/);
 });

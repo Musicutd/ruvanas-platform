@@ -19,10 +19,16 @@ const row = (name, checksum) => ({ migration_name: name, checksum, finished_at: 
 let root, catalog, prior;
 before(async () => {
   root = await mkdtemp(path.join(tmpdir(), "ruvanas-hour-migrate-tests-"));
-  for (const entry of await readPreviewMigrationCatalog()) {
+  // This historical guard is pinned to its release's migration set. Later
+  // migrations belong in neither its synthetic deployment nor its baseline.
+  for (const entry of (await readPreviewMigrationCatalog()).filter(entry => entry.name <= NEW)) {
     const directory = path.join(root, "prisma/migrations", entry.name);
     await mkdir(directory, { recursive: true });
-    await copyFile(new URL(`../prisma/migrations/${entry.name}/migration.sql`, import.meta.url), path.join(directory, "migration.sql"));
+    const source = new URL(`../prisma/migrations/${entry.name}/migration.sql`, import.meta.url);
+    // The then-new migration was pinned to deployed LF bytes, independently of
+    // this checkout's platform. Preserve all historical file variants as-is.
+    if (entry.name === NEW) await writeFile(path.join(directory, "migration.sql"), (await readFile(source, "utf8")).replace(/\r\n/g, "\n"));
+    else await copyFile(source, path.join(directory, "migration.sql"));
   }
   await copyFile(new URL("../prisma/schema.prisma", import.meta.url), path.join(root, "prisma/schema.prisma"));
   await copyFile(new URL("../prisma/migrations/migration_lock.toml", import.meta.url), path.join(root, "prisma/migrations/migration_lock.toml"));
@@ -67,6 +73,18 @@ function database(applied = false) {
     deploy: async () => { calls.deployments++; state.snapshot = snapshot(true); } };
   return { state, calls, db, options };
 }
+
+test("the historical hour guard refuses today's later migrations before connecting or deploying", async () => {
+  const current = await readPreviewMigrationCatalog();
+  assert.ok(current.some(entry => entry.name > NEW));
+  assert.equal(decideCatalogueTestHourMigration(current, snapshot()).code, "MIGRATION_CATALOG_CHANGED");
+  let connections = 0, deployments = 0;
+  const result = await runCatalogueTestHourMigration({ env: clone(ENV), mode: "apply",
+    connect: async () => { connections++; throw new Error("must not connect"); },
+    deploy: async () => { deployments++; } });
+  assert.equal(result.code, "MIGRATION_CATALOG_CHANGED");
+  assert.equal(connections, 0); assert.equal(deployments, 0);
+});
 
 test("pins exact 129-row observed history and only the hour migration can be pending", () => {
   assert.equal(decideCatalogueTestHourMigration(catalog, snapshot()).action, "APPLY");
