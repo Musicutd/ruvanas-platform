@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import vm from "node:vm";
 import * as accountPolicy from "../lib/private-preview-account-policy.mjs";
+import * as subscriberTesting from "../lib/private-preview-subscriber-testing.mjs";
 
 const require = createRequire(import.meta.url), React = require("react"), h = React.createElement;
 const { renderToStaticMarkup } = require("react-dom/server"), babel = require("next/dist/compiled/babel/core");
@@ -41,6 +42,7 @@ function setup(file, { resolved = workspace, requestedStationId = stationId } = 
     "@/lib/subscriber-product-access": { requireSubscriberProduct: async (product, include) => {
       assert.equal(product, "ONLINE"); if (include) assert.equal(include.enterpriseSecurityPolicy, true); return { context, entitlements }; } },
     "@/lib/private-preview-account-policy.mjs": accountPolicy,
+    "@/lib/private-preview-subscriber-testing.mjs": subscriberTesting,
     "@/lib/private-preview-online-draft.mjs": { onlineDraftSubscription: () => true, onlineDraftChannelWhere: () => ({ status: "DRAFT" }) },
     "@/lib/private-preview-policy.mjs": { isPrivatePreviewTester: () => true, readPrivatePreviewPolicy: () => ({}) },
     "@/lib/product-access.mjs": { subscriberProductForStationFamily: () => "ONLINE", enabledSubscriberProducts: () => [], SUBSCRIBER_PRODUCT_LIST: [{ key: "ONLINE", label: "Online Radio", href: "/dashboard/radio" }] },
