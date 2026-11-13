@@ -2062,6 +2062,10 @@ model Organisation {
   radioAdvertisingPolicies           RadioAdvertisingPolicy[]
   radioDistributionDestinations      RadioDistributionDestination[]
   generatedPlaylists                 GeneratedPlaylist[]
+  rewardProgram                      RewardProgram?
+  rewardEntitlementGrant             RewardEntitlementGrant?
+  rewardStaffGrants                   RewardStaffGrant[]
+  rewardAuditEvents                   RewardAuditEvent[]
 }
 
 model OrganisationMember {
@@ -2077,8 +2081,10 @@ model OrganisationMember {
   organisationBranchAssignments OrganisationBranchAssignment[]
   correctionsFacilityGrants     CorrectionsFacilityGrant[]
   correctionsNetworkGrant       CorrectionsNetworkGrant?
+  rewardStaffGrants              RewardStaffGrant[]
 
   @@unique([userId, organisationId])
+  @@unique([id, organisationId])
   @@index([organisationId])
 }
 
@@ -2548,6 +2554,9 @@ model Subscription {
   billingInvoices         BillingInvoice[]
   billingReconciliations  BillingUsageReconciliation[]
   complimentaryAccessCode ComplimentaryAccessCode?     @relation("ActiveComplimentaryAccess", fields: [complimentaryAccessCodeId], references: [id], onDelete: SetNull)
+  rewardEntitlementGrants  RewardEntitlementGrant[]
+
+  @@unique([id, organisationId])
 }
 
 model ComplimentaryAccessCode {
@@ -2778,8 +2787,10 @@ model Location {
   correctionsAudioDistributionTargets CorrectionsNetworkAudioDistribution[] @relation("CorrectionsAudioDistributionTarget")
   correctionsAudioDistributionSources CorrectionsNetworkAudioDistribution[] @relation("CorrectionsAudioDistributionSource")
   correctionsSyndicationSources CorrectionsSyndicationOffer[]
+  rewardStaffGrants             RewardStaffGrant[]
 
   @@unique([organisationId, slug])
+  @@unique([id, organisationId])
   @@index([organisationId])
   @@index([brandId])
 }
@@ -8551,4 +8562,153 @@ model StudioBroadcastSessionDestination {
 
   @@id([sessionId, destinationId])
   @@index([destinationId, state])
+}
+
+// Retail Rewards is optional. These tables grant no access without the existing
+// server feature, Retail subscription and explicit Rewards policy checks.
+enum RewardProgramStatus {
+  DISABLED
+  ACTIVE
+  PAUSED
+}
+
+enum RewardGrantStatus {
+  DISABLED
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  SUSPENDED
+  CANCELLED
+  EXPIRED
+}
+
+enum RewardTier {
+  REWARDS_STARTER
+  REWARDS_PRO
+  REWARDS_BUSINESS
+  REWARDS_ENTERPRISE
+}
+
+enum RewardStaffScope {
+  ALL_LOCATIONS
+  LOCATIONS
+}
+
+enum RewardAction {
+  READ
+  MANAGE_OFFERS
+  PUBLISH_OFFERS
+  REDEEM
+  REVERSE
+  VIEW_INSIGHTS
+  EXPORT
+  MANAGE_STAFF
+}
+
+enum RewardAuditAction {
+  PROGRAM_CREATED
+  PROGRAM_CHANGED
+  ENTITLEMENT_CREATED
+  ENTITLEMENT_CHANGED
+  ENTITLEMENT_REVOKED
+  STAFF_GRANT_CREATED
+  STAFF_GRANT_CHANGED
+  STAFF_GRANT_REVOKED
+}
+
+enum RewardAuditTargetType {
+  PROGRAM
+  ENTITLEMENT_GRANT
+  STAFF_GRANT
+}
+
+model RewardProgram {
+  id             String              @id @default(cuid())
+  organisationId String              @unique
+  status         RewardProgramStatus @default(DISABLED)
+  timezone       String              @default("Europe/Malta") @db.VarChar(64)
+  networkOptIn   Boolean             @default(false)
+  createdAt      DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime            @updatedAt @db.Timestamptz(3)
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+}
+
+// A single current grant per tenant. Changes retain their history in the
+// append-only audit; no tier supplies implicit prices or numeric allowances.
+model RewardEntitlementGrant {
+  id                     String            @id @default(cuid())
+  organisationId         String            @unique
+  subscriptionId         String
+  capability             String            @default("RETAIL_REWARDS") @db.VarChar(32)
+  source                 String            @default("MANUAL_INTERNAL") @db.VarChar(32)
+  tier                   RewardTier
+  status                 RewardGrantStatus @default(DISABLED)
+  startsAt               DateTime          @db.Timestamptz(3)
+  expiresAt              DateTime          @db.Timestamptz(3)
+  revokedAt              DateTime?         @db.Timestamptz(3)
+  limitsVersion          Int               @default(1)
+  activeOffers           Int
+  locations              Int
+  staffSeats             Int
+  monthlyRedemptions     Int
+  analyticsRetentionDays Int
+  exportEnabled          Boolean
+  brandingEnabled        Boolean
+  createdAt              DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt              DateTime          @updatedAt @db.Timestamptz(3)
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  subscription Subscription @relation(fields: [subscriptionId, organisationId], references: [id, organisationId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([subscriptionId, organisationId])
+  @@index([organisationId, status, expiresAt])
+}
+
+// Each current row applies to all locations or one existing location. The
+// adapter maps this to RR-01a's []/[locationId] projection. SQL also enforces
+// one ALL_LOCATIONS row per member through a partial unique index.
+model RewardStaffGrant {
+  id                   String           @id @default(cuid())
+  organisationId       String
+  organisationMemberId String
+  scope                RewardStaffScope
+  locationId           String?
+  capabilities         RewardAction[]
+  startsAt             DateTime         @db.Timestamptz(3)
+  expiresAt            DateTime         @db.Timestamptz(3)
+  revokedAt            DateTime?        @db.Timestamptz(3)
+  createdAt            DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime         @updatedAt @db.Timestamptz(3)
+
+  organisation       Organisation       @relation(fields: [organisationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  organisationMember OrganisationMember @relation(fields: [organisationMemberId, organisationId], references: [id, organisationId], onDelete: Cascade, onUpdate: Restrict)
+  location           Location?          @relation(fields: [locationId, organisationId], references: [id, organisationId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([organisationId, organisationMemberId, locationId], map: "RewardStaffGrant_member_location_key")
+  @@index([organisationId, organisationMemberId, expiresAt], map: "RewardStaffGrant_member_expiry_idx")
+  @@index([locationId, organisationId])
+}
+
+// Actor/target identifiers are immutable historical references, not live user
+// FKs. Deleting a member removes their current grants without altering evidence.
+// SQL constrains metadata to safe bounded fields and rejects UPDATE/DELETE and
+// TRUNCATE. No reset exception or history-erasing cascade is provided.
+model RewardAuditEvent {
+  id                        String               @id @default(cuid())
+  organisationId            String
+  actorUserId               String?              @db.VarChar(191)
+  actorOrganisationMemberId String?              @db.VarChar(191)
+  action                    RewardAuditAction
+  targetType                RewardAuditTargetType
+  targetId                  String               @db.VarChar(191)
+  requestId                 String?              @db.VarChar(191)
+  metadata                  Json                 @default("{}")
+  createdAt                 DateTime             @default(now()) @db.Timestamptz(3)
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([organisationId, createdAt, id])
+  @@index([organisationId, action, createdAt])
+  @@index([organisationId, targetType, targetId, createdAt], map: "RewardAuditEvent_target_time_idx")
 }
