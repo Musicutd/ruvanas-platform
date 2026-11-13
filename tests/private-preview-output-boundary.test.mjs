@@ -117,10 +117,61 @@ test("actual public website helper requires both an active service and permissio
   assert.equal(await service.loadPublicStationWebsiteBySlug("synthetic-station", db), null, "reserved preview output stays closed");
 });
 
-test("device-cookie delivery and encoder worker enforce the canonical boundary before source access", async () => {
-  const player = await readFile(new URL("../lib/player-auth.js", import.meta.url), "utf8");
+test("device-cookie delivery requires ordinary output permission or the guarded Retail result", async () => {
+  const fixtureSource = `
+    export const state = { token: "a".repeat(40), player: null, retail: null, lookups: [], retailCalls: [] };
+    export const prisma = { player: { findUnique: async query => { state.lookups.push(query); return state.player; } } };
+    export async function cookies() { return { get: () => ({ value: state.token }) }; }
+    export async function loadRetailTestPlayerByTokenHash(database, tokenHash) {
+      state.retailCalls.push({ database, tokenHash }); return state.retail;
+    }
+  `;
+  const { state, prisma } = await import(moduleUrl(fixtureSource));
+  const service = await isolatedService("../lib/player-auth.js", {
+    "next/headers": fixtureSource,
+    "@/lib/prisma": fixtureSource,
+    // The real Retail authorizer's tenant, approval and revocation guards are
+    // covered by retail-test-player-access.test.mjs; exercise delegation here.
+    "@/lib/retail-test-player-access.mjs": fixtureSource
+  });
+  const previousSecret = process.env.SESSION_SECRET;
+  process.env.SESSION_SECRET = "synthetic-device-cookie-boundary-secret-only";
+  try {
+    const tokenHash = service.playerTokenHash(state.token);
+    state.player = { id: "commercial-player", organisation: { subscription: subscription(commercialPlan) } };
+    assert.equal(await service.getCurrentPlayer(), state.player);
+    assert.equal(state.retailCalls.length, 0, "ordinary output does not need the Retail exception");
+    assert.equal(state.lookups[0].where.sessionTokenHash, tokenHash);
+
+    for (const plan of [PREVIEW_ONLINE_DRAFT_PLAN, PREVIEW_TESTER_PLAN,
+      { ...commercialPlan, code: "PRIVATE_PREVIEW_UNKNOWN_VERSION" }, null]) {
+      state.player = plan ? { id: "preview-player", organisation: { subscription: subscription(plan) } } : null;
+      const before = state.retailCalls.length;
+      assert.equal(await service.getCurrentPlayer(), null, "a rejected Retail fallback must not return the raw player");
+      assert.equal(state.retailCalls.length, before + 1);
+      assert.deepEqual(state.retailCalls.at(-1), { database: prisma, tokenHash });
+    }
+
+    state.player = { id: "preview-player", organisation: { subscription: subscription(PREVIEW_TESTER_PLAN) } };
+    state.retail = { id: "approved-retail-player", subscriberTestStream: { kind: "RETAIL_SHARED_STREAM" } };
+    assert.equal(await service.getCurrentPlayer(), state.retail, "only the separately authorized Retail view is returned");
+    assert.deepEqual(state.retailCalls.at(-1), { database: prisma, tokenHash });
+
+    const lookupCount = state.lookups.length, retailCount = state.retailCalls.length;
+    for (const token of [undefined, "short", "x".repeat(129), "!".repeat(40)]) {
+      state.token = token;
+      assert.equal(await service.getCurrentPlayer(), null);
+    }
+    assert.equal(state.lookups.length, lookupCount, "invalid cookies never reach player lookup");
+    assert.equal(state.retailCalls.length, retailCount, "invalid cookies never reach the Retail exception");
+  } finally {
+    if (previousSecret === undefined) delete process.env.SESSION_SECRET;
+    else process.env.SESSION_SECRET = previousSecret;
+  }
+});
+
+test("encoder worker enforces the canonical boundary before source access", async () => {
   const worker = await readFile(new URL("../scripts/online-radio-encoder-worker.mjs", import.meta.url), "utf8");
-  assert.match(player, /resolveEntitlements\(player\.organisation\?\.subscription\)\.outputEnabled \? player : null/);
   const outputGuard = worker.indexOf('if (!entitlements.outputEnabled) return { ready: false, reason: "OUTPUT_NOT_PERMITTED" }');
   assert.ok(outputGuard > worker.indexOf("const entitlements = resolveEntitlements"));
   assert.ok(outputGuard < worker.indexOf("const genres = await prisma.mediaGenre.findMany"));
