@@ -4,6 +4,11 @@
 
 BEGIN;
 
+-- Bound waits on the existing shared tables and each statement's execution.
+-- A timeout aborts this transaction; do not retry a failed migration blindly.
+SET LOCAL lock_timeout = '5s';
+SET LOCAL statement_timeout = '60s';
+
 CREATE TYPE "RewardProgramStatus" AS ENUM ('DISABLED', 'ACTIVE', 'PAUSED');
 CREATE TYPE "RewardGrantStatus" AS ENUM ('DISABLED', 'TRIAL', 'ACTIVE', 'PAST_DUE', 'SUSPENDED', 'CANCELLED', 'EXPIRED');
 CREATE TYPE "RewardTier" AS ENUM ('REWARDS_STARTER', 'REWARDS_PRO', 'REWARDS_BUSINESS', 'REWARDS_ENTERPRISE');

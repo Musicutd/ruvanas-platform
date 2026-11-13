@@ -119,6 +119,50 @@ jobs:
         if: always()
         run: test ! -f /tmp/ruvanas-next.pid || kill $(cat /tmp/ruvanas-next.pid) || true
 
+  rewards-database:
+    # Isolated from the shared validation database: this suite exercises the
+    # global subscriber-reset code inside transactions that always roll back.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: rewards_ci
+          POSTGRES_PASSWORD: rewards_ci
+          POSTGRES_DB: ruvanas_rewards_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U rewards_ci -d ruvanas_rewards_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://rewards_ci:rewards_ci@127.0.0.1:5432/ruvanas_rewards_ci
+      RUVANAS_REWARDS_DATABASE_URL: postgresql://rewards_ci:rewards_ci@127.0.0.1:5432/ruvanas_rewards_ci
+      RUN_DATABASE_TESTS: "1"
+      RUVANAS_REWARDS_CI_TEST: "1"
+      RUVANAS_RETAIL_REWARDS_ENABLED: "false"
+      RUVANAS_RETAIL_REWARDS_PUBLIC_CLAIMS_ENABLED: "false"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+      - name: Generate Prisma client
+        run: npx prisma generate
+      - name: Replay database migrations on dedicated PostgreSQL 16
+        run: npx prisma migrate deploy
+      - name: Verify migration history is clean
+        run: npx prisma migrate status
+      - name: Verify Rewards constraints, immutable evidence and atomic reset
+        run: node --test --test-concurrency=1 tests/retail-rewards-database.test.mjs
+
   encoder-image:
     runs-on: ubuntu-latest
     timeout-minutes: 20

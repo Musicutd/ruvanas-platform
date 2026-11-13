@@ -3,13 +3,187 @@ import { randomUUID } from "node:crypto";
 import { realpathSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
+import { isDeepStrictEqual } from "node:util";
 
 // These cases include the existing global subscriber reset. Require a dedicated
-// owned cluster, never just DATABASE_URL or the shared CI database-test switch.
-const enabled = process.env.RUN_DATABASE_TESTS === "1" && process.env.RUVANAS_REWARDS_LOCAL_TEST === "1";
+// owned cluster or the separate ephemeral CI job, never just DATABASE_URL.
+const requested = process.env.RUVANAS_REWARDS_LOCAL_TEST !== undefined || process.env.RUVANAS_REWARDS_CI_TEST !== undefined;
+const CI_DATABASE_URL = "postgresql://rewards_ci:rewards_ci@127.0.0.1:5432/ruvanas_rewards_ci";
 const NOW = new Date("2026-11-13T12:00:00Z"), END = new Date("2027-11-13T12:00:00Z");
 const samePath = (a, b) => path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase();
 const rollback = new Error("ROLL_BACK_SYNTHETIC_REWARDS_FIXTURE");
+
+function rewardsDatabaseTarget(env, { platform = process.platform, realpath = realpathSync } = {}) {
+  assert.equal(env.RUN_DATABASE_TESTS, "1", "Database tests require explicit opt-in.");
+  if (env.RUVANAS_REWARDS_CI_TEST !== undefined) {
+    assert.equal(env.RUVANAS_REWARDS_CI_TEST, "1");
+    assert.equal(env.RUVANAS_REWARDS_LOCAL_TEST, undefined, "CI and local modes cannot be combined.");
+    assert.equal(env.RUVANAS_REWARDS_CLUSTER_DIR, undefined);
+    assert.equal(platform, "linux");
+    for (const [key, value] of Object.entries({ GITHUB_ACTIONS: "true", CI: "true", GITHUB_WORKFLOW: "CI",
+      GITHUB_JOB: "rewards-database", RUNNER_ENVIRONMENT: "github-hosted", RUNNER_OS: "Linux" })) {
+      assert.equal(env[key], value, `Unexpected CI identity: ${key}.`);
+    }
+    assert.match(env.GITHUB_REPOSITORY || "", /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/);
+    assert.match(env.GITHUB_RUN_ID || "", /^[1-9][0-9]*$/);
+    assert.match(env.GITHUB_RUN_ATTEMPT || "", /^[1-9][0-9]*$/);
+    assert.ok(env.DATABASE_URL === CI_DATABASE_URL && env.RUVANAS_REWARDS_DATABASE_URL === CI_DATABASE_URL,
+      "Only the dedicated loopback CI database URL is permitted.");
+    return { mode: "CI", url: new URL(CI_DATABASE_URL) };
+  }
+  assert.equal(env.RUVANAS_REWARDS_LOCAL_TEST, "1", "Use an explicit owned local fixture.");
+  const url = new URL(env.RUVANAS_REWARDS_DATABASE_URL);
+  assert.equal(url.protocol, "postgresql:"); assert.equal(url.hostname, "127.0.0.1");
+  assert.equal(url.username, "rr01b_qa"); assert.equal(url.password, "");
+  assert.ok(Number(url.port) > 1024 && Number(url.port) <= 65535);
+  assert.ok(["/ruvanas_rewards_full", "/ruvanas_rewards_upgrade"].includes(url.pathname));
+  assert.equal(url.search, "?connection_limit=4");
+  assert.ok(env.DATABASE_URL === url.href, "The local fixture URLs must agree.");
+  assert.equal(typeof env.RUVANAS_REWARDS_CLUSTER_DIR, "string");
+  const cluster = realpath(env.RUVANAS_REWARDS_CLUSTER_DIR);
+  assert.ok(path.isAbsolute(cluster));
+  assert.match(cluster.replaceAll("\\", "/"), /\/retail-rewards-rr01b-20261113\/sessions\/postgres-[0-9]+-[a-f0-9]{10}\/postgres$/);
+  return { mode: "LOCAL", url, cluster };
+}
+
+async function openRewardsDatabase(env, { createClient = async url => {
+  const { PrismaClient } = await import("@prisma/client");
+  return new PrismaClient({ datasourceUrl: url });
+}, ...options } = {}) {
+  // All configuration validation runs before constructing a client or querying.
+  const target = rewardsDatabaseTarget(env, options);
+  const db = await createClient(target.url.href);
+  try {
+    const rows = await db.$queryRawUnsafe("SELECT current_setting('data_directory') AS directory,current_database() AS database,current_user AS role,host(inet_server_addr()) AS host,inet_server_port() AS port,current_setting('server_version_num')::integer AS version");
+    assert.equal(rows.length, 1);
+    const [identity] = rows;
+    if (target.mode === "CI") {
+      assert.equal(identity.database, "ruvanas_rewards_ci"); assert.equal(identity.role, "rewards_ci");
+      assert.equal(identity.port, 5432); assert.equal(identity.directory, "/var/lib/postgresql/data");
+      assert.ok(identity.version >= 160000 && identity.version < 170000, "This job requires PostgreSQL 16.");
+      // The client is pinned to loopback; the service reports its Docker-side IP.
+      assert.equal(typeof identity.host, "string"); assert.ok(identity.host.length > 0);
+    } else {
+      assert.ok(samePath(identity.directory, target.cluster));
+      assert.equal(identity.database, target.url.pathname.slice(1)); assert.equal(identity.role, "rr01b_qa");
+      assert.equal(identity.host, "127.0.0.1"); assert.equal(identity.port, Number(target.url.port));
+    }
+    return { db, target };
+  } catch (error) { await db.$disconnect(); throw error; }
+}
+
+async function assertEmptyCiBaseline(db) {
+  // Three existing migrations deliberately seed QA organisations/subscriptions
+  // and a media profile. Preserve those exact seeds; every other application
+  // table must be empty before any destructive reset test is attempted.
+  const tables = await db.$queryRawUnsafe(`SELECT tablename FROM pg_tables WHERE schemaname='public'
+    AND tablename NOT IN ('_prisma_migrations','Plan','Organisation','Subscription','OrganisationMediaProfile') ORDER BY tablename`);
+  assert.ok(tables.length > 0);
+  const counts = await db.$queryRawUnsafe(tables.map(({ tablename }) =>
+    `SELECT '${tablename.replaceAll("'", "''")}' AS name,count(*)::bigint AS count FROM "${tablename.replaceAll('"', '""')}"`).join(" UNION ALL "));
+  assert.ok(counts.every(row => row.count === 0n), "The dedicated CI database must contain zero non-migration application rows.");
+  const [{ snapshot }] = await db.$queryRawUnsafe(`SELECT jsonb_build_object(
+    'plans',(SELECT coalesce(jsonb_agg(to_jsonb(t) ORDER BY id),'[]'::jsonb) FROM "Plan" t),
+    'organisations',(SELECT coalesce(jsonb_agg(to_jsonb(t) ORDER BY id),'[]'::jsonb) FROM "Organisation" t),
+    'subscriptions',(SELECT coalesce(jsonb_agg(to_jsonb(t) ORDER BY id),'[]'::jsonb) FROM "Subscription" t),
+    'profiles',(SELECT coalesce(jsonb_agg(to_jsonb(t) ORDER BY id),'[]'::jsonb) FROM "OrganisationMediaProfile" t)) AS snapshot`);
+  assert.ok(isDeepStrictEqual(snapshot.organisations.map(({ id, name, slug }) => ({ id, name, slug })), [
+    { id: "qa-faith-organisation", name: "Ruvanas Faith QA", slug: "ruvanas-faith-qa" },
+    { id: "qa-health-organisation", name: "Ruvanas Health QA", slug: "ruvanas-health-qa" },
+    { id: "qa-organisations-organisation", name: "Ruvanas Organisations QA", slug: "ruvanas-organisations-qa" }
+  ]), "Only exact historical migration seed organisations may exist.");
+  assert.ok(isDeepStrictEqual(snapshot.subscriptions.map(({ id, organisationId, status, planId }) => ({ id, organisationId, status,
+    planCode: snapshot.plans.find(plan => plan.id === planId)?.code })), [
+    { id: "qa-faith-subscription", organisationId: "qa-faith-organisation", status: "TRIAL", planCode: "FAITH_PRO" },
+    { id: "qa-health-subscription", organisationId: "qa-health-organisation", status: "TRIAL", planCode: "HEALTH_PRO" },
+    { id: "qa-organisations-subscription", organisationId: "qa-organisations-organisation", status: "TRIAL", planCode: "ORGANISATIONS_PRO" }
+  ]), "Only exact historical migration seed subscriptions may exist.");
+  assert.ok(isDeepStrictEqual(snapshot.profiles.map(({ id, organisationId }) => ({ id, organisationId })), [
+    { id: "qa-organisations-media-profile", organisationId: "qa-organisations-organisation" }
+  ]), "Only the historical migration seed profile may exist.");
+  return snapshot;
+}
+
+const ciFixtureEnvironment = () => ({ RUN_DATABASE_TESTS: "1", RUVANAS_REWARDS_CI_TEST: "1", DATABASE_URL: CI_DATABASE_URL,
+  RUVANAS_REWARDS_DATABASE_URL: CI_DATABASE_URL, GITHUB_ACTIONS: "true", CI: "true", GITHUB_WORKFLOW: "CI",
+  GITHUB_JOB: "rewards-database", RUNNER_ENVIRONMENT: "github-hosted", RUNNER_OS: "Linux",
+  GITHUB_REPOSITORY: "synthetic/repository", GITHUB_RUN_ID: "123456", GITHUB_RUN_ATTEMPT: "1" });
+
+test("Rewards CI guard rejects malformed or shared database configuration before any client or query", async () => {
+  assert.equal(rewardsDatabaseTarget(ciFixtureEnvironment(), { platform: "linux" }).mode, "CI");
+  const forbidden = [
+    { RUN_DATABASE_TESTS: "0" }, { RUVANAS_REWARDS_CI_TEST: "true" }, { RUVANAS_REWARDS_LOCAL_TEST: "1" },
+    { RUVANAS_REWARDS_CLUSTER_DIR: "/tmp/foreign" }, { GITHUB_ACTIONS: "false" }, { CI: "false" },
+    { GITHUB_WORKFLOW: "Other" }, { GITHUB_JOB: "validate" }, { RUNNER_ENVIRONMENT: "self-hosted" }, { RUNNER_OS: "Windows" },
+    { GITHUB_REPOSITORY: undefined }, { GITHUB_RUN_ID: undefined }, { GITHUB_RUN_ID: "0" }, { GITHUB_RUN_ATTEMPT: "0" },
+    { DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/ruvanas" },
+    { DATABASE_URL: "postgresql://rewards_ci:rewards_ci@production.example/ruvanas_rewards_ci" },
+    { RUVANAS_REWARDS_DATABASE_URL: `${CI_DATABASE_URL}?schema=public` },
+    { RUVANAS_REWARDS_DATABASE_URL: CI_DATABASE_URL.replace("127.0.0.1", "localhost") },
+    { DATABASE_URL: CI_DATABASE_URL.replace("5432", "5433") }, { DATABASE_URL: undefined }
+  ];
+  for (const changes of forbidden) {
+    let clients = 0;
+    await assert.rejects(openRewardsDatabase({ ...ciFixtureEnvironment(), ...changes }, { platform: "linux",
+      createClient: () => { clients++; throw new Error("No client or query is permitted."); } }));
+    assert.equal(clients, 0, "Malformed CI guard must fail before database access.");
+  }
+  let clients = 0;
+  await assert.rejects(openRewardsDatabase(ciFixtureEnvironment(), { platform: "win32", createClient: () => { clients++; } }));
+  assert.equal(clients, 0);
+});
+
+test("Rewards fixture identity mismatch disconnects after the read-only identity query", async () => {
+  const valid = { database: "ruvanas_rewards_ci", role: "rewards_ci", port: 5432,
+    directory: "/var/lib/postgresql/data", version: 160012, host: "172.18.0.2" };
+  for (const changes of [{ database: "ruvanas" }, { role: "postgres" }, { port: 5433 }, { directory: "/production" },
+    { version: 150010 }, { version: 180000 }, { host: null }]) {
+    let queries = 0, disconnected = 0;
+    await assert.rejects(openRewardsDatabase(ciFixtureEnvironment(), { platform: "linux", createClient: () => ({
+      $queryRawUnsafe: async () => { queries++; return [{ ...valid, ...changes }]; },
+      $disconnect: async () => { disconnected++; }
+    }) }));
+    assert.equal(queries, 1); assert.equal(disconnected, 1);
+  }
+});
+
+test("Rewards CI baseline rejects customer rows and altered migration seeds before test transactions", async () => {
+  const snapshot = {
+    plans: [{ id: "faith", code: "FAITH_PRO" }, { id: "health", code: "HEALTH_PRO" }, { id: "organisations", code: "ORGANISATIONS_PRO" }],
+    organisations: [
+      { id: "qa-faith-organisation", name: "Ruvanas Faith QA", slug: "ruvanas-faith-qa" },
+      { id: "qa-health-organisation", name: "Ruvanas Health QA", slug: "ruvanas-health-qa" },
+      { id: "qa-organisations-organisation", name: "Ruvanas Organisations QA", slug: "ruvanas-organisations-qa" }
+    ],
+    subscriptions: [
+      { id: "qa-faith-subscription", organisationId: "qa-faith-organisation", status: "TRIAL", planId: "faith" },
+      { id: "qa-health-subscription", organisationId: "qa-health-organisation", status: "TRIAL", planId: "health" },
+      { id: "qa-organisations-subscription", organisationId: "qa-organisations-organisation", status: "TRIAL", planId: "organisations" }
+    ],
+    profiles: [{ id: "qa-organisations-media-profile", organisationId: "qa-organisations-organisation" }]
+  };
+  for (const change of [
+    state => { state.count = 1n; }, state => { state.snapshot.organisations.push({ id: "customer" }); },
+    state => { state.snapshot.organisations[0].name = "Different tenant"; },
+    state => { state.snapshot.subscriptions[0].organisationId = "foreign"; },
+    state => { state.snapshot.subscriptions[0].status = "ACTIVE"; },
+    state => { state.snapshot.profiles[0].organisationId = "foreign"; }
+  ]) {
+    const state = { snapshot: structuredClone(snapshot), count: 0n, reads: 0, transactions: 0 }; change(state);
+    const db = {
+      $queryRawUnsafe: async () => {
+        state.reads++;
+        if (state.reads === 1) return [{ tablename: "User" }];
+        if (state.reads === 2) return [{ name: "User", count: state.count }];
+        return [{ snapshot: state.snapshot }];
+      },
+      $transaction: () => { state.transactions++; throw new Error("No mutation is permitted."); }
+    };
+    await assert.rejects(assertEmptyCiBaseline(db));
+    assert.equal(state.transactions, 0);
+    assert.equal(state.reads, state.count ? 2 : 3);
+  }
+});
 
 async function syntheticTransaction(db, operation) {
   try {
@@ -55,25 +229,14 @@ function auditData(f) {
 }
 
 test("Rewards PostgreSQL constraints, audit evidence and reset compatibility on an owned disposable cluster", {
-  skip: !enabled && "Use the isolated RR-01b local database harness; no ordinary application database is allowed."
+  skip: !requested && "Use the dedicated Rewards CI job or owned local harness; ordinary application databases are forbidden."
 }, async t => {
-  const url = new URL(process.env.RUVANAS_REWARDS_DATABASE_URL);
-  assert.equal(url.protocol, "postgresql:"); assert.equal(url.hostname, "127.0.0.1");
-  assert.equal(url.username, "rr01b_qa"); assert.equal(url.password, "");
-  assert.ok(Number(url.port) > 1024 && Number(url.port) <= 65535);
-  assert.ok(["/ruvanas_rewards_full", "/ruvanas_rewards_upgrade"].includes(url.pathname));
-  assert.equal(url.search, "?connection_limit=4");
-  assert.equal(process.env.DATABASE_URL, url.href);
-  const cluster = realpathSync(process.env.RUVANAS_REWARDS_CLUSTER_DIR);
-  assert.ok(path.isAbsolute(cluster));
-  assert.match(cluster.replaceAll("\\", "/"), /\/retail-rewards-rr01b-20261113\/sessions\/postgres-[0-9]+-[a-f0-9]{10}\/postgres$/);
-  const { PrismaClient } = await import("@prisma/client");
-  const db = new PrismaClient({ datasourceUrl: url.href });
+  const { db, target } = await openRewardsDatabase(process.env);
   try {
-    const [identity] = await db.$queryRawUnsafe("SELECT current_setting('data_directory') AS directory,current_database() AS database,current_user AS role,host(inet_server_addr()) AS host,inet_server_port() AS port");
-    assert.ok(samePath(identity.directory, cluster));
-    assert.equal(identity.database, url.pathname.slice(1)); assert.equal(identity.role, "rr01b_qa");
-    assert.equal(identity.host, "127.0.0.1"); assert.equal(identity.port, Number(url.port));
+    // Exercise the same zero-data sentinel during the clean local rehearsal.
+    // The separately owned upgrade fixture intentionally has a legacy tenant.
+    const baselineRequired = target.mode === "CI" || target.url.pathname === "/ruvanas_rewards_full";
+    const ciBaseline = baselineRequired ? await assertEmptyCiBaseline(db) : null;
 
     await t.test("new rows remain disabled and the real adapter preserves exact tenant projections", () => syntheticTransaction(db, async tx => {
       const f = await fixture(tx);
@@ -223,5 +386,7 @@ test("Rewards PostgreSQL constraints, audit evidence and reset compatibility on 
       assert.deepEqual(await tx.rewardAuditEvent.findMany(), before.audit);
       assert.deepEqual(await tx.rewardAuditEvent.findUnique({ where: { id: event.id } }), event);
     }));
+    if (baselineRequired) assert.ok(isDeepStrictEqual(await assertEmptyCiBaseline(db), ciBaseline),
+      "All synthetic tests must roll back and leave migration seeds unchanged.");
   } finally { await db.$disconnect(); }
 });
