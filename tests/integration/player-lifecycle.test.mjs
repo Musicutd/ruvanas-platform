@@ -1,11 +1,19 @@
 import assert from "node:assert/strict";
 import { createHmac, randomUUID } from "node:crypto";
+import { setDefaultResultOrder } from "node:dns";
 import test from "node:test";
 import { PrismaClient } from "@prisma/client";
 import { createPlaybackProofToken } from "../../lib/playback-proof.mjs";
 import { hashPlayerToken } from "../../lib/player-tokens.mjs";
 
-const baseUrl = process.env.INTEGRATION_BASE_URL || "http://127.0.0.1:3100";
+const integrationUrl = new URL(process.env.INTEGRATION_BASE_URL || "http://127.0.0.1:3100");
+if (integrationUrl.protocol === "http:" && integrationUrl.hostname === "127.0.0.1") {
+  // Next normalizes loopback IPv4 request URLs to localhost before the enrolment
+  // route compares request.url with Origin. Use one real same-origin HTTP URL.
+  setDefaultResultOrder("ipv4first");
+  integrationUrl.hostname = "localhost";
+}
+const baseUrl = integrationUrl.origin;
 const sessionSecret = process.env.SESSION_SECRET;
 
 async function api(path, { method = "GET", body, cookie, origin = baseUrl, headers: extraHeaders = {} } = {}) {
