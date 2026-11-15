@@ -5,9 +5,13 @@ import ContextHelp from "@/app/components/ContextHelp";
 import SkipLink from "@/app/components/SkipLink";
 import { subscriberProductForStationFamily } from "@/lib/product-access.mjs";
 import { requireSubscriberProduct } from "@/lib/subscriber-product-access";
+import { onlineDraftSubscription } from "@/lib/private-preview-online-draft.mjs";
+import { resolveTestRadioSubscriberWorkspace } from "@/lib/test-radio-subscriber-access.mjs";
+import { isManagedRetailStreamDraftStation } from "@/lib/retail-stream-draft-boundary.mjs";
 
 export default async function StationDetailsPage({ params }) {
-  const context = await getActiveOrganisationContext();
+  const context = await getActiveOrganisationContext({ subscription: { include: { plan: true, billingContract: true } }, enterpriseSecurityPolicy: true });
+  const { stationId } = await params;
 
   if (!context) {
     redirect("/login");
@@ -21,7 +25,7 @@ export default async function StationDetailsPage({ params }) {
 
   const station = await prisma.station.findFirst({
     where: {
-      id: params.stationId,
+      id: stationId,
       organisationId: membership.organisationId
     },
     include: {
@@ -33,9 +37,48 @@ export default async function StationDetailsPage({ params }) {
     notFound();
   }
 
+  if (isManagedRetailStreamDraftStation(station)) {
+    await requireSubscriberProduct("RETAIL");
+    return <main style={styles.page}>
+      <SkipLink />
+      <header style={styles.header}><a href="/dashboard/retail" style={styles.brand}>RUVANAS</a><a href="/dashboard/retail" style={styles.backLink}>Retail</a></header>
+      <section style={styles.content} id="main-content">
+        <p style={styles.eyebrow}>RETAIL · PRIVATE CONNECTION DRAFT</p>
+        <h1 style={styles.title}>{station.name}</h1>
+        <p style={styles.subtitle}>This managed Retail streaming connection is restricted. It is not a subscriber listening channel or a public player.</p>
+        <section style={styles.statusCard}><div><p style={styles.cardLabel}>Recorded station status</p><h2 style={styles.status}>{station.status.replaceAll("_", " ")}</h2>
+          <p>Connection review and any future activation are separate administrator steps. This page does not test a live stream or change shop playback.</p></div></section>
+        <a href="/dashboard/retail" style={styles.setupButton}>Return to Retail</a>
+      </section>
+    </main>;
+  }
+
   const productKey = subscriberProductForStationFamily(station.productFamily);
   await requireSubscriberProduct(productKey);
+  const testRadioWorkspace = await resolveTestRadioSubscriberWorkspace(prisma, context);
+  if (testRadioWorkspace?.stationId === station.id) return <main style={styles.page}>
+    <SkipLink />
+    <header style={styles.header}><a href="/dashboard/radio" style={styles.brand}>RUVANAS</a><a href="/dashboard/radio" style={styles.backLink}>Online Radio</a></header>
+    <section style={styles.content} id="main-content"><p style={styles.eyebrow}>TEST RADIO · MUSIC & PLANNING</p>
+      <h1 style={styles.title}>{station.name}</h1><p style={styles.subtitle}>Your existing music catalogue, saved playlists and weekly programme drafts.</p>
+      <section style={styles.statusCard}><div><p style={styles.cardLabel}>Workspace permissions</p><h2 style={styles.status}>Plan here · admin approves on air</h2>
+        <p>Browse approved track details and save playlist or weekly drafts. Saving never changes the current broadcast. AutoDJ controls, streaming settings and on-air approval stay with the administrator.</p></div></section>
+      <section style={styles.nextCard}><h2 style={styles.nextTitle}>What would you like to prepare?</h2><div style={styles.actions}>
+        <a href="/dashboard/programming?product=ONLINE#workspace-library" style={styles.setupButton}>Music library</a>
+        <a href="/dashboard/programming?product=ONLINE#workspace-simple" style={styles.secondaryButton}>Generate or load a playlist</a>
+        <a href="/dashboard/programming?product=ONLINE#workspace-planner" style={styles.secondaryButton}>Weekly planner</a>
+      </div></section></section></main>;
   const productLabel = productKey === "HEALTH" ? "Ruvanas Health" : productKey === "FAITH" ? "Ruvanas Faith" : productKey === "ORGANISATIONS" ? "Ruvanas Organisations" : "Online Radio";
+  if (onlineDraftSubscription(membership.organisation.subscription)) return <main style={styles.page}>
+    <header style={styles.header}><a href="/dashboard/radio" style={styles.brand}>RUVANAS</a><a href="/dashboard/radio" style={styles.backLink}>Online Radio test</a></header>
+    <section style={styles.content} id="main-content"><p style={styles.eyebrow}>PRIVATE TEST STATION · NOT ON AIR</p>
+      <h1 style={styles.title}>{station.name}</h1><p style={styles.subtitle}>{station.description}</p>
+      <section style={styles.statusCard}><div><p style={styles.cardLabel}>Saved privately</p><h2 style={styles.status}>Draft-only workspace</h2>
+        <p>Live broadcasting, public player, stream configuration, audio uploads and paid provisioning are blocked. This station does not provision a streaming service.</p></div></section>
+      <section style={styles.nextCard}><h2 style={styles.nextTitle}>Continue your private test</h2><div style={styles.actions}>
+        <a href="/dashboard/programming#workspace-simple" style={styles.setupButton}>Draft playlists</a>
+        <a href={`/dashboard/radio/schedule/${station.id}`} style={styles.secondaryButton}>Weekly planner</a>
+      </div></section></section></main>;
 
   const needsSetup = station.status === "PENDING_SETUP";
 

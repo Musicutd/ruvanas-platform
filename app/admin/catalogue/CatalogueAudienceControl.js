@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CATALOGUE_PILLARS, CATALOGUE_TIERS, effectiveCatalogueLevel } from "@/lib/catalogue-audience.mjs";
+import { CATALOGUE_PILLARS, CATALOGUE_TIERS, catalogueAudienceTier } from "@/lib/catalogue-audience.mjs";
 import { CATALOGUE_TERRITORY_PRESETS, normalizeCatalogueTerritory } from "@/lib/catalogue-territories.mjs";
 
 const presetCodes = new Set(CATALOGUE_TERRITORY_PRESETS.map((item) => item.code));
@@ -11,10 +11,10 @@ function territoryChoices(value) {
   return { regions: codes.filter((code) => presetCodes.has(code)), extra: codes.filter((code) => !presetCodes.has(code)).join(", ") };
 }
 
-export default function CatalogueAudienceControl({ track }) {
+export default function CatalogueAudienceControl({ track, busy = false }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
-  const [tier, setTier] = useState(effectiveCatalogueLevel(track.minimumCatalogueLevel));
+  const [tier, setTier] = useState(catalogueAudienceTier(track));
   const [uses, setUses] = useState(track.permittedUses || []);
   const [regions, setRegions] = useState(() => territoryChoices(track.permittedTerritories).regions);
   const [extraTerritories, setExtraTerritories] = useState(() => territoryChoices(track.permittedTerritories).extra);
@@ -22,14 +22,16 @@ export default function CatalogueAudienceControl({ track }) {
   const [confirmed, setConfirmed] = useState(false);
   const [message, setMessage] = useState("");
   useEffect(() => {
-    setTier(effectiveCatalogueLevel(track.minimumCatalogueLevel));
+    setTier(catalogueAudienceTier(track));
     setUses(track.permittedUses || []);
     setRegions(territoryChoices(track.permittedTerritories).regions);
     setExtraTerritories(territoryChoices(track.permittedTerritories).extra);
-  }, [track.minimumCatalogueLevel, track.permittedUses, track.permittedTerritories]);
-  const tierLabel = CATALOGUE_TIERS.find((item) => item.level === track.minimumCatalogueLevel)?.label || "Legacy · treated as Tier 3";
+    setConfirmed(false);
+  }, [track.minimumCatalogueLevel, track.catalogueAllTiers, track.permittedUses, track.permittedTerritories]);
+  const tierLabel = CATALOGUE_TIERS.find((item) => item.level === catalogueAudienceTier(track))?.label || "Legacy · treated as Tier 3";
   const pillarNames = CATALOGUE_PILLARS.filter((item) => track.permittedUses?.includes(item.use)).map((item) => item.label);
   const territories = String(track.permittedTerritories || "").trim();
+  const disabled = busy || saving;
 
   function toggleUse(use) {
     setUses((current) => current.includes(use) ? current.filter((item) => item !== use) : [...current, use]);
@@ -39,6 +41,7 @@ export default function CatalogueAudienceControl({ track }) {
   }
 
   async function save() {
+    if (disabled) return;
     if (!uses.length) { setMessage("Choose at least one pillar."); return; }
     const selectedTerritories = [...regions, ...extraTerritories.split(/[,;\n]/).map((item) => item.trim()).filter(Boolean)];
     if (!selectedTerritories.length) { setMessage("Choose at least one contract-approved territory."); return; }
@@ -65,22 +68,23 @@ export default function CatalogueAudienceControl({ track }) {
     <strong>{tierLabel}</strong>
     <small>{pillarNames.length ? pillarNames.join(", ") : "No pillars approved · unavailable to subscribers"}</small>
     <small>Territories: {territories || "Not recorded · unavailable to subscribers"}</small>
-    <button type="button" onClick={() => { setEditing((current) => !current); setMessage(""); }} style={buttonStyle}>{editing ? "Cancel" : "Edit access"}</button>
+    <button type="button" disabled={disabled} onClick={() => { setEditing((current) => !current); setMessage(""); }} style={buttonStyle}>{editing ? "Cancel" : "Edit access"}</button>
     {editing ? <div style={{ display: "grid", gap: 8, padding: 10, border: "1px solid #cbd5e1", borderRadius: 8, background: "#f8fafc" }}>
       <label style={{ display: "grid", gap: 4 }}>Available from tier
-        <select value={tier} onChange={(event) => setTier(event.target.value)} disabled={saving} style={inputStyle}>{CATALOGUE_TIERS.map((item) => <option key={item.level} value={item.level}>{item.label}</option>)}</select>
+        <select value={tier} onChange={(event) => setTier(event.target.value)} disabled={disabled} style={inputStyle}>{CATALOGUE_TIERS.map((item) => <option key={item.level} value={item.level}>{item.label}</option>)}</select>
       </label>
-      {CATALOGUE_PILLARS.map((pillar) => <label key={pillar.use} style={{ display: "flex", gap: 6, alignItems: "center" }}><input type="checkbox" checked={uses.includes(pillar.use)} onChange={() => toggleUse(pillar.use)} disabled={saving} />{pillar.label}</label>)}
+      <small>All tiers includes every plan with catalogue access. Product-use, territory, genre and licence rules still apply.</small>
+      {CATALOGUE_PILLARS.map((pillar) => <label key={pillar.use} style={{ display: "flex", gap: 6, alignItems: "center" }}><input type="checkbox" checked={uses.includes(pillar.use)} onChange={() => toggleUse(pillar.use)} disabled={disabled} />{pillar.label}</label>)}
       <fieldset style={{ border: "1px solid #cbd5e1", borderRadius: 6, display: "grid", gap: 6 }}>
         <legend>Contract-approved territories · required</legend>
-        {CATALOGUE_TERRITORY_PRESETS.map((region) => <label key={region.code} style={{ display: "flex", gap: 6, alignItems: "center" }}><input type="checkbox" checked={regions.includes(region.code)} onChange={() => toggleRegion(region.code)} disabled={saving} />{region.label}</label>)}
+        {CATALOGUE_TERRITORY_PRESETS.map((region) => <label key={region.code} style={{ display: "flex", gap: 6, alignItems: "center" }}><input type="checkbox" checked={regions.includes(region.code)} onChange={() => toggleRegion(region.code)} disabled={disabled} />{region.label}</label>)}
         <label style={{ display: "grid", gap: 4 }}>Other approved country codes
-          <input value={extraTerritories} onChange={(event) => setExtraTerritories(event.target.value)} disabled={saving} placeholder="MT, GB, or WORLDWIDE only if licensed" style={inputStyle} />
+          <input value={extraTerritories} onChange={(event) => setExtraTerritories(event.target.value)} disabled={disabled} placeholder="MT, GB, or WORLDWIDE only if licensed" style={inputStyle} />
         </label>
       </fieldset>
       <small>Changes to a ready track can immediately change subscriber availability. Provider territories cannot be widened here; other rights and genre controls still apply.</small>
-      <label style={{ display: "flex", gap: 6, alignItems: "flex-start" }}><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} disabled={saving} />I confirm the recorded licence covers these pillars and this tier.</label>
-      <button type="button" onClick={save} disabled={saving || !uses.length || (!regions.length && !extraTerritories.trim()) || !confirmed} style={buttonStyle}>{saving ? "Saving…" : "Save access"}</button>
+      <label style={{ display: "flex", gap: 6, alignItems: "flex-start" }}><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} disabled={disabled} />I confirm the recorded licence covers these pillars and this tier.</label>
+      <button type="button" onClick={save} disabled={disabled || !uses.length || (!regions.length && !extraTerritories.trim()) || !confirmed} style={buttonStyle}>{saving ? "Saving…" : "Save access"}</button>
     </div> : null}
     {message ? <small role="status">{message}</small> : null}
   </div>;

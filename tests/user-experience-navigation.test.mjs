@@ -131,6 +131,21 @@ test("admin navigation keeps each destination unique", () => {
   assert.equal(new Set(hrefs).size, hrefs.length);
 });
 
+test("Rewards pilot navigation requires both Super Admin and explicit authorised access", () => {
+  const hasPilot = (role, options) => buildAdminNavigation(role, options).flatMap(section => section.items)
+    .some(item => item.href === "/admin/retail-rewards/pilot");
+  assert.equal(hasPilot("SUPER_ADMIN"), false);
+  for (const flag of [false, undefined, null, "true", 1]) {
+    assert.equal(hasPilot("SUPER_ADMIN", { rewardsPilotEnabled: flag }), false);
+  }
+  for (const role of ["SUPPORT", "OWNER", "MANAGER", "VIEWER", null]) {
+    assert.equal(hasPilot(role, { rewardsPilotEnabled: true }), false);
+  }
+  assert.equal(hasPilot("SUPER_ADMIN", { rewardsPilotEnabled: true }), true);
+  const all = buildAdminNavigation("SUPER_ADMIN", { rewardsPilotEnabled: true }).flatMap(section => section.items);
+  assert.equal(all.filter(item => item.href === "/admin/retail-rewards/pilot").length, 1);
+});
+
 test("subscriber command centre keeps shortcuts permission-filtered and accessible", async () => {
   const [dashboard, layout, shell, shellStyles, styles] = await Promise.all([
     readFile(new URL("../app/dashboard/page.js", import.meta.url), "utf8"),
@@ -174,7 +189,7 @@ test("admin command centre uses role-filtered tabs and accessible interactive an
     readFile(new URL("../app/admin/admin-dashboard.module.css", import.meta.url), "utf8")
   ]);
 
-  assert.match(layout, /buildAdminNavigation\(adminUser\.role\)/);
+  assert.match(layout, /buildAdminNavigation\(adminUser\.role, \{ rewardsPilotEnabled \}\)/);
   assert.match(layout, /<AdminNavigationTabs navigation=\{navigation\}/);
   assert.match(tabs, /role="tablist"/);
   assert.match(tabs, /aria-selected/);

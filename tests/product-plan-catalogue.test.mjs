@@ -12,11 +12,11 @@ import {
 } from "../lib/product-plan-catalogue.mjs";
 
 const expectedPlans = [
-  ["RETAIL_START", "Retail Start", "RETAIL", 1, 1900, "NONE"],
-  ["RETAIL_BUSINESS", "Retail Business", "RETAIL", 2, 4900, "NONE"],
+  ["RETAIL_START", "Retail Start", "RETAIL", 1, 1900, "FOCUSED"],
+  ["RETAIL_BUSINESS", "Retail Business", "RETAIL", 2, 4900, "FOCUSED"],
   ["RETAIL_PROFESSIONAL", "Retail Professional", "RETAIL", 3, 14900, "FOCUSED"],
-  ["RETAIL_ADVANCED", "Retail Advanced", "RETAIL", 4, 39900, "PROFESSIONAL"],
-  ["RETAIL_ENTERPRISE", "Retail Enterprise", "RETAIL", 5, 99900, "PREMIUM"],
+  ["RETAIL_ADVANCED", "Retail Advanced", "RETAIL", 4, 39900, "FOCUSED"],
+  ["RETAIL_ENTERPRISE", "Retail Enterprise", "RETAIL", 5, 99900, "FOCUSED"],
   ["SCHOOL_START", "School Start", "SCHOOL", 1, 1990, "NONE"],
   ["SCHOOL_CREATE", "School Create", "SCHOOL", 2, 4900, "NONE"],
   ["SCHOOL_PRO", "School Pro", "SCHOOL", 3, 9900, "FOCUSED"],
@@ -85,14 +85,22 @@ test("every product has five ordered tiers and exactly one product capability", 
   }
 });
 
-test("Retail packs expose the approved sites, storage, audio, Studio, catalogue and display progression", () => {
+test("Retail packs retain commercial limits while including Focused music without displays on every tier", () => {
   const retail = publicPlansForProduct("RETAIL");
   assert.deepEqual(retail.map((plan) => plan.monthlyPriceCents), [1900, 4900, 14900, 39900, 99900]);
   assert.deepEqual(retail.map((plan) => plan.stationLimit), [1, 3, 10, 30, 100]);
   assert.deepEqual(retail.map((plan) => plan.storageLimitGb), [5, 15, 100, 200, 2000]);
   assert.deepEqual(retail.map((plan) => plan.maxBitrateKbps), [128, 256, 320, 320, 320]);
-  assert.deepEqual(retail.map((plan) => plan.digitalSignageEnabled), [true, true, true, true, true]);
-  assert.deepEqual(retail.map((plan) => plan.licensedMusicCatalogueLevel), ["NONE", "NONE", "FOCUSED", "PROFESSIONAL", "PREMIUM"]);
+  assert.deepEqual(retail.map((plan) => plan.digitalSignageEnabled), [false, false, false, false, false]);
+  assert.deepEqual(retail.map((plan) => plan.licensedMusicCatalogueLevel), ["FOCUSED", "FOCUSED", "FOCUSED", "FOCUSED", "FOCUSED"]);
+  assert.deepEqual(retail.map((plan) => plan.listenerLimit), [100, 500, 2000, 10000, 50000]);
+  assert.deepEqual(retail.map((plan) => plan.retailMediaEnabled), [false, false, true, true, true]);
+  for (const plan of retail) {
+    const stored = publicPlanDatabaseData(plan);
+    assert.equal(stored.licensedMusicCatalogueLevel, "FOCUSED");
+    assert.equal(stored.digitalSignageEnabled, false);
+    assert.doesNotMatch(plan.description, /signage|display|professional Licensed|premium catalogue/i);
+  }
 });
 
 test("public plans resolve by stable code or slug and map safely to database data", () => {
@@ -113,6 +121,33 @@ test("catalogue validation rejects cross-product access and malformed tier sets"
   const malformed = PUBLIC_PLAN_CATALOGUE.map((plan) => ({ ...plan }));
   malformed[0].onlineRadioEnabled = true;
   assert.throws(() => validatePublicPlanCatalogue(malformed), /exactly one product family/i);
+});
+
+test("Retail validation rejects catalogue or display drift without changing other product progression", () => {
+  const wrongCatalogue = PUBLIC_PLAN_CATALOGUE.map((plan) => ({ ...plan }));
+  wrongCatalogue[0].licensedMusicCatalogueLevel = "NONE";
+  assert.throws(() => validatePublicPlanCatalogue(wrongCatalogue), /Invalid Licensed Music Catalogue level/);
+  const displays = PUBLIC_PLAN_CATALOGUE.map((plan) => ({ ...plan }));
+  displays[4].digitalSignageEnabled = true;
+  assert.throws(() => validatePublicPlanCatalogue(displays), /Digital displays are not included/);
+  for (const product of RUVANAS_PRODUCTS.filter(product => product !== "RETAIL")) {
+    assert.deepEqual(publicPlansForProduct(product).map(plan => plan.licensedMusicCatalogueLevel),
+      ["NONE", "NONE", "FOCUSED", "PROFESSIONAL", "PREMIUM"]);
+  }
+});
+
+test("Retail plan migration only updates catalogue and display flags for its five standard plans", async () => {
+  const migration = await readFile(new URL("../prisma/migrations/20261209000000_retail_focused_catalogue_audio_only/migration.sql", import.meta.url), "utf8");
+  const sql = migration.replace(/--[^\n]*/g, "");
+  assert.match(sql, /UPDATE "Plan"/);
+  assert.match(sql, /WHERE "productFamily" = 'RETAIL'/);
+  assert.deepEqual([...sql.matchAll(/'(RETAIL_[A-Z]+)'/g)].map(match => match[1]), publicPlansForProduct("RETAIL").map(plan => plan.code));
+  const assignments = sql.split(/\bSET\b/)[1].split(/\bWHERE\b/)[0];
+  assert.deepEqual([...assignments.matchAll(/"(\w+)"\s*=/g)].map(match => match[1]),
+    ["licensedMusicCatalogueLevel", "digitalSignageEnabled", "updatedAt"]);
+  assert.match(assignments, /"licensedMusicCatalogueLevel" = 'FOCUSED'/);
+  assert.match(assignments, /"digitalSignageEnabled" = false/);
+  assert.doesNotMatch(sql, /\b(DELETE|INSERT|DROP|ALTER)\b|"Subscription"|"Station"|"Track"/);
 });
 
 test("the database migrations and Super Admin controls expose the authoritative catalogue safely", async () => {

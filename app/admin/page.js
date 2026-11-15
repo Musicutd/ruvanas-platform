@@ -5,6 +5,7 @@ import { getAdminAnalyticsSnapshot } from "@/lib/admin-analytics-service";
 import { prisma } from "@/lib/prisma";
 import { getAdminUser } from "@/lib/requireAdmin";
 import { buildAdminNavigation } from "@/lib/user-experience-navigation.mjs";
+import { canShowRewardPilotNavigation } from "@/lib/retail-rewards/pilot-navigation-server";
 import styles from "./admin-dashboard.module.css";
 
 export const dynamic = "force-dynamic";
@@ -85,7 +86,8 @@ export default async function AdminOverviewPage({ searchParams }) {
   const snapshot = await getAdminAnalyticsSnapshot(prisma, { range, includeRestrictedOperations: adminUser.role === "SUPER_ADMIN" });
   const playbackPoints = chartPoints(snapshot.series, "completed");
   const sessionPoints = chartPoints(snapshot.series, "sessionStarts");
-  const navigationItems = buildAdminNavigation(adminUser.role).flatMap((section) => section.items);
+  const rewardsPilotEnabled = adminUser.role === "SUPER_ADMIN" && await canShowRewardPilotNavigation();
+  const navigationItems = buildAdminNavigation(adminUser.role, { rewardsPilotEnabled }).flatMap((section) => section.items);
   const preferredActions = ["/admin/organisations", "/admin/players", "/admin/compliance", "/admin/operations"];
   const quickActions = preferredActions.map((href) => navigationItems.find((item) => item.href === href)).filter(Boolean);
   const visibleAttention = adminUser.role === "SUPER_ADMIN"

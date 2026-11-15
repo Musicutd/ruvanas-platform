@@ -92,18 +92,18 @@ test("queued audio requires a matching server ID before fetching and reporting s
   const calls = [];
   const fetchImpl = async (url, options) => {
     calls.push({ url: String(url), options });
-    if (String(url).includes("/download/server/91")) return new Response(JSON.stringify([{ host: "dc03.promoonly.com", id: 7 }]), { headers: { "content-type": "application/json" } });
+    if (String(url).includes("/download/server/91")) return new Response(JSON.stringify([{ host: "dc03.promoonly.com", id: 0 }]), { headers: { "content-type": "application/json" } });
     if (String(url).includes("/pool/v5/download/")) return new Response(new Uint8Array([0x49, 0x44, 0x33, 0, 0]), { headers: { "content-type": "audio/mpeg", "content-disposition": 'attachment; filename="sample.mp3"' } });
-    return new Response(JSON.stringify({ result: "ok" }), { headers: { "content-type": "application/json" } });
+    return new Response(JSON.stringify({ result: "success" }), { headers: { "content-type": "application/json" } });
   };
   const client = new PromoOnlyApiClient(config, { fetchImpl, tokenManager: { getToken: async () => "test-token" } });
   const audio = await client.downloadQueuedMedia({ trackid: 91, dl_token: "grant", servers: ["dc03.promoonly.com"] });
-  assert.equal(audio.serverId, 7);
+  assert.equal(audio.serverId, 0);
   assert.equal(audio.fileName, "sample.mp3");
   assert.equal(calls[1].url, "https://dc03.promoonly.com/pool/v5/download/grant");
   await client.confirmDownload({ trackid: 91, serverid: audio.serverId, dl_token: "grant" });
   assert.equal(calls[2].url, "https://api.promoonly.com/download/success");
-  assert.equal(String(calls[2].options.body), "trackid=91&serverid=7&dl_token=grant");
+  assert.equal(String(calls[2].options.body), "trackid=91&serverid=0&dl_token=grant");
 });
 
 test("plain HTTP media is rejected by default before a provider-server request", async () => {
@@ -137,9 +137,9 @@ test("subscriber import is rejected and the service checks before database acces
 
 test("provider track is tier-gated and fails closed if provider relationship is absent", () => {
   const asset = { id: "media", status: "READY", mediaType: "MUSIC", libraryType: "RUVANAS_CATALOGUE", organisationId: null, licensedCatalogue: true, genres: [{ mediaGenre: { slug: "pop", name: "Pop" } }] };
-  const item = { status: "ACTIVE", autoDjReady: true, canonicalGenre: { active: true, providerReviewStatus: "APPROVED", minimumCatalogueLevel: "FOCUSED" } };
+  const item = { status: "ACTIVE", autoDjReady: true, connection: { providerKey: "PROMO_ONLY", status: "ACTIVE" }, canonicalGenre: { active: true, providerReviewStatus: "APPROVED", minimumCatalogueLevel: "FOCUSED" } };
   const track = { status: "READY", mediaAsset: asset, catalogueProvider: "PROMO_ONLY", rightsReference: "contract-123", rightsReviewStatus: "APPROVED", permittedUses: ["ONLINE_RADIO"], permittedTerritories: "WORLDWIDE", minimumCatalogueLevel: "PROFESSIONAL", distributorItems: [item] };
-  const options = { requiredUse: "ONLINE_RADIO", licensedCatalogueLevel: "FOCUSED" };
+  const options = { requiredUse: "ONLINE_RADIO", licensedCatalogueLevel: "FOCUSED", promoOnlyConfig: config };
   assert.equal(musicTrackEligibility(track, options).reason, "CATALOGUE_TIER_REQUIRED");
   assert.equal(musicTrackEligibility(track, { ...options, licensedCatalogueLevel: "PROFESSIONAL" }).playable, true);
   assert.equal(musicTrackEligibility({ ...track, distributorItems: undefined }, { ...options, licensedCatalogueLevel: "PROFESSIONAL" }).playable, false);
@@ -148,9 +148,9 @@ test("provider track is tier-gated and fails closed if provider relationship is 
   assert.equal(musicTrackEligibility(premium, { ...options, licensedCatalogueLevel: "PROFESSIONAL" }).playable, false);
   assert.equal(musicTrackEligibility(premium, { ...options, licensedCatalogueLevel: "PREMIUM" }).playable, true);
   assert.equal(musicTrackEligibility({ ...premium, permittedTerritories: "MT" }, { ...options, licensedCatalogueLevel: "PREMIUM" }).reason, "TERRITORY_REQUIRED");
-  assert.equal(studioQueueReadiness({ ...asset, track }, { licensedMusicCatalogueEnabled: true, licensedMusicCatalogueLevel: "FOCUSED", planProductFamily: "ONLINE" }).ready, false);
-  assert.equal(studioQueueReadiness({ ...asset, track }, { licensedMusicCatalogueEnabled: true, licensedMusicCatalogueLevel: "PROFESSIONAL", planProductFamily: "ONLINE" }).ready, true);
-  assert.equal(studioQueueReadiness({ ...asset, track: { ...track, rightsReviewStatus: "DRAFT" } }, { licensedMusicCatalogueEnabled: true, licensedMusicCatalogueLevel: "PREMIUM", planProductFamily: "ONLINE" }).ready, false);
+  assert.equal(studioQueueReadiness({ ...asset, track }, { licensedMusicCatalogueEnabled: true, licensedMusicCatalogueLevel: "FOCUSED", planProductFamily: "ONLINE", promoOnlyConfig: config }).ready, false);
+  assert.equal(studioQueueReadiness({ ...asset, track }, { licensedMusicCatalogueEnabled: true, licensedMusicCatalogueLevel: "PROFESSIONAL", planProductFamily: "ONLINE", promoOnlyConfig: config }).ready, true);
+  assert.equal(studioQueueReadiness({ ...asset, track: { ...track, rightsReviewStatus: "DRAFT" } }, { licensedMusicCatalogueEnabled: true, licensedMusicCatalogueLevel: "PREMIUM", planProductFamily: "ONLINE", promoOnlyConfig: config }).ready, false);
 });
 
 test("RSS discovery is idempotent and a later METADATA mode enriches the same item once", async () => {
@@ -186,7 +186,11 @@ test("RSS discovery is idempotent and a later METADATA mode enriches the same it
         tracks.set(key, value); return value;
       }
     },
-    track: { update: async ({ data }) => { protectedStatus = data.status; return {}; } },
+    track: { updateMany: async ({ where, data }) => {
+      assert.equal(where.catalogueProvider, "PROMO_ONLY");
+      assert.equal(where.mediaAsset.is.libraryType, "RUVANAS_CATALOGUE");
+      protectedStatus = data.status; return { count: 1 };
+    } },
     auditLog: { create: async () => ({}) },
     $transaction: async (operations) => Promise.all(operations)
   };

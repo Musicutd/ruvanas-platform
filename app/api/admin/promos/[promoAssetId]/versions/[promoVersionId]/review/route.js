@@ -3,6 +3,8 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requirePlatformAdmin } from "@/lib/access-control";
 import { reviewPromoVersion } from "@/lib/promo-versioning.mjs";
+import { isRetailSubscriberUploadedRecording, reviewRetailUploadedRecordingAsAdmin } from "@/lib/retail-commercial-subscriber-review.mjs";
+import { retailRecordingReviewError } from "@/lib/retail-commercial-subscriber-review-request.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +44,18 @@ export async function PATCH(request, { params }) {
         { error: "The promotional version was not found." },
         { status: 404 }
       );
+    }
+
+    if (isRetailSubscriberUploadedRecording(version)) {
+      try {
+        const updated = await reviewRetailUploadedRecordingAsAdmin(prisma, { promoAssetId, promoVersionId,
+          actorId: access.user.id, decision: parsed.data.decision, notes: parsed.data.notes });
+        return NextResponse.json({ version: { id: updated.id, version: updated.version, status: updated.status,
+          qcStatus: updated.qcStatus, qcNotes: updated.qcNotes, reviewedAt: updated.reviewedAt?.toISOString() || null } });
+      } catch (error) {
+        const { status, ...body } = retailRecordingReviewError(error);
+        return NextResponse.json(body, { status });
+      }
     }
 
     if (

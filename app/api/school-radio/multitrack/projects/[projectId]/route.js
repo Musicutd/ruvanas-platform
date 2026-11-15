@@ -9,8 +9,8 @@ import { invalidateApprovedAudioOutputs } from "@/lib/audio-project-governance";
 export const dynamic = "force-dynamic";
 
 const requestSchema = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("SAVE"), state: z.record(z.unknown()), reason: z.string().trim().max(120).optional() }),
-  z.object({ action: z.literal("QUEUE_RENDER"), state: z.record(z.unknown()), preset: z.enum(["SCHOOL_RADIO_MP3", "SPEECH_MP3", "WAV_MASTER"]) }),
+  z.object({ action: z.literal("SAVE"), state: z.record(z.string(), z.unknown()), reason: z.string().trim().max(120).optional() }),
+  z.object({ action: z.literal("QUEUE_RENDER"), state: z.record(z.string(), z.unknown()), preset: z.enum(["SCHOOL_RADIO_MP3", "SPEECH_MP3", "WAV_MASTER"]) }),
   z.object({ action: z.literal("APPROVE_OUTPUT"), renderId: z.string().cuid() })
 ]);
 

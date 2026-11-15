@@ -19,6 +19,9 @@ import {
   storeCatalogueTrack
 } from "@/lib/catalogue-track-storage";
 import { securityLog } from "@/lib/security-log";
+import { catalogueBulkFileSizeError } from "@/lib/catalogue-request-limits.mjs";
+import { acquireCatalogueBulkRequest, CatalogueBulkRequestError, readCatalogueBulkFormData } from "@/lib/catalogue-bulk-request.mjs";
+import { newCatalogueGenreLevel } from "@/lib/catalogue-new-genres.mjs";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -40,8 +43,12 @@ function rowResponse(row) {
     mixName: row.mixName,
     bpm: row.bpm,
     durationSeconds: row.durationSeconds,
+    submittedDurationSeconds: row.submittedDurationSeconds ?? null,
+    durationSource: row.durationSource || null,
     genreSource: row.genreSource,
     genres: row.genreNames,
+    newGenres: row.newGenreNames.map(name => ({ name, minimumCatalogueLevel: newCatalogueGenreLevel(name) })),
+    importStatus: row.metadata?.status || null,
     isExplicit: row.isExplicit,
     fileName: row.file?.baseName || null,
     notes: row.notes,
@@ -50,12 +57,16 @@ function rowResponse(row) {
 }
 
 export async function POST(request) {
+  let release;
   try {
     const access = await requirePlatformAdmin();
     const denied = superAdminOnly(access);
     if (denied) return denied;
 
-    const formData = await request.formData();
+    release = acquireCatalogueBulkRequest();
+    if (!release) return NextResponse.json({ error: "Another catalogue batch is being checked or imported. Wait for it to finish, then try again." },
+      { status: 429, headers: { "Retry-After": "5" } });
+    const formData = await readCatalogueBulkFormData(request);
     const archive = formData.get("archive");
     const manifest = formData.get("manifest");
     const mode = String(formData.get("mode") || "validate");
@@ -65,6 +76,8 @@ export async function POST(request) {
     if (!manifest || !(manifest instanceof File) || manifest.size === 0) {
       return NextResponse.json({ error: "Choose the CSV or XLSX catalogue spreadsheet." }, { status: 400 });
     }
+    const fileSizeError = catalogueBulkFileSizeError(archive, manifest);
+    if (fileSizeError) return NextResponse.json({ error: fileSizeError }, { status: 413 });
     if (!['validate', 'import'].includes(mode)) {
       return NextResponse.json({ error: "Choose whether to check or import the batch." }, { status: 400 });
     }
@@ -85,12 +98,13 @@ export async function POST(request) {
     if (!settings.ok) return NextResponse.json({ error: settings.error }, { status: 400 });
 
     const genres = await prisma.mediaGenre.findMany({
-      where: { active: true },
-      select: { id: true, name: true, slug: true },
+      // Include unavailable identities so an inactive/rejected genre cannot be
+      // mistaken for a missing name and recreated through a CSV upload.
+      select: { id: true, name: true, slug: true, normalizedKey: true, active: true, providerReviewStatus: true },
       orderBy: { name: "asc" }
     });
     const [manifestRows, audioFiles] = await Promise.all([
-      parseCatalogueManifest({ buffer: Buffer.from(await manifest.arrayBuffer()), fileName: manifest.name, genres }),
+      parseCatalogueManifest({ buffer: Buffer.from(await manifest.arrayBuffer()), fileName: manifest.name, genres, allowNewGenres: true }),
       extractCatalogueArchive(Buffer.from(await archive.arrayBuffer()))
     ]);
     const rows = matchManifestRowsToAudio(manifestRows, audioFiles);
@@ -98,7 +112,13 @@ export async function POST(request) {
     for (const row of rows) {
       if (!row.file || row.errors.length) { inspected.push(null); continue; }
       try {
-        const audio = inspectCatalogueAudio({ buffer: row.file.buffer, fileName: row.file.baseName });
+        const audio = await inspectCatalogueAudio({ buffer: row.file.buffer, fileName: row.file.baseName });
+        row.submittedDurationSeconds = row.durationSeconds;
+        row.durationSeconds = audio.durationSeconds;
+        row.durationSource = "VERIFIED_AUDIO";
+        if (row.submittedDurationSeconds != null && row.submittedDurationSeconds !== audio.durationSeconds) {
+          row.notes.push(`Spreadsheet length differs; the verified audio length (${audio.durationSeconds} seconds) will be used.`);
+        }
         inspected.push(audio);
       } catch (error) {
         row.errors.push(error instanceof Error ? error.message : "The audio file is invalid.");
@@ -147,12 +167,15 @@ export async function POST(request) {
           fileName: row.file.baseName,
           metadata: row.metadata,
           actorUserId: access.user.id,
+          newGenreNames: row.newGenreNames,
           inspected: inspected[index],
-          auditContext: { bulkImportId: batchId, spreadsheetRow: row.sheetRow, manifestName: manifest.name, archiveName: archive.name }
+          auditContext: { bulkImportId: batchId, spreadsheetRow: row.sheetRow, manifestName: manifest.name, archiveName: archive.name,
+            spreadsheetDurationSeconds: row.submittedDurationSeconds ?? null }
         });
         imported.push({ sheetRow: row.sheetRow, trackId: stored.track.id, artist: stored.track.artist, title: stored.track.title });
       } catch (error) {
-        failures.push({ sheetRow: row.sheetRow, artist: row.artist, title: row.title, error: error instanceof CatalogueTrackStorageError ? error.message : "The track could not be stored." });
+        const genreError = ["CATALOGUE_GENRE_UNAVAILABLE", "CATALOGUE_GENRE_CONFLICT", "CATALOGUE_GENRE_INVALID", "CATALOGUE_GENRE_AMBIGUOUS"].includes(error?.code);
+        failures.push({ sheetRow: row.sheetRow, artist: row.artist, title: row.title, error: error instanceof CatalogueTrackStorageError || genreError ? error.message : "The track could not be stored." });
       }
     }
 
@@ -173,11 +196,13 @@ export async function POST(request) {
     });
     return NextResponse.json({ ok: failures.length === 0, batchId, imported, failures }, { status: failures.length ? 207 : 201 });
   } catch (error) {
-    const expected = error instanceof CatalogueBulkImportError || error instanceof CatalogueTrackStorageError;
+    const expected = error instanceof CatalogueBulkImportError || error instanceof CatalogueTrackStorageError || error instanceof CatalogueBulkRequestError;
     const status = expected ? error.status : 500;
     securityLog(status >= 500 ? "error" : "warn", "CATALOGUE_BULK_IMPORT_ERROR", request, {
       error: error instanceof Error ? error.message : "unknown"
     });
     return NextResponse.json({ error: expected ? error.message : "The catalogue batch could not be processed. Please try again." }, { status });
+  } finally {
+    release?.();
   }
 }
