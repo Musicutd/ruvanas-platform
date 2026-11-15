@@ -267,7 +267,8 @@ jobs:
     # The regression owns baseline migration replay, populated upgrade and a
     # standard logical restore in this disposable service. No website or worker
     # is started; immutable synthetic history is removed with the job container.
-    runs-on: ubuntu-latest
+    # Pin the runner whose distribution supplies postgresql-client-16.
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
       postgres:
