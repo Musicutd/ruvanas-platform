@@ -29,6 +29,9 @@ function setup(file, { resolved = workspace, requestedStationId = stationId } = 
   const mock = {
     "@/lib/auth": { getActiveOrganisationContext: async include => { assert.equal(include.enterpriseSecurityPolicy, true); return context; } },
     "@/lib/prisma": { prisma: db },
+    "@/lib/retail-rewards/pilot-preview-server": { loadPilotPreviewBusinessSession: async () => {
+      throw new Error("Ordinary subscriber context must not consult the pilot fallback");
+    } },
     "@/lib/test-radio-subscriber-access.mjs": { resolveTestRadioSubscriberWorkspace: async (database, ctx) => { assert.equal(database, db); assert.equal(ctx, context); return resolved; } },
     "@/lib/retail-subscriber-access.mjs": { resolveRetailSubscriberWorkspace: async (database, ctx) => {
       assert.equal(database, db); assert.equal(ctx, context);

@@ -3,14 +3,22 @@ import { redirect } from "next/navigation";
 import { getAdminUser } from "@/lib/requireAdmin";
 import { isPrivatePreviewAdmin, readPrivatePreviewPolicy } from "@/lib/private-preview-policy.mjs";
 import { buildAdminNavigation } from "@/lib/user-experience-navigation.mjs";
+import { canShowRewardPilotNavigation } from "@/lib/retail-rewards/pilot-navigation-server";
+import { loadPilotPreviewBusinessSession } from "@/lib/retail-rewards/pilot-preview-server";
+import PilotBusinessShell from "../rewards/PilotBusinessShell";
 import AdminNavigationTabs from "./AdminNavigationTabs";
 import styles from "./admin-navigation.module.css";
 
 export default async function AdminLayout({ children }) {
   const adminUser = await getAdminUser();
+  if (!adminUser) {
+    const pilotSession = await loadPilotPreviewBusinessSession();
+    if (pilotSession?.user?.role === "SUPER_ADMIN") return <PilotBusinessShell session={pilotSession}>{children}</PilotBusinessShell>;
+  }
   if (!adminUser) redirect("/login");
 
-  const navigation = buildAdminNavigation(adminUser.role);
+  const rewardsPilotEnabled = adminUser.role === "SUPER_ADMIN" && await canShowRewardPilotNavigation();
+  const navigation = buildAdminNavigation(adminUser.role, { rewardsPilotEnabled });
   const canManagePreviewCodes = isPrivatePreviewAdmin(adminUser, readPrivatePreviewPolicy());
 
   return (

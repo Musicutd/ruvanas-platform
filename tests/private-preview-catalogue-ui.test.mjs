@@ -27,7 +27,7 @@ function fixture(plan) {
   } } };
 }
 
-function loadUI(file, context = fixture(accountPolicy.PREVIEW_ONLINE_DRAFT_CATALOGUE_PLAN), mounts = { uploadedLibrary: 0 }) {
+function loadUI(file, context = fixture(accountPolicy.PREVIEW_ONLINE_DRAFT_CATALOGUE_PLAN), mounts = { uploadedLibrary: 0 }, pilot = { session: null, calls: 0 }) {
   if (!compiled.has(file)) compiled.set(file, babel.transformSync(readFileSync(new URL(`../${file}`, import.meta.url), "utf8"), {
     filename: file, babelrc: false, configFile: false, envName: "test", presets: [require.resolve("next/babel")]
   }).code);
@@ -36,6 +36,9 @@ function loadUI(file, context = fixture(accountPolicy.PREVIEW_ONLINE_DRAFT_CATAL
   const mocked = {
     "@/lib/private-preview-account-policy.mjs": accountPolicy,
     "@/lib/private-preview-subscriber-testing.mjs": subscriberTesting,
+    "@/lib/retail-rewards/pilot-preview-server": { loadPilotPreviewBusinessSession: async () => { pilot.calls += 1; return pilot.session; } },
+    "../rewards/PilotBusinessShell": ({ session, children }) => h("div", { "data-rewards-pilot-shell": true },
+      h("a", { href: session.pilotLanding }, "Private Rewards workspace"), children),
     "@/lib/test-radio-subscriber-access.mjs": { resolveTestRadioSubscriberWorkspace: async () => null },
     "@/lib/retail-subscriber-access.mjs": { resolveRetailSubscriberWorkspace: async (_database, current) => {
       assert.equal(current.user.privatePreviewAccess.pillars.includes("RETAIL"), false);
@@ -110,6 +113,27 @@ test("enabled subscriber setup does not incorrectly describe the whole profile a
     assert.match(html, /shop locations/i);
     assert.match(html, /assigned/i);
     assert.doesNotMatch(html, /<audio|<video/);
+  }
+});
+
+test("existing tester dashboard context never invokes the separate pilot sign-in fallback", async () => {
+  const pilot = { session: { user: { role: "OWNER" }, pilotLanding: "/dashboard/retail/rewards" }, calls: 0 };
+  const Page = loadUI("app/dashboard/layout.js", fixture(accountPolicy.PREVIEW_ONLINE_DRAFT_CATALOGUE_PLAN), undefined, pilot);
+  const html = renderToStaticMarkup(await Page({ children: h("div", null, "Tester content") }));
+  assert.equal(pilot.calls, 0); assert.doesNotMatch(html, /data-rewards-pilot-shell/); assert.match(html, /FOCUSED/);
+});
+
+test("missing ordinary dashboard context uses only the scoped business pilot session", async () => {
+  for (const role of ["OWNER", "MANAGER", "CONTENT_EDITOR", "VIEWER"]) {
+    const pilot = { session: { user: { role }, pilotLanding: role === "VIEWER" ? "/dashboard/retail/rewards/redeem" : "/dashboard/retail/rewards" }, calls: 0 };
+    const Page = loadUI("app/dashboard/layout.js", null, undefined, pilot);
+    const html = renderToStaticMarkup(await Page({ children: h("div", null, "Rewards content") }));
+    assert.equal(pilot.calls, 1); assert.match(html, /data-rewards-pilot-shell/); assert.match(html, /Rewards content/);
+    assert.doesNotMatch(html, /FOCUSED|<audio|<video/);
+  }
+  for (const session of [null, { user: { role: "SUPER_ADMIN" } }, { user: { role: "SUPPORT" } }, { user: { role: "STUDENT" } }]) {
+    const pilot = { session, calls: 0 }, Page = loadUI("app/dashboard/layout.js", null, undefined, pilot);
+    await assert.rejects(Page({ children: null }), /UNEXPECTED_TEST_SIDE_EFFECT/); assert.equal(pilot.calls, 1);
   }
 });
 

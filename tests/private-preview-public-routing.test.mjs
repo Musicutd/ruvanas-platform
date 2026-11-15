@@ -3,11 +3,15 @@ import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 import { publicRequestOrigin } from "../lib/origin-policy.mjs";
 import * as policy from "../lib/private-preview-policy.mjs";
-import { privatePreviewTesterRequestAllowed } from "../lib/private-preview-tester-policy.mjs";
+import { privatePreviewTesterRequestAllowed, isPrivatePreviewOnlineDraftSession } from "../lib/private-preview-tester-policy.mjs";
 import { catalogueRequestSizePolicy } from "../lib/catalogue-request-limits.mjs";
 import { retailTestPlayerBootstrapRequest, retailTestPlayerDeviceRequest } from "../lib/retail-test-player-request.mjs";
 import { isPrivatePreviewSubscriberTestingSession } from "../lib/private-preview-subscriber-testing.mjs";
 import { hashPlayerToken } from "../lib/player-tokens.mjs";
+import { readPilotPreviewPolicy } from "../lib/retail-rewards/pilot-preview-policy.mjs";
+import { pilotPreviewRoute } from "../lib/retail-rewards/pilot-preview-routes.mjs";
+import { pilotPreviewBusinessIdentity } from "../lib/retail-rewards/pilot-preview-business.mjs";
+import { requireRewardShopperAccess, SHOPPER_COOKIE } from "../lib/retail-rewards/shopper-access.mjs";
 
 const source = await readFile(new URL("../middleware.js", import.meta.url), "utf8");
 const BASE_ENV = {
@@ -15,7 +19,8 @@ const BASE_ENV = {
   RUVANAS_PRIVATE_PREVIEW_ENABLED: "1", RUVANAS_PRIVATE_PREVIEW_PUBLIC_SITE: "1",
   RUVANAS_PRIVATE_PREVIEW_ALLOWED_EMAILS: "owner@example.test", RUVANAS_PRIVATE_PREVIEW_ADMIN_EMAIL: "owner@example.test",
   RUVANAS_PUBLIC_URL: "https://www.ruvanas.com", RUVANAS_PUBLIC_COMING_SOON_URL: "https://www.ruvanas.com/",
-  ALLOWED_ORIGINS: "https://ruvanas-platform.onrender.com,https://unapproved.example.test"
+  ALLOWED_ORIGINS: "https://ruvanas-platform.onrender.com,https://unapproved.example.test",
+  RUVANAS_RETAIL_REWARDS_PILOT_PREVIEW_ENABLED: undefined
 };
 
 class TestResponse extends Response {
@@ -32,9 +37,12 @@ function middlewareHarness({ session = null, lookupThrows = false, deviceAllowed
   // Prisma/session transport replaced. Auth/routing policies are real imports.
   // The explicit import replacement also detects changes to that test seam.
   const importStatement = 'const { prisma } = await import("@/lib/prisma");';
-  assert.equal(source.split(importStatement).length, 2);
+  const shopperImport = 'const { requireRewardShopperAccess, SHOPPER_COOKIE } = await import("@/lib/retail-rewards/shopper-access.mjs");';
+  assert.equal(source.split(importStatement).length, 3, "Preview and Rewards pilot authentication each load Prisma lazily");
+  assert.equal(source.split(shopperImport).length, 2, "Shopper pilot authentication has one reviewed import seam");
   const body = source.replace(/^import [^\n]+;\r?\n/gm, "")
-    .replace(importStatement, "const prisma = await loadPrisma();")
+    .replaceAll(importStatement, "const prisma = await loadPrisma();")
+    .replace(shopperImport, "")
     .replace('const { prisma: deviceDb } = await import("@/lib/prisma");', "const deviceDb = {};")
     .replace('const { loadRetailTestPlayerByTokenHash } = await import("@/lib/retail-test-player-access.mjs");', "")
     .replace("export async function middleware", "async function middleware")
@@ -42,14 +50,16 @@ function middlewareHarness({ session = null, lookupThrows = false, deviceAllowed
   const names = ["NextResponse", "publicRequestOrigin", "privatePreviewTesterRequestAllowed", "getSessionFromToken", "SESSION_COOKIE",
     "readPrivatePreviewPolicy", "isPrivatePreviewPublicPath", "isPrivatePreviewRegistrationPath", "privatePreviewSessionLanding",
     "isPrivatePreviewAdminSession", "isPrivatePreviewOwnerBootstrapSession", "loadPrisma", "crypto", "catalogueRequestSizePolicy",
-    "retailTestPlayerBootstrapRequest", "retailTestPlayerDeviceRequest", "hashPlayerToken", "loadRetailTestPlayerByTokenHash", "isPrivatePreviewSubscriberTestingSession"];
+    "retailTestPlayerBootstrapRequest", "retailTestPlayerDeviceRequest", "hashPlayerToken", "loadRetailTestPlayerByTokenHash", "isPrivatePreviewSubscriberTestingSession",
+    "isPrivatePreviewOnlineDraftSession", "readPilotPreviewPolicy", "pilotPreviewRoute", "pilotPreviewBusinessIdentity", "requireRewardShopperAccess", "SHOPPER_COOKIE"];
   const values = [TestResponse, publicRequestOrigin, privatePreviewTesterRequestAllowed,
     async () => { lookups += 1; if (lookupThrows) throw new Error("No public session query allowed"); return session; },
     "ruvanas_session", policy.readPrivatePreviewPolicy, policy.isPrivatePreviewPublicPath, policy.isPrivatePreviewRegistrationPath,
     policy.privatePreviewSessionLanding, policy.isPrivatePreviewAdminSession, policy.isPrivatePreviewOwnerBootstrapSession,
     async () => { loads += 1; return {}; }, { randomUUID: () => "synthetic-request-id" }, catalogueRequestSizePolicy,
     retailTestPlayerBootstrapRequest, retailTestPlayerDeviceRequest, hashPlayerToken, async () => deviceAllowed ? { subscriberTestStream: {} } : null,
-    isPrivatePreviewSubscriberTestingSession];
+    isPrivatePreviewSubscriberTestingSession, isPrivatePreviewOnlineDraftSession, readPilotPreviewPolicy, pilotPreviewRoute,
+    pilotPreviewBusinessIdentity, requireRewardShopperAccess, SHOPPER_COOKIE];
   const run = new Function(...names, `${body}\nreturn middleware;`)(...values);
   return { run, get loads() { return loads; }, get lookups() { return lookups; } };
 }
@@ -114,6 +124,30 @@ test("public paths never permit a write or bypass CSRF by an alias", async () =>
     }
     assert.equal(harness.loads, 0);
   });
+});
+
+test("absent or disabled Rewards pilot bridge does not expose pilot sign-in, shopper or business routes", async () => {
+  for (const flag of [undefined, "false"]) {
+    await withEnv({ RUVANAS_RETAIL_REWARDS_ENABLED: "true", RUVANAS_RETAIL_REWARDS_PILOT_ADMIN_ENABLED: "true",
+      RUVANAS_RETAIL_REWARDS_PILOT_ORGANISATION_IDS: '["org-one"]', RUVANAS_RETAIL_REWARDS_PILOT_PREVIEW_ENABLED: flag }, async () => {
+      const harness = middlewareHarness({ lookupThrows: true });
+      for (const path of ["/rewards/pilot-sign-in", "/rewards/sign-in", "/rewards/accept-invitation", "/rewards/wallet",
+        "/dashboard/retail/rewards", "/admin/retail-rewards/pilot"]) {
+        const response = await harness.run(request(path, { cookie: false }));
+        assert.equal(response.status, 307, path);
+        assert.equal(response.headers.get("location"), "https://www.ruvanas.com/login");
+        assert.equal(response.headers.get("x-test-action"), null);
+      }
+      for (const [path, method] of [["/api/retail-rewards/pilot-login", "POST"], ["/api/rewards/auth/login", "POST"],
+        ["/api/rewards/auth/invitation", "POST"], ["/api/rewards/discovery/shops", "GET"], ["/api/rewards/claims", "GET"]]) {
+        const response = await harness.run(request(path, { method, cookie: false, headers: { origin: "https://www.ruvanas.com" } }));
+        assert.equal(response.status, 401, path);
+        assert.equal(response.headers.get("x-test-action"), null);
+      }
+      assert.equal(harness.loads, 0);
+      assert.equal(harness.lookups, 0);
+    });
+  }
 });
 
 test("anonymous private app, API and assets remain protected; public-looking unknown paths are not documents", async () => {

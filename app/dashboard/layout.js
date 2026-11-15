@@ -12,6 +12,8 @@ import { prisma } from "@/lib/prisma";
 import { resolveTestRadioSubscriberWorkspace } from "@/lib/test-radio-subscriber-access.mjs";
 import { resolveRetailSubscriberWorkspace } from "@/lib/retail-subscriber-access.mjs";
 import { isPrivatePreviewSubscriberTestingSession } from "@/lib/private-preview-subscriber-testing.mjs";
+import { loadPilotPreviewBusinessSession } from "@/lib/retail-rewards/pilot-preview-server";
+import PilotBusinessShell from "../rewards/PilotBusinessShell";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +29,13 @@ export default async function DashboardLayout({ children }) {
     }
   });
 
-  if (!context) redirect("/login");
+  if (!context) {
+    const pilotSession = await loadPilotPreviewBusinessSession();
+    if (pilotSession && ["OWNER", "MANAGER", "CONTENT_EDITOR", "VIEWER"].includes(pilotSession.user?.role)) {
+      return <PilotBusinessShell session={pilotSession}>{children}</PilotBusinessShell>;
+    }
+    redirect("/login");
+  }
   if (context.user.role === "STUDENT") redirect("/school-student");
   if (!context.membership) redirect("/register");
 

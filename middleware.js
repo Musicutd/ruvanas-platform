@@ -7,6 +7,9 @@ import { catalogueRequestSizePolicy } from "@/lib/catalogue-request-limits.mjs";
 import { isPrivatePreviewSubscriberTestingSession } from "@/lib/private-preview-subscriber-testing.mjs";
 import { retailTestPlayerBootstrapRequest, retailTestPlayerDeviceRequest } from "@/lib/retail-test-player-request.mjs";
 import { hashPlayerToken } from "@/lib/player-tokens.mjs";
+import { readPilotPreviewPolicy } from "@/lib/retail-rewards/pilot-preview-policy.mjs";
+import { pilotPreviewRoute } from "@/lib/retail-rewards/pilot-preview-routes.mjs";
+import { pilotPreviewBusinessIdentity } from "@/lib/retail-rewards/pilot-preview-business.mjs";
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 const LEGACY_MATCHER = (path) => path === "/" || path === "/api" || path.startsWith("/api/");
@@ -46,6 +49,20 @@ async function retailDeviceFromRequest(request) {
   const { prisma: deviceDb } = await import("@/lib/prisma");
   const { loadRetailTestPlayerByTokenHash } = await import("@/lib/retail-test-player-access.mjs");
   return Boolean(await loadRetailTestPlayerByTokenHash(deviceDb, hashPlayerToken(token, process.env.SESSION_SECRET)));
+}
+
+async function rewardsPilotAdmission(request, kind) {
+  if (["BOOTSTRAP", "ASSET"].includes(kind)) return true;
+  const { prisma } = await import("@/lib/prisma");
+  if (kind === "SHOPPER") {
+    const { requireRewardShopperAccess, SHOPPER_COOKIE } = await import("@/lib/retail-rewards/shopper-access.mjs");
+    return (await requireRewardShopperAccess({ db: prisma, env: process.env,
+      token: request.cookies.get(SHOPPER_COOKIE)?.value })).ok === true;
+  }
+  const session = await getSessionFromToken(request.cookies.get(SESSION_COOKIE)?.value,
+    { db: prisma, env: process.env, allowRewardsPilot: true });
+  const identity = pilotPreviewBusinessIdentity(session, process.env);
+  return Boolean(identity && (kind === "ADMIN" ? identity.role === "SUPER_ADMIN" : identity.role !== "SUPER_ADMIN"));
 }
 
 function previewDenied(request, policy, requestId) {
@@ -172,10 +189,23 @@ export async function middleware(request) {
     }
     const loginEntry = (request.method === "GET" || request.method === "HEAD") &&
       (request.nextUrl.pathname === "/login" || request.nextUrl.pathname === "/preview-login");
+    const pilotPolicy = readPilotPreviewPolicy(process.env);
+    const pilotRoute = pilotPolicy.enabled ? pilotPreviewRoute(request.nextUrl.pathname, request.method, request.headers.has("next-action")) : null;
+    let rewardsPilotAllowed = false;
+    if (pilotRoute) {
+      try { rewardsPilotAllowed = await rewardsPilotAdmission(request, pilotRoute); }
+      catch { return previewResponse(NextResponse.json({ error: "Pilot sign-in is unavailable." }, { status: 503 }), requestId); }
+      if (!rewardsPilotAllowed) {
+        if (["GET", "HEAD"].includes(request.method) && !request.nextUrl.pathname.startsWith("/api/")) {
+          return previewResponse(NextResponse.redirect(new URL(pilotRoute === "SHOPPER" ? "/rewards/sign-in" : "/rewards/pilot-sign-in", preview.previewOrigin)), requestId);
+        }
+        return previewResponse(NextResponse.json({ error: "Rewards pilot sign-in required." }, { status: 401 }), requestId);
+      }
+    }
     let retailDeviceAllowed = false;
     try { retailDeviceAllowed = await retailDeviceFromRequest(request); } catch { /* Fail closed; never grant a stale device cookie. */ }
     const retailBootstrap = retailTestPlayerBootstrapRequest(request.nextUrl.pathname, request.method);
-    if (!retailBootstrap && !retailDeviceAllowed && (loginEntry || !previewBootstrap(request))) {
+    if (!rewardsPilotAllowed && !retailBootstrap && !retailDeviceAllowed && (loginEntry || !previewBootstrap(request))) {
       let session = null;
       try {
         session = await previewSessionFromRequest(request);
