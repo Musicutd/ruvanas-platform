@@ -236,28 +236,48 @@ test("Rewards populated upgrade survives an unmodified logical backup and restor
     assert.equal((await tables(db)).length, 0, "The source must start with an empty public schema");
     assert.equal((await db.$queryRawUnsafe("SELECT count(*)::int AS count FROM pg_database WHERE datname=$1", RESTORED_DB))[0].count, 0, "Never reuse or overwrite an existing restore database");
     const originalMigrations = readdirSync(path.join(ROOT, "prisma/migrations"), { withFileTypes: true }).filter(entry => entry.isDirectory()).map(entry => entry.name).sort();
-    assert.equal(originalMigrations.length, 142); assert.equal(originalMigrations.at(-1), FIX);
-    const oldMigrationFiles = Object.fromEntries(originalMigrations.slice(0, -1).map(name => [name, hash(readFileSync(path.join(ROOT, "prisma/migrations", name, "migration.sql")))]));
+    const fixIndex = originalMigrations.indexOf(FIX);
+    assert.equal(fixIndex, 141, "The reviewed historical restore fix must retain its original position");
+    const baselineMigrations = originalMigrations.slice(0, fixIndex);
+    const oldMigrationFiles = Object.fromEntries(baselineMigrations.map(name => [name, hash(readFileSync(path.join(ROOT, "prisma/migrations", name, "migration.sql")))]));
     const baseline = path.join(privateDirectory, "baseline"); mkdirSync(path.join(baseline, "migrations"), { recursive: true });
     copyFileSync(path.join(ROOT, "prisma/schema.prisma"), path.join(baseline, "schema.prisma"));
     copyFileSync(path.join(ROOT, "prisma/migrations/migration_lock.toml"), path.join(baseline, "migrations/migration_lock.toml"));
-    for (const name of originalMigrations.slice(0, -1)) { mkdirSync(path.join(baseline, "migrations", name)); copyFileSync(path.join(ROOT, "prisma/migrations", name, "migration.sql"), path.join(baseline, "migrations", name, "migration.sql")); }
+    for (const name of baselineMigrations) { mkdirSync(path.join(baseline, "migrations", name)); copyFileSync(path.join(ROOT, "prisma/migrations", name, "migration.sql"), path.join(baseline, "migrations", name, "migration.sql")); }
     const prisma = path.join(ROOT, "node_modules/prisma/build/index.js");
     await run(process.execPath, [prisma, "migrate", "deploy", "--schema", path.join(baseline, "schema.prisma")], env, path.join(target.artifacts, "baseline-migrate.log"), 300000);
     const beforeMigrations = await migrations(db); assert.equal(beforeMigrations.length, 141); assert.ok(beforeMigrations.every(row => row.finished_at && !row.rolled_back_at));
-    const f = await fixture(db), names = await tables(db), beforeRows = await rows(db, names), beforeFunctions = await db.$queryRawUnsafe("SELECT oid::text,proname,provolatile,proisstrict,prosecdef,proconfig FROM pg_proc WHERE pronamespace='public'::regnamespace ORDER BY proname");
+    const f = await fixture(db), baselineNames = await tables(db), beforeRows = await rows(db, baselineNames), beforeFunctions = await db.$queryRawUnsafe("SELECT oid::text,proname,provolatile,proisstrict,prosecdef,proconfig FROM pg_proc WHERE pronamespace='public'::regnamespace ORDER BY proname");
     const baselineValidation = await validators(db, f, "");
     assert.equal(baselineValidation.snapshot, false); assert.equal(baselineValidation.metadata, false); assert.equal(baselineValidation.campaign, false);
     report.baselineValidation = baselineValidation; passed("populated baseline reproduces empty-search-path validation failure");
-    await run(process.execPath, [prisma, "migrate", "deploy", "--schema", path.join(ROOT, "prisma/schema.prisma")], env, path.join(target.artifacts, "candidate-migrate.log"), 300000);
-    const afterMigrations = await migrations(db); assert.equal(afterMigrations.length, 142); assert.deepEqual(afterMigrations.slice(0, -1), beforeMigrations); assert.equal(afterMigrations.at(-1).migration_name, FIX); assert.ok(afterMigrations.at(-1).finished_at && !afterMigrations.at(-1).rolled_back_at);
+    // Exercise the historical fix alone before replaying any later migrations.
+    mkdirSync(path.join(baseline, "migrations", FIX));
+    copyFileSync(path.join(ROOT, "prisma/migrations", FIX, "migration.sql"), path.join(baseline, "migrations", FIX, "migration.sql"));
+    await run(process.execPath, [prisma, "migrate", "deploy", "--schema", path.join(baseline, "schema.prisma")], env, path.join(target.artifacts, "candidate-migrate.log"), 300000);
+    const fixedMigrations = await migrations(db); assert.equal(fixedMigrations.length, 142); assert.deepEqual(fixedMigrations.slice(0, -1), beforeMigrations); assert.equal(fixedMigrations.at(-1).migration_name, FIX); assert.ok(fixedMigrations.at(-1).finished_at && !fixedMigrations.at(-1).rolled_back_at);
     assert.deepEqual(await db.$queryRawUnsafe("SELECT oid::text,proname,provolatile,proisstrict,prosecdef,proconfig FROM pg_proc WHERE pronamespace='public'::regnamespace ORDER BY proname"), beforeFunctions, "Function identity or security/validation attributes changed");
-    assert.deepEqual((await rows(db, names)).filter(row => row.name !== "_prisma_migrations"), beforeRows.filter(row => row.name !== "_prisma_migrations"));
+    assert.deepEqual((await rows(db, baselineNames)).filter(row => row.name !== "_prisma_migrations"), beforeRows.filter(row => row.name !== "_prisma_migrations"));
     for (const [name, digest] of Object.entries(oldMigrationFiles)) assert.equal(hash(readFileSync(path.join(ROOT, "prisma/migrations", name, "migration.sql"))), digest);
     passed("forward migration preserves populated history, all business rows and existing migration checksums");
     const expected = { snapshot: true, metadata: true, campaign: true, invalidSnapshot: false, invalidMetadata: false, invalidCampaign: false, extraMetadata: false, malformedCampaign: false };
     assert.deepEqual(await validators(db, f, ""), expected); assert.deepEqual(await validators(db, f, "rr07k_shadow, pg_catalog, public", true), expected);
     await immutableChecks(db); passed("valid metadata works with empty or hostile search paths; invalid metadata and immutable writes stay rejected");
+    await run(process.execPath, [prisma, "migrate", "deploy", "--schema", path.join(ROOT, "prisma/schema.prisma")], env, path.join(target.artifacts, "current-migrate.log"), 300000);
+    const afterMigrations = await migrations(db), names = await tables(db);
+    assert.equal(afterMigrations.length, originalMigrations.length);
+    assert.deepEqual(afterMigrations.slice(0, fixedMigrations.length), fixedMigrations);
+    assert.ok(afterMigrations.every(row => row.finished_at && !row.rolled_back_at));
+    // Populate the newest additive table only after the historical restore-fix
+    // regression has completed. Preparation must survive a standard restore
+    // without gaining credentials, membership, invitation or session access.
+    const dormantShopper = await db.rewardShopper.create({ data: {
+      displayName: "Synthetic dormant restore shopper", status: "DISABLED", authVersion: 1
+    } });
+    const dormantSetup = await db.rewardShopperSetup.create({ data: {
+      shopperId: dormantShopper.id, emailCanonical: `restore-dormant-${randomUUID()}@example.invalid`,
+      organisationId: f.org, createdByUserId: f.user, createdAt: NOW
+    } });
     const sourceRows = await rows(db, names), sourceSchema = await schema(db), sourceSequences = await sequences(db);
     const archive = path.join(privateDirectory, "synthetic.dump"), connection = ["-h", "127.0.0.1", "-p", target.url.port, "-U", target.url.username];
     await run(executable("pg_dump"), [...connection, "-d", SOURCE_DB, "--format=custom", "--no-owner", "--no-privileges", "--file", archive], env, path.join(target.artifacts, "pg-dump.log"));
@@ -270,6 +290,18 @@ test("Rewards populated upgrade survives an unmodified logical backup and restor
     assert.deepEqual(await tables(restored), names); assert.deepEqual(await rows(restored, names), sourceRows); assert.deepEqual(await migrations(restored), afterMigrations); assert.deepEqual(await sequences(restored), sourceSequences);
     report.schema = await compareSchemas(restored, sourceSchema, await schema(restored));
     assert.deepEqual(await validators(restored, f, ""), expected); await immutableChecks(restored);
+    const restoredDormant = await restored.rewardShopper.findUnique({ where: { id: dormantShopper.id }, include: {
+      credential: true, invitation: true, membership: true, sessions: true, pilotEnrollment: true, claims: true
+    } });
+    assert.equal(restoredDormant.status, "DISABLED"); assert.equal(restoredDormant.authVersion, 1);
+    assert.equal(restoredDormant.displayName, dormantShopper.displayName);
+    for (const relation of ["credential", "invitation", "membership", "pilotEnrollment"]) assert.equal(restoredDormant[relation], null);
+    assert.deepEqual(restoredDormant.sessions, []); assert.deepEqual(restoredDormant.claims, []);
+    assert.deepEqual(await restored.rewardShopperSetup.findUnique({ where: { shopperId: dormantShopper.id } }), dormantSetup);
+    assert.equal(await restored.user.count({ where: { email: dormantSetup.emailCanonical } }), 0);
+    report.dormantShopper = { status: restoredDormant.status, authVersion: restoredDormant.authVersion,
+      setupPreserved: true, provenancePreserved: true, credentials: 0, invitations: 0, memberships: 0, sessions: 0, pilotEnrollments: 0, claims: 0, businessIdentities: 0 };
+    passed("populated dormant shopper and immutable setup provenance restore without granting any access");
     assert.deepEqual(await rows(db, names), sourceRows); assert.deepEqual(await rows(restored, names), sourceRows);
     report.tables = names.length; report.migrations = afterMigrations.length; report.rowsDigest = hash(sourceRows); report.migrationDigest = hash(afterMigrations); report.sequences = sourceSequences;
     report.preservedHistory = { audit: await restored.rewardAuditEvent.count(), campaignRevisions: await restored.rewardOfferCampaignRevision.count(), claims: await restored.rewardClaim.count(), receipts: await restored.rewardRedemption.count() };

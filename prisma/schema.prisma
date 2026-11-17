@@ -2066,6 +2066,7 @@ model Organisation {
   rewardEntitlementGrant             RewardEntitlementGrant?
   rewardStaffGrants                   RewardStaffGrant[]
   rewardAuditEvents                   RewardAuditEvent[]
+  rewardShopperSetups                  RewardShopperSetup[]
   rewardPilotShopperEnrollments        RewardPilotShopperEnrollment[]
   rewardPilotAuditEvents               RewardPilotAuditEvent[]
   rewardOffers                        RewardOffer[]
@@ -8927,8 +8928,26 @@ model RewardShopper {
   membership RewardShopperMembership?
   credential RewardShopperCredential?
   invitation RewardShopperInvitation?
+  setup      RewardShopperSetup?
   pilotEnrollment RewardPilotShopperEnrollment?
   claims     RewardClaim[]
+}
+
+// Inactive account preparation only. This immutable identity/provenance record
+// confers no invitation, credentials, membership, tenant role or Rewards access.
+// A future activation flow must explicitly target this identity, never adopt it
+// by email. Application rollback retains the additive table without using it.
+model RewardShopperSetup {
+  shopperId       String   @id
+  emailCanonical  String   @unique @db.VarChar(254)
+  organisationId  String
+  createdByUserId String   @db.VarChar(191)
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+
+  shopper      RewardShopper @relation(fields: [shopperId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([organisationId, createdAt], map: "RewardShopperSetup_org_time_idx")
 }
 
 // Immutable provisioning provenance, not shopper tenancy: discovery and

@@ -170,6 +170,9 @@ jobs:
         # The authentication suite removes only its own mutable shopper fixtures.
         # Run before immutable offer concurrency evidence is retained below.
         run: node --test --test-concurrency=1 tests/retail-rewards-shopper-auth-database.test.mjs
+      - name: Verify disabled shopper setup and account isolation
+        # Uses synthetic records and removes only its own mutable fixtures.
+        run: node --test --test-concurrency=1 tests/dormant-shopper-database.test.mjs
       - name: Verify Rewards offers and concurrent publication on the disposable database
         # Run after the zero-data foundation suite. These tests retain synthetic
         # immutable offer/audit history until the isolated CI service is removed.

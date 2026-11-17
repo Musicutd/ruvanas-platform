@@ -27,6 +27,8 @@ function matches(row, where = {}) {
     const actual = row?.[key];
     if (wanted instanceof Date) return actual instanceof Date && actual.getTime() === wanted.getTime();
     if (wanted && typeof wanted === "object") {
+      if (Object.hasOwn(wanted, "equals")) return wanted.mode === "insensitive"
+        ? typeof actual === "string" && actual.toLowerCase() === wanted.equals.toLowerCase() : actual === wanted.equals;
       if (Object.hasOwn(wanted, "in")) return wanted.in.includes(actual);
       if (Object.hasOwn(wanted, "not")) return actual !== wanted.not;
       if (Object.hasOwn(wanted, "gt")) return actual > wanted.gt;
@@ -49,7 +51,7 @@ function project(row, select) {
 // behavior; PostgreSQL migration/concurrency is checked separately.
 function fixture({ prepared = true } = {}) {
   let source = {
-    context: context(),
+    context: context(), user: [], rewardShopperSetup: [],
     organisation: [{ id: "org-one", name: "Test shop business", subscription: { id: "sub-one", organisationId: "org-one", status: "ACTIVE",
       plan: { active: true, code: "RETAIL_START", productFamily: "RETAIL", retailRadioEnabled: true } } }, { id: "other-org", name: "Foreign private business" }],
     location: [{ id: "shop-one", organisationId: "org-one", name: "Private shop name", status: "ACTIVE" }, { id: "shop-two", organisationId: "org-one", name: "Second shop", status: "ACTIVE" },
@@ -77,7 +79,7 @@ function fixture({ prepared = true } = {}) {
     const result = { _data: data };
     for (const model of Object.keys(data).filter(k => k !== "context")) result[model] = {
       async findUnique(args) { calls.push({ model, method: "findUnique" }); return project(hydrated(model, data[model].find(r => matches(r, args.where)), data), args.select); },
-      async findFirst(args) { return project(hydrated(model, data[model].find(r => matches(r, args.where)), data), args.select); },
+      async findFirst(args) { calls.push({ model, method: "findFirst", args: copy(args) }); return project(hydrated(model, data[model].find(r => matches(r, args.where)), data), args.select); },
       async findMany(args = {}) { return data[model].map(row => hydrated(model, row, data)).filter(row => matches(row, args.where)).slice(0, args.take).map(row => project(row, args.select)); },
       async count(args) { return data[model].map(row => hydrated(model, row, data)).filter(row => matches(row, args.where)).length; },
       async create(args) {
@@ -257,10 +259,26 @@ test("invitations create separate disabled global shoppers with one-use hashed t
   for (const secret of [result.invitationToken, INVITE.email, INVITE.displayName, "tokenHash"]) assert.equal(JSON.stringify(f.data.rewardPilotAuditEvent).includes(secret), false);
 });
 
-test("existing invitation or credential email is never adopted or rebound", async () => {
-  for (const table of ["rewardShopperCredential", "rewardShopperInvitation"]) {
-    const f = fixture(); f.data[table].push({ shopperId: "existing-other-shopper", emailCanonical: INVITE.email });
-    assert.equal((await f.service.invite(INVITE)).code, "CONFLICT"); assert.equal(f.data.rewardShopper.length, 0); assert.equal(f.data.rewardPilotShopperEnrollment.length, 0);
+test("business account, invitation, credential and dormant setup emails are never adopted or rebound", async () => {
+  for (const table of ["user", "rewardShopperCredential", "rewardShopperInvitation", "rewardShopperSetup"]) {
+    const f = fixture(); f.data[table].push(table === "user"
+      ? { id: "existing-business-user", email: INVITE.email.toUpperCase() }
+      : { shopperId: "existing-other-shopper", emailCanonical: INVITE.email.toUpperCase(), organisationId: "other-org" });
+    const before = copy(f.data);
+    assert.equal((await f.service.invite(INVITE)).code, "CONFLICT"); assert.deepEqual(f.data, before);
+    for (const identity of ["user", "rewardShopperCredential", "rewardShopperInvitation", "rewardShopperSetup"]) {
+      const lookup = f.calls.find(call => call.model === identity && call.method === "findFirst");
+      assert.deepEqual(lookup?.args.where, { [identity === "user" ? "email" : "emailCanonical"]: { equals: INVITE.email, mode: "insensitive" } });
+    }
+  }
+});
+
+test("an email reserved before the invite transaction is rechecked without issuing any access", async () => {
+  const f = fixture();
+  f.beforeTransaction = data => { data.rewardShopperSetup.push({ shopperId: "prepared-shopper", emailCanonical: INVITE.email, organisationId: "org-one" }); };
+  assert.equal((await f.service.invite(INVITE)).code, "CONFLICT");
+  for (const model of ["rewardShopper", "rewardShopperMembership", "rewardShopperInvitation", "rewardShopperCredential", "rewardPilotShopperEnrollment", "rewardPilotAuditEvent"]) {
+    assert.equal(f.data[model].length, 0);
   }
 });
 
