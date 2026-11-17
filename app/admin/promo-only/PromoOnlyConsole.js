@@ -13,10 +13,16 @@ const formatDate = (value) => value ? new Date(value).toLocaleString() : "—";
 
 export default function PromoOnlyConsole({ initial }) {
   const router = useRouter();
-  const { config, connection, runs, feedItems, tracks, mappings, genres, configError } = initial;
+  const { config, connection, runs, feedItems, tracks, mappings, genres, configError, metadataSampleReady = false, metadataBatchReady = false, audioSampleState = null } = initial;
   const [busy, setBusy] = useState("");
   const [notice, setNotice] = useState("");
   const [trackTerritories, setTrackTerritories] = useState({});
+  const syncUnavailableReasons = [
+    !config.enabled || config.mode === "OFF" ? "Catalogue sync is switched off for this private preview." : "",
+    !config.rssConfigured ? "No approved Promo Only catalogue feed (RSS) is configured." : ""
+  ].filter(Boolean);
+  const syncUnavailable = syncUnavailableReasons.length > 0;
+  const syncDisabled = Boolean(busy) || syncUnavailable;
 
   function toggleTrackTerritory(trackId, code) {
     setTrackTerritories((current) => {
@@ -31,9 +37,28 @@ export default function PromoOnlyConsole({ initial }) {
       const response = await fetch(path, { method, headers: { "content-type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(`${payload.error || "Action failed."}${payload.code ? ` (${payload.code})` : ""}`);
-      setNotice("Saved. The master catalogue and testing status have been refreshed.");
+      setNotice(path === "/api/admin/promo-only/metadata-batch"
+        ? `Metadata only: ${payload.result.createdCount} new, ${payload.result.updatedCount} changed, ${payload.result.unchangedCount} unchanged; ${payload.result.skippedCount} protected tracks left untouched.${payload.result.truncatedCount ? ` ${payload.result.truncatedCount} tracks outside the 25-track cap were not imported.` : ""} No audio was downloaded or made playable. Automatic sync remains off.`
+        : path === "/api/admin/promo-only/metadata-sample"
+        ? "One metadata sample saved. No audio was downloaded or made playable; this is not a full library sync."
+        : path === "/api/admin/promo-only/audio-sample/preflight-repair"
+          ? payload.result?.repaired === true
+            ? "Pre-download check repaired. No audio was downloaded. The one-track import is ready."
+            : "Pre-download repair was not confirmed. No download was requested."
+        : path === "/api/admin/promo-only/audio-sample" || path === "/api/admin/promo-only/audio-sample/recover"
+          ? payload.result?.reconciliationRequired || payload.result?.playbackAvailable !== true
+            ? "Private test audio is stored but playback is blocked pending reconciliation. Do not repeat the download."
+            : path === "/api/admin/promo-only/audio-sample/recover"
+              ? "Existing queued sample recovered into private draft storage. No new queue request was made. Use the owner-only player below."
+              : "Private test audio stored. Use the owner-only player below; public playback and rights approval remain off."
+        : "Saved. The master catalogue and testing status have been refreshed.");
       router.refresh();
-    } catch (error) { setNotice(error.message); }
+    } catch (error) {
+      setNotice(error.message);
+      // The one-shot server claim may have changed even when the request
+      // failed. Refresh that state so a stale import button cannot mislead.
+      if (path === "/api/admin/promo-only/audio-sample" || path === "/api/admin/promo-only/audio-sample/preflight-repair" || path === "/api/admin/promo-only/audio-sample/recover") router.refresh();
+    }
     finally { setBusy(""); }
   }
 
@@ -49,12 +74,46 @@ export default function PromoOnlyConsole({ initial }) {
     <section style={panel}>
       <h2>Connection and safe mode</h2>
       <p><strong>{configError || config.mode}</strong> · RSS {config.rssConfigured ? `configured (${config.rssHost})` : "not configured"} · API credentials {config.credentialsConfigured ? "configured" : "not configured"} · audio gate {config.audioDownloadEnabled ? "enabled for AUDIO_TEST only" : "off"} · media transport {config.allowHttpMediaTest ? "HTTP test exception enabled" : "HTTPS only"} · PRODUCTION locked</p>
-      <p>Polling: every {config.pollMinutes} minutes · last successful: {formatDate(connection?.lastSuccessfulSyncAt)} · next: {formatDate(connection?.nextSyncAt)} · {connection?._count?.feedItems || 0} feed items · {connection?._count?.tracks || 0} provider tracks.</p>
+      <p>Polling: {syncUnavailable ? "paused — no automatic sync is running" : `configured interval ${config.pollMinutes} minutes`} · last successful: {formatDate(connection?.lastSuccessfulSyncAt)} · next: {formatDate(connection?.nextSyncAt)} · {connection?._count?.feedItems || 0} feed items · {connection?._count?.tracks || 0} provider tracks.</p>
       <p>Change modes and secrets through server environment settings, never this page. AUDIO_TEST never downloads automatically from a feed poll; select each test track below.</p>
-      <button style={button} disabled={Boolean(busy) || !config.enabled || !config.rssConfigured} onClick={() => post("/api/admin/promo-only/sync")}>{busy ? "Working…" : "Run Sync Now"}</button>
+      <button style={{ ...button, opacity: syncDisabled ? 0.55 : 1, cursor: syncDisabled ? "not-allowed" : "pointer" }} disabled={syncDisabled} aria-describedby={syncUnavailable ? "promo-only-sync-unavailable" : undefined} onClick={() => post("/api/admin/promo-only/sync")}>{busy === "/api/admin/promo-only/sync" ? "Syncing…" : "Run Sync Now"}</button>
+      {syncUnavailable ? <div id="promo-only-sync-unavailable" role="note">
+        <p><strong>Sync unavailable</strong></p>
+        <ul>{syncUnavailableReasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>
+        <p>API credentials alone do not enable full catalogue sync. RSS is required by this feed-sync button, not by the manual API metadata import. Downloads remain off.</p>
+      </div> : null}
+      {metadataBatchReady ? <>
+        <p><strong>Manual API metadata import is ready.</strong> Import the latest available audio release, capped at 25 tracks. RSS is not needed for this action. Titles, artists and genres only; existing queued or imported audio is left untouched.</p>
+        <p>This is not a full library sync. Downloads, playback, scheduled polling and public music access remain off.</p>
+        <button style={button} disabled={Boolean(busy)} onClick={() => post("/api/admin/promo-only/metadata-batch")}>{busy === "/api/admin/promo-only/metadata-batch" ? "Importing metadata…" : "Import one release (max 25 tracks)"}</button>
+      </> : metadataSampleReady ? <>
+        <p>Manual one-track API metadata test is ready. Regular feed sync, scheduled polling and general audio imports remain off.</p>
+        <button style={button} disabled={Boolean(busy)} onClick={() => post("/api/admin/promo-only/metadata-sample")}>Import one metadata sample</button>
+      </> : null}
       {notice ? <p role="status" style={{ color: "#164e75", fontWeight: 800 }}>{notice}</p> : null}
     </section>
-    <section style={panel}><h2>Recent sync history</h2><div style={wrap}><table style={table}><thead><tr>{["Time", "Trigger / mode", "Status", "Fetched", "Enriched", "Rejected", "Safe error"].map((x) => <th key={x} style={cell}>{x}</th>)}</tr></thead><tbody>{runs.map((run) => <tr key={run.id}><td style={cell}>{formatDate(run.createdAt)}</td><td style={cell}>{run.trigger} / {run.mode}</td><td style={cell}>{run.status}</td><td style={cell}>{run.fetchedCount}</td><td style={cell}>{run.enrichedCount}</td><td style={cell}>{run.rejectedCount}</td><td style={cell}>{run.safeErrorCode || "—"}</td></tr>)}</tbody></table></div>{!runs.length ? <p>No sync has run yet.</p> : null}</section>
+    {audioSampleState?.enabled ? <section style={panel}>
+      <h2>Private one-track audio test</h2>
+      <p>The Kid LAROI f./GIVEON — GET EVEN · track 713637 · release 122500.</p>
+      <p>This is one owner-only trial sample, not a full library import. The file remains a draft in separate private storage. Catalogue rights approval, ordinary playback, public access and AutoDJ remain off.</p>
+      {!audioSampleState.ready ? <p>The private audio test is not ready. Server settings need review.</p> : null}
+      {audioSampleState.canImport ? <button style={button} disabled={Boolean(busy)} onClick={() => post("/api/admin/promo-only/audio-sample")}>{busy === "/api/admin/promo-only/audio-sample" ? "Importing one private sample…" : "Download one private test sample"}</button> : null}
+      {audioSampleState.safeErrorCode ? <p role="status">The test stopped safely: {audioSampleState.safeErrorCode}. Do not repeat the download; this attempt needs review.</p> : null}
+      {audioSampleState.reconciliationRequired ? <p>The stopped test needs review before any further action. No download will be repeated automatically.</p> : null}
+      {audioSampleState.ready && audioSampleState.reconciliationRequired && audioSampleState.safeErrorCode === "PROMOONLY_AUDIO_SAMPLE_SERVERS_INVALID" ? <>
+        <p>This specific pre-download validation failure can be checked once against the supplier. This check cannot queue or download audio.</p>
+        <button style={button} disabled={Boolean(busy)} onClick={() => post("/api/admin/promo-only/audio-sample/preflight-repair")}>{busy === "/api/admin/promo-only/audio-sample/preflight-repair" ? "Checking pre-download validation…" : "Check and repair pre-download validation"}</button>
+      </> : null}
+      {audioSampleState.canRecover === true ? <>
+        <p>One controlled recovery is available for the existing queued MP3. This action cannot queue a track again. A failed recovery stays locked; it will not retry automatically.</p>
+        <button style={button} disabled={Boolean(busy)} onClick={() => post("/api/admin/promo-only/audio-sample/recover")}>{busy === "/api/admin/promo-only/audio-sample/recover" ? "Recovering existing queued sample…" : "Recover existing queued sample once"}</button>
+      </> : null}
+      {audioSampleState.playbackAvailable ? <>
+        <p>Private draft ready for the owner to listen. This does not approve public or commercial use.</p>
+        <audio aria-label="Owner-only Promo Only test sample" controls preload="none" controlsList="nodownload" src="/api/admin/promo-only/audio-sample/stream" style={{ width: "100%", maxWidth: 620 }} />
+      </> : null}
+    </section> : null}
+    <section style={panel}><h2>Recent sync history</h2><div style={wrap}><table style={table}><thead><tr>{["Time", "Trigger / mode", "Status", "Fetched", "Enriched", "New", "Changed", "Unchanged", "Rejected / protected", "Safe error"].map((x) => <th key={x} style={cell}>{x}</th>)}</tr></thead><tbody>{runs.map((run) => <tr key={run.id}><td style={cell}>{formatDate(run.createdAt)}</td><td style={cell}>{run.trigger} / {run.mode}</td><td style={cell}>{run.status}</td><td style={cell}>{run.fetchedCount}</td><td style={cell}>{run.enrichedCount}</td><td style={cell}>{run.createdCount}</td><td style={cell}>{run.updatedCount}</td><td style={cell}>{run.unchangedCount}</td><td style={cell}>{run.rejectedCount}</td><td style={cell}>{run.safeErrorCode || "—"}</td></tr>)}</tbody></table></div>{!runs.length ? <p>No sync has run yet.</p> : null}</section>
     <section style={panel}><h2>Discovered RSS items</h2><div style={wrap}><table style={table}><thead><tr>{["Title", "Provider identity", "Status", "First seen", "Error"].map((x) => <th key={x} style={cell}>{x}</th>)}</tr></thead><tbody>{feedItems.map((item) => <tr key={item.id}><td style={cell}>{item.normalizedPayload?.title || "Untitled"}</td><td style={cell}>Track {item.externalTrackId || "—"} / release {item.externalReleaseId || "—"}</td><td style={cell}>{item.status}</td><td style={cell}>{formatDate(item.firstSeenAt)}</td><td style={cell}>{item.lastErrorCode || "—"}</td></tr>)}</tbody></table></div>{!feedItems.length ? <p>No feed items discovered.</p> : null}</section>
     <section style={panel}><h2>Master catalogue provider records</h2><p>Only Super Admin can request a test import. Storage alone does not publish the track; rights evidence and availability still require review.</p><div style={wrap}><table style={{ ...table, minWidth: 1100 }}><thead><tr>{["Track", "Metadata", "Genre", "Provider IDs", "Import", "Tier", "Controls"].map((x) => <th key={x} style={cell}>{x}</th>)}</tr></thead><tbody>{tracks.map((track) => <tr key={track.id}>
       <td style={cell}><strong>{track.artist} — {track.title}</strong><br />{track.mixName || "Original"} · {track.bpm || "—"} BPM</td>
@@ -62,8 +121,9 @@ export default function PromoOnlyConsole({ initial }) {
       <td style={cell}>{track.canonicalGenre?.name || "Unmapped"}<br />Original: {track.sourceGenre || "—"}</td>
       <td style={cell}>Track {track.externalTrackId}<br />Title {track.externalTitleId || "—"}<br />Release {track.release?.externalReleaseId || "—"}</td>
       <td style={cell}>{track.importState}<br />{track.audioStatus}<br />{track.track?.rightsReviewStatus || "No audio"}<br />Territories: {track.permittedTerritories?.join(", ") || "not approved"}<br />AutoDJ {track.autoDjReady ? "eligible" : "off"}</td>
-      <td style={cell}><select aria-label={`Tier for ${track.title}`} defaultValue={track.minimumCatalogueLevel} onChange={(e) => trackAction(track, "SET_TIER", { minimumCatalogueLevel: e.target.value })} disabled={Boolean(busy)}>{["FOCUSED", "PROFESSIONAL", "PREMIUM"].map((level) => <option key={level}>{level}</option>)}</select></td>
+      <td style={cell}><select aria-label={`Tier for ${track.title}`} defaultValue={track.minimumCatalogueLevel} onChange={(e) => trackAction(track, "SET_TIER", { minimumCatalogueLevel: e.target.value })} disabled={Boolean(busy) || metadataSampleReady}>{["FOCUSED", "PROFESSIONAL", "PREMIUM"].map((level) => <option key={level}>{level}</option>)}</select></td>
       <td style={cell}><div style={{ display: "grid", gap: 6 }}>
+        {metadataSampleReady ? <small>Metadata inspection only. No public audio or playback rights are granted.</small> : <>
         <button style={button} disabled={Boolean(busy) || !config.credentialsConfigured} onClick={() => trackAction(track, "REFRESH_METADATA")}>Refresh metadata</button>
         {!track.trackId && config.mode === "AUDIO_TEST" && config.audioDownloadEnabled ? <button style={button} disabled={Boolean(busy) || track.status !== "ACTIVE" || !track.canonicalGenre?.active} onClick={() => post(`/api/admin/promo-only/tracks/${track.id}/download`)}>Import test audio</button> : null}
         {!track.trackId && track.audioStatus.startsWith("FAILED") ? <button style={button} disabled={Boolean(busy)} onClick={() => trackAction(track, "RETRY_DOWNLOAD")}>Retry failed import</button> : null}
@@ -77,8 +137,9 @@ export default function PromoOnlyConsole({ initial }) {
           if (window.confirm(`Approve ${track.title} for ${permittedUses.join(", ")} in ${permittedTerritories}? Confirm this is covered by the signed licence.`)) trackAction(track, "ENABLE", { rightsReference, permittedUses, permittedTerritories });
         }}>Approve rights and enable</button><small>Europe means EU/EEA, UK and Switzerland. Select only signed-agreement territories.</small></div> : null}
         {track.status === "ACTIVE" ? <button style={button} disabled={Boolean(busy)} onClick={() => window.confirm("Quarantine this track and remove it from playback eligibility?") && trackAction(track, "QUARANTINE")}>Quarantine</button> : null}
+        </>}
       </div></td>
-    </tr>)}</tbody></table></div>{!tracks.length ? <p>No provider metadata yet. Start with DISCOVERY and then METADATA.</p> : null}</section>
+    </tr>)}</tbody></table></div>{!tracks.length ? <p>{metadataSampleReady ? "No metadata sample yet. Use Import one metadata sample above; no audio will be imported." : "No provider metadata yet. Start with DISCOVERY and then METADATA."}</p> : null}</section>
     <section style={panel}><h2>Super Admin genres · Promo Only mapping</h2><p>The original API genre is retained even when its Ruvanas classification is renamed, aliased, merged or remapped.</p><div style={wrap}><table style={table}><thead><tr>{["Original provider genre", "Canonical Ruvanas genre", "Mapping", "Auto-created", "Status", "Manage"].map((x) => <th key={x} style={cell}>{x}</th>)}</tr></thead><tbody>{mappings.map((mapping) => <tr key={mapping.id}>
       <td style={cell}>{mapping.sourceGenre}</td><td style={cell}>{mapping.catalogGenre?.name}</td><td style={cell}>{mapping.mappingType}</td><td style={cell}>{mapping.autoCreated ? "Yes" : "No"}</td><td style={cell}>{mapping.reviewStatus} · {mapping.active ? "Active" : "Inactive"}</td>
       <td style={cell}><div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>

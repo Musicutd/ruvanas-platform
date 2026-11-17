@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { isManagedRetailStreamDraftStation } from "@/lib/retail-stream-draft-boundary.mjs";
 
 export async function GET(request, { params }) {
   try {
@@ -10,10 +11,10 @@ export async function GET(request, { params }) {
         publicPlayerEnabled: true,
         OR: [{ productFamily: null }, { productFamily: { not: "CORRECTIONS" } }]
       },
-      select: { id: true, name: true, slug: true, description: true, logoUrl: true, publicPlayerTagline: true, publicPlayerAccent: true, stationWebsiteEnabled: true }
+      select: { id: true, organisationId: true, productFamily: true, name: true, slug: true, description: true, logoUrl: true, publicPlayerTagline: true, publicPlayerAccent: true, stationWebsiteEnabled: true }
     });
 
-    if (!station) {
+    if (!station || isManagedRetailStreamDraftStation(station)) {
       return NextResponse.json(
         { error: "Station not found." },
         { status: 404 }

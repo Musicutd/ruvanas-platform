@@ -6,12 +6,60 @@ import {
   complimentaryCodeSuffix,
   complimentaryPlanProducts,
   complimentaryPlanSnapshot,
+  describePlanFeatures,
   generateComplimentaryCode,
   hashComplimentaryCode,
   normaliseComplimentaryCode,
   resolveComplimentaryPlan
 } from "../lib/complimentary-access.mjs";
 import { resolveEntitlements } from "../lib/entitlements.mjs";
+import { PUBLIC_PLAN_CATALOGUE } from "../lib/product-plan-catalogue.mjs";
+
+test("standard Retail complimentary grants follow Focused music while preserving their saved limits", () => {
+  const oldLevels = ["NONE", "NONE", "FOCUSED", "PROFESSIONAL", "PREMIUM"];
+  for (const current of PUBLIC_PLAN_CATALOGUE.filter(plan => plan.productFamily === "RETAIL")) {
+    const old = { ...current, licensedMusicCatalogueLevel: oldLevels[current.tierNumber - 1],
+      includesRuvanasCatalogue: false, digitalSignageEnabled: true, stationLimit: 7,
+      storageLimitGb: 33, listenerLimit: 71, maxBitrateKbps: 192 };
+    const snapshot = complimentaryPlanSnapshot(old);
+    assert.equal(snapshot.complimentaryLicensedMusicCatalogueLevel, "FOCUSED");
+    const subscription = { status: "SUSPENDED", complimentaryAccessActive: true,
+      ...snapshot, complimentaryLicensedMusicCatalogueLevel: old.licensedMusicCatalogueLevel,
+      complimentaryIncludesCatalogue: false, complimentaryDigitalSignageEnabled: true };
+    const before = structuredClone(subscription);
+    const effective = resolveComplimentaryPlan(subscription);
+    assert.equal(effective.licensedMusicCatalogueLevel, "FOCUSED", current.code);
+    assert.equal(effective.includesRuvanasCatalogue, true);
+    for (const field of ["stationLimit", "storageLimitGb", "listenerLimit", "maxBitrateKbps"]) {
+      assert.equal(effective[field], old[field]);
+    }
+    const access = resolveEntitlements(subscription);
+    assert.equal(access.licensedMusicCatalogueLevel, "FOCUSED");
+    assert.equal(access.digitalSignageEnabled, false);
+    assert.ok(describePlanFeatures(effective).includes("focused Licensed Music Catalogue"));
+    assert.ok(!describePlanFeatures(effective).includes("Digital Signage"));
+    assert.deepEqual(subscription, before, "projection does not rewrite the saved grant");
+    assert.equal(resolveComplimentaryPlan({ ...subscription, complimentaryAccessActive: false }), null);
+  }
+});
+
+test("Retail complimentary alignment leaves other products, custom codes and inconsistent identities alone", () => {
+  const retail = PUBLIC_PLAN_CATALOGUE.find(plan => plan.code === "RETAIL_ENTERPRISE");
+  const cases = [
+    { ...retail, code: "CUSTOM_RETAIL_ENTERPRISE" },
+    { ...retail, code: retail.publicSlug },
+    { ...retail, productFamily: "ONLINE" },
+    { ...retail, tierNumber: 3 },
+    PUBLIC_PLAN_CATALOGUE.find(plan => plan.code === "ONLINE_NETWORK")
+  ];
+  for (const base of cases) {
+    const original = { ...base, licensedMusicCatalogueLevel: "PREMIUM", includesRuvanasCatalogue: false };
+    const snapshot = complimentaryPlanSnapshot(original);
+    const effective = resolveComplimentaryPlan({ complimentaryAccessActive: true, ...snapshot });
+    assert.equal(effective.licensedMusicCatalogueLevel, "PREMIUM");
+    assert.equal(effective.includesRuvanasCatalogue, false);
+  }
+});
 
 const tier = {
   active: true,

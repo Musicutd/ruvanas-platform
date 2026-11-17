@@ -3,6 +3,10 @@ import { prisma } from "@/lib/prisma";
 import { getAdminUser } from "@/lib/requireAdmin";
 import AdminStationSetupForm from "./AdminStationSetupForm";
 import AdminStreamingProfiles from "./AdminStreamingProfiles";
+import CatalogueStreamTest from "./CatalogueStreamTest";
+import ContinuousAutoDj from "./ContinuousAutoDj";
+import TestRadioWeeklyPlanner from "./TestRadioWeeklyPlanner";
+import { isManagedRetailStreamDraftStation } from "@/lib/retail-stream-draft-boundary.mjs";
 
 export default async function AdminStationSetupPage({ params }) {
   const user = await getAdminUser();
@@ -20,6 +24,9 @@ export default async function AdminStationSetupPage({ params }) {
 
   if (!station) {
     notFound();
+  }
+  if (isManagedRetailStreamDraftStation(station)) {
+    redirect(`/admin/organisations/${encodeURIComponent(station.organisationId)}/retail-stream`);
   }
 
   const [channels, destinations, liveSources] = await Promise.all([
@@ -52,7 +59,8 @@ export default async function AdminStationSetupPage({ params }) {
   };
 
   return (
-    <div style={{ maxWidth: 720, margin: "40px auto", padding: "0 16px" }}>
+    <div style={{ maxWidth: station.id === "cmvcnbwi20008hr23sd76psi8" ? 1360 : 720, margin: "40px auto", padding: "0 16px" }}>
+      <div style={{ maxWidth: 720, margin: "0 auto" }}>
       <h1 style={{ fontSize: 28, fontWeight: 800, marginBottom: 8 }}>
         Configure streaming for {station.name}
       </h1>
@@ -61,6 +69,10 @@ export default async function AdminStationSetupPage({ params }) {
         Super Admin controls the private Centova or generic HTTP stream. Save the connection, then activate the station only after a live-source check succeeds. Leave a password blank to keep it unchanged.
       </p>
 
+      {station.id === "cmvcnbwi20008hr23sd76psi8" && <ContinuousAutoDj stationId={station.id} />}
+      </div>
+      {station.id === "cmvcnbwi20008hr23sd76psi8" && <TestRadioWeeklyPlanner stationId={station.id} />}
+      <div style={{ maxWidth: 720, margin: "0 auto" }}>
       <AdminStationSetupForm
         stationId={station.id}
         stationName={station.name}
@@ -69,7 +81,14 @@ export default async function AdminStationSetupPage({ params }) {
         hasStreamConfig={Boolean(station.streamConfig?.streamUrl)}
         initialData={initialData}
       />
+      {station.id === "cmvcnbwi20008hr23sd76psi8" && <>
+        <details style={{ margin: "24px 0" }}>
+          <summary style={{ cursor: "pointer", minHeight: 44 }}>Advanced diagnostics — timed tests, not continuous AutoDJ</summary>
+          <CatalogueStreamTest stationId={station.id} />
+        </details>
+      </>}
       <AdminStreamingProfiles stationId={station.id} channels={channels} destinations={destinations} liveSources={liveSources} />
+      </div>
     </div>
   );
 }

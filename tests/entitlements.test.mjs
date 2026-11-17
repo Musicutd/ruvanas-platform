@@ -6,6 +6,7 @@ import {
   isWithinLimit,
   resolveEntitlements
 } from "../lib/entitlements.mjs";
+import { PUBLIC_PLAN_CATALOGUE } from "../lib/product-plan-catalogue.mjs";
 
 const plan = {
   active: true,
@@ -24,6 +25,32 @@ const plan = {
   retailMediaEnabled: true,
   digitalSignageEnabled: true
 };
+
+test("Retail displays stay paused even when an old subscription explicitly enabled them", () => {
+  for (const retailPlan of PUBLIC_PLAN_CATALOGUE.filter(row => row.productFamily === "RETAIL")) {
+    for (const override of [null, false, true]) {
+      const subscription = { status: "ACTIVE", plan: { ...retailPlan, digitalSignageEnabled: true }, digitalSignageEnabled: override };
+      const before = structuredClone(subscription);
+      const entitlements = resolveEntitlements(subscription);
+      assert.equal(entitlements.digitalSignageEnabled, false, retailPlan.code);
+      assert.equal(entitlements.digitalSignageDisplayLimit, 0);
+      assert.equal(entitlements.retailRadioEnabled, true);
+      assert.equal(entitlements.licensedMusicCatalogueLevel, "FOCUSED");
+      for (const field of ["stationLimit", "storageLimitGb", "listenerLimit", "maxBitrateKbps"]) {
+        assert.equal(entitlements[field], retailPlan[field]);
+      }
+      assert.deepEqual(subscription, before, "pausing access does not delete or rewrite saved data");
+    }
+  }
+});
+
+test("the Retail display pause does not change other product plans or their overrides", () => {
+  for (const otherPlan of PUBLIC_PLAN_CATALOGUE.filter(row => row.productFamily !== "RETAIL")) {
+    for (const override of [false, true]) {
+      assert.equal(resolveEntitlements({ status: "ACTIVE", plan: otherPlan, digitalSignageEnabled: override }).digitalSignageEnabled, override, otherPlan.code);
+    }
+  }
+});
 
 test("active and trial subscriptions receive plan entitlements", () => {
   for (const status of ["TRIAL", "ACTIVE", "PAST_DUE"]) {

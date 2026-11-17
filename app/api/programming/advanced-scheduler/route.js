@@ -3,16 +3,17 @@ import { prisma } from "@/lib/prisma";
 import { contextForAdvancedScheduler } from "@/lib/advanced-scheduler-access";
 import { canAuthorProgrammeSchedule, parseProgrammeScheduleInput } from "@/lib/advanced-scheduler.mjs";
 import { listProgrammeSchedules, programmeScheduleInclude, programmeSchedulerSources, safeProgrammeSchedule, validateProgrammeScheduleSources } from "@/lib/advanced-scheduler-service";
+import { onlineDraftChannelWhere, lockOnlineDraftOrganisation } from "@/lib/private-preview-online-draft.mjs";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const access = await contextForAdvancedScheduler();
+    const access = await contextForAdvancedScheduler({ allowOnlineDraft: true });
     if (access.response) return access.response;
     const { membership } = access.context;
-    const [schedules, sources] = await Promise.all([listProgrammeSchedules(membership.organisationId), programmeSchedulerSources(membership.organisationId)]);
-    return NextResponse.json({ ok: true, canAuthor: canAuthorProgrammeSchedule(membership.role), canPublish: ["OWNER", "MANAGER"].includes(membership.role), schedules, sources });
+    const [schedules, sources] = await Promise.all([listProgrammeSchedules(membership.organisationId), programmeSchedulerSources(membership.organisationId, new Date(), { sandboxDraftOnly: access.sandboxDraftOnly })]);
+    return NextResponse.json({ ok: true, sandboxDraftOnly: access.sandboxDraftOnly, canAuthor: canAuthorProgrammeSchedule(membership.role), canPublish: !access.sandboxDraftOnly && ["OWNER", "MANAGER"].includes(membership.role), schedules, sources });
   } catch (error) {
     console.error("Advanced scheduler list error:", error);
     return NextResponse.json({ error: "Unable to load the Advanced Scheduler." }, { status: 500 });
@@ -21,17 +22,18 @@ export async function GET() {
 
 export async function POST(request) {
   try {
-    const access = await contextForAdvancedScheduler();
+    const access = await contextForAdvancedScheduler({ allowOnlineDraft: true });
     if (access.response) return access.response;
     const { user, membership } = access.context;
     if (!canAuthorProgrammeSchedule(membership.role)) return NextResponse.json({ error: "Only owners, managers and content editors can prepare channel schedules." }, { status: 403 });
     const parsed = parseProgrammeScheduleInput(await request.json().catch(() => null));
     if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 });
     const organisationId = membership.organisationId;
-    const channel = await prisma.channel.findFirst({ where: { id: parsed.data.channelId, organisationId, status: "ACTIVE" }, select: { id: true } });
+    const channel = await prisma.channel.findFirst({ where: { id: parsed.data.channelId, ...(access.sandboxDraftOnly ? onlineDraftChannelWhere(organisationId) : { organisationId, status: "ACTIVE" }) }, select: { id: true } });
     if (!channel) return NextResponse.json({ error: "Choose an active channel owned by this organisation." }, { status: 404 });
-    await validateProgrammeScheduleSources(prisma, organisationId, parsed.data.items);
+    await validateProgrammeScheduleSources(prisma, organisationId, parsed.data.items, { sandboxDraftOnly: access.sandboxDraftOnly });
     const created = await prisma.$transaction(async (tx) => {
+      if (access.sandboxDraftOnly) await lockOnlineDraftOrganisation(tx, organisationId);
       const schedule = await tx.programmeSchedule.create({
         data: {
           organisationId,
@@ -39,7 +41,7 @@ export async function POST(request) {
           name: parsed.data.name,
           timezone: parsed.data.timezone,
           createdByUserId: user.id,
-          versions: { create: { version: 1, createdByUserId: user.id, items: { create: parsed.data.items } } }
+          versions: { create: { version: 1, status: "DRAFT", isActive: false, createdByUserId: user.id, items: { create: parsed.data.items } } }
         }
       });
       await tx.auditLog.create({ data: { organisationId, actorUserId: user.id, action: "PROGRAMME_SCHEDULE_DRAFT_CREATED", entityType: "ProgrammeSchedule", entityId: schedule.id, details: { channelId: channel.id, version: 1, itemCount: parsed.data.items.length, typedSources: true } } });
