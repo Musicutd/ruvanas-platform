@@ -23,7 +23,7 @@ const plan = () => ({ id: "public-plan-retail-pro", code: "RETAIL_PRO", active: 
   productFamily: "RETAIL", retailRadioEnabled: true });
 
 function harness(options = {}) {
-  let state = { users: [], organisations: [], members: [], subscriptions: [], audits: [], credentials: [], invitations: [], plan: plan() };
+  let state = { users: [], organisations: [], members: [], subscriptions: [], audits: [], credentials: [], invitations: [], setups: [], plan: plan() };
   let liveSession = options.session === undefined ? session() : options.session;
   let currentTime = new Date(NOW), hashCalls = 0, transactions = 0, dbSessionReads = 0, txSessionReads = 0;
   const calls = [], env = options.env || {};
@@ -63,6 +63,7 @@ function harness(options = {}) {
       organisation: { findFirst: findInsensitive("organisation", "slug", "organisations", "id"), create: create("organisation", "organisations", "organisation") },
       rewardShopperCredential: { findFirst: findInsensitive("rewardShopperCredential", "emailCanonical", "credentials", "shopperId") },
       rewardShopperInvitation: { findFirst: findInsensitive("rewardShopperInvitation", "emailCanonical", "invitations", "shopperId") },
+      rewardShopperSetup: { findFirst: findInsensitive("rewardShopperSetup", "emailCanonical", "setups", "shopperId") },
       plan: { findUnique: async args => {
         record("plan", "findUnique", args);
         return state.plan?.id === args.where.id ? structuredClone(state.plan) : null;
@@ -211,8 +212,8 @@ test("passwords require 15 codepoints, at most 72 UTF-8 bytes, well formed Unico
   }
 });
 
-test("case insensitive User, shopper credential and even revoked invitation collisions reject without hashing", async () => {
-  for (const table of ["users", "credentials", "invitations"]) {
+test("case insensitive User, shopper credential, revoked invitation and dormant setup collisions reject without hashing", async () => {
+  for (const table of ["users", "credentials", "invitations", "setups"]) {
     const h = harness();
     h.state[table].push(table === "users" ? { id: "legacy-user", email: "SHOP@EXAMPLE.INVALID" } :
       { shopperId: "legacy-shopper", emailCanonical: "SHOP@EXAMPLE.INVALID", revokedAt: NOW });
@@ -245,6 +246,7 @@ test("authority, collision and plan changes during password hashing are rejected
     h => { h.session.id = "changed-session"; }, h => { h.state.plan.active = false; },
     h => { h.state.users.push({ id: "racing-user", email: "SHOP@EXAMPLE.INVALID" }); },
     h => { h.state.invitations.push({ shopperId: "racing-shopper", emailCanonical: "SHOP@EXAMPLE.INVALID" }); },
+    h => { h.state.setups.push({ shopperId: "racing-dormant-shopper", emailCanonical: "SHOP@EXAMPLE.INVALID" }); },
     h => { h.state.organisations.push({ id: "racing-org", slug: "SYNTHETIC-REWARDS-SHOP" }); }]) {
     const h = harness({ onHash: mutate }), result = await h.service.create(input());
     assert.equal(result.ok, false); assert.equal(h.hashCalls, 1); noCreatedRecords(h);

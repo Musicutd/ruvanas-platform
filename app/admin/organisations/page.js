@@ -224,6 +224,7 @@ export default async function AdminOrganisationsPage() {
           {canManageEntitlements ? <Link href="/admin/retail-stream" style={styles.addButton}>Retail pilot setup</Link> : null}
           {canManageEntitlements ? <Link href="/admin/test-data-reset" style={styles.resetButton}>Reset all test data</Link> : null}
           <Link href="/admin/organisations/new" style={styles.addButton}>Add organisation</Link>
+          {canManageEntitlements ? <Link href="/admin/shoppers/new" style={styles.addButton}>Prepare disabled shopper</Link> : null}
         </div>
       </PageHeader>
 
