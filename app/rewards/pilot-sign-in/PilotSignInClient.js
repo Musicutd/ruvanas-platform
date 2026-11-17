@@ -22,7 +22,7 @@ export default function PilotSignInClient({ transport = defaultTransport, onSucc
     const canonicalEmail = canonicalEmailSchema.safeParse(email), workspace = organisationId.trim();
     if (!canonicalEmail.success || !password || new TextEncoder().encode(password).byteLength > 72 || password.includes("\0") ||
       !password.isWellFormed() || (workspace && !rewardIdSchema.safeParse(workspace).success)) {
-      setError("Enter your business email and password. If you enter a workspace ID, use the exact ID supplied by the Super Admin."); return;
+      setError("Enter your business email and password. If you enter a workspace ID, use the exact ID supplied by the Super Admin."); setPassword(""); return;
     }
     const body = { email: canonicalEmail.data, password, ...(workspace ? { organisationId: workspace } : {}) };
     inFlight.current = true; setBusy(true);
@@ -55,12 +55,13 @@ export default function PilotSignInClient({ transport = defaultTransport, onSucc
     <header className={styles.header}><div className={styles.headerInner}><span className={styles.brand}><span>RUVANAS</span><strong>Rewards</strong></span><span className={styles.badge}>Private pilot</span></div></header>
     <div className={styles.layout}>
       <section className={styles.intro}><p className={styles.eyebrow}>YOUR OWN ACCOUNT. YOUR ASSIGNED ROLE.</p><h1>Welcome to the Rewards pilot.</h1>
-        <p>Super Admins, Client Admins and shop staff use their existing business accounts here. Access is limited to the approved pilot workspaces and permissions.</p>
+        <p>Client Admins and shop staff use their existing business accounts here. Access is limited to the approved pilot workspaces and permissions.</p>
+        <aside className={styles.notice}><strong>Ruvanas private-preview owner?</strong><p>Use your <a href="/login">usual administrator sign-in</a>, then open <strong>Rewards pilot setup</strong> in Administration. Use your existing administrator account.</p></aside>
         <aside className={styles.notice}><strong>Shopping with coupons?</strong><p>Shopper accounts are separate. <a href="/rewards/sign-in">Sign in as a shopper</a>, or <a href="/rewards/accept-invitation">accept your shopper invitation</a>.</p></aside>
       </section>
       <section className={styles.card} aria-labelledby="pilot-login-heading"><p className={styles.eyebrow}>BUSINESS & ADMINISTRATOR SIGN-IN</p><h2 id="pilot-login-heading">Sign in to your pilot</h2>
         <p className={styles.cardLead}>Use the account already approved for this pilot. This form does not create an account or change your role.</p>
-        <form onSubmit={submit} noValidate>
+        <form method="post" action="/api/retail-rewards/pilot-login" onSubmit={submit} noValidate>
           <label className={styles.field}>Business email<input name="email" type="email" inputMode="email" autoComplete="username" autoCapitalize="none" spellCheck={false} maxLength={254} value={email} onChange={event => setEmail(event.target.value)} disabled={busy || complete} /></label>
           <label className={styles.field}>Password<input name="password" type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} disabled={busy || complete} /></label>
           <details style={{ marginTop: 20 }}><summary>More than one pilot workspace?</summary>

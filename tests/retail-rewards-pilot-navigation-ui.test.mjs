@@ -8,6 +8,9 @@ import * as pilotPreviewPolicy from "../lib/retail-rewards/pilot-preview-policy.
 import * as featurePolicy from "../lib/retail-rewards/feature-policy.mjs";
 import * as offerContracts from "../lib/retail-rewards/offer-contracts.mjs";
 import * as offerUi from "../lib/retail-rewards/offer-ui.mjs";
+import * as shopperAuthContracts from "../lib/retail-rewards/shopper-auth-contracts.mjs";
+import * as rewardContracts from "../lib/retail-rewards/contracts.mjs";
+import * as pilotLoginUi from "../lib/retail-rewards/pilot-login-ui.mjs";
 
 const require = createRequire(import.meta.url);
 const React = require("react");
@@ -44,10 +47,14 @@ function loadUi(file, { env = pilotPreviewEnvironment(), checkout = false } = {}
     "@/lib/retail-rewards/offer-server": { loadRewardOfferService: async () => ({ list: async () => ({ ok: false, error: "Offer management is not available for this account." }) }) },
     "@/lib/retail-rewards/offer-contracts.mjs": offerContracts,
     "@/lib/retail-rewards/offer-ui.mjs": offerUi,
+    "@/lib/retail-rewards/shopper-auth-contracts.mjs": shopperAuthContracts,
+    "@/lib/retail-rewards/contracts.mjs": rewardContracts,
+    "@/lib/retail-rewards/pilot-login-ui.mjs": pilotLoginUi,
     "./RewardOffersClient": () => h("main", null, "Offers"),
     "./PilotSignOutButton": () => h("button", { type: "button", disabled: true }, "Sign out"),
     "./reward-offers.module.css": styles,
-    "./pilot-business-shell.module.css": styles
+    "./pilot-business-shell.module.css": styles,
+    "../shopper-auth.module.css": styles
   };
   vm.runInNewContext(compiled.get(file), {
     module, exports: module.exports, process: { env: { NODE_ENV: "test", ...env } },
@@ -106,4 +113,16 @@ test("merchant guidance distinguishes offer publication from shopper discovery a
   assert.match(html, /Shoppers use their own accounts/);
   assert.match(html, /authorised shop staff confirm redemptions/);
   assert.doesNotMatch(html, /not available yet|remain unavailable in this stage/);
+});
+
+test("pilot sign-in gives the existing preview owner the usual login and never natively submits passwords by GET", () => {
+  const SignIn = loadUi("app/rewards/pilot-sign-in/PilotSignInClient.js");
+  const html = renderToStaticMarkup(h(SignIn));
+  assert.match(html, /href="\/login">usual administrator sign-in/);
+  assert.match(html, /Rewards pilot setup/);
+  assert.match(html, /Use your existing administrator account/);
+  assert.match(html, /<form method="post" action="\/api\/retail-rewards\/pilot-login"/);
+  assert.match(html, /type="password"/);
+  assert.match(html, /Public registration remains closed/);
+  assert.doesNotMatch(html, /create (?:a |an )?Super Admin|registration link|href="\/register/);
 });

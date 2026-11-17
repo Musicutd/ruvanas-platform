@@ -4,6 +4,8 @@ import { createRewardPilotAdminService } from "../lib/retail-rewards/pilot-admin
 import { requirePilotAdminAccess } from "../lib/retail-rewards/pilot-admin-access.mjs";
 import { readPilotAdminPolicy, pilotAdminSchemas } from "../lib/retail-rewards/pilot-admin-contracts.mjs";
 import { hashShopperInvitationToken } from "../lib/retail-rewards/shopper-auth-service.mjs";
+import { pilotPreviewEnvironment } from "./fixtures/rewards-pilot-preview.mjs";
+import { pilotPreviewOwnerContext } from "./fixtures/rewards-pilot-preview-admin.mjs";
 
 const NOW = new Date("2026-11-14T12:00:00.000Z"), END = new Date("2026-11-30T12:00:00.000Z"), START = new Date("2026-11-01T00:00:00.000Z");
 const copy = value => structuredClone(value);
@@ -94,6 +96,7 @@ function fixture({ prepared = true } = {}) {
       const sql = parts.join("?"); calls.push({ model: "lock", sql, values });
       if (sql.includes('FROM "User"')) return data.context.user.id === values[0] ? [{ id: values[0] }] : [];
       if (sql.includes('FROM "Session"')) return data.context.session.id === values[0] && data.context.session.userId === values[1] ? [{ id: values[0] }] : [];
+      if (sql.includes('FROM "PrivatePreviewAccess"')) return data.context.user.privatePreviewAccess?.userId === values[0] ? [{ userId: values[0] }] : [];
       if (sql.includes('FROM "Subscription"')) { const sub = data.organisation.find(o => o.id === values[0])?.subscription; return sub ? [{ id: sub.id }] : []; }
       if (sql.includes('FROM "RewardProgram"')) return data.rewardProgram.filter(p => p.organisationId === values[0]).map(p => ({ id: p.id }));
       if (sql.includes('FROM "RewardEntitlementGrant"')) return data.rewardEntitlementGrant.filter(g => g.organisationId === values[0]).map(g => ({ id: g.id }));
@@ -149,6 +152,35 @@ test("only fresh normal Super Admin sessions authorize explicit pilot organisati
 test("disabled gate avoids all context and database activity", async () => {
   const f = fixture(); f.env.RUVANAS_RETAIL_REWARDS_ENABLED = "false";
   assert.equal((await f.service.invite(INVITE)).code, "FEATURE_DISABLED"); assert.equal(f.calls.length, 0);
+});
+
+test("configured preview owner can prepare only an allowlisted pilot with existing grant locked", async () => {
+  const f = fixture({ prepared: false }); Object.assign(f.env, pilotPreviewEnvironment());
+  f.data.context = pilotPreviewOwnerContext(NOW);
+  assert.equal((await f.service.prepare({ ...PREPARE, organisationId: "other-org" })).code, "FORBIDDEN");
+  assert.equal((await f.service.prepare(PREPARE)).ok, true);
+  assert.equal(f.data.rewardProgram.length, 1);
+  assert.equal(f.data.rewardPilotAuditEvent[0].actorUserId, "preview-owner");
+  const locks = f.calls.filter(c => c.model === "lock");
+  const grant = locks.findIndex(c => c.sql.includes('FROM "PrivatePreviewAccess"'));
+  assert.ok(grant >= 0);
+  assert.match(locks[grant].sql, /FOR SHARE/);
+  assert.deepEqual(locks[grant].values, ["preview-owner"]);
+  assert.ok(locks.findIndex(c => c.sql.includes('FROM "User"')) < grant);
+});
+
+test("preview grant revocation, mode change or bridge withdrawal after write rolls the pilot mutation back", async () => {
+  for (const mutate of [d => d.context.user.privatePreviewAccess.enabled = false,
+    d => d.context.user.privatePreviewAccess.passwordEnabled = false,
+    d => { d.context.session.authMethod = "PASSWORD"; d.context.user.privatePreviewAccess = null; },
+    (_d, f) => f.env.RUVANAS_RETAIL_REWARDS_PILOT_PREVIEW_ENABLED = "false"]) {
+    const f = fixture({ prepared: false }); Object.assign(f.env, pilotPreviewEnvironment());
+    f.data.context = pilotPreviewOwnerContext(NOW);
+    f.afterWrite = (data, model) => { if (model === "rewardProgram") mutate(data, f); };
+    assert.equal((await f.service.prepare(PREPARE)).ok, false, String(mutate));
+    assert.equal(f.data.rewardProgram.length, 0); assert.equal(f.data.rewardEntitlementGrant.length, 0);
+    assert.equal(f.data.rewardPilotAuditEvent.length, 0);
+  }
 });
 
 test("organisation selector and overview never return non-allowlisted organisations or private shopper credentials", async () => {

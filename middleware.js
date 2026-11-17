@@ -10,6 +10,7 @@ import { hashPlayerToken } from "@/lib/player-tokens.mjs";
 import { readPilotPreviewPolicy } from "@/lib/retail-rewards/pilot-preview-policy.mjs";
 import { pilotPreviewRoute } from "@/lib/retail-rewards/pilot-preview-routes.mjs";
 import { pilotPreviewBusinessIdentity } from "@/lib/retail-rewards/pilot-preview-business.mjs";
+import { pilotPreviewAdminIdentity } from "@/lib/retail-rewards/pilot-preview-admin.mjs";
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 const LEGACY_MATCHER = (path) => path === "/" || path === "/api" || path.startsWith("/api/");
@@ -61,6 +62,7 @@ async function rewardsPilotAdmission(request, kind) {
   }
   const session = await getSessionFromToken(request.cookies.get(SESSION_COOKIE)?.value,
     { db: prisma, env: process.env, allowRewardsPilot: true });
+  if (kind === "ADMIN" && pilotPreviewAdminIdentity(session, process.env)) return true;
   const identity = pilotPreviewBusinessIdentity(session, process.env);
   return Boolean(identity && (kind === "ADMIN" ? identity.role === "SUPER_ADMIN" : identity.role !== "SUPER_ADMIN"));
 }
@@ -190,7 +192,13 @@ export async function middleware(request) {
     const loginEntry = (request.method === "GET" || request.method === "HEAD") &&
       (request.nextUrl.pathname === "/login" || request.nextUrl.pathname === "/preview-login");
     const pilotPolicy = readPilotPreviewPolicy(process.env);
-    const pilotRoute = pilotPolicy.enabled ? pilotPreviewRoute(request.nextUrl.pathname, request.method, request.headers.has("next-action")) : null;
+    const classifiedPilotRoute = pilotPreviewRoute(request.nextUrl.pathname, request.method, request.headers.has("next-action"));
+    // A preview owner's normal back-office access must not bypass the separate
+    // pilot gates. The route's server guard independently repeats this check.
+    if (classifiedPilotRoute === "ADMIN" && !pilotPolicy.enabled) {
+      return previewResponse(new NextResponse(null, { status: 404 }), requestId);
+    }
+    const pilotRoute = pilotPolicy.enabled ? classifiedPilotRoute : null;
     let rewardsPilotAllowed = false;
     if (pilotRoute) {
       try { rewardsPilotAllowed = await rewardsPilotAdmission(request, pilotRoute); }

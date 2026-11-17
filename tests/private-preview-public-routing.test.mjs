@@ -11,7 +11,10 @@ import { hashPlayerToken } from "../lib/player-tokens.mjs";
 import { readPilotPreviewPolicy } from "../lib/retail-rewards/pilot-preview-policy.mjs";
 import { pilotPreviewRoute } from "../lib/retail-rewards/pilot-preview-routes.mjs";
 import { pilotPreviewBusinessIdentity } from "../lib/retail-rewards/pilot-preview-business.mjs";
+import { pilotPreviewAdminIdentity } from "../lib/retail-rewards/pilot-preview-admin.mjs";
+import { requirePilotAdminAccess } from "../lib/retail-rewards/pilot-admin-access.mjs";
 import { requireRewardShopperAccess, SHOPPER_COOKIE } from "../lib/retail-rewards/shopper-access.mjs";
+import { pilotPreviewOwnerContext } from "./fixtures/rewards-pilot-preview-admin.mjs";
 
 const source = await readFile(new URL("../middleware.js", import.meta.url), "utf8");
 const BASE_ENV = {
@@ -51,7 +54,7 @@ function middlewareHarness({ session = null, lookupThrows = false, deviceAllowed
     "readPrivatePreviewPolicy", "isPrivatePreviewPublicPath", "isPrivatePreviewRegistrationPath", "privatePreviewSessionLanding",
     "isPrivatePreviewAdminSession", "isPrivatePreviewOwnerBootstrapSession", "loadPrisma", "crypto", "catalogueRequestSizePolicy",
     "retailTestPlayerBootstrapRequest", "retailTestPlayerDeviceRequest", "hashPlayerToken", "loadRetailTestPlayerByTokenHash", "isPrivatePreviewSubscriberTestingSession",
-    "isPrivatePreviewOnlineDraftSession", "readPilotPreviewPolicy", "pilotPreviewRoute", "pilotPreviewBusinessIdentity", "requireRewardShopperAccess", "SHOPPER_COOKIE"];
+    "isPrivatePreviewOnlineDraftSession", "readPilotPreviewPolicy", "pilotPreviewRoute", "pilotPreviewBusinessIdentity", "pilotPreviewAdminIdentity", "requireRewardShopperAccess", "SHOPPER_COOKIE"];
   const values = [TestResponse, publicRequestOrigin, privatePreviewTesterRequestAllowed,
     async () => { lookups += 1; if (lookupThrows) throw new Error("No public session query allowed"); return session; },
     "ruvanas_session", policy.readPrivatePreviewPolicy, policy.isPrivatePreviewPublicPath, policy.isPrivatePreviewRegistrationPath,
@@ -59,7 +62,7 @@ function middlewareHarness({ session = null, lookupThrows = false, deviceAllowed
     async () => { loads += 1; return {}; }, { randomUUID: () => "synthetic-request-id" }, catalogueRequestSizePolicy,
     retailTestPlayerBootstrapRequest, retailTestPlayerDeviceRequest, hashPlayerToken, async () => deviceAllowed ? { subscriberTestStream: {} } : null,
     isPrivatePreviewSubscriberTestingSession, isPrivatePreviewOnlineDraftSession, readPilotPreviewPolicy, pilotPreviewRoute,
-    pilotPreviewBusinessIdentity, requireRewardShopperAccess, SHOPPER_COOKIE];
+    pilotPreviewBusinessIdentity, pilotPreviewAdminIdentity, requireRewardShopperAccess, SHOPPER_COOKIE];
   const run = new Function(...names, `${body}\nreturn middleware;`)(...values);
   return { run, get loads() { return loads; }, get lookups() { return lookups; } };
 }
@@ -68,7 +71,7 @@ function request(pathname, { method = "GET", origin = "https://www.ruvanas.com",
   const url = new URL(pathname, origin);
   return { url: url.href, nextUrl: url, method,
     headers: new Headers({ host: url.host, ...headers }),
-    cookies: { get: name => name === "ruvanas_player" ? (deviceCookie ? { value: "p".repeat(43) } : undefined) : cookie ? { value: "a".repeat(64) } : undefined } };
+    cookies: { get: name => name === "ruvanas_player" ? (deviceCookie ? { value: "p".repeat(43) } : undefined) : name === "ruvanas_session" && cookie ? { value: "a".repeat(64) } : undefined } };
 }
 
 async function withEnv(overrides, action) {
@@ -134,6 +137,7 @@ test("absent or disabled Rewards pilot bridge does not expose pilot sign-in, sho
       for (const path of ["/rewards/pilot-sign-in", "/rewards/sign-in", "/rewards/accept-invitation", "/rewards/wallet",
         "/dashboard/retail/rewards", "/admin/retail-rewards/pilot"]) {
         const response = await harness.run(request(path, { cookie: false }));
+        if (path === "/admin/retail-rewards/pilot") { assert.equal(response.status, 404); continue; }
         assert.equal(response.status, 307, path);
         assert.equal(response.headers.get("location"), "https://www.ruvanas.com/login");
         assert.equal(response.headers.get("x-test-action"), null);
@@ -148,6 +152,61 @@ test("absent or disabled Rewards pilot bridge does not expose pilot sign-in, sho
       assert.equal(harness.lookups, 0);
     });
   }
+});
+
+const ADMIN_PILOT_ENV = { RUVANAS_RETAIL_REWARDS_ENABLED: "true", RUVANAS_RETAIL_REWARDS_PILOT_ADMIN_ENABLED: "true",
+  RUVANAS_RETAIL_REWARDS_PILOT_ORGANISATION_IDS: '["org-one"]', RUVANAS_RETAIL_REWARDS_PILOT_PREVIEW_ENABLED: "true",
+  RUVANAS_PRIVATE_PREVIEW_ALLOWED_EMAILS: "owner@example.invalid", RUVANAS_PRIVATE_PREVIEW_ADMIN_EMAIL: "owner@example.invalid" };
+
+test("actual middleware admits the established preview owner only to scoped pilot administration", async () => {
+  await withEnv({ ...ADMIN_PILOT_ENV, RUVANAS_RETAIL_REWARDS_SHOPPER_ENABLED: "true" }, async () => {
+    const c = pilotPreviewOwnerContext(), harness = middlewareHarness({ session: c.session });
+    for (const path of ["/admin/retail-rewards/pilot", "/api/admin/retail-rewards/pilot/organisations",
+      "/api/admin/retail-rewards/pilot/readiness?organisationId=org-one"]) {
+      const response = await harness.run(request(path));
+      assert.equal(response.headers.get("x-test-action"), "next", path);
+    }
+    const merchant = await harness.run(request("/dashboard/retail/rewards"));
+    assert.equal(merchant.status, 307);
+    assert.equal(new URL(merchant.headers.get("location")).pathname, "/rewards/pilot-sign-in");
+    const merchantApi = await harness.run(request("/api/retail-rewards/offers"));
+    assert.equal(merchantApi.status, 401);
+    const beforeShopperLookups = harness.lookups;
+    const shopper = await harness.run(request("/rewards/wallet"));
+    assert.equal(shopper.status, 307);
+    assert.equal(new URL(shopper.headers.get("location")).pathname, "/rewards/sign-in");
+    assert.equal(harness.lookups, beforeShopperLookups, "owner cookie is not consulted for shopper authentication");
+    // Middleware selects roles; the same route's guard selects the exact tenant.
+    assert.equal((await requirePilotAdminAccess({ env: process.env, loadContext: async () => c,
+      organisationId: "other-org" })).code, "FORBIDDEN");
+    assert.equal((await harness.run(request("/register"))).status, 404);
+  });
+});
+
+test("actual middleware denies disabled pilot admin gates before any session or database lookup", async () => {
+  for (const key of ["RUVANAS_RETAIL_REWARDS_ENABLED", "RUVANAS_RETAIL_REWARDS_PILOT_ADMIN_ENABLED", "RUVANAS_RETAIL_REWARDS_PILOT_PREVIEW_ENABLED"]) {
+    await withEnv({ ...ADMIN_PILOT_ENV, [key]: "false" }, async () => {
+      const harness = middlewareHarness({ session: pilotPreviewOwnerContext().session, lookupThrows: true });
+      for (const [path, method] of [["/admin/retail-rewards/pilot", "GET"], ["/api/admin/retail-rewards/pilot/overview", "GET"],
+        ["/api/admin/retail-rewards/pilot/prepare", "POST"]]) {
+        const response = await harness.run(request(path, { method, headers: { origin: "https://www.ruvanas.com" } }));
+        assert.equal(response.status, 404, `${key} ${path}`);
+      }
+      assert.equal(harness.loads, 0); assert.equal(harness.lookups, 0);
+    });
+  }
+});
+
+test("actual middleware rejects preview bootstrap and malformed owner grants on pilot admin routes", async () => {
+  await withEnv(ADMIN_PILOT_ENV, async () => {
+    for (const mutate of [s => s.authMethod = "PREVIEW_CODE", s => s.user.email = "tester@example.invalid",
+      s => s.user.privatePreviewAccess.enabled = false, s => s.user.privatePreviewAccess.organisationId = "org-one",
+      s => s.user.privatePreviewAccess.pillars = ["RETAIL"], s => s.revokedAt = new Date(), s => s.expiresAt = new Date(0)]) {
+      const session = pilotPreviewOwnerContext().session; mutate(session);
+      const response = await middlewareHarness({ session }).run(request("/api/admin/retail-rewards/pilot/organisations"));
+      assert.equal(response.status, 401, String(mutate));
+    }
+  });
 });
 
 test("anonymous private app, API and assets remain protected; public-looking unknown paths are not documents", async () => {
