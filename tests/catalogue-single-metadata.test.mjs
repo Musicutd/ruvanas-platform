@@ -45,12 +45,11 @@ test("new genre values are validated and capped together with selected genres", 
 test("a new spreadsheet genre is created once at Premium level and can be reused", async () => {
   const saved = [];
   const tx = { mediaGenre: {
-    findFirst: async ({ where }) => saved.find((genre) => genre.normalizedKey === where.OR[0].normalizedKey) || null,
-    findUnique: async ({ where }) => saved.find((genre) => genre.slug === where.slug) || null,
-    create: async ({ data }) => {
-      const genre = { id: `genre-${saved.length + 1}`, ...data };
-      saved.push(genre);
-      return genre;
+    findMany: async () => [...saved],
+    createMany: async ({ data, skipDuplicates }) => {
+      assert.equal(skipDuplicates, true);
+      for (const row of data) saved.push({ id: `genre-${saved.length + 1}`, ...row });
+      return { count: data.length };
     }
   } };
   const created = await resolveNewCatalogueGenres(tx, ["Soul"]);

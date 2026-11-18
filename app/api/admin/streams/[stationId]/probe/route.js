@@ -4,6 +4,7 @@ import { requirePlatformAdmin } from "@/lib/access-control";
 import { accessDenied } from "@/lib/api-response";
 import { probeStationStream } from "@/lib/stream-source-health-service";
 import { getRequestId } from "@/lib/security-log";
+import { isManagedRetailStreamDraftStation, RETAIL_STREAM_DRAFT_PROTECTED_MESSAGE } from "@/lib/retail-stream-draft-boundary.mjs";
 
 export async function POST(request, { params }) {
   try {
@@ -12,8 +13,11 @@ export async function POST(request, { params }) {
     const { stationId } = await params;
     const config = await prisma.stationStreamConfig.findUnique({
       where: { stationId: String(stationId || "") },
-      include: { station: { select: { id: true, organisationId: true, name: true } } }
+      include: { station: { select: { id: true, organisationId: true, name: true, productFamily: true, slug: true } } }
     });
+    if (config?.station && isManagedRetailStreamDraftStation(config.station)) {
+      return NextResponse.json({ error: RETAIL_STREAM_DRAFT_PROTECTED_MESSAGE }, { status: 409 });
+    }
     if (!config?.streamUrl) return NextResponse.json({ error: "This station does not have a public stream configured." }, { status: 404 });
     const result = await probeStationStream(prisma, config);
     await prisma.auditLog.create({

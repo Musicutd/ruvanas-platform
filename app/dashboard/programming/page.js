@@ -17,29 +17,60 @@ import AudioProcessingWorkspace from "./AudioProcessingWorkspace";
 import AutoDjExpansionWorkspace from "./AutoDjExpansionWorkspace";
 import WorkspaceTabs from "../WorkspaceTabs";
 import SimplePlaylistWorkspace from "./SimplePlaylistWorkspace";
+import OnlineRadioLibraryWorkspace from "./OnlineRadioLibraryWorkspace";
+import TestRadioSubscriberWorkspace from "./TestRadioSubscriberWorkspace";
+import { resolveTestRadioSubscriberWorkspace } from "@/lib/test-radio-subscriber-access.mjs";
+import RetailSubscriberWorkspace from "./RetailSubscriberWorkspace";
+import { resolveRetailSubscriberWorkspace } from "@/lib/retail-subscriber-access.mjs";
 import styles from "./programming.module.css";
 
 export const dynamic = "force-dynamic";
 
-export default async function SubscriberProgrammingPage() {
-  const context = await getActiveOrganisationContext({ subscription: { include: { plan: true, billingContract: true } } });
+export default async function SubscriberProgrammingPage({ searchParams }) {
+  const context = await getActiveOrganisationContext({ subscription: { include: { plan: true, billingContract: true } }, enterpriseSecurityPolicy: true });
   if (!context) redirect("/login");
   if (!context.membership) redirect("/dashboard");
   const canManage = ["OWNER", "MANAGER"].includes(context.membership.role);
   const entitlements = resolveEntitlements(context.membership.organisation.subscription);
+  const sandboxDraftOnly = entitlements.sandboxDraftOnly;
+  const catalogueMetadataOnly = sandboxDraftOnly && entitlements.sandboxCatalogueMetadata === true;
+  const testRadioWorkspace = await resolveTestRadioSubscriberWorkspace(prisma, context);
+  if (testRadioWorkspace) return <main className={styles.page}>
+    <SkipLink />
+    <header className={styles.header}><a href="/dashboard/radio" className={styles.brand}>RUVANAS</a><a href="/dashboard/radio" className={styles.back}>Back to Online Radio</a></header>
+    <section className={styles.shell} id="main-content"><TestRadioSubscriberWorkspace stationId={testRadioWorkspace.stationId} /></section>
+  </main>;
+  const retailWorkspace = await resolveRetailSubscriberWorkspace(prisma, context);
+  if (retailWorkspace) return <main className={styles.page}>
+    <SkipLink />
+    <header className={styles.header}><a href="/dashboard/retail" className={styles.brand}>RUVANAS</a><a href="/dashboard/retail" className={styles.back}>Back to Retail</a></header>
+    <section className={styles.shell} id="main-content"><RetailSubscriberWorkspace stationId={retailWorkspace.stationId} /></section>
+  </main>;
   const onlineOnly = entitlements.onlineRadioEnabled && ![
     entitlements.retailRadioEnabled, entitlements.schoolRadioEnabled, entitlements.healthRadioEnabled,
     entitlements.faithRadioEnabled, entitlements.organisationsEnabled
   ].some(Boolean);
-  const onlineRadioStation = entitlements.onlineRadioEnabled ? await prisma.station.findFirst({
+  const requestedOnline = (await searchParams)?.product === "ONLINE";
+  const radioPlanning = entitlements.onlineRadioEnabled && (onlineOnly || sandboxDraftOnly || requestedOnline);
+  const onlineChannelIds = radioPlanning ? (await prisma.channel.findMany({
+    where: { organisationId: context.membership.organisationId, station: { productFamily: "ONLINE" }, OR: [{ musicRightsUse: null }, { musicRightsUse: "ONLINE_RADIO" }] },
+    select: { id: true }, orderBy: { id: "asc" }, take: 200
+  })).map((channel) => channel.id) : null;
+  const onlineRadioStation = entitlements.onlineRadioEnabled && !radioPlanning ? await prisma.station.findFirst({
     where: { organisationId: context.membership.organisationId, productFamily: "ONLINE" },
     select: { id: true, name: true },
     orderBy: { createdAt: "asc" }
   }) : null;
-  const tabs = [
-    { id: "simple", label: "Music & playlists", description: "Start Non-Stop music; add playlists when ready" },
-    { id: "schedule", label: onlineOnly ? "More AutoDJ settings" : "Weekly plan", description: onlineOnly ? "Backup music and detailed playback settings" : "See now and plan the week" },
-    { id: "automation", label: "Advanced tools", description: "Clocks, rules and detailed schedules" },
+  const tabs = sandboxDraftOnly ? [
+    { id: "library", label: "1 · Music library", description: catalogueMetadataOnly ? "Browse approved catalogue details for your Malta test" : "Understand catalogue access in this draft-only test" },
+    { id: "simple", label: "2 · Playlists", description: "Save a reusable genre-based music draft" },
+    { id: "planner", label: "3 · Weekly planner", description: "Place programmes in a week and preview the times" }
+  ] : [
+    ...(radioPlanning ? [{ id: "library", label: "1 · Music library", description: "Browse approved catalogue music or your own uploads" }] : []),
+    { id: "simple", label: radioPlanning ? "2 · Playlists" : "AutoDJ & playlists", description: "Choose a channel and save a reusable music mix" },
+    { id: "planner", label: radioPlanning ? "3 · Weekly planner" : "Weekly planner", description: "Save a draft and review the seven-day preview" },
+    { id: "schedule", label: onlineOnly ? "Backup & playback" : "Locations & backup", description: onlineOnly ? "Detailed fallback music and playback settings" : "Location / zone plans and fallback music" },
+    { id: "automation", label: "Advanced tools", description: "Music rules, clocks and generated playlists" },
     { id: "live", label: "Live radio", description: "Studio, sources and failover" },
     { id: "production", label: "Production", description: "Voice tracks and audio processing" },
     ...(canManage ? [{ id: "access", label: "DJ access", description: "Controlled presenter access" }] : [])
@@ -55,10 +86,10 @@ export default async function SubscriberProgrammingPage() {
       <section className={styles.shell} id="main-content">
         <div className={styles.hero}>
           <div>
-            <p className={styles.eyebrow}>MUSIC & PLAYLISTS</p>
-            <h1>{onlineOnly ? "Get your station playing" : "Choose music for your service"}</h1>
+            <p className={styles.eyebrow}>{radioPlanning ? "ONLINE RADIO · MUSIC & PLANNING" : "AUTODJ & SCHEDULE"}</p>
+            <h1>{radioPlanning ? "Your music. Your programmes. Your week." : "Music made easier to plan"}</h1>
             <p className={styles.intro}>
-              {onlineOnly ? "Start with approved Non-Stop music. Playlists and timed shows are optional, and Ruvanas handles the stream connection." : `Start with approved Non-Stop music for ${context.membership.organisation.name}. Add playlists or a weekly plan when you need them.`}
+              {sandboxDraftOnly ? "Start with your music access, create a private playlist draft, then plan and preview your week. No audio, public player or broadcasting is enabled." : radioPlanning ? "Find your music, save a reusable playlist, then arrange your programmes in the weekly planner. Browsing and weekly drafts do not start broadcasting." : "Choose your channel, set its automatic music, then plan recurring programmes in Weekly planner. Saving a draft never puts it on air; preview and publish are separate steps."}
             </p>
           </div>
           <div className={styles.safetyNote}>
@@ -66,16 +97,20 @@ export default async function SubscriberProgrammingPage() {
             <span>Music selection and rights controls remain managed by Ruvanas.</span>
           </div>
         </div>
-        <WorkspaceTabs label="Programming tools" intro="Open only the part of radio programming you need right now." tabs={tabs}>
-          <div className={styles.workspace}><SimplePlaylistWorkspace availableProducts={enabledSubscriberProducts(entitlements).map(({ key, label }) => ({ key, label }))} /></div>
-          <div className={styles.workspace}><ProgrammingWorkspace organisationName={context.membership.organisation.name} onlineOnly={onlineOnly} /></div>
+        <WorkspaceTabs label={radioPlanning ? "Your station workflow" : "Programming tools"} intro={radioPlanning ? "Work from left to right, or return to any step. Your unsaved work stays in its tab." : "Start with AutoDJ. Use Weekly planner when you want recurring programmes."} tabs={tabs}>
+          {radioPlanning ? <div className={styles.workspace}><OnlineRadioLibraryWorkspace sandboxDraftOnly={sandboxDraftOnly} catalogueMetadataOnly={catalogueMetadataOnly} /></div> : null}
+          <div className={styles.workspace}><SimplePlaylistWorkspace onlineOnly={radioPlanning} planningOnly={radioPlanning} availableProducts={enabledSubscriberProducts(entitlements).map(({ key, label }) => ({ key, label }))} /></div>
           <div className={styles.workspace}>
-            {onlineRadioStation ? <div className={styles.notice} role="note">Plan recurring station shows? <a href={`/dashboard/radio/schedule/${onlineRadioStation.id}`}>Open the station programme schedule</a>. Everyday Non-Stop music is managed in Music &amp; playlists.</div> : null}
-            <AutoDjExpansionWorkspace /><SmartPlaylistsWorkspace /><RadioClocksWorkspace /><AdvancedSchedulerWorkspace />
+            <div className={styles.notice} role="note">{sandboxDraftOnly ? "Private draft planning only. A test playlist is a saved configuration, not playable audio. No plan can be published." : <>Weekly planner controls channel programmes. Location-specific music and backup settings remain in {onlineOnly ? "Backup & playback" : "Locations & backup"}.</>} {onlineRadioStation ? <a href={`/dashboard/radio/schedule/${onlineRadioStation.id}`}>Open the station programme schedule</a> : null}</div>
+            <AdvancedSchedulerWorkspace onlineChannelIds={onlineChannelIds} />
           </div>
-          <div className={styles.workspace}><ExternalLiveWorkspace /><LiveFailoverWorkspace /><BrowserLiveStudioWorkspace /></div>
-          <div className={styles.workspace}><VoiceTrackingWorkspace /><AudioProcessingWorkspace /></div>
-          {canManage ? <div className={styles.workspace}><DjAccessWorkspace /></div> : null}
+          {!sandboxDraftOnly ? <div className={styles.workspace}><ProgrammingWorkspace organisationName={context.membership.organisation.name} onlineOnly={onlineOnly} /></div> : null}
+          {!sandboxDraftOnly ? <div className={styles.workspace}>
+            <AutoDjExpansionWorkspace /><SmartPlaylistsWorkspace /><RadioClocksWorkspace />
+          </div> : null}
+          {!sandboxDraftOnly ? <div className={styles.workspace}><ExternalLiveWorkspace /><LiveFailoverWorkspace /><BrowserLiveStudioWorkspace /></div> : null}
+          {!sandboxDraftOnly ? <div className={styles.workspace}><VoiceTrackingWorkspace /><AudioProcessingWorkspace /></div> : null}
+          {canManage && !sandboxDraftOnly ? <div className={styles.workspace}><DjAccessWorkspace /></div> : null}
         </WorkspaceTabs>
       </section>
     </main>

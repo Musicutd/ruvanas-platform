@@ -40,7 +40,7 @@ async function expectProtectedApi(path, { method = "GET", body } = {}) {
   results.push({ path, status: response.status, expectation: "AUTHENTICATED_API" });
 }
 
-await expectPublicPage("/", "Every space deserves its");
+await expectPublicPage("/", "Every shop deserves its");
 await expectPublicPage("/login", "Welcome back");
 await expectPublicPage("/register", "Plan registration is temporarily paused");
 await expectPublicPage("/register?platform=retail&tier=retail-professional", "Plan registration is temporarily paused");

@@ -7,6 +7,7 @@ import { encryptSecret } from "@/lib/crypto";
 import { parseExternalLiveSourceInput } from "@/lib/external-live.mjs";
 import { createExternalLiveSource } from "@/lib/external-live-service";
 import { safeStudioDestination, validateStudioDestination } from "@/lib/studio-broadcast.mjs";
+import { isManagedRetailStreamDraftStation, RETAIL_STREAM_DRAFT_PROTECTED_MESSAGE } from "@/lib/retail-stream-draft-boundary.mjs";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -31,8 +32,9 @@ async function stationForSuperAdmin(stationId) {
   if (access.user.role !== "SUPER_ADMIN") {
     return { response: NextResponse.json({ error: "Only Ruvanas Super Admin can configure streaming details." }, { status: 403 }) };
   }
-  const station = await prisma.station.findUnique({ where: { id: stationId }, select: { id: true, organisationId: true } });
+  const station = await prisma.station.findUnique({ where: { id: stationId }, select: { id: true, organisationId: true, productFamily: true, slug: true } });
   if (!station) return { response: NextResponse.json({ error: "Station not found." }, { status: 404 }) };
+  if (isManagedRetailStreamDraftStation(station)) return { response: NextResponse.json({ error: RETAIL_STREAM_DRAFT_PROTECTED_MESSAGE }, { status: 409 }) };
   return { user: access.user, station };
 }
 

@@ -1,6 +1,7 @@
 "use client";
 import { CATALOGUE_TERRITORY_PRESETS } from "@/lib/catalogue-territories.mjs";
 import { CATALOGUE_PILLARS, CATALOGUE_TIERS } from "@/lib/catalogue-audience.mjs";
+import { catalogueBulkFileSizeError, catalogueRequestSizePolicy } from "@/lib/catalogue-request-limits.mjs";
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -34,9 +35,19 @@ export default function CatalogueBulkUploadForm() {
     setResult(null);
     try {
       const data = new FormData(form);
+      const fileSizeError = catalogueBulkFileSizeError(data.get("archive"), data.get("manifest"));
+      if (fileSizeError) { setPreview(null); throw new Error(fileSizeError); }
       data.set("mode", mode);
       const response = await fetch("/api/admin/catalogue/bulk-upload", { method: "POST", body: data });
-      const body = await response.json();
+      let body;
+      try { body = await response.json(); }
+      catch {
+        if (response.status === 413) throw new Error(catalogueRequestSizePolicy("/api/admin/catalogue/bulk-upload", "POST").error);
+        if (response.status === 502 || response.status === 503) {
+          throw new Error("The service is temporarily unavailable. Wait a short while, then check the catalogue before retrying.");
+        }
+        throw new Error("The server did not return a readable result. Check the catalogue before trying again.");
+      }
       if (!response.ok) {
         if (body.preview) setPreview(body.preview);
         throw new Error(body.error || "The catalogue batch could not be processed.");
@@ -69,11 +80,11 @@ export default function CatalogueBulkUploadForm() {
       <div style={styles.grid}>
         <label style={styles.label}>Music ZIP
           <input name="archive" type="file" accept=".zip,application/zip" required disabled={Boolean(working)} style={styles.input} onChange={() => setPreview(null)} />
-          <span style={styles.hint}>Up to 100 MP3, WAV, OGG or M4A files; ZIP maximum 150 MB.</span>
+          <span style={styles.hint}>Up to 100 MP3, WAV, OGG or M4A files; ZIP maximum 150 MB, each audio file maximum 50 MB, uncompressed total maximum 200 MB.</span>
         </label>
         <label style={styles.label}>Metadata spreadsheet
           <input name="manifest" type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required disabled={Boolean(working)} style={styles.input} onChange={() => setPreview(null)} />
-          <span style={styles.hint}>Your current Artist, Title, Mix, Time, BPM, Genre and Content Warning columns are supported.</span>
+          <span style={styles.hint}>CSV or XLSX maximum 10 MB. Your current Artist, Title, Mix, Time, BPM, Genre and Content Warning columns are supported.</span>
         </label>
       </div>
 
@@ -81,6 +92,8 @@ export default function CatalogueBulkUploadForm() {
         <strong>Automatic matching</strong>
         <span>The File column is optional when each audio filename starts with the spreadsheet row number or contains the artist and title.</span>
         <span>HTML text such as <code>R&amp;amp;B</code> is decoded and matched to the existing <strong>R&amp;B</strong> genre.</span>
+        <span>New spreadsheet genres are detected automatically and created when their tracks are imported successfully. Tracks follow your ready-for-programming choice below. Checking files does not save genres or music.</span>
+        <span>Track lengths are measured from the audio. If a spreadsheet time differs, the verified audio length is used.</span>
       </div>
 
       <fieldset style={styles.fieldset} disabled={Boolean(working)}>
@@ -131,15 +144,22 @@ export default function CatalogueBulkUploadForm() {
 }
 
 function Preview({ preview }) {
+  const newGenres = [...new Map(preview.rows.flatMap(row => row.newGenres || []).map(genre => [genre.name.toLowerCase(), genre])).values()];
   return <section style={styles.preview} aria-label="Bulk import check">
     <div style={styles.previewHeader}>
       <div><strong>3. Review before import</strong><p>{preview.summary.matchedTracks} ready · {preview.summary.invalidRows} need attention · {preview.summary.audioFiles} audio files found</p></div>
       <span style={preview.ready ? styles.ready : styles.notReady}>{preview.ready ? "Ready to import" : "Fix highlighted rows"}</span>
     </div>
+    {newGenres.length ? <div style={styles.info}>
+      <strong>New genres detected — created after successful import</strong>
+      <span>{newGenres.map(genre => `${genre.name} (${CATALOGUE_TIERS.find(tier => tier.level === genre.minimumCatalogueLevel)?.label || genre.minimumCatalogueLevel})`).join(", ")}</span>
+      <span>{preview.ready ? "Each new genre is saved automatically with its imported track." : "These genres are recognised. Resolve the highlighted file or metadata issues, then import the batch to create them."}</span>
+      <span>Tracks stay Draft unless you explicitly select “ready for programming”. Ready tracks still need a Music Mode and published schedule before playback. Existing genre settings and track rights are not changed.</span>
+    </div> : null}
     {preview.unmatchedFiles.length ? <div style={styles.warning}><strong>Audio not used by the spreadsheet:</strong> {preview.unmatchedFiles.join(", ")}</div> : null}
-    <div style={styles.tableWrap}><table style={styles.table}><thead><tr><th style={styles.previewHeaderCell}>Row</th><th style={styles.previewHeaderCell}>Audio</th><th style={styles.previewHeaderCell}>Track</th><th style={styles.previewHeaderCell}>Mix / BPM</th><th style={styles.previewHeaderCell}>Genre</th><th style={styles.previewHeaderCell}>Check</th></tr></thead><tbody>
+    <div style={styles.tableWrap}><table style={styles.table}><thead><tr><th style={styles.previewHeaderCell}>Row</th><th style={styles.previewHeaderCell}>Audio</th><th style={styles.previewHeaderCell}>Track</th><th style={styles.previewHeaderCell}>Mix / BPM</th><th style={styles.previewHeaderCell}>Verified length</th><th style={styles.previewHeaderCell}>Genre</th><th style={styles.previewHeaderCell}>Check</th></tr></thead><tbody>
       {preview.rows.map((row) => <tr key={row.sheetRow} style={row.errors.length ? styles.badRow : undefined}>
-        <td style={styles.previewCell}>{row.sheetRow}</td><td style={styles.previewCell}>{row.fileName || "Not matched"}</td><td style={styles.previewCell}><strong>{row.artist} — {row.title}</strong>{row.isExplicit ? <small style={styles.block}>Explicit content</small> : null}</td><td style={styles.previewCell}>{row.mixName || "—"} / {row.bpm || "—"}</td><td style={styles.previewCell}>{row.genres.length ? row.genres.join(", ") : "Uncategorised"}{row.notes.map((note) => <small key={note} style={styles.block}>{note}</small>)}</td><td style={styles.previewCell}>{row.errors.length ? row.errors.map((item) => <small key={item} style={styles.issue}>{item}</small>) : <span style={styles.good}>Ready</span>}</td>
+        <td style={styles.previewCell}>{row.sheetRow}</td><td style={styles.previewCell}>{row.fileName || "Not matched"}</td><td style={styles.previewCell}><strong>{row.artist} — {row.title}</strong>{row.isExplicit ? <small style={styles.block}>Explicit content</small> : null}</td><td style={styles.previewCell}>{row.mixName || "—"} / {row.bpm || "—"}</td><td style={styles.previewCell}>{row.durationSource === "VERIFIED_AUDIO" ? `${Math.floor(row.durationSeconds / 60)}:${String(row.durationSeconds % 60).padStart(2, "0")}` : "Not verified"}</td><td style={styles.previewCell}>{row.genres.length || row.newGenres?.length ? [...row.genres, ...(row.newGenres || []).map(genre => `${genre.name} (new)`)].join(", ") : "Uncategorised"}{row.notes.map((note) => <small key={note} style={styles.block}>{note}</small>)}</td><td style={styles.previewCell}>{row.errors.length ? row.errors.map((item) => <small key={item} style={styles.issue}>{item}</small>) : <span style={styles.good}>Ready to import{row.importStatus === "DRAFT" ? " · saved as Draft" : ""}</span>}</td>
       </tr>)}
     </tbody></table></div>
   </section>;

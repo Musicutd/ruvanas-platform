@@ -1,0 +1,6 @@
+# Preserve the original Git bytes of these checksum-pinned artifacts on Windows.
+/prisma/migrations/20261205000000_private_preview_account_access/migration.sql text eol=lf
+/assets/private-preview-public-site/index.html text eol=lf
+/assets/private-preview-public-site/how-it-works/index.html text eol=lf
+/assets/public-homepage-source/index.html text eol=lf
+/prisma/migrations/20261208000000_private_preview_subscriber_testing/migration.sql text eol=lf

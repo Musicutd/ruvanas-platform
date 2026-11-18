@@ -32,6 +32,10 @@ export default async function NewOrganisationPage() {
       <section style={styles.section}>
         <CreateOrganisationForm plans={plans} currentUserEmail={adminUser.email} />
       </section>
+      <p style={styles.description}>
+        Need a separate Client Admin for a new Retail workspace?{" "}
+        <Link href="/admin/organisations/new-client-admin">Create workspace with Client Admin</Link>
+      </p>
     </main>
   );
 }
