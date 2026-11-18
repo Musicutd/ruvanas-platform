@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readShopperFeaturePolicy, shopperBrowseSchema, publicSlugSchema, shopperOfferTerms } from "../lib/retail-rewards/shopper-contracts.mjs";
+import { readShopperFeaturePolicy, shopperBrowseSchema, shopperLocationsSchema, publicSlugSchema, shopperOfferTerms } from "../lib/retail-rewards/shopper-contracts.mjs";
 
 const ON = { RUVANAS_RETAIL_REWARDS_ENABLED: "true", RUVANAS_RETAIL_REWARDS_SHOPPER_ENABLED: "true" };
 test("shopper discovery is independently gated and never enables claims", () => {
@@ -30,4 +30,16 @@ test("shopper terms keep disclosed rules while removing internal location identi
   assert.equal(shopperOfferTerms({ ...terms, organisationId: "private" }), null);
   assert.equal(shopperOfferTerms({ ...terms, percentBps: 10001 }), null);
   assert.deepEqual(terms.locationIds, ["private-location-id"]);
+});
+
+test("location filters accept public town and country only with bounded paging", () => {
+  assert.deepEqual(shopperBrowseSchema.parse({ locality: " Sliema ", countryCode: "MT", page: 2 }), { locality: "Sliema", countryCode: "MT", page: 2 });
+  assert.deepEqual(shopperLocationsSchema.parse({ search: " Sli ", countryCode: "MT", page: 1 }), { search: "Sli", countryCode: "MT", page: 1 });
+  for (const input of [{ locality: "" }, { locality: "\n" }, { locality: "Sli\u0000ema" }, { locality: "x".repeat(121) }, { countryCode: "mt" }, { countryCode: "MTA" }]) {
+    assert.equal(shopperBrowseSchema.safeParse(input).success, false);
+  }
+  for (const input of [{ locationId: "private-location" }, { organisationId: "private-org" }, { shopperId: "other-shopper" },
+    { locality: "Sliema" }, { category: "FASHION" }, { page: 1001 }, { countryCode: "mt" }, { search: "x".repeat(101) }]) {
+    assert.equal(shopperLocationsSchema.safeParse(input).success, false);
+  }
 });

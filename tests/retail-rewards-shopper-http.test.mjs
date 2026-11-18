@@ -5,7 +5,8 @@ const ON = { RUVANAS_RETAIL_REWARDS_ENABLED: "true", RUVANAS_RETAIL_REWARDS_SHOP
 const req = (query = "", method = "GET") => new Request(`https://www.ruvanas.com/api/rewards/discovery/shops${query}`, { method });
 function fixture(env = ON, overrides = {}) {
   const calls = [];
-  const service = { shops: async input => { calls.push(["shops", input]); return { ok: true, shops: [], page: 1, hasMore: false }; },
+  const service = { locations: async input => { calls.push(["locations", input]); return { ok: true, locations: [], page: 1, hasMore: false }; },
+    shops: async input => { calls.push(["shops", input]); return { ok: true, shops: [], page: 1, hasMore: false }; },
     shop: async (slug, input) => { calls.push(["shop", slug, input]); return { ok: true, shop: { slug }, offers: [] }; },
     offer: async (shop, offer) => { calls.push(["offer", shop, offer]); return { ok: true, offer: { slug: offer } }; } };
   const handlers = createShopperDiscoveryHttp({ env,
@@ -16,7 +17,7 @@ function fixture(env = ON, overrides = {}) {
 }
 test("disabled shopper routes call no auth, limiter or service adapters", async () => {
   const f = fixture({});
-  for (const response of [await f.handlers.shops(req()), await f.handlers.shop(req(), "sample-shop"), await f.handlers.offer(req(), "sample-shop", "offer-10")]) {
+  for (const response of [await f.handlers.locations(req()), await f.handlers.shops(req()), await f.handlers.shop(req(), "sample-shop"), await f.handlers.offer(req(), "sample-shop", "offer-10")]) {
     assert.equal(response.status, 403); assert.equal((await response.json()).code, "FEATURE_DISABLED");
   }
   assert.deepEqual(f.calls, []);
@@ -51,4 +52,19 @@ test("errors do not expose storage, session or customer data", async () => {
   const f = fixture(ON, { loadService: async () => { throw new Error("postgresql://private credentials"); } });
   const response = await f.handlers.shops(req());
   assert.equal(response.status, 503); assert.equal((await response.text()).includes("credentials"), false);
+});
+
+test("location reads and exact town shop filtering retain private no-store and strict authority boundaries", async () => {
+  const f = fixture();
+  const response = await f.handlers.locations(req("?search=Sli&countryCode=MT&page=2"));
+  assert.equal(response.status, 200); assert.match(response.headers.get("cache-control"), /private, no-store/);
+  assert.equal(response.headers.get("vary"), "Cookie");
+  assert.deepEqual(f.calls.at(-1), ["locations", { search: "Sli", countryCode: "MT", page: 2 }]);
+  await f.handlers.shops(req("?locality=Sliema&countryCode=MT&category=FASHION"));
+  assert.deepEqual(f.calls.at(-1), ["shops", { category: "FASHION", locality: "Sliema", countryCode: "MT" }]);
+  const invalid = fixture();
+  assert.equal((await invalid.handlers.locations(req("", "POST"))).status, 405);
+  for (const query of ["?shopperId=foreign", "?countryCode=MT&countryCode=GB", "?countryCode=mt", "?page=0", "?category=HOME"])
+    assert.equal((await invalid.handlers.locations(req(query))).status, 400);
+  assert.deepEqual(invalid.calls, []);
 });

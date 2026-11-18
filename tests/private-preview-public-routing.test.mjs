@@ -13,7 +13,7 @@ import { pilotPreviewRoute } from "../lib/retail-rewards/pilot-preview-routes.mj
 import { pilotPreviewBusinessIdentity } from "../lib/retail-rewards/pilot-preview-business.mjs";
 import { pilotPreviewAdminIdentity } from "../lib/retail-rewards/pilot-preview-admin.mjs";
 import { requirePilotAdminAccess } from "../lib/retail-rewards/pilot-admin-access.mjs";
-import { requireRewardShopperAccess, SHOPPER_COOKIE } from "../lib/retail-rewards/shopper-access.mjs";
+import { requireRewardShopperAccess, hashShopperSessionToken, SHOPPER_COOKIE } from "../lib/retail-rewards/shopper-access.mjs";
 import { pilotPreviewOwnerContext } from "./fixtures/rewards-pilot-preview-admin.mjs";
 
 const source = await readFile(new URL("../middleware.js", import.meta.url), "utf8");
@@ -33,7 +33,7 @@ class TestResponse extends Response {
   static json(body, init = {}) { return new TestResponse(JSON.stringify(body), init); }
 }
 
-function middlewareHarness({ session = null, lookupThrows = false, deviceAllowed = false } = {}) {
+function middlewareHarness({ session = null, lookupThrows = false, deviceAllowed = false, shopperDb = {} } = {}) {
   let loads = 0;
   let lookups = 0;
   // Execute the actual middleware body with only Next's response adapter and
@@ -59,7 +59,7 @@ function middlewareHarness({ session = null, lookupThrows = false, deviceAllowed
     async () => { lookups += 1; if (lookupThrows) throw new Error("No public session query allowed"); return session; },
     "ruvanas_session", policy.readPrivatePreviewPolicy, policy.isPrivatePreviewPublicPath, policy.isPrivatePreviewRegistrationPath,
     policy.privatePreviewSessionLanding, policy.isPrivatePreviewAdminSession, policy.isPrivatePreviewOwnerBootstrapSession,
-    async () => { loads += 1; return {}; }, { randomUUID: () => "synthetic-request-id" }, catalogueRequestSizePolicy,
+    async () => { loads += 1; return shopperDb; }, { randomUUID: () => "synthetic-request-id" }, catalogueRequestSizePolicy,
     retailTestPlayerBootstrapRequest, retailTestPlayerDeviceRequest, hashPlayerToken, async () => deviceAllowed ? { subscriberTestStream: {} } : null,
     isPrivatePreviewSubscriberTestingSession, isPrivatePreviewOnlineDraftSession, readPilotPreviewPolicy, pilotPreviewRoute,
     pilotPreviewBusinessIdentity, pilotPreviewAdminIdentity, requireRewardShopperAccess, SHOPPER_COOKIE];
@@ -67,11 +67,13 @@ function middlewareHarness({ session = null, lookupThrows = false, deviceAllowed
   return { run, get loads() { return loads; }, get lookups() { return lookups; } };
 }
 
-function request(pathname, { method = "GET", origin = "https://www.ruvanas.com", headers = {}, cookie = true, deviceCookie = false } = {}) {
+function request(pathname, { method = "GET", origin = "https://www.ruvanas.com", headers = {}, cookie = true, deviceCookie = false, shopperCookie = false } = {}) {
   const url = new URL(pathname, origin);
   return { url: url.href, nextUrl: url, method,
     headers: new Headers({ host: url.host, ...headers }),
-    cookies: { get: name => name === "ruvanas_player" ? (deviceCookie ? { value: "p".repeat(43) } : undefined) : name === "ruvanas_session" && cookie ? { value: "a".repeat(64) } : undefined } };
+    cookies: { get: name => name === "ruvanas_player" ? (deviceCookie ? { value: "p".repeat(43) } : undefined)
+      : name === SHOPPER_COOKIE ? (shopperCookie ? { value: "b".repeat(64) } : undefined)
+      : name === "ruvanas_session" && cookie ? { value: "a".repeat(64) } : undefined } };
 }
 
 async function withEnv(overrides, action) {
@@ -157,6 +159,59 @@ test("absent or disabled Rewards pilot bridge does not expose pilot sign-in, sho
 const ADMIN_PILOT_ENV = { RUVANAS_RETAIL_REWARDS_ENABLED: "true", RUVANAS_RETAIL_REWARDS_PILOT_ADMIN_ENABLED: "true",
   RUVANAS_RETAIL_REWARDS_PILOT_ORGANISATION_IDS: '["org-one"]', RUVANAS_RETAIL_REWARDS_PILOT_PREVIEW_ENABLED: "true",
   RUVANAS_PRIVATE_PREVIEW_ALLOWED_EMAILS: "owner@example.invalid", RUVANAS_PRIVATE_PREVIEW_ADMIN_EMAIL: "owner@example.invalid" };
+
+const SHOPPER_PILOT_ENV = { ...ADMIN_PILOT_ENV, RUVANAS_RETAIL_REWARDS_SHOPPER_ENABLED: "true",
+  SESSION_SECRET: "synthetic-local-shopper-middleware-secret-only" };
+function middlewareShopperFixture() {
+  const now = new Date(), start = new Date(now.getTime() - 60_000), end = new Date(now.getTime() + 3_600_000);
+  const row = { id: "shopper-session-one", shopperId: "shopper-one",
+    tokenHash: hashShopperSessionToken("b".repeat(64), SHOPPER_PILOT_ENV.SESSION_SECRET),
+    authVersion: 1, createdAt: start, expiresAt: end, revokedAt: null,
+    shopper: { id: "shopper-one", status: "ACTIVE", authVersion: 1, membership: {
+      id: "shopper-membership-one", shopperId: "shopper-one", status: "ACTIVE", source: "MANUAL_INTERNAL",
+      startsAt: start, expiresAt: end, revokedAt: null, version: 1 } } };
+  const reads = [];
+  const db = { rewardShopperSession: { findUnique: async query => {
+    reads.push(query); assert.equal(query.where.tokenHash, row.tokenHash); return structuredClone(row);
+  } }, rewardPilotShopperEnrollment: { findUnique: async query => {
+    assert.equal(query.where.shopperId, row.shopperId); return { shopperId: row.shopperId, organisationId: "org-one" };
+  } } };
+  return { row, db, reads };
+}
+
+test("actual middleware admits location search and paging with only a current pilot shopper session", async () => {
+  await withEnv(SHOPPER_PILOT_ENV, async () => {
+    const fixture = middlewareShopperFixture(), harness = middlewareHarness({ shopperDb: fixture.db, lookupThrows: true });
+    for (const method of ["GET", "HEAD"]) {
+      const response = await harness.run(request("/api/rewards/discovery/locations?search=Sli&countryCode=MT&page=2",
+        { method, cookie: false, shopperCookie: true }));
+      assert.equal(response.headers.get("x-test-action"), "next", method);
+      assert.match(response.headers.get("cache-control"), /private, no-store/);
+    }
+    assert.equal(fixture.reads.length, 2);
+    assert.equal(harness.lookups, 0, "A business/preview session is neither required nor consulted");
+    const missing = await harness.run(request("/api/rewards/discovery/locations", { cookie: false }));
+    assert.equal(missing.status, 401); assert.equal(missing.headers.get("x-test-action"), null);
+    assert.equal(fixture.reads.length, 2, "Missing shopper cookies cause no shopper lookup");
+    fixture.row.revokedAt = new Date();
+    const revoked = await harness.run(request("/api/rewards/discovery/locations", { cookie: false, shopperCookie: true }));
+    assert.equal(revoked.status, 401); assert.equal(revoked.headers.get("x-test-action"), null);
+    assert.equal(harness.lookups, 0, "Failure does not fall back to a business identity");
+  });
+});
+
+test("location shopper admission stays closed when pilot or Rewards is disabled and never opens registration", async () => {
+  for (const disabled of ["RUVANAS_RETAIL_REWARDS_PILOT_PREVIEW_ENABLED", "RUVANAS_RETAIL_REWARDS_ENABLED"]) {
+    await withEnv({ ...SHOPPER_PILOT_ENV, [disabled]: "false" }, async () => {
+      const fixture = middlewareShopperFixture(), harness = middlewareHarness({ shopperDb: fixture.db, lookupThrows: true });
+      const response = await harness.run(request("/api/rewards/discovery/locations", { cookie: false, shopperCookie: true }));
+      assert.equal(response.status, 401, disabled); assert.equal(response.headers.get("x-test-action"), null);
+      assert.equal(fixture.reads.length, 0); assert.equal(harness.loads, 0); assert.equal(harness.lookups, 0);
+      assert.equal((await harness.run(request("/register", { cookie: false, shopperCookie: true }))).status, 404);
+      assert.equal((await harness.run(request("/api/auth/register", { method: "POST", cookie: false, shopperCookie: true }))).status, 403);
+    });
+  }
+});
 
 test("actual middleware admits the established preview owner only to scoped pilot administration", async () => {
   await withEnv({ ...ADMIN_PILOT_ENV, RUVANAS_RETAIL_REWARDS_SHOPPER_ENABLED: "true" }, async () => {

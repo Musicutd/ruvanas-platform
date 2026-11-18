@@ -270,6 +270,72 @@ test("RR-03a PostgreSQL shopper identity, public discovery and reset isolation",
       assert.equal((await service.shops({ category: "HOME" })).shops.some(shop => shop.slug === own.profile.publicSlug), true);
     }));
 
+    await t.test("public locality/country filtering precedes paging and locations contain only eligible shops", () => syntheticTransaction(db, async tx => {
+      const shopper = await shopperFixture(tx), service = await serviceFor(tx, shopper);
+      for (let index = 0; index < 26; index++) {
+        const merchant = await merchantFixture(tx);
+        await tx.rewardPublicShopProfile.update({ where: { id: merchant.profile.id }, data: {
+          publicSlug: `aa-town-${String(index).padStart(2, "0")}`, locality: "Valletta" } });
+      }
+      const chosen = await merchantFixture(tx), sameNameAbroad = await merchantFixture(tx), hidden = await merchantFixture(tx);
+      await tx.rewardPublicShopProfile.update({ where: { id: chosen.profile.id }, data: { publicSlug: "zz-selected-town", locality: "Zurrieq" } });
+      await tx.rewardPublicShopProfile.update({ where: { id: sameNameAbroad.profile.id }, data: { locality: "Zurrieq", countryCode: "GB" } });
+      await tx.rewardPublicShopProfile.update({ where: { id: hidden.profile.id }, data: { locality: "Hidden town" } });
+      await tx.rewardProgram.update({ where: { id: hidden.program.id }, data: { networkOptIn: false } });
+      const shops = await service.shops({ locality: "zurrieq", countryCode: "MT" });
+      assert.equal(shops.ok, true, JSON.stringify(shops));
+      assert.deepEqual(shops.shops.map(shop => shop.slug), ["zz-selected-town"]); assert.equal(shops.hasMore, false);
+      const first = await service.locations({ countryCode: "MT" });
+      assert.equal(first.ok, true, JSON.stringify(first)); assert.equal(first.hasMore, true);
+      assert.deepEqual(first.locations, [{ locality: "Valletta", countryCode: "MT" }]);
+      const second = await service.locations({ countryCode: "MT", page: 2 });
+      assert.equal(second.hasMore, false); assert.ok(second.locations.some(location => location.locality === "Zurrieq"));
+      assert.deepEqual((await service.locations({ search: "zurr", countryCode: "MT" })).locations, [{ locality: "Zurrieq", countryCode: "MT" }]);
+      assert.deepEqual((await service.locations({ search: "Hidden" })).locations, []);
+      const payload = JSON.stringify([first, second, shops]);
+      for (const secret of [shopper.shopper.id, chosen.organisation.id, chosen.location.id, "PRIVATE_CITY", "organisationId", "locationId"])
+        assert.equal(payload.includes(secret), false, secret);
+    }));
+
+    await t.test("uses left counts owned net redemptions across revisions, not claims or other shoppers", () => syntheticTransaction(db, async tx => {
+      const shopper = await shopperFixture(tx), other = await shopperFixture(tx), merchant = await merchantFixture(tx), foreign = await merchantFixture(tx);
+      const service = await serviceFor(tx, shopper), read = () => service.offer(merchant.profile.publicSlug, merchant.listing.publicSlug);
+      async function issue(target = merchant, owner = shopper, revision = 1) {
+        await tx.rewardOfferUsagePolicy.upsert({ where: { offerId: target.offer.id },
+          create: { offerId: target.offer.id, organisationId: target.organisation.id, timezone: "Europe/Malta" }, update: {} });
+        return tx.rewardClaim.create({ data: { organisationId: target.organisation.id, offerId: target.offer.id, revision,
+          shopperId: owner.shopper.id, shopperAuthVersion: 1, locationId: target.location.id,
+          publicShopName: target.profile.displayName, publicShopSlug: target.profile.publicSlug,
+          createdAt: NOW, expiresAt: new Date(NOW.getTime() + 3600000) } });
+      }
+      async function redeem(claim) {
+        return tx.rewardRedemption.create({ data: { organisationId: claim.organisationId, offerId: claim.offerId,
+          shopperId: claim.shopperId, locationId: claim.locationId, claimId: claim.id,
+          actorUserId: "synthetic-client-admin", actorOrganisationMemberId: "synthetic-cashier",
+          idempotencyKeyHash: randomBytes(32).toString("hex"), requestHash: randomBytes(32).toString("hex"),
+          eligibleSpendMinor: 5000, currency: "EUR", discountMinor: 500, occurredAt: NOW } });
+      }
+      await issue(); await issue();
+      assert.equal((await read()).offer.usage.remaining, 10);
+      const receipt = await redeem(await issue()); await redeem(await issue());
+      await redeem(await issue(merchant, other)); await redeem(await issue(foreign));
+      await tx.rewardOfferRevision.create({ data: { organisationId: merchant.organisation.id, offerId: merchant.offer.id,
+        revision: 2, terms: merchant.published, actorUserId: "synthetic-client-admin" } });
+      await tx.rewardOffer.update({ where: { id: merchant.offer.id }, data: { lastRevision: 2, publishedRevision: 2 } });
+      await tx.rewardOfferDiscovery.update({ where: { id: merchant.listing.id }, data: { revision: 2 } });
+      await redeem(await issue(merchant, shopper, 2));
+      const result = await read();
+      assert.equal(result.ok, true, JSON.stringify(result)); assert.equal(result.offer.revision, 2);
+      assert.deepEqual(result.offer.usage, { limit: 10, used: 3, remaining: 7, asOf: NOW.toISOString() });
+      await tx.rewardRedemptionReversal.create({ data: { organisationId: merchant.organisation.id, redemptionId: receipt.id,
+        actorUserId: "synthetic-client-admin", actorOrganisationMemberId: "synthetic-cashier", reason: "WRONG_COUPON",
+        idempotencyKeyHash: randomBytes(32).toString("hex"), requestHash: randomBytes(32).toString("hex"), occurredAt: NOW } });
+      assert.deepEqual((await read()).offer.usage, { limit: 10, used: 2, remaining: 8, asOf: NOW.toISOString() });
+      const serialized = JSON.stringify(result);
+      for (const privateValue of [shopper.shopper.id, other.shopper.id, receipt.id, merchant.organisation.id, merchant.offer.id])
+        assert.equal(serialized.includes(privateValue), false);
+    }));
+
     await t.test("26 stale revisions cannot fill the first shop or coupon candidate page", () => syntheticTransaction(db, async tx => {
       const shopper = await shopperFixture(tx), merchant = await merchantFixture(tx), service = await serviceFor(tx, shopper);
       const shopSlug = "zz-current-shop", offerSlug = "zz-current-coupon";

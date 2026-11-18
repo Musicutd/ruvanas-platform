@@ -7,6 +7,8 @@ import { checkoutAttempt, checkoutMessage, checkoutRequest, checkoutTransport } 
 import styles from "./shopper-claims.module.css";
 import { reversalReasonLabel } from "@/lib/retail-rewards/reversal-ui.mjs";
 import { renderCheckoutQr } from "@/lib/retail-rewards/checkout-qr.mjs";
+import { ShopperHeader, ShopperNav } from "./ShopperChrome";
+import shopperStyles from "./shopper-discovery.module.css";
 
 function CheckoutQr({ token }) {
   const canvas = useRef(null), [state, setState] = useState("PREPARING");
@@ -30,7 +32,7 @@ function Receipt({ receipt }) {
   return <section className={styles.receipt} aria-label="Coupon receipt"><p className={styles.eyebrow}>{receipt.reversal ? "REDEMPTION REVERSED" : "REDEMPTION CONFIRMED"}</p><h3>{receipt.offerTitle}</h3><p>{receipt.shopName}</p><dl><div><dt>Original qualifying purchase</dt><dd>{shopperMoney(receipt.eligibleSpendMinor, receipt.currency)}</dd></div><div><dt>Original coupon saving</dt><dd>{receipt.discountMinor === null ? "Applied manually by the shop" : shopperMoney(receipt.discountMinor, receipt.currency)}</dd></div><div><dt>Recorded</dt><dd>{offerDateLabel(receipt.redeemedAt, "Europe/Malta")} · Europe/Malta</dd></div><div><dt>Confirmation</dt><dd>{receipt.id}</dd></div></dl>{receipt.reversal && <div className={styles.notice}><strong>Correction recorded</strong><p>{reversalReasonLabel(receipt.reversal.reason)} · {offerDateLabel(receipt.reversal.reversedAt, "Europe/Malta")} (Europe/Malta).</p><p>This old coupon and its code remain used. Get a fresh coupon if you still meet the offer’s current terms and limits. A replacement is not guaranteed.</p><p>No payment or refund was processed. The original receipt remains unchanged.</p></div>}<p className={styles.help}>This confirms coupon redemption. It is not a payment receipt or proof of purchase.</p></section>;
 }
 
-function IssuedClaim({ claim, transport = checkoutTransport, onUpdate }) {
+function IssuedClaim({ claim, transport = checkoutTransport, onUpdate, compact = false }) {
   const [code, setCode] = useState(null), [busy, setBusy] = useState(false), [error, setError] = useState(""), [message, setMessage] = useState("");
   const pending = useRef(false), active = useRef(null), alive = useRef(true), codeEpoch = useRef(0);
   function clearCode() { codeEpoch.current++; active.current?.abort(); setCode(null); }
@@ -66,13 +68,12 @@ function IssuedClaim({ claim, transport = checkoutTransport, onUpdate }) {
   }
   return <section className={styles.detail} aria-label="Your issued coupon">
     <div className={styles.topline}><span className={styles.badge}>{claim.status === "REVERSED" ? "Redemption reversed" : claim.status === "REDEEMED" ? "Redeemed" : ready ? "Ready for checkout" : "Not available"}</span><span className={styles.help}>Issued terms · version {claim.revision}</span></div>
-    <p className={styles.benefit}>{summary.benefit}</p><h3>{claim.terms.title}</h3><p className={styles.shop}>{claim.shop.name}</p>
-    <dl className={styles.facts}><div><dt>Minimum spend</dt><dd>{summary.spend}</dd></div><div><dt>Coupon expires</dt><dd>{offerDateLabel(claim.expiresAt, claim.terms.timezone)}<small>{claim.terms.timezone}</small></dd></div><div><dt>Offer use limits</dt><dd>{summary.usage}<small>{summary.daily}</small></dd></div></dl>
-    <details className={styles.terms}><summary>Read the issued conditions</summary><p>{claim.terms.description}</p><p className={styles.preWrap}>{claim.terms.legalTerms}</p>{claim.terms.exclusions && <p><strong>Exclusions: </strong>{claim.terms.exclusions}</p>}<p>{summary.combinable}. {summary.pause}</p><p>The offer allows up to {claim.terms.totalLimit} successful uses across all shoppers. These limits are checked by the server at checkout; a coupon does not reserve a use.</p><p>Offer dates: {summary.starts} to {summary.ends} ({claim.terms.timezone}).</p></details>
-    {claim.receipt ? <Receipt receipt={claim.receipt} /> : ready ? <section className={styles.checkoutBox} aria-label="Show at checkout"><h4>Ready to use it at the shop?</h4><p>Ask staff at <strong>{claim.shop.name}</strong> to review your code and confirm the redemption. You cannot redeem it yourself.</p>
+    {!compact && <><p className={styles.benefit}>{summary.benefit}</p><h3>{claim.terms.title}</h3><p className={styles.shop}>{claim.shop.name}</p></>}
+    {claim.receipt ? <Receipt receipt={claim.receipt} /> : ready ? <section className={styles.checkoutBox} aria-label="Show at checkout"><h4>Show this at the shop</h4><p>Staff at <strong>{claim.shop.name}</strong> confirm your redemption. Showing the code does not use the voucher.</p>
       {code ? <><p className={styles.help}>Show this private code to staff. It expires at {offerDateLabel(code.expiresAt, claim.terms.timezone)} ({claim.terms.timezone}).</p><CheckoutQr token={code.token} /><output aria-label="Checkout code" className={styles.code}>{code.token}</output><div className={styles.actions}><button type="button" className={styles.primary} onClick={copyCode}>Copy code</button><button type="button" className={styles.secondary} onClick={() => { clearCode(); setMessage("Code hidden. A fresh code replaces the previous one."); }}>Hide code</button></div></> : <button type="button" className={styles.primary} disabled={busy} onClick={showCode}>{busy ? "Preparing code…" : "Show checkout code"}</button>}
-      <button type="button" className={styles.textButton} disabled={busy} onClick={showCode}>Get a fresh code</button><p className={styles.help}>A fresh code invalidates the previous code. Codes last at most five minutes. Both QR and text clear when you hide this page or leave it.</p>
+      {code && <button type="button" className={styles.textButton} disabled={busy} onClick={showCode}>Get a fresh code</button>}<p className={styles.help}>Codes expire within five minutes and hide when you leave this page. A fresh code replaces the previous one.</p>
     </section> : <p className={styles.notice}>This issued coupon cannot currently be used. Refresh your coupons to check its latest status.</p>}
+    <details className={styles.terms}><summary>Voucher conditions and limits</summary><dl className={styles.facts}><div><dt>Minimum spend</dt><dd>{summary.spend}</dd></div><div><dt>Coupon expires</dt><dd>{offerDateLabel(claim.expiresAt, claim.terms.timezone)}<small>{claim.terms.timezone}</small></dd></div><div><dt>Offer use limits</dt><dd>{summary.usage}<small>{summary.daily}</small></dd></div></dl><p>{claim.terms.description}</p><p className={styles.preWrap}>{claim.terms.legalTerms}</p>{claim.terms.exclusions && <p><strong>Exclusions: </strong>{claim.terms.exclusions}</p>}<p>{summary.combinable}. {summary.pause}</p><p>The offer allows up to {claim.terms.totalLimit} successful uses across all shoppers. These limits are checked at checkout; a coupon does not reserve a use.</p><p>Offer dates: {summary.starts} to {summary.ends} ({claim.terms.timezone}).</p></details>
     {claim.terms.usage === "REUSABLE" && <p className={styles.help}>After a successful use, return to the offer to get a new coupon. Lifetime and daily use limits still apply.</p>}
     {error && <p className={styles.error} role="alert">{error}</p>}{message && <p className={styles.notice} role="status">{message}</p>}
   </section>;
@@ -94,11 +95,11 @@ export function ClaimOfferAction({ shopSlug, offer, transport = checkoutTranspor
     } catch (problem) { if (alive.current) setError(checkoutMessage(problem.code)); }
     finally { clearTimeout(timer); pending.current = false; active.current = null; if (alive.current) setBusy(false); }
   }
-  if (claim) return <IssuedClaim key={claim.id} claim={claim} transport={transport} onUpdate={setClaim} />;
-  return <section className={styles.claimAction} aria-label="Get this coupon"><h3>Use this offer at the shop</h3><p>Get a coupon for the published conditions above, then show a short-lived code to shop staff at checkout. Staff confirm the redemption.</p><button type="button" className={styles.primary} disabled={busy} onClick={getCoupon}>{busy ? "Getting your coupon…" : error ? "Retry getting coupon" : "Get coupon"}</button><p className={styles.help}>Getting a coupon does not reserve availability or count as a redemption. Each repeat use needs a fresh coupon.</p>{error && <p className={styles.error} role="alert">{error}</p>}</section>;
+  if (claim) return <IssuedClaim key={claim.id} claim={claim} transport={transport} onUpdate={setClaim} compact />;
+  return <section className={styles.claimAction} aria-label="Get this coupon"><h3>Ready to use your voucher?</h3><p>Get a voucher for these terms, then show its checkout code to the shop.</p><button type="button" className={styles.primary} disabled={busy} onClick={getCoupon}>{busy ? "Getting your coupon…" : error ? "Retry getting coupon" : "Get coupon"}</button><p className={styles.help}>Only staff-confirmed redemption uses your allowance. Getting a voucher does not reserve availability.</p>{error && <p className={styles.error} role="alert">{error}</p>}</section>;
 }
 
-export default function ShopperClaimsClient({ initialData, transport = checkoutTransport, previewOnly = false }) {
+export default function ShopperClaimsClient({ initialData, transport = checkoutTransport, previewOnly = false, onBrowse, onAccount }) {
   const [data, setData] = useState({ claims: [], page: 1, hasMore: false, ...initialData }), [selected, setSelected] = useState(null), [busy, setBusy] = useState(false), [error, setError] = useState(initialData?.ok === false ? checkoutMessage(initialData.code) : "");
   const active = useRef(null), sequence = useRef(0);
   useEffect(() => () => { sequence.current++; active.current?.abort(); }, []);
@@ -110,15 +111,16 @@ export default function ShopperClaimsClient({ initialData, transport = checkoutT
     finally { clearTimeout(timer); if (sequence.current === request) { setBusy(false); active.current = null; } }
   }
   function updateClaim(claim) { setSelected(claim); setData(current => ({ ...current, claims: current.claims.map(item => item.id === claim.id ? claim : item) })); }
-  return <main className={styles.page}>
-    {previewOnly && <p className={styles.preview}><strong>LOCAL SHOPPER PREVIEW</strong> · Sample coupons only · No live checkout or accounts</p>}
-    <header className={styles.header}><a href="/rewards">RUVANAS <strong>Rewards</strong></a><span>Shopper</span></header>
-    <div className={styles.container}><a className={styles.back} href="/rewards">← Browse shops</a><div className={styles.heading}><div><p className={styles.eyebrow}>YOUR COUPONS</p><h1>Ready for your next visit.</h1><p>Open an issued coupon to see its conditions and show a code to shop staff.</p></div><button type="button" className={styles.secondary} disabled={busy} onClick={() => refresh()}>Refresh coupons</button></div>
-      {selected ? <><button type="button" className={styles.textButton} onClick={() => setSelected(null)}>← Back to your coupons</button><IssuedClaim key={selected.id} claim={selected} transport={transport} onUpdate={updateClaim} /></> : <section className={styles.cards} aria-label="Your coupons">{data.claims.map(claim => <article className={styles.card} key={claim.id}><div className={styles.topline}><span className={styles.badge}>{claim.status.toLowerCase().replaceAll("_", " ")}</span><span className={styles.help}>Version {claim.revision}</span></div><h2>{claim.terms.title}</h2><p>{claim.shop.name}</p><p className={styles.help}>Expires {offerDateLabel(claim.expiresAt, claim.terms.timezone)} · {claim.terms.timezone}</p><button type="button" className={styles.secondary} onClick={() => setSelected(claim)} aria-label={`Open coupon ${claim.terms.title}`}>Open coupon →</button></article>)}</section>}
+  return <main className={`${styles.page} ${shopperStyles.page}`}>
+    {previewOnly && <p className={styles.preview}><strong>LOCAL PREVIEW</strong> · Sample vouchers only · No live checkout or accounts</p>}
+    <ShopperHeader onHome={onBrowse} />
+    <div className={styles.container}><div className={styles.heading}><div><p className={styles.eyebrow}>YOUR REWARDS</p><h1>My vouchers</h1><p>Ready for your next visit. Open a voucher to show it at the shop.</p></div><button type="button" className={styles.secondary} disabled={busy} onClick={() => refresh()}>Refresh vouchers</button></div>
+      {selected ? <><button type="button" className={styles.textButton} onClick={() => setSelected(null)}>← Back to my vouchers</button><IssuedClaim key={selected.id} claim={selected} transport={transport} onUpdate={updateClaim} /></> : <section className={styles.cards} aria-label="Your coupons">{data.claims.map(claim => <article className={styles.card} key={claim.id}><div className={styles.topline}><span className={styles.walletBrand}>RUVANAS REWARDS</span><span className={styles.badge}>{claim.status.toLowerCase().replaceAll("_", " ")}</span></div><p className={styles.walletBenefit}>{shopperCouponSummary(claim.terms).benefit}</p><h2>{claim.shop.name}</h2><p>{claim.terms.title}</p><p className={styles.walletExpiry}>Until {offerDateLabel(claim.expiresAt, claim.terms.timezone)} · {claim.terms.timezone}</p><button type="button" className={styles.secondary} onClick={() => setSelected(claim)} aria-label={`Open coupon ${claim.terms.title}`}>Open voucher →</button></article>)}</section>}
       {!selected && !busy && !error && data.claims.length === 0 && <p className={styles.notice}>No coupons on this page. Browse a shop’s offers to get one, or continue to the next page if available.</p>}
       {busy && <p role="status">Loading your coupons…</p>}{error && <p className={styles.error} role="alert">{error}</p>}
       {!selected && !error && <div className={styles.pagination}><button type="button" className={styles.secondary} disabled={busy || data.page <= 1} onClick={() => refresh(data.page - 1)}>← Previous</button><span>Page {data.page}</span><button type="button" className={styles.secondary} disabled={busy || !data.hasMore} onClick={() => refresh(data.page + 1)}>Next →</button></div>}
       <footer className={styles.footer}>A checkout code is private and temporary. The shop must validate it before applying the offer. This is coupon confirmation, not payment processing.</footer>
     </div>
+    <ShopperNav active="wallet" onExplore={onBrowse} onAccount={onAccount} />
   </main>;
 }

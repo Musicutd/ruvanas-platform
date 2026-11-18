@@ -29,6 +29,7 @@ function fixture() {
       displayName: "Public Home Shop", description: "Approved shop description", locality: "Valletta", countryCode: "MT",
       status: "PUBLISHED", networkOptIn: true, publishedAt: START, revokedAt: null,
       location: { id: "private-location", organisationId: "private-org", status: "ACTIVE", addressLine1: "Private address" } }],
+    redemptions: [],
     listings: [{ id: "private-listing", organisationId: "private-org", offerId: "private-offer", revision: 1, publicSlug: "home-coupon",
       discoverable: true, approvedAt: START, revokedAt: null,
       publishedSnapshot: { organisationId: "private-org", offerId: "private-offer", revision: 1, terms: terms(), actorUserId: "private-owner" },
@@ -45,14 +46,18 @@ function fixture() {
       if (value === null || typeof value !== "object") return row[key] === value;
       const actual = row[key];
       if (Array.isArray(value.in)) return value.in.includes(actual);
+      if (Object.hasOwn(value, "not") && actual === value.not) return false;
       if (value.path) {
         const text = value.path.reduce((current, part) => current?.[part], actual);
         return value.equals !== undefined ? text === value.equals : String(text).toLowerCase().includes(value.string_contains.toLowerCase());
       }
+      if (Object.hasOwn(value, "equals")) return value.mode === "insensitive"
+        ? String(actual).toLowerCase() === String(value.equals).toLowerCase() : actual === value.equals;
       if (value.some) return Array.isArray(actual) && actual.some(item => matches(item, value.some));
       if (value.lte !== undefined) return actual <= value.lte;
       if (value.gt !== undefined) return actual > value.gt;
       if (value.contains !== undefined) return String(actual).toLowerCase().includes(value.contains.toLowerCase());
+      if (Object.hasOwn(value, "not")) return true;
       return matches(actual, value);
     });
   }
@@ -84,12 +89,13 @@ function fixture() {
         .sort((a, b) => a.publicSlug.localeCompare(b.publicSlug)).slice(query.skip, query.skip + query.take).map(row => project(row, query.select)); }
     },
     rewardOfferDiscovery: { async findMany(query) { calls.push(["listings", query]); return data.listings.map(expandedListing).filter(row => matches(row, query.where))
-      .sort((a, b) => a.publicSlug.localeCompare(b.publicSlug)).slice(query.skip, query.skip + query.take).map(row => project(row, query.select)); } }
+      .sort((a, b) => a.publicSlug.localeCompare(b.publicSlug)).slice(query.skip, query.skip + query.take).map(row => project(row, query.select)); } },
+    rewardRedemption: { async count(query) { calls.push(["usage", query]); return data.redemptions.filter(row => matches(row, query.where)).length; } }
   };
   const env = { ...ENV };
   const service = createShopperDiscoveryService({ db, env, clock: () => time,
     loadShopper: async passedDb => { assert.equal(passedDb, db); authCount++; const result = afterAuth?.(authCount); return result || clone(ACCESS); } });
-  return { data, calls, service, env, setAfterAuth: value => { afterAuth = value; }, setClock: value => { time = value; } };
+  return { data, calls, service, env, db, setAfterAuth: value => { afterAuth = value; }, setClock: value => { time = value; } };
 }
 
 test("discovery disabled and invalid input never load shopper or database", async () => {
@@ -98,9 +104,12 @@ test("discovery disabled and invalid input never load shopper or database", asyn
   assert.equal((await f.service.shops()).code, "FEATURE_DISABLED");
   assert.equal((await f.service.shop("home-shop")).code, "FEATURE_DISABLED");
   assert.equal((await f.service.offer("home-shop", "home-coupon")).code, "FEATURE_DISABLED");
+  assert.equal((await f.service.locations()).code, "FEATURE_DISABLED");
   f.env.RUVANAS_RETAIL_REWARDS_SHOPPER_ENABLED = "true";
   assert.equal((await f.service.shops({ organisationId: "private-org" })).code, "INVALID_REQUEST");
   assert.equal((await f.service.shops({ page: 1001 })).code, "INVALID_REQUEST");
+  assert.equal((await f.service.locations({ shopperId: "someone" })).code, "INVALID_REQUEST");
+  assert.equal((await f.service.locations({ page: 1001 })).code, "INVALID_REQUEST");
   assert.equal(f.calls.length, 0);
 });
 
@@ -240,4 +249,94 @@ test("private preview discovery is bounded to the pilot allowlist and reflects r
   f.env.RUVANAS_RETAIL_REWARDS_PILOT_ORGANISATION_IDS = '["private-org"]';
   f.setAfterAuth(() => { f.env.RUVANAS_RETAIL_REWARDS_PILOT_PREVIEW_ENABLED = "false"; });
   assert.equal((await f.service.shops()).shops.length, 0);
+});
+
+function addShop(f, suffix, locality, countryCode = "MT") {
+  const profile = clone(f.data.profiles[0]), listing = clone(f.data.listings[0]);
+  profile.id = `profile-${suffix}`; profile.publicSlug = `shop-${suffix}`; profile.locality = locality; profile.countryCode = countryCode;
+  profile.locationId = profile.location.id = `location-${suffix}`;
+  listing.id = `listing-${suffix}`; listing.publicSlug = `coupon-${suffix}`;
+  listing.offerId = listing.offer.id = listing.publishedSnapshot.offerId = `offer-${suffix}`;
+  listing.offer.locations = [{ organisationId: "private-org", offerId: listing.offerId, locationId: profile.locationId, scope: "PUBLISHED" }];
+  listing.publishedSnapshot.terms.locationIds = [profile.locationId];
+  f.data.profiles.push(profile); f.data.listings.push(listing);
+  return { profile, listing };
+}
+
+test("location search returns only opted-in eligible towns and countries without private fields", async () => {
+  const f = fixture();
+  addShop(f, "sliema-one", "Sliema"); addShop(f, "sliema-two", "Sliema"); addShop(f, "foreign", "Sliema", "GB");
+  addShop(f, "withdrawn", "Hidden town").profile.networkOptIn = false;
+  addShop(f, "invalid", "Invalid town").listing.publishedSnapshot.terms.percentBps = 0;
+  addShop(f, "blank", "   ");
+  const all = await f.service.locations();
+  assert.equal(all.ok, true); assert.equal(all.hasMore, false);
+  assert.deepEqual(all.locations, [{ locality: "Valletta", countryCode: "MT" }, { locality: "Sliema", countryCode: "GB" }, { locality: "Sliema", countryCode: "MT" }]);
+  assert.equal(JSON.stringify(all).includes("private-"), false);
+  const searched = await f.service.locations({ search: "sli", countryCode: "MT" });
+  assert.deepEqual(searched.locations, [{ locality: "Sliema", countryCode: "MT" }]);
+  assert.deepEqual((await f.service.locations({ search: "Public Home Shop" })).locations, []);
+  assert.ok(f.calls.filter(([kind]) => kind === "profiles").every(([, q]) => q.take <= 26));
+  assert.equal(f.calls.filter(([kind]) => kind === "usage").length, 0);
+});
+
+test("locality and country filter shops before pagination and are rechecked on fresh reads", async () => {
+  const f = fixture();
+  for (let index = 0; index < 26; index++) addShop(f, `a-${String(index).padStart(2, "0")}`, "Another town");
+  addShop(f, "zz-selected", "Sliema"); addShop(f, "zz-abroad", "Sliema", "GB");
+  const selected = await f.service.shops({ locality: "sliema", countryCode: "MT" });
+  assert.equal(selected.shops.length, 1); assert.equal(selected.shops[0].slug, "shop-zz-selected"); assert.equal(selected.hasMore, false);
+  for (const [, query] of f.calls.filter(([kind]) => kind === "profiles")) {
+    assert.deepEqual(query.where.locality, { equals: "sliema", mode: "insensitive" });
+    assert.equal(query.where.countryCode, "MT"); assert.equal(query.skip, 0);
+  }
+  f.setAfterAuth(count => { if (count === 5) f.data.profiles.find(p => p.publicSlug === "shop-zz-selected").locality = "Changed town"; });
+  assert.deepEqual((await f.service.shops({ locality: "Sliema", countryCode: "MT" })).shops, []);
+});
+
+test("location windows retain hasMore and a later town can be found directly by search", async () => {
+  const f = fixture();
+  for (let index = 0; index < 26; index++) addShop(f, `a-${String(index).padStart(2, "0")}`, "Sliema");
+  addShop(f, "zz-last", "Zurrieq");
+  const first = await f.service.locations(), next = await f.service.locations({ page: 2 });
+  assert.equal(first.hasMore, true); assert.equal(next.hasMore, false);
+  assert.ok(next.locations.some(row => row.locality === "Zurrieq"));
+  assert.deepEqual((await f.service.locations({ search: "zurr" })).locations, [{ locality: "Zurrieq", countryCode: "MT" }]);
+  assert.equal(Object.hasOwn(first, "total"), false);
+  const g = fixture(); g.setAfterAuth(count => { if (count === 2) g.data.grant.revokedAt = NOW; });
+  assert.deepEqual((await g.service.locations()).locations, []);
+});
+
+test("uses left is the current shopper's non-reversed redemption count across published revisions", async () => {
+  const f = fixture();
+  const redemption = patch => ({ organisationId: "private-org", offerId: "private-offer", shopperId: ACCESS.shopperId, reversal: null, ...patch });
+  f.data.redemptions = [redemption({ revision: 1 }), redemption({ revision: 2 }), redemption({ revision: 3 }),
+    redemption({ shopperId: "different-shopper" }), redemption({ organisationId: "different-org" }),
+    redemption({ offerId: "different-offer" }), redemption({ reversal: { id: "correction" } })];
+  const result = await f.service.offer("home-shop", "home-coupon");
+  assert.deepEqual(result.offer.usage, { limit: 10, used: 3, remaining: 7, asOf: NOW.toISOString() });
+  assert.deepEqual((await f.service.shop("home-shop")).offers[0].usage, result.offer.usage);
+  for (const [, query] of f.calls.filter(([kind]) => kind === "usage")) {
+    assert.deepEqual(query.where, { organisationId: "private-org", offerId: "private-offer", shopperId: ACCESS.shopperId, reversal: null });
+  }
+  assert.equal(JSON.stringify(result).includes(ACCESS.shopperId), false);
+  f.data.redemptions[0].reversal = { id: "correction" };
+  assert.equal((await f.service.offer("home-shop", "home-coupon")).offer.usage.remaining, 8);
+  f.data.redemptions.push(...Array.from({ length: 12 }, () => redemption({})));
+  assert.equal((await f.service.offer("home-shop", "home-coupon")).offer.usage.remaining, 0);
+});
+
+test("unknown usage fails closed and no count is inferred from claims or a changing identity", async () => {
+  const f = fixture();
+  f.data.claims = Array.from({ length: 10 }, () => ({ shopperId: ACCESS.shopperId, offerId: "private-offer" }));
+  assert.equal((await f.service.offer("home-shop", "home-coupon")).offer.usage.remaining, 10);
+  f.db.rewardRedemption.count = async () => { throw new Error("private database credentials"); };
+  const failed = await f.service.offer("home-shop", "home-coupon");
+  assert.equal(failed.code, "UNAVAILABLE"); assert.equal(JSON.stringify(failed).includes("credentials"), false);
+  for (const count of [-1, NaN, 1.5, "3"]) {
+    const g = fixture(); g.db.rewardRedemption.count = async () => count;
+    assert.equal((await g.service.offer("home-shop", "home-coupon")).code, "UNAVAILABLE");
+  }
+  const h = fixture(); h.setAfterAuth(count => count === 3 ? { ...ACCESS, shopperId: "another-shopper" } : null);
+  assert.equal((await h.service.offer("home-shop", "home-coupon")).code, "UNAUTHENTICATED");
 });

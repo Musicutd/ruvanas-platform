@@ -71,6 +71,21 @@ test("reviewed pilot routes are explicit and never grant methods, other pillars,
   assert.equal(pilotPreviewRoute("/dashboard/retail/rewards", "POST"), null);
 });
 
+test("location search and pagination use only the exact shopper read route in private preview", () => {
+  const path = "/api/rewards/discovery/locations";
+  for (const method of ["GET", "HEAD"]) {
+    assert.equal(pilotPreviewRoute(path, method), "SHOPPER", `${method} location reads require shopper authentication`);
+    assert.equal(pilotPreviewRoute(path, method, true), null, "A server action is never a shopper read");
+  }
+  for (const method of ["POST", "PATCH", "PUT", "DELETE", "OPTIONS"]) {
+    assert.equal(pilotPreviewRoute(path, method), null, `${method} is not admitted`);
+  }
+  for (const sibling of [`${path}/`, `${path}/extra`, `${path}-admin`, "/api/rewards/discovery/%6cocations",
+    `${path}%2fextra`, "/api/rewards/discovery\\locations"]) {
+    for (const method of ["GET", "HEAD", "POST"]) assert.equal(pilotPreviewRoute(sibling, method), null, `${method} ${sibling}`);
+  }
+});
+
 test("actual password comparison creates only a bounded session; stale password or authority cannot commit", async () => {
   const password = "local pilot client password", passwordHash = await bcrypt.hash(password, 4);
   for (const changed of [null, "password", "preview", "membership"]) {
