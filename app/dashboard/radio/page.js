@@ -3,16 +3,59 @@ import { prisma } from "@/lib/prisma";
 import { requireSubscriberProduct } from "@/lib/subscriber-product-access";
 import { firstListenableOnlineStation, onlineRadioListenHref } from "@/lib/online-radio-listen.mjs";
 import ProductDashboard from "../ProductDashboard";
+import { resolveTestRadioSubscriberWorkspace } from "@/lib/test-radio-subscriber-access.mjs";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Online Radio dashboard | Ruvanas" };
 
 export default async function OnlineRadioDashboard() {
   const { context, entitlements } = await requireSubscriberProduct("ONLINE", {
+    enterpriseSecurityPolicy: true,
     stations: { where: { productFamily: "ONLINE" }, select: { id: true, slug: true, status: true, productFamily: true, storageUsedMb: true, publicPlayerEnabled: true, stationWebsiteEnabled: true, streamConfig: { select: { streamUrl: true } } }, orderBy: { createdAt: "asc" } }
   });
   const organisation = context.membership.organisation;
   const firstStation = organisation.stations.find((station) => station.status === "ACTIVE") || organisation.stations[0] || null;
+  const testRadioWorkspace = await resolveTestRadioSubscriberWorkspace(prisma, context);
+  if (testRadioWorkspace) return <ProductDashboard
+    eyebrow="ONLINE RADIO · TEST RADIO"
+    title="Your music. Your playlists. Your week."
+    description="Browse your existing catalogue, generate a playlist, build a template or load a saved mix. Arrange your programmes in the weekly planner and save a draft for administrator review. Your edits do not change the current broadcast."
+    status="Planning enabled · on-air approval stays admin-only" statusTone="healthy"
+    primaryAction={{ href: "/dashboard/programming?product=ONLINE#workspace-library", label: "Open music & planner" }}
+    quickTasks={[
+      { href: "/dashboard/programming?product=ONLINE#workspace-library", label: "1 · Music library", description: "Search the existing rights-approved catalogue and track details." },
+      { href: "/dashboard/programming?product=ONLINE#workspace-simple", label: "2 · Playlists", description: "Generate Playlist, Template Builder and Load Playlist." },
+      { href: "/dashboard/programming?product=ONLINE#workspace-planner", label: "3 · Weekly planner", description: "Arrange programmes, preview the week and save a new draft." }
+    ]}
+    metrics={[
+      { label: "Station", value: testRadioWorkspace.stationName, detail: "Your existing station and music library" },
+      { label: "On-air approval", value: "Admin-only", detail: "Drafts never replace the approved broadcast automatically" },
+      { label: "Streaming settings", value: "Protected", detail: "Managed separately by the administrator" }
+    ]}
+    sections={[{ eyebrow: "PLAN WITH CONFIDENCE", title: "Prepare here. Approve on air separately.", description: "Your saved playlists and weekly drafts are shared with the administrator for review. Music-rights checks remain in place. This workspace cannot start or stop AutoDJ, change streaming credentials, upload audio or publish a programme.", actions: [
+      { href: `/stations/${testRadioWorkspace.stationId}`, label: "View Test Radio", description: "Open your station workspace." },
+      { href: "/dashboard/programming?product=ONLINE#workspace-simple", label: "Prepare a playlist", description: "Save a new recipe without changing an existing on-air mix." },
+      { href: "/dashboard/programming?product=ONLINE#workspace-planner", label: "Plan the week", description: "Save a new draft while the approved week stays unchanged." }
+    ] }]} />;
+  if (entitlements.sandboxDraftOnly) return <ProductDashboard
+    eyebrow="ONLINE RADIO · PRIVATE EDITABLE TEST"
+    title="Your private station test workspace"
+    description={entitlements.sandboxCatalogueMetadata ? "Browse rights-filtered FOCUSED catalogue metadata for Malta, save private playlist settings and preview a weekly programme plan. Audio playback, uploads, broadcasting, public publishing and paid provisioning remain off." : "Create one private station, save draft playlist settings and preview a weekly programme plan. No broadcast, audio upload, public player or paid provisioning is enabled."}
+    status={entitlements.sandboxCatalogueMetadata ? "Malta catalogue metadata · audio and broadcasting off" : "Draft-only testing · live broadcasting off"} statusTone="attention"
+    primaryAction={{ href: firstStation ? `/stations/${firstStation.id}` : "/stations/new", label: firstStation ? "Open test station" : "Create test station" }}
+    quickTasks={[
+      { href: "/dashboard/programming?product=ONLINE#workspace-library", label: "1 · Music library", description: entitlements.sandboxCatalogueMetadata ? "Browse approved catalogue metadata for Malta. No audio playback or download." : "See what your draft-only music access includes." },
+      { href: "/dashboard/programming?product=ONLINE#workspace-simple", label: "2 · Playlists", description: "Create a reusable private genre-based mix." },
+      { href: "/dashboard/programming?product=ONLINE#workspace-planner", label: "3 · Weekly planner", description: "Save programmes and preview your private test week." }
+    ]}
+    metrics={[{ label: "Test stations", value: `${organisation.stations.length} / 1`, detail: "Private station identity only" },
+      { label: "Live broadcasting", value: "Off", detail: "No stream connection or listener delivery" },
+      { label: "Audio uploads", value: "Off", detail: "No audio storage is provisioned for this test mode" }]}
+    sections={[{ eyebrow: "TEST SAFELY", title: "Plan without going live", description: "All saved work stays inside this isolated test organisation.", actions: [
+      { href: firstStation ? `/stations/${firstStation.id}` : "/stations/new", label: firstStation ? "View test station" : "Create test station", description: "Name and describe a private pending-setup station." },
+      { href: "/dashboard/programming#workspace-simple", label: "Draft playlists", description: "Save genre and playlist settings without generating or playing audio." },
+      { href: firstStation ? `/dashboard/radio/schedule/${firstStation.id}` : "/stations/new", label: "Weekly planner", description: "Save draft versions and preview programme times. Publication stays blocked." }
+    ] }]} />;
   const listenStation = firstListenableOnlineStation(organisation.stations);
   const now = new Date();
   const [players, liveStreams, publicListeners, activeMusicModes, activeAutoDjPolicies] = await Promise.all([
@@ -34,15 +77,10 @@ export default async function OnlineRadioDashboard() {
     publicPlayerEnabled: Boolean(firstStation?.publicPlayerEnabled),
     activePublicListeners: publicListeners
   });
-  const stationReady = firstStation?.status === "ACTIVE" && Boolean(firstStation?.streamConfig?.streamUrl);
-  const quickTasks = !firstStation ? [] : stationReady ? [
-    { href: "/dashboard/autodj/online", label: "AutoDJ music", description: "Keep your station playing; detailed schedules stay available separately." },
-    { href: `/stations/${firstStation.id}/public-player`, label: "Your listening page", description: "Preview or publish the page you will share with listeners." },
-    { href: "/dashboard/media", label: "Add your own audio", description: "Prepare station-owned tracks, jingles and spoken content." }
-  ] : [
-    { href: "/dashboard/autodj/online", label: "Prepare AutoDJ music", description: "Choose approved music now; Ruvanas handles the broadcast connection separately." },
-    { href: "/dashboard/media", label: "Prepare your audio", description: "Add station-owned audio while Ruvanas prepares the broadcast connection." },
-    { href: "/dashboard/support", label: "Ask Ruvanas", description: "Send a question and follow the answer in one place." }
+  const quickTasks = [
+    { href: "/dashboard/programming?product=ONLINE#workspace-library", label: "1 · Music library", description: "Find approved songs and manage your own uploaded audio." },
+    { href: "/dashboard/programming?product=ONLINE#workspace-simple", label: "2 · Playlists", description: "Create reusable genre-based music mixes for your programmes." },
+    { href: "/dashboard/programming?product=ONLINE#workspace-planner", label: "3 · Weekly planner", description: "Arrange your programmes, save a draft and review the week." }
   ];
 
   return <ProductDashboard

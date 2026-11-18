@@ -4,7 +4,8 @@ import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import CatalogueBulkUploadForm from "./CatalogueBulkUploadForm";
 import CatalogueUploadForm from "./CatalogueUploadForm";
-import CatalogueAudienceControl from "./CatalogueAudienceControl";
+import CatalogueTrackTable from "./CatalogueTrackTable";
+import { catalogueTableRows } from "@/lib/catalogue-track-search.mjs";
 import GenreTierControl from "./GenreTierControl";
 import { CANONICAL_AUTODJ_GENRES, normaliseGenreCode } from "@/lib/autodj-genre-entitlements.mjs";
 
@@ -198,90 +199,7 @@ export default async function AdminCataloguePage() {
           </span>
         </div>
 
-        {catalogueAssets.length === 0 ? (
-          <div style={styles.emptyState}>
-            <p style={styles.emptyTitle}>No catalogue tracks are available.</p>
-            <p style={styles.emptyText}>
-              The catalogue is intentionally empty while commercial music
-              licensing is deferred. Organisation users cannot access this
-              catalogue at this time.
-            </p>
-          </div>
-        ) : (
-          <div style={styles.tableWrapper}>
-            <table style={styles.table}>
-              <thead>
-                <tr>
-                  <th style={styles.tableHeader}>Track</th>
-                  <th style={styles.tableHeader}>Artist</th>
-                  <th style={styles.tableHeader}>Mix / BPM</th>
-                  <th style={styles.tableHeader}>Genres</th>
-                  <th style={styles.tableHeader}>Type</th>
-                  <th style={styles.tableHeader}>Status</th>
-                  <th style={styles.tableHeader}>Rights</th>
-                  <th style={styles.tableHeader}>Subscriber access</th>
-                  <th style={styles.tableHeader}>Added</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {catalogueAssets.map((asset) => (
-                  <tr key={asset.id} style={styles.tableRow}>
-                    <td style={styles.tableCellStrong}>
-                      <div>{asset.track?.title || asset.name}</div>
-                      <div style={styles.originalName}>
-                        {asset.originalName}
-                      </div>
-                    </td>
-
-                    <td style={styles.tableCell}>
-                      {asset.track?.artist || "Metadata pending"}
-                    </td>
-
-                    <td style={styles.tableCell}>
-                      {asset.track ? `${asset.track.mixName || "—"} / ${asset.track.bpm || "—"}` : "—"}
-                    </td>
-
-                    <td style={styles.tableCell}>
-                      {asset.genres.length > 0
-                        ? asset.genres
-                            .map((item) => item.mediaGenre.name)
-                            .join(", ")
-                        : "Uncategorised"}
-                    </td>
-
-                    <td style={styles.tableCell}>{asset.mediaType}</td>
-
-                    <td style={styles.tableCell}>
-                      <span style={styles.statusBadge}>{asset.track?.status || asset.status}</span>
-                    </td>
-
-                    <td style={styles.tableCell}>
-                      {asset.track?.rightsHolder ? (
-                        <>
-                          <div>{asset.track.rightsHolder}</div>
-                          <div style={styles.originalName}>
-                            {asset.track.permittedTerritories || "Territories not recorded"}
-                          </div>
-                        </>
-                      ) : (
-                        "Legacy record"
-                      )}
-                    </td>
-
-                    <td style={styles.tableCell}>
-                      {asset.track ? <CatalogueAudienceControl track={{ id: asset.track.id, minimumCatalogueLevel: asset.track.minimumCatalogueLevel, permittedUses: asset.track.permittedUses, permittedTerritories: asset.track.permittedTerritories }} /> : "No track metadata"}
-                    </td>
-
-                    <td style={styles.tableCell}>
-                      {new Date(asset.createdAt).toLocaleDateString()}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <CatalogueTrackTable rows={catalogueTableRows(catalogueAssets)} />
       </section>
 
       <section style={styles.section}>

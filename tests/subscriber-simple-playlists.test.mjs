@@ -68,7 +68,7 @@ test("scheduled template is tenant scoped and outranks Non-Stop but not explicit
 
 test("Online Radio scheduled output uses the existing configured source and never crosses tenants", () => {
   const now = new Date("2026-09-25T01:30:00Z");
-  const station = { id: "station", organisationId: "org-a", productFamily: "ONLINE", streamConfig: { outboundAutoDjEnabled: true, providerKey: "CENTOVA_CAST", serverHost: "example.com", sourcePort: 8198, sourcePasswordEncrypted: "secret" }, channels: [{ id: "channel-a", organisationId: "org-a", status: "ACTIVE" }] };
+  const station = { id: "station", organisationId: "org-a", productFamily: "ONLINE", status: "ACTIVE", streamConfig: { outboundAutoDjEnabled: true, providerKey: "CENTOVA_CAST", serverHost: "example.com", sourcePort: 8198, sourcePasswordEncrypted: "secret" }, channels: [{ id: "channel-a", organisationId: "org-a", status: "ACTIVE" }] };
   const event = { id: "event", organisationId: "org-a", channelId: "channel-a", startsAt: new Date("2026-09-25T01:00:00Z"), endsAt: new Date("2026-09-25T03:00:00Z"), smartPlaylist: { id: "playlist", organisationId: "org-a", status: "ACTIVE", rightsUse: "ONLINE_RADIO", simpleBuildMode: "RANDOM_GENRE_POOL", durationMinutes: 60, genreCodes: ["POP"], version: 1, updatedAt: now, musicModeId: "mode" } };
   assert.equal(eligibleScheduledOnlineRotation(station, { onlineRadioEnabled: true }, event, entries, now).ready, true);
   assert.equal(eligibleScheduledOnlineRotation(station, { onlineRadioEnabled: true }, { ...event, smartPlaylist: { ...event.smartPlaylist, organisationId: "org-b" } }, entries, now).ready, false);

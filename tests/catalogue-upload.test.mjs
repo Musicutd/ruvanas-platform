@@ -70,9 +70,10 @@ test("single-track catalogue upload requires valid chosen territories", () => {
   assert.equal(parseCatalogueMetadata({ ...validMetadata, permittedTerritories: "Europe, US, Canada" }).data.permittedTerritories, "EUROPE,US,CA");
 });
 
-test("catalogue metadata requires an explicit Tier 3, 4 or 5 threshold", () => {
+test("catalogue metadata accepts an explicit all-tier choice and tier thresholds, never legacy NONE", () => {
   assert.equal(parseCatalogueMetadata({ ...validMetadata, minimumCatalogueLevel: "NONE" }).ok, false);
   assert.equal(parseCatalogueMetadata({ ...validMetadata, minimumCatalogueLevel: "PREMIUM" }).data.minimumCatalogueLevel, "PREMIUM");
+  assert.equal(parseCatalogueMetadata({ ...validMetadata, minimumCatalogueLevel: "ALL" }).data.minimumCatalogueLevel, "ALL");
 });
 
 test("catalogue metadata only becomes ready through the explicit option", () => {

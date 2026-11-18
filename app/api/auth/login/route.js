@@ -4,13 +4,18 @@ import { prisma } from "@/lib/prisma";
 import { createSession } from "@/lib/auth";
 import { resolveEntitlements } from "@/lib/entitlements.mjs";
 import { loginLandingRoute } from "@/lib/login-routing.mjs";
+import { readPrivatePreviewPolicy } from "@/lib/private-preview-policy.mjs";
 import { clearRateLimit, consumeRateLimit, createRateLimitKey } from "@/lib/rate-limit";
 import { securityLog } from "@/lib/security-log";
+import { previewPasswordLogin } from "@/lib/private-preview-password-route";
 
 const LOGIN_LIMIT = 10;
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
-
 export async function POST(request) {
+  const previewPolicy = readPrivatePreviewPolicy(process.env);
+  if (previewPolicy.enabled) {
+    return previewPasswordLogin(request);
+  }
   try {
     const body = await request.json();
     const email = String(body.email || "").trim().toLowerCase();

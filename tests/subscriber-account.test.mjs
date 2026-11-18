@@ -50,6 +50,14 @@ test("subscriber plan feature summary reflects effective entitlements", () => {
   assert.equal(features.find((feature) => feature.label === "Retail Media").enabled, true);
 });
 
+test("Retail account summaries omit paused digital displays without changing other products", () => {
+  const retail = subscriberPlanFeatures({ planProductFamily: "RETAIL", includesRuvanasCatalogue: true });
+  assert.equal(retail.some(feature => feature.label === "Digital Signage"), false);
+  assert.equal(retail.find(feature => feature.label === "Ruvanas Music Catalogue").enabled, true);
+  const school = subscriberPlanFeatures({ planProductFamily: "SCHOOL", digitalSignageEnabled: true });
+  assert.equal(school.find(feature => feature.label === "Digital Signage").enabled, true);
+});
+
 test("account page is tenant-derived, owner-filtered and does not expose provider identifiers", async () => {
   const [page, styles, navigation] = await Promise.all([
     readFile(new URL("../app/dashboard/account/page.js", import.meta.url), "utf8"),

@@ -115,7 +115,7 @@ test("every guided subscriber route points to its relevant help topic and skip t
     ["../app/dashboard/page.js", "getting-started"],
     ["../app/dashboard/players/page.js", "shop-players"],
     ["../app/dashboard/media/page.js", "audio-uploads"],
-    ["../app/stations/new/page.js", "station-setup"],
+    ["../app/stations/new/NewStationClient.js", "station-setup"],
     ["../app/stations/[stationId]/setup/page.js", "station-setup"],
     ["../app/stations/[stationId]/page.js", "station-setup"]
   ];

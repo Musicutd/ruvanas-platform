@@ -17,10 +17,12 @@ export async function PATCH(request, { params }) {
     const organisation = await prisma.organisation.findUnique({ where: { id: String(organisationId || "") }, include: { subscription: { include: { plan: true } } } });
     if (!organisation) return NextResponse.json({ error: "Organisation not found." }, { status: 404 });
     if (!organisation.subscription) return NextResponse.json({ error: "Add a subscription before enabling Digital Signage." }, { status: 409 });
+    const retailAudioOnly = organisation.subscription.plan.productFamily === "RETAIL";
+    if (retailAudioOnly && parsed.data.enabled === true) return NextResponse.json({ error: "Digital displays are paused for all Retail plans. Retail audio access is unchanged." }, { status: 409 });
     const previousOverride = organisation.subscription.digitalSignageEnabled;
-    const previousEffective = Boolean(previousOverride ?? organisation.subscription.plan.digitalSignageEnabled);
+    const previousEffective = Boolean(!retailAudioOnly && (previousOverride ?? organisation.subscription.plan.digitalSignageEnabled));
     const nextOverride = parsed.data.enabled;
-    const nextEffective = Boolean(nextOverride ?? organisation.subscription.plan.digitalSignageEnabled);
+    const nextEffective = Boolean(!retailAudioOnly && (nextOverride ?? organisation.subscription.plan.digitalSignageEnabled));
     const subscription = await prisma.$transaction(async (tx) => {
       const updated = await tx.subscription.update({ where: { id: organisation.subscription.id }, data: { digitalSignageEnabled: nextOverride } });
       await tx.auditLog.create({ data: {

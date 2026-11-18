@@ -28,7 +28,7 @@ test("dense subscriber workspaces are split into task-focused tabs", async () =>
   ]);
 
   assert.match(productDashboard, /<WorkspaceTabs/);
-  assert.match(programming, /label="Programming tools"/);
+  assert.match(programming, /label=\{radioPlanning \? "Your station workflow" : "Programming tools"\}/);
   assert.match(programming, /id: "automation"/);
   assert.match(programming, /id: "live"/);
   assert.match(school, /label="School Radio tools"/);
