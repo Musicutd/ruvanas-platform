@@ -37,7 +37,7 @@ test("station page checks tenant and Online Radio family; draft and publish rema
   const create = source("../app/api/programming/advanced-scheduler/route.js");
   const publish = source("../app/api/programming/advanced-scheduler/[scheduleId]/versions/[versionId]/publish/route.js");
 
-  assert.match(page, /requireSubscriberProduct\("ONLINE"\)/);
+  assert.match(page, /requireSubscriberProduct\("ONLINE", \{ enterpriseSecurityPolicy: true \}\)/);
   assert.match(page, /organisationId: context\.membership\.organisationId, productFamily: "ONLINE"/);
   assert.match(page, /AdvancedSchedulerWorkspace stationId=\{station\.id\}/);
   assert.match(scheduler, /scopeStationScheduleData\(payload, stationId\)/);

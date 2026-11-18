@@ -168,6 +168,17 @@ test("organisation reset order covers every tenant model and places children bef
   assert.ok(names.indexOf("StudioProductHandoff") < names.indexOf("AudioRender"));
   assert.ok(names.indexOf("PromoAsset") < names.indexOf("MediaAsset"));
   assert.ok(names.indexOf("AudioProject") < names.indexOf("MediaAsset"));
+  // Published-revision history remains a protected child. The optional offer
+  // pointer must not make the entire reset module unimportable when Rewards is off.
+  for (const model of ["RewardOffer", "RewardOfferLocation", "RewardOfferRevision", "RewardProgram", "RewardAuditEvent"])
+    assert.ok(names.includes(model));
+  assert.ok(names.indexOf("RewardOfferRevision") < names.indexOf("RewardOffer"));
+  assert.ok(names.indexOf("RewardOfferLocation") < names.indexOf("RewardOffer"));
+  assert.ok(names.indexOf("RewardOffer") < names.indexOf("RewardProgram"));
+  assert.ok(names.indexOf("RewardPublicShopProfile") < names.indexOf("Location"));
+  assert.ok(names.indexOf("RewardOfferDiscovery") < names.indexOf("RewardOfferRevision"));
+  for (const model of ["RewardShopper", "RewardShopperSession", "RewardShopperMembership", "RewardShopperCredential", "RewardShopperInvitation"])
+    assert.equal(names.includes(model), false);
   for (const promoVersionConsumer of [
     "Campaign",
     "VoiceTrackSegue",

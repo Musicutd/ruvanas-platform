@@ -1733,6 +1733,7 @@ model User {
   auditLogs                              AuditLog[]                       @relation("AuditActor")
   sessions                               Session[]
   passwordResetTokens                    PasswordResetToken[]
+  privatePreviewAccess                   PrivatePreviewAccess?
   submittedPromoVersions                 PromoVersion[]                   @relation("PromoVersionSubmittedBy")
   reviewedPromoVersions                  PromoVersion[]                   @relation("PromoVersionReviewedBy")
   publishedCampaigns                     Campaign[]                       @relation("CampaignPublishedBy")
@@ -1902,6 +1903,7 @@ model Organisation {
   updatedAt DateTime @updatedAt
 
   members                            OrganisationMember[]
+  privatePreviewAccess               PrivatePreviewAccess?
   invitations                        OrganisationInvitation[]
   subscription                       Subscription?
   stations                           Station[]
@@ -2060,6 +2062,18 @@ model Organisation {
   radioAdvertisingPolicies           RadioAdvertisingPolicy[]
   radioDistributionDestinations      RadioDistributionDestination[]
   generatedPlaylists                 GeneratedPlaylist[]
+  rewardProgram                      RewardProgram?
+  rewardEntitlementGrant             RewardEntitlementGrant?
+  rewardStaffGrants                   RewardStaffGrant[]
+  rewardAuditEvents                   RewardAuditEvent[]
+  rewardShopperSetups                  RewardShopperSetup[]
+  rewardPilotShopperEnrollments        RewardPilotShopperEnrollment[]
+  rewardPilotAuditEvents               RewardPilotAuditEvent[]
+  rewardOffers                        RewardOffer[]
+  rewardPublicShopProfiles             RewardPublicShopProfile[]
+  rewardOfferDiscoveries               RewardOfferDiscovery[]
+  rewardClaims                        RewardClaim[]
+  rewardRedemptionReversals            RewardRedemptionReversal[]
 }
 
 model OrganisationMember {
@@ -2075,8 +2089,10 @@ model OrganisationMember {
   organisationBranchAssignments OrganisationBranchAssignment[]
   correctionsFacilityGrants     CorrectionsFacilityGrant[]
   correctionsNetworkGrant       CorrectionsNetworkGrant?
+  rewardStaffGrants              RewardStaffGrant[]
 
   @@unique([userId, organisationId])
+  @@unique([id, organisationId])
   @@index([organisationId])
 }
 
@@ -2501,6 +2517,7 @@ model Subscription {
   planId                                     String
   status                                     SubscriptionStatus           @default(TRIAL)
   currentPeriodEnd                           DateTime?
+  subscriberTestPlanSnapshot                 Json?
   retailRadioEnabled                         Boolean?
   schoolRadioEnabled                         Boolean?
   onlineRadioEnabled                         Boolean?
@@ -2545,6 +2562,9 @@ model Subscription {
   billingInvoices         BillingInvoice[]
   billingReconciliations  BillingUsageReconciliation[]
   complimentaryAccessCode ComplimentaryAccessCode?     @relation("ActiveComplimentaryAccess", fields: [complimentaryAccessCodeId], references: [id], onDelete: SetNull)
+  rewardEntitlementGrants  RewardEntitlementGrant[]
+
+  @@unique([id, organisationId])
 }
 
 model ComplimentaryAccessCode {
@@ -2775,8 +2795,13 @@ model Location {
   correctionsAudioDistributionTargets CorrectionsNetworkAudioDistribution[] @relation("CorrectionsAudioDistributionTarget")
   correctionsAudioDistributionSources CorrectionsNetworkAudioDistribution[] @relation("CorrectionsAudioDistributionSource")
   correctionsSyndicationSources CorrectionsSyndicationOffer[]
+  rewardStaffGrants             RewardStaffGrant[]
+  rewardOfferLocations          RewardOfferLocation[]
+  rewardPublicShopProfiles       RewardPublicShopProfile[]
+  rewardClaims                  RewardClaim[]
 
   @@unique([organisationId, slug])
+  @@unique([id, organisationId])
   @@index([organisationId])
   @@index([brandId])
 }
@@ -3592,6 +3617,7 @@ model Station {
 
   organisation                  Organisation                   @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   streamConfig                  StationStreamConfig?
+  catalogueTests                OnlineRadioCatalogueTest[]
   channels                      Channel[]
   playoutEvents                 PlayoutEvent[]
   streamHealthSamples           StationStreamHealthSample[]
@@ -3614,6 +3640,56 @@ model Station {
   @@unique([id, organisationId])
   @@index([organisationId, productFamily, status])
   @@index([organisationId])
+}
+
+// Explicit, short-lived owner tests. Never a subscriber entitlement or a
+// recurring AutoDJ schedule. Source-send events are not listener proof of play.
+model OnlineRadioCatalogueTest {
+  id                       String   @id @default(cuid())
+  stationId                String
+  organisationId           String
+  createdByUserId          String
+  status                   String   @default("PREPARED")
+  origin                   String
+  territory                String   @default("MT")
+  catalogueLevel           String   @default("FOCUSED")
+  durationSeconds          Int      @default(300)
+  authorization            Json
+  plan                     Json
+  fingerprint              String
+  expiresAt                DateTime
+  requestedAt              DateTime?
+  deadlineAt               DateTime?
+  publicExposureAcceptedAt DateTime?
+  leaseOwner               String?
+  leaseUntil               DateTime?
+  startedAt                DateTime?
+  endedAt                  DateTime?
+  stopRequestedAt          DateTime?
+  endedReason              String?
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  station Station                         @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  events  OnlineRadioCatalogueTestEvent[]
+
+  @@index([stationId, status, createdAt])
+  @@index([status, expiresAt])
+}
+
+model OnlineRadioCatalogueTestEvent {
+  id         String   @id @default(cuid())
+  testId     String
+  eventKey   String
+  kind       String
+  trackId    String?
+  details    Json
+  occurredAt DateTime @default(now())
+
+  test OnlineRadioCatalogueTest @relation(fields: [testId], references: [id], onDelete: Cascade)
+
+  @@unique([testId, eventKey])
+  @@index([testId, occurredAt])
 }
 
 model StationDomain {
@@ -4082,7 +4158,10 @@ model Campaign {
   playoutIntents    PlayoutIntent[]
   proofOfPlayEvents ProofOfPlayEvent[]
   retailMediaOrder  RetailMediaOrder?
+  rewardOfferDraftLinks RewardOfferCampaignDraft[]
+  rewardOfferRevisionLinks RewardOfferCampaignRevision[]
 
+  @@unique([id, organisationId])
   @@index([organisationId, status])
   @@index([promoVersionId, status])
   @@index([effectiveFrom, effectiveTo])
@@ -4600,6 +4679,7 @@ model Track {
   contentWarning        String?
   catalogueProvider     String?
   minimumCatalogueLevel LicensedMusicCatalogueLevel @default(NONE)
+  catalogueAllTiers     Boolean                     @default(false)
   isExplicit            Boolean                     @default(false)
   status                TrackStatus                 @default(DRAFT)
   rightsHolder          String?
@@ -6814,6 +6894,23 @@ model NotificationDelivery {
   @@index([organisationId, status, createdAt])
 }
 
+// Explicit owner-managed preview enrollment. Never a commercial subscription or
+// a right to publish licensed media. Each tester gets a separate sandbox tenant.
+model PrivatePreviewAccess {
+  userId         String   @id
+  organisationId String?  @unique
+  enabled        Boolean  @default(true)
+  passwordEnabled Boolean @default(false)
+  subscriberTestingEnabled Boolean @default(false)
+  pillars        String[] @default([])
+  expiresAt      DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organisation Organisation? @relation(fields: [organisationId], references: [id], onDelete: Restrict)
+}
+
 model Session {
   id                   String    @id @default(cuid())
   userId               String
@@ -8479,4 +8576,623 @@ model StudioBroadcastSessionDestination {
 
   @@id([sessionId, destinationId])
   @@index([destinationId, state])
+}
+
+// Retail Rewards is optional. These tables grant no access without the existing
+// server feature, Retail subscription and explicit Rewards policy checks.
+enum RewardProgramStatus {
+  DISABLED
+  ACTIVE
+  PAUSED
+}
+
+enum RewardGrantStatus {
+  DISABLED
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  SUSPENDED
+  CANCELLED
+  EXPIRED
+}
+
+enum RewardTier {
+  REWARDS_STARTER
+  REWARDS_PRO
+  REWARDS_BUSINESS
+  REWARDS_ENTERPRISE
+}
+
+enum RewardStaffScope {
+  ALL_LOCATIONS
+  LOCATIONS
+}
+
+enum RewardAction {
+  READ
+  MANAGE_OFFERS
+  PUBLISH_OFFERS
+  REDEEM
+  REVERSE
+  VIEW_INSIGHTS
+  EXPORT
+  MANAGE_STAFF
+}
+
+enum RewardAuditAction {
+  PROGRAM_CREATED
+  PROGRAM_CHANGED
+  ENTITLEMENT_CREATED
+  ENTITLEMENT_CHANGED
+  ENTITLEMENT_REVOKED
+  STAFF_GRANT_CREATED
+  STAFF_GRANT_CHANGED
+  STAFF_GRANT_REVOKED
+  OFFER_CREATED
+  OFFER_DRAFT_SAVED
+  OFFER_PUBLISHED
+  OFFER_PAUSED
+  OFFER_RESUMED
+  OFFER_CANCELLED
+  OFFER_CAMPAIGN_DRAFT_SAVED
+  OFFER_CAMPAIGN_DRAFT_CLEARED
+}
+
+enum RewardAuditTargetType {
+  PROGRAM
+  ENTITLEMENT_GRANT
+  STAFF_GRANT
+  OFFER
+}
+
+enum RewardPilotAuditAction {
+  PROGRAM_PREPARED
+  SHOP_PUBLISHED
+  OFFER_APPROVED
+  SHOPPER_INVITED
+  INVITATION_REISSUED
+  INVITATION_REVOKED
+}
+
+enum RewardPilotAuditTargetType {
+  PROGRAM
+  SHOP
+  OFFER
+  SHOPPER
+}
+
+enum RewardOfferState {
+  DRAFT
+  PUBLISHED
+  PAUSED
+  CANCELLED
+}
+
+enum RewardOfferLocationScope {
+  DRAFT
+  PUBLISHED
+}
+
+model RewardProgram {
+  id             String              @id @default(cuid())
+  organisationId String              @unique
+  status         RewardProgramStatus @default(DISABLED)
+  timezone       String              @default("Europe/Malta") @db.VarChar(64)
+  networkOptIn   Boolean             @default(false)
+  createdAt      DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime            @updatedAt @db.Timestamptz(3)
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  offers RewardOffer[]
+
+  @@unique([id, organisationId])
+}
+
+// A single current grant per tenant. Changes retain their history in the
+// append-only audit; no tier supplies implicit prices or numeric allowances.
+model RewardEntitlementGrant {
+  id                     String            @id @default(cuid())
+  organisationId         String            @unique
+  subscriptionId         String
+  capability             String            @default("RETAIL_REWARDS") @db.VarChar(32)
+  source                 String            @default("MANUAL_INTERNAL") @db.VarChar(32)
+  tier                   RewardTier
+  status                 RewardGrantStatus @default(DISABLED)
+  startsAt               DateTime          @db.Timestamptz(3)
+  expiresAt              DateTime          @db.Timestamptz(3)
+  revokedAt              DateTime?         @db.Timestamptz(3)
+  limitsVersion          Int               @default(1)
+  activeOffers           Int
+  locations              Int
+  staffSeats             Int
+  monthlyRedemptions     Int
+  analyticsRetentionDays Int
+  exportEnabled          Boolean
+  brandingEnabled        Boolean
+  createdAt              DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt              DateTime          @updatedAt @db.Timestamptz(3)
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  subscription Subscription @relation(fields: [subscriptionId, organisationId], references: [id, organisationId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([subscriptionId, organisationId])
+  @@index([organisationId, status, expiresAt])
+}
+
+// Each current row applies to all locations or one existing location. The
+// adapter maps this to RR-01a's []/[locationId] projection. SQL also enforces
+// one ALL_LOCATIONS row per member through a partial unique index.
+model RewardStaffGrant {
+  id                   String           @id @default(cuid())
+  organisationId       String
+  organisationMemberId String
+  scope                RewardStaffScope
+  locationId           String?
+  capabilities         RewardAction[]
+  startsAt             DateTime         @db.Timestamptz(3)
+  expiresAt            DateTime         @db.Timestamptz(3)
+  revokedAt            DateTime?        @db.Timestamptz(3)
+  createdAt            DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime         @updatedAt @db.Timestamptz(3)
+
+  organisation       Organisation       @relation(fields: [organisationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  organisationMember OrganisationMember @relation(fields: [organisationMemberId, organisationId], references: [id, organisationId], onDelete: Cascade, onUpdate: Restrict)
+  location           Location?          @relation(fields: [locationId, organisationId], references: [id, organisationId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([organisationId, organisationMemberId, locationId], map: "RewardStaffGrant_member_location_key")
+  @@index([organisationId, organisationMemberId, expiresAt], map: "RewardStaffGrant_member_expiry_idx")
+  @@index([locationId, organisationId])
+}
+
+// Actor/target identifiers are immutable historical references, not live user
+// FKs. Deleting a member removes their current grants without altering evidence.
+// SQL constrains metadata to safe bounded fields and rejects UPDATE/DELETE and
+// TRUNCATE. No reset exception or history-erasing cascade is provided.
+model RewardAuditEvent {
+  id                        String               @id @default(cuid())
+  organisationId            String
+  actorUserId               String?              @db.VarChar(191)
+  actorOrganisationMemberId String?              @db.VarChar(191)
+  action                    RewardAuditAction
+  targetType                RewardAuditTargetType
+  targetId                  String               @db.VarChar(191)
+  requestId                 String?              @db.VarChar(191)
+  metadata                  Json                 @default("{}")
+  createdAt                 DateTime             @default(now()) @db.Timestamptz(3)
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([organisationId, createdAt, id])
+  @@index([organisationId, action, createdAt])
+  @@index([organisationId, targetType, targetId, createdAt], map: "RewardAuditEvent_target_time_idx")
+}
+
+// Local pilot provisioning has its own bounded audit vocabulary. Historical
+// actor/target IDs are not live user FKs. SQL rejects unsafe metadata and all
+// UPDATE/DELETE/TRUNCATE operations, including through subscriber reset.
+model RewardPilotAuditEvent {
+  id             String                     @id @default(cuid())
+  organisationId String
+  actorUserId    String                     @db.VarChar(191)
+  action         RewardPilotAuditAction
+  targetType     RewardPilotAuditTargetType
+  targetId       String                     @db.VarChar(191)
+  requestId      String?                    @db.VarChar(191)
+  metadataJson   Json                       @default("{}")
+  createdAt      DateTime                   @default(now()) @db.Timestamptz(3)
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([organisationId, createdAt, id], map: "RewardPilotAuditEvent_org_time_idx")
+  @@index([organisationId, targetType, targetId, createdAt], map: "RewardPilotAuditEvent_target_time_idx")
+}
+
+// RR-02 offer drafts are separate from immutable published terms. A published
+// offer can retain a newer draft without altering an existing shopper revision.
+model RewardOffer {
+  id                   String           @id @default(cuid())
+  organisationId       String
+  programId            String
+  state                RewardOfferState @default(DRAFT)
+  version              Int              @default(1)
+  draft                Json
+  lastRevision         Int              @default(0)
+  publishedRevision    Int?
+  publishedStartsAt    DateTime?         @db.Timestamptz(3)
+  publishedEndsAt      DateTime?         @db.Timestamptz(3)
+  createdByUserId      String            @db.VarChar(191)
+  updatedByUserId      String            @db.VarChar(191)
+  createdAt            DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime          @updatedAt @db.Timestamptz(3)
+
+  organisation      Organisation         @relation(fields: [organisationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  program           RewardProgram        @relation(fields: [programId, organisationId], references: [id, organisationId], onDelete: Restrict, onUpdate: Restrict)
+  locations         RewardOfferLocation[]
+  revisions         RewardOfferRevision[] @relation("RewardOfferRevisions")
+  publishedSnapshot RewardOfferRevision?  @relation("PublishedRewardOfferRevision", fields: [id, publishedRevision, organisationId], references: [offerId, revision, organisationId], onDelete: Restrict, onUpdate: Restrict, map: "RewardOffer_published_revision_fkey")
+  discovery         RewardOfferDiscovery?
+  usagePolicy       RewardOfferUsagePolicy?
+  claims            RewardClaim[]
+  campaignDraft     RewardOfferCampaignDraft?
+  campaignRevisions RewardOfferCampaignRevision[]
+
+  @@unique([id, organisationId])
+  @@index([organisationId, updatedAt, id])
+  @@index([organisationId, state, publishedEndsAt])
+  @@index([programId, organisationId])
+}
+
+// Both draft and published targets retain same-tenant database foreign keys.
+// Explicit target sets avoid silently adding new locations to an issued offer.
+model RewardOfferLocation {
+  organisationId String
+  offerId        String
+  locationId     String
+  scope          RewardOfferLocationScope
+
+  offer    RewardOffer @relation(fields: [offerId, organisationId], references: [id, organisationId], onDelete: Restrict, onUpdate: Restrict)
+  location Location    @relation(fields: [locationId, organisationId], references: [id, organisationId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@id([offerId, scope, locationId])
+  @@index([locationId, organisationId])
+  @@index([organisationId, offerId])
+}
+
+// Historical actor IDs remain after membership changes. SQL rejects mutation,
+// deletion and TRUNCATE, including attempts made through cascading operations.
+model RewardOfferRevision {
+  id             String   @id @default(cuid())
+  organisationId String
+  offerId        String
+  revision       Int
+  terms          Json
+  actorUserId    String   @db.VarChar(191)
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+
+  offer             RewardOffer   @relation("RewardOfferRevisions", fields: [offerId, organisationId], references: [id, organisationId], onDelete: Restrict, onUpdate: Restrict)
+  publishedByOffers RewardOffer[] @relation("PublishedRewardOfferRevision")
+  discoveryListings RewardOfferDiscovery[]
+  claims            RewardClaim[]
+  campaignLink      RewardOfferCampaignRevision?
+
+  @@unique([offerId, revision])
+  @@unique([offerId, revision, organisationId], map: "RewardOfferRevision_tenant_revision_key")
+  @@index([organisationId, offerId, createdAt])
+}
+
+// RR-06b: an optional selection for the next coupon publication only. This is
+// separate from shopper-visible terms and does not publish or schedule audio.
+model RewardOfferCampaignDraft {
+  offerId                    String   @id
+  organisationId             String
+  campaignId                 String
+  campaignPublicationRevision Int
+  campaignConfigurationHash  String   @db.VarChar(64)
+  selectedByUserId           String   @db.VarChar(191)
+  selectedAt                 DateTime @default(now()) @db.Timestamptz(3)
+
+  offer    RewardOffer @relation(fields: [offerId, organisationId], references: [id, organisationId], onDelete: Restrict, onUpdate: Restrict)
+  campaign Campaign    @relation(fields: [campaignId, organisationId], references: [id, organisationId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([offerId, organisationId])
+  @@index([organisationId, campaignId])
+}
+
+// Immutable association metadata, not proof that an advert was heard or caused
+// a claim. SQL permits insertion only with a newly created coupon revision in
+// the same transaction and prevents UPDATE, DELETE and TRUNCATE. Archive linked
+// campaigns instead of deleting them; historical IDs and names remain intact.
+model RewardOfferCampaignRevision {
+  offerId                    String
+  revision                   Int
+  organisationId             String
+  campaignId                 String
+  campaignPublicationRevision Int
+  campaignConfigurationHash  String   @db.VarChar(64)
+  snapshot                   Json
+  actorUserId                String   @db.VarChar(191)
+  pinnedAt                   DateTime @default(now()) @db.Timestamptz(3)
+
+  offer         RewardOffer         @relation(fields: [offerId, organisationId], references: [id, organisationId], onDelete: Restrict, onUpdate: Restrict, map: "RewardCampaignRevision_offer_tenant_fk")
+  offerRevision RewardOfferRevision @relation(fields: [offerId, revision, organisationId], references: [offerId, revision, organisationId], onDelete: Restrict, onUpdate: Restrict, map: "RewardCampaignRevision_offer_revision_tenant_fk")
+  campaign      Campaign            @relation(fields: [campaignId, organisationId], references: [id, organisationId], onDelete: Restrict, onUpdate: Restrict, map: "RewardCampaignRevision_campaign_tenant_fk")
+
+  @@id([offerId, revision])
+  @@unique([offerId, revision, organisationId], map: "RewardCampaignRevision_tenant_revision_key")
+  @@index([organisationId, campaignId, campaignPublicationRevision], map: "RewardCampaignRevision_campaign_revision_idx")
+}
+
+enum RewardShopperStatus {
+  DISABLED
+  ACTIVE
+  SUSPENDED
+}
+
+enum RewardPublicShopStatus {
+  DRAFT
+  PUBLISHED
+}
+
+// A separate consumer principal. Private shopper authentication never creates
+// a business role, tenant, billing account or public registration entitlement.
+model RewardShopper {
+  id          String              @id @default(cuid())
+  displayName String?             @db.VarChar(80)
+  status      RewardShopperStatus @default(DISABLED)
+  authVersion Int                @default(1)
+  createdAt   DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime            @updatedAt @db.Timestamptz(3)
+
+  sessions   RewardShopperSession[]
+  membership RewardShopperMembership?
+  credential RewardShopperCredential?
+  invitation RewardShopperInvitation?
+  setup      RewardShopperSetup?
+  pilotEnrollment RewardPilotShopperEnrollment?
+  claims     RewardClaim[]
+}
+
+// Inactive account preparation only. This immutable identity/provenance record
+// confers no invitation, credentials, membership, tenant role or Rewards access.
+// A future activation flow must explicitly target this identity, never adopt it
+// by email. Application rollback retains the additive table without using it.
+model RewardShopperSetup {
+  shopperId       String   @id
+  emailCanonical  String   @unique @db.VarChar(254)
+  organisationId  String
+  createdByUserId String   @db.VarChar(191)
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+
+  shopper      RewardShopper @relation(fields: [shopperId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([organisationId, createdAt], map: "RewardShopperSetup_org_time_idx")
+}
+
+// Immutable provisioning provenance, not shopper tenancy: discovery and
+// membership remain global. Never adopt an existing shopper by email. This
+// origin controls only which allowlisted pilot may reissue/revoke its invite.
+model RewardPilotShopperEnrollment {
+  shopperId       String   @id
+  organisationId  String
+  createdByUserId String   @db.VarChar(191)
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+
+  shopper      RewardShopper @relation(fields: [shopperId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([organisationId, createdAt], map: "RewardPilotEnrollment_org_time_idx")
+}
+
+// The first issued claim fixes the daily-use calendar across every revision.
+// Immutable SQL evidence; neither offer edits nor resets can rewrite it.
+model RewardOfferUsagePolicy {
+  offerId        String   @id
+  organisationId String
+  timezone       String   @db.VarChar(64)
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+
+  offer  RewardOffer   @relation(fields: [offerId, organisationId], references: [id, organisationId], onDelete: Restrict, onUpdate: Restrict)
+  claims RewardClaim[]
+
+  @@unique([offerId, organisationId])
+}
+
+// One immutable use at one explicitly selected shop, pinned to issued terms.
+// The claim ID is an owner-scoped identifier, never a bearer checkout code.
+model RewardClaim {
+  id                 String   @id @default(cuid())
+  organisationId     String
+  offerId            String
+  revision           Int
+  shopperId          String
+  shopperAuthVersion Int
+  locationId         String
+  publicShopName     String   @db.VarChar(140)
+  publicShopSlug     String   @db.VarChar(96)
+  createdAt          DateTime @default(now()) @db.Timestamptz(3)
+  expiresAt          DateTime @db.Timestamptz(3)
+
+  organisation      Organisation          @relation(fields: [organisationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  offer             RewardOffer           @relation(fields: [offerId, organisationId], references: [id, organisationId], onDelete: Restrict, onUpdate: Restrict)
+  publishedSnapshot RewardOfferRevision   @relation(fields: [offerId, revision, organisationId], references: [offerId, revision, organisationId], onDelete: Restrict, onUpdate: Restrict)
+  location          Location              @relation(fields: [locationId, organisationId], references: [id, organisationId], onDelete: Restrict, onUpdate: Restrict)
+  shopper           RewardShopper         @relation(fields: [shopperId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  usagePolicy       RewardOfferUsagePolicy @relation(fields: [offerId, organisationId], references: [offerId, organisationId], onDelete: Restrict, onUpdate: Restrict, map: "RewardClaim_usage_policy_fkey")
+  redemption        RewardRedemption?
+  token             RewardClaimToken?
+  requests          RewardClaimRequest[]
+
+  @@unique([id, organisationId])
+  @@unique([id, shopperId], map: "RewardClaim_id_shopper_key")
+  @@unique([id, organisationId, offerId, shopperId, locationId], map: "RewardClaim_receipt_scope_key")
+  @@index([shopperId, createdAt, id])
+  @@index([offerId, shopperId, expiresAt])
+  @@index([locationId, organisationId])
+  @@index([offerId, revision, organisationId])
+}
+
+model RewardClaimRequest {
+  id                 String   @id @default(cuid())
+  shopperId          String
+  idempotencyKeyHash String   @db.VarChar(64)
+  requestHash        String   @db.VarChar(64)
+  claimId            String
+  createdAt          DateTime @default(now()) @db.Timestamptz(3)
+
+  claim RewardClaim @relation(fields: [claimId, shopperId], references: [id, shopperId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([shopperId, idempotencyKeyHash])
+  @@index([claimId, shopperId])
+}
+
+// Only a keyed hash is stored. Rotation updates this row for the same claim.
+model RewardClaimToken {
+  claimId   String   @id
+  tokenHash String   @unique @db.VarChar(64)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  expiresAt DateTime @db.Timestamptz(3)
+
+  claim RewardClaim @relation(fields: [claimId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([expiresAt])
+}
+
+// Successful use is the immutable receipt and audit evidence. Actor identifiers
+// survive changes to business membership; this is not a payment record.
+model RewardRedemption {
+  id                        String   @id @default(cuid())
+  organisationId            String
+  offerId                   String
+  shopperId                 String
+  locationId                String
+  claimId                   String   @unique
+  actorUserId               String   @db.VarChar(191)
+  actorOrganisationMemberId String   @db.VarChar(191)
+  idempotencyKeyHash        String   @db.VarChar(64)
+  requestHash               String   @db.VarChar(64)
+  eligibleSpendMinor        Int
+  currency                  String   @db.VarChar(3)
+  discountMinor             Int?
+  occurredAt                DateTime @default(now()) @db.Timestamptz(3)
+
+  claim RewardClaim @relation(fields: [claimId, organisationId, offerId, shopperId, locationId], references: [id, organisationId, offerId, shopperId, locationId], onDelete: Restrict, onUpdate: Restrict, map: "RewardRedemption_claim_scope_fkey")
+
+  reversal RewardRedemptionReversal?
+
+  @@unique([id, organisationId])
+  @@unique([claimId, organisationId, offerId, shopperId, locationId], map: "RewardRedemption_claim_scope_key")
+  @@unique([organisationId, actorOrganisationMemberId, idempotencyKeyHash], map: "RewardRedemption_member_request_key")
+  @@index([organisationId, occurredAt])
+  @@index([offerId, occurredAt])
+  @@index([offerId, shopperId, occurredAt])
+}
+
+// Corrections append immutable history; the original receipt and claim remain consumed.
+model RewardRedemptionReversal {
+  id                        String   @id @default(cuid())
+  organisationId            String
+  redemptionId              String   @unique
+  actorUserId               String   @db.VarChar(191)
+  actorOrganisationMemberId String   @db.VarChar(191)
+  reason                    String   @db.VarChar(32)
+  idempotencyKeyHash        String   @db.VarChar(64)
+  requestHash               String   @db.VarChar(64)
+  occurredAt                DateTime @default(now()) @db.Timestamptz(3)
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  redemption RewardRedemption @relation(fields: [redemptionId, organisationId], references: [id, organisationId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([redemptionId, organisationId])
+  @@unique([organisationId, actorOrganisationMemberId, idempotencyKeyHash], map: "RewardReversal_member_request_key")
+  @@index([organisationId, occurredAt])
+}
+
+model RewardShopperCredential {
+  shopperId      String   @id
+  emailCanonical String   @unique @db.VarChar(254)
+  passwordHash   String   @db.VarChar(60)
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @db.Timestamptz(3)
+
+  shopper RewardShopper @relation(fields: [shopperId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+}
+
+// Provisioned privately only. Acceptance is one atomic operation; no token or
+// credential is issued by migrations or by the public registration routes.
+model RewardShopperInvitation {
+  id             String    @id @default(cuid())
+  shopperId      String    @unique
+  emailCanonical String    @unique @db.VarChar(254)
+  tokenHash      String    @unique @db.VarChar(64)
+  authVersion    Int
+  createdAt      DateTime  @default(now()) @db.Timestamptz(3)
+  expiresAt      DateTime  @db.Timestamptz(3)
+  revokedAt      DateTime? @db.Timestamptz(3)
+  acceptedAt     DateTime? @db.Timestamptz(3)
+
+  shopper RewardShopper @relation(fields: [shopperId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([expiresAt])
+}
+
+model RewardShopperSession {
+  id          String    @id @default(cuid())
+  shopperId   String
+  tokenHash   String    @unique @db.VarChar(64)
+  authVersion Int
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+  expiresAt   DateTime  @db.Timestamptz(3)
+  revokedAt   DateTime? @db.Timestamptz(3)
+
+  shopper RewardShopper @relation(fields: [shopperId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([shopperId, expiresAt])
+  @@index([expiresAt])
+}
+
+model RewardShopperMembership {
+  id        String              @id @default(cuid())
+  shopperId String              @unique
+  status    RewardShopperStatus @default(DISABLED)
+  source    String              @default("MANUAL_INTERNAL") @db.VarChar(32)
+  startsAt  DateTime            @db.Timestamptz(3)
+  expiresAt DateTime            @db.Timestamptz(3)
+  revokedAt DateTime?           @db.Timestamptz(3)
+  version   Int                 @default(1)
+  createdAt DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime            @updatedAt @db.Timestamptz(3)
+
+  shopper RewardShopper @relation(fields: [shopperId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([status, expiresAt])
+}
+
+// Explicitly approved public text only. Never substitute private Location
+// names/addresses when any public field is missing or unavailable.
+model RewardPublicShopProfile {
+  id             String                 @id @default(cuid())
+  organisationId String
+  locationId     String                 @unique
+  publicSlug     String                 @unique @db.VarChar(100)
+  displayName    String                 @db.VarChar(140)
+  description    String                 @db.VarChar(2000)
+  locality       String                 @db.VarChar(120)
+  countryCode    String                 @db.VarChar(2)
+  status         RewardPublicShopStatus @default(DRAFT)
+  networkOptIn   Boolean                @default(false)
+  publishedAt    DateTime?              @db.Timestamptz(3)
+  revokedAt      DateTime?              @db.Timestamptz(3)
+  createdAt      DateTime               @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime               @updatedAt @db.Timestamptz(3)
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  location Location @relation(fields: [locationId, organisationId], references: [id, organisationId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([locationId, organisationId])
+  @@index([organisationId, status, publicSlug])
+}
+
+// Explicit discovery consent is tied to one immutable published revision.
+// Publishing revised offer terms does not silently update this consent.
+model RewardOfferDiscovery {
+  id             String    @id @default(cuid())
+  organisationId String
+  offerId        String    @unique
+  revision       Int
+  publicSlug     String    @unique @db.VarChar(100)
+  discoverable   Boolean   @default(false)
+  approvedAt     DateTime? @db.Timestamptz(3)
+  revokedAt      DateTime? @db.Timestamptz(3)
+  createdAt      DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime  @updatedAt @db.Timestamptz(3)
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  offer RewardOffer @relation(fields: [offerId, organisationId], references: [id, organisationId], onDelete: Restrict, onUpdate: Restrict)
+  publishedSnapshot RewardOfferRevision @relation(fields: [offerId, revision, organisationId], references: [offerId, revision, organisationId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([offerId, organisationId])
+  @@index([offerId, revision, organisationId])
+  @@index([organisationId, discoverable, publicSlug])
 }

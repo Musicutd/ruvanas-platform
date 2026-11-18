@@ -14,7 +14,8 @@ export default async function PillarAutoDjPage({ params }) {
   const pillar = audioPillar(product);
   if (!pillar) notFound();
   if (product === "RETAIL") redirect("/dashboard/retail/music");
-  await requireSubscriberProduct(product);
+  const { entitlements } = await requireSubscriberProduct(product);
+  if (entitlements.sandboxDraftOnly) redirect("/dashboard/programming#workspace-simple");
 
   return <main className={styles.page} id="main-content">
     <Link href={pillar.dashboardHref} className={styles.back}>← {pillar.label}</Link>

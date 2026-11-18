@@ -78,6 +78,7 @@ async function readRotation() {
   });
   if (!station) return { ready: false, reason: "STATION_NOT_FOUND" };
   const entitlements = resolveEntitlements(station.organisation.subscription);
+  if (!entitlements.outputEnabled) return { ready: false, reason: "OUTPUT_NOT_PERMITTED" };
   const genres = await prisma.mediaGenre.findMany({ where: { active: true }, select: { name: true, slug: true, active: true, minimumCatalogueLevel: true }, take: 250 });
   const now = new Date();
   const nonStopChannel = station.channels?.length === 1 ? station.channels[0] : null;
