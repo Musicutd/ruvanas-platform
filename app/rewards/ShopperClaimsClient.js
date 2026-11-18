@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { shopperCouponSummary, shopperMoney } from "@/lib/retail-rewards/shopper-ui.mjs";
+import { shopperCouponSummary, shopperMoney, shopperVoucherUsage } from "@/lib/retail-rewards/shopper-ui.mjs";
 import { offerDateLabel } from "@/lib/retail-rewards/offer-ui.mjs";
 import { checkoutAttempt, checkoutMessage, checkoutRequest, checkoutTransport } from "@/lib/retail-rewards/checkout-ui.mjs";
 import styles from "./shopper-claims.module.css";
@@ -26,6 +26,32 @@ function CheckoutQr({ token }) {
     return () => { cancelled = true; if (target) { target.width = 0; target.height = 0; } staging.width = 0; staging.height = 0; };
   }, [token]);
   return <div className={styles.qr}><canvas ref={canvas} role="img" aria-label="Private checkout QR code" hidden={state !== "READY"} />{state !== "READY" && <p className={styles.help} role="status">{state === "PREPARING" ? "Preparing your QR code…" : "QR code unavailable. Use the private text code below."}</p>}<p className={styles.help}>Shop staff can scan this QR or enter the same code below. Scanning alone does not redeem your coupon.</p></div>;
+}
+
+function ClaimUsage({ claim, compact = false }) {
+  const usage = shopperVoucherUsage(claim);
+  return <div className={compact ? styles.walletUsage : styles.usagePanel} aria-label="Your voucher uses">
+    <span className={styles.usageType}>{claim.terms.usage === "REUSABLE" ? "Reusable voucher" : "Single-use voucher"}</span>
+    <strong>{usage.known ? usage.label : "Uses left unavailable"}</strong>
+    {usage.known && <div className={styles.usageTrack} aria-hidden="true"><span style={{ width: `${100 * usage.remaining / usage.limit}%` }} /></div>}
+    <p>{!usage.known ? `${usage.label}. Refresh to check uses left.` : usage.exhausted ? "All uses under these terms have been used." : "Only completed, non-reversed redemptions count."}</p>
+    {!compact && usage.known && <p>Checked {offerDateLabel(usage.asOf, claim.terms.timezone)} ({claim.terms.timezone}). Daily limits and availability are still checked at checkout.</p>}
+  </div>;
+}
+
+function WalletClaimCard({ claim, onOpen }) {
+  const summary = shopperCouponSummary(claim.terms);
+  const history = claim.status === "REDEEMED" || claim.status === "REVERSED";
+  return <article className={styles.card}>
+    <div className={styles.topline}><span className={styles.walletBrand}>RUVANAS REWARDS</span><span className={styles.badge}>{claim.status.toLowerCase().replaceAll("_", " ")}</span></div>
+    <p className={styles.walletBenefit}>{summary.benefit}</p><h2>{claim.shop.name}</h2><p>{claim.terms.title}</p>
+    <ClaimUsage claim={claim} compact />
+    <p className={styles.walletExpiry}>Checkout voucher expires {offerDateLabel(claim.expiresAt, claim.terms.timezone)} · {claim.terms.timezone}</p>
+    {history && <p className={styles.walletState}>This voucher stays used. Any remaining uses require a new voucher from the offer.</p>}
+    {claim.status === "EXPIRED" && <p className={styles.walletState}>This checkout voucher has expired. Any remaining uses require a new voucher from the offer.</p>}
+    {claim.status === "UNAVAILABLE" && <p className={styles.walletState}>This voucher is currently unavailable, even if uses remain.</p>}
+    <button type="button" className={styles.secondary} onClick={() => onOpen(claim)} aria-label={history ? `View receipt for ${claim.terms.title}` : `Open coupon ${claim.terms.title}`}>{history ? "View receipt →" : "Open voucher →"}</button>
+  </article>;
 }
 
 function Receipt({ receipt }) {
@@ -69,6 +95,7 @@ function IssuedClaim({ claim, transport = checkoutTransport, onUpdate, compact =
   return <section className={styles.detail} aria-label="Your issued coupon">
     <div className={styles.topline}><span className={styles.badge}>{claim.status === "REVERSED" ? "Redemption reversed" : claim.status === "REDEEMED" ? "Redeemed" : ready ? "Ready for checkout" : "Not available"}</span><span className={styles.help}>Issued terms · version {claim.revision}</span></div>
     {!compact && <><p className={styles.benefit}>{summary.benefit}</p><h3>{claim.terms.title}</h3><p className={styles.shop}>{claim.shop.name}</p></>}
+    <ClaimUsage claim={claim} />
     {claim.receipt ? <Receipt receipt={claim.receipt} /> : ready ? <section className={styles.checkoutBox} aria-label="Show at checkout"><h4>Show this at the shop</h4><p>Staff at <strong>{claim.shop.name}</strong> confirm your redemption. Showing the code does not use the voucher.</p>
       {code ? <><p className={styles.help}>Show this private code to staff. It expires at {offerDateLabel(code.expiresAt, claim.terms.timezone)} ({claim.terms.timezone}).</p><CheckoutQr token={code.token} /><output aria-label="Checkout code" className={styles.code}>{code.token}</output><div className={styles.actions}><button type="button" className={styles.primary} onClick={copyCode}>Copy code</button><button type="button" className={styles.secondary} onClick={() => { clearCode(); setMessage("Code hidden. A fresh code replaces the previous one."); }}>Hide code</button></div></> : <button type="button" className={styles.primary} disabled={busy} onClick={showCode}>{busy ? "Preparing code…" : "Show checkout code"}</button>}
       {code && <button type="button" className={styles.textButton} disabled={busy} onClick={showCode}>Get a fresh code</button>}<p className={styles.help}>Codes expire within five minutes and hide when you leave this page. A fresh code replaces the previous one.</p>
@@ -115,7 +142,7 @@ export default function ShopperClaimsClient({ initialData, transport = checkoutT
     {previewOnly && <p className={styles.preview}><strong>LOCAL PREVIEW</strong> · Sample vouchers only · No live checkout or accounts</p>}
     <ShopperHeader onHome={onBrowse} />
     <div className={styles.container}><div className={styles.heading}><div><p className={styles.eyebrow}>YOUR REWARDS</p><h1>My vouchers</h1><p>Ready for your next visit. Open a voucher to show it at the shop.</p></div><button type="button" className={styles.secondary} disabled={busy} onClick={() => refresh()}>Refresh vouchers</button></div>
-      {selected ? <><button type="button" className={styles.textButton} onClick={() => setSelected(null)}>← Back to my vouchers</button><IssuedClaim key={selected.id} claim={selected} transport={transport} onUpdate={updateClaim} /></> : <section className={styles.cards} aria-label="Your coupons">{data.claims.map(claim => <article className={styles.card} key={claim.id}><div className={styles.topline}><span className={styles.walletBrand}>RUVANAS REWARDS</span><span className={styles.badge}>{claim.status.toLowerCase().replaceAll("_", " ")}</span></div><p className={styles.walletBenefit}>{shopperCouponSummary(claim.terms).benefit}</p><h2>{claim.shop.name}</h2><p>{claim.terms.title}</p><p className={styles.walletExpiry}>Until {offerDateLabel(claim.expiresAt, claim.terms.timezone)} · {claim.terms.timezone}</p><button type="button" className={styles.secondary} onClick={() => setSelected(claim)} aria-label={`Open coupon ${claim.terms.title}`}>Open voucher →</button></article>)}</section>}
+      {selected ? <><button type="button" className={styles.textButton} onClick={() => setSelected(null)}>← Back to my vouchers</button><IssuedClaim key={selected.id} claim={selected} transport={transport} onUpdate={updateClaim} /></> : <section className={styles.cards} aria-label="Your coupons">{data.claims.map(claim => <WalletClaimCard key={claim.id} claim={claim} onOpen={setSelected} />)}</section>}
       {!selected && !busy && !error && data.claims.length === 0 && <p className={styles.notice}>No coupons on this page. Browse a shop’s offers to get one, or continue to the next page if available.</p>}
       {busy && <p role="status">Loading your coupons…</p>}{error && <p className={styles.error} role="alert">{error}</p>}
       {!selected && !error && <div className={styles.pagination}><button type="button" className={styles.secondary} disabled={busy || data.page <= 1} onClick={() => refresh(data.page - 1)}>← Previous</button><span>Page {data.page}</span><button type="button" className={styles.secondary} disabled={busy || !data.hasMore} onClick={() => refresh(data.page + 1)}>Next →</button></div>}

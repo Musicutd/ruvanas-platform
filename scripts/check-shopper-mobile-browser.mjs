@@ -125,9 +125,9 @@ try {
   });
   await check("My vouchers shows the confirmed demo receipt and navigation clears checkout codes", async () => {
     await page.getByRole("button", { name: "My vouchers", exact: true }).click();
-    await page.getByRole("button", { name: /^Open coupon / }).first().waitFor();
+    await page.getByRole("button", { name: /^View receipt for / }).first().waitFor();
     assert.equal(await code().count(), 0);
-    await page.getByRole("button", { name: /^Open coupon / }).first().click();
+    await page.getByRole("button", { name: /^View receipt for / }).first().click();
     await page.getByRole("region", { name: "Coupon receipt", exact: true }).waitFor();
     assert.equal(await code().count(), 0); await overflow(); await screenshot("07-demo-wallet-receipt");
     await page.evaluate(() => window.shopperPreview.reset());

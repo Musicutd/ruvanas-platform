@@ -75,7 +75,13 @@ export function createShopperMobilePreview({ clock = () => new Date(), delayMs =
     claims.unshift(claim); claimRequests.set(body.idempotencyKey, claim);
     return { ok: true, claim: publicClaim(claim) };
   }
-  function publicClaim(claim) { const { _offerSlug, ...result } = claim; return clone(result); }
+  function publicClaim(claim) {
+    const { _offerSlug, ...result } = claim, used = usage.get(_offerSlug) || 0;
+    return clone({ ...result, ...(!state.missingUsage ? { usage: {
+      limit: claim.terms.perShopperLimit, used,
+      remaining: Math.max(0, claim.terms.perShopperLimit - used), asOf: now()
+    } } : {}) });
+  }
   function redeemLatest() {
     const claim = claims.find(row => row.status === "READY");
     if (!claim) return false;
@@ -85,6 +91,43 @@ export function createShopperMobilePreview({ clock = () => new Date(), delayMs =
     claim.receipt = { id: `demo-receipt-${claim.id}`, redeemedAt: now(), shopName: claim.shop.name, offerTitle: claim.terms.title, revision: claim.revision,
       currency: claim.terms.currency, eligibleSpendMinor: amount, discountMinor: Math.floor(amount * claim.terms.percentBps / 10_000), reversal: null };
     return true;
+  }
+  function reverseLatest() {
+    const claim = claims.find(row => row.status === "REDEEMED" && row.receipt && !row.receipt.reversal);
+    if (!claim) return false;
+    usage.set(claim._offerSlug, Math.max(0, (usage.get(claim._offerSlug) || 0) - 1));
+    claim.status = "REVERSED";
+    claim.receipt.reversal = { id: `demo-reversal-${claim.id}`, reversedAt: now(), reason: "WRONG_COUPON" };
+    return true;
+  }
+  function loadSampleWallet() {
+    // Explicit preview data only: these scenarios are not service/database tests.
+    // Resetting this tab never creates, deletes or changes a real claim.
+    usage.clear(); usage.set("urban-edit-ten", 3); usage.set("table-and-co-ten", 10);
+    claims.length = 0; claimRequests.clear(); state.missingUsage = false;
+    const at = clock().getTime();
+    const scenarios = [
+      ["urban-edit-ten", "READY"], ["urban-edit-fifteen", "READY"],
+      ["table-and-co-ten", "REDEEMED"], ["city-style-ten", "EXPIRED"],
+      ["home-corner-fifteen", "REVERSED"], ["home-stories-ten", "UNAVAILABLE"]
+    ];
+    for (const [slug, status] of scenarios) {
+      const offer = offers.find(row => row.slug === slug), shop = shops.find(row => row.slug === offer.shopSlug);
+      const id = `demo-wallet-${slug}`;
+      const claim = { id, status, shop: { slug: shop.slug, name: shop.name }, revision: offer.revision,
+        terms: clone(offer.terms), createdAt: new Date(at - 20 * 60_000).toISOString(),
+        expiresAt: new Date(at + (status === "EXPIRED" ? -60_000 : 60 * 60_000)).toISOString(),
+        receipt: null, _offerSlug: slug };
+      if (["REDEEMED", "REVERSED"].includes(status)) {
+        const amount = Math.max(6000, claim.terms.minimumSpendMinor);
+        claim.receipt = { id: `demo-receipt-${id}`, redeemedAt: new Date(at - 10 * 60_000).toISOString(),
+          shopName: shop.name, offerTitle: claim.terms.title, revision: claim.revision, currency: claim.terms.currency,
+          eligibleSpendMinor: amount, discountMinor: Math.floor(amount * claim.terms.percentBps / 10_000),
+          reversal: status === "REVERSED" ? { id: `demo-reversal-${id}`, reversedAt: new Date(at - 5 * 60_000).toISOString(), reason: "WRONG_COUPON" } : null };
+      }
+      claims.push(claim);
+    }
+    return { ok: true, claims: claims.map(publicClaim), page: 1, hasMore: false };
   }
   async function transport(input, options = {}) {
     if (typeof input !== "string" || !input.startsWith("/api/rewards/") || input.startsWith("//")) throw new Error("Preview accepts only its in-memory Rewards paths.");
@@ -116,7 +159,7 @@ export function createShopperMobilePreview({ clock = () => new Date(), delayMs =
     } else result = fail("INVALID_REQUEST", "That operation is not supported in the local preview.");
     return clone(result);
   }
-  return Object.freeze({ initialData: locations(), transport, state, redeemLatest, requests,
+  return Object.freeze({ initialData: locations(), transport, state, redeemLatest, reverseLatest, loadSampleWallet, requests,
     snapshot: () => ({ uses: Object.fromEntries(usage), claims: claims.map(publicClaim), requestCount: requests.length }),
     initialWallet: () => ({ ok: true, claims: claims.map(publicClaim), page: 1, hasMore: false }) });
 }

@@ -35,7 +35,60 @@ test("issuing and showing a demo coupon never consumes a use; only simulated cas
   assert.equal((await preview.transport(`/api/rewards/claims/${issued.claim.id}/credential`, { method: "POST" })).ok, false);
   const wallet = preview.initialWallet();
   assert.equal(wallet.claims[0].status, "REDEEMED"); assert.equal(wallet.claims[0].receipt.discountMinor, 600);
+  assert.equal(issued.claim.usage.remaining, 7);
+  assert.equal(first.claim.usage.remaining, 7);
+  assert.equal(rotated.claim.usage.remaining, 7);
+  assert.equal(wallet.claims[0].usage.remaining, 6);
   assert.equal(JSON.stringify(preview.requests).includes(first.token), false);
+});
+
+test("sample correction restores offer usage without resurrecting a consumed coupon or checkout code", async () => {
+  const preview = fixture();
+  const issued = await preview.transport("/api/rewards/claims", claimOptions("sample-correction"));
+  assert.equal(preview.reverseLatest(), false);
+  assert.equal(preview.redeemLatest(), true);
+  assert.equal(preview.reverseLatest(), true);
+  assert.equal(preview.reverseLatest(), false);
+  assert.equal(preview.redeemLatest(), false);
+  const refreshed = await preview.transport("/api/rewards/claims");
+  assert.equal(refreshed.claims[0].status, "REVERSED");
+  assert.equal(refreshed.claims[0].usage.remaining, 7);
+  assert.equal(refreshed.claims[0].receipt.reversal.reason, "WRONG_COUPON");
+  assert.equal((await preview.transport(`/api/rewards/claims/${issued.claim.id}/credential`, { method: "POST" })).ok, false);
+  const retry = await preview.transport("/api/rewards/claims", claimOptions("sample-correction"));
+  assert.equal(retry.claim.id, issued.claim.id);
+  assert.equal(retry.claim.status, "REVERSED");
+  const fresh = await preview.transport("/api/rewards/claims", claimOptions("fresh-after-correction"));
+  assert.notEqual(fresh.claim.id, issued.claim.id);
+  assert.equal(fresh.claim.status, "READY");
+  assert.equal(fresh.claim.usage.remaining, 7);
+});
+
+test("explicit synthetic wallet scenarios keep availability separate from remaining offer allowance", async () => {
+  const preview = fixture();
+  assert.deepEqual(preview.initialWallet().claims, [], "normal demo is unchanged until sample control is used");
+  const loaded = preview.loadSampleWallet();
+  assert.deepEqual(loaded.claims.map(row => [row.status, row.usage.remaining, row.usage.limit]), [
+    ["READY", 7, 10], ["READY", 1, 1], ["REDEEMED", 0, 10],
+    ["EXPIRED", 10, 10], ["REVERSED", 1, 1], ["UNAVAILABLE", 10, 10]
+  ]);
+  for (const claim of loaded.claims) {
+    assert.equal("_offerSlug" in claim, false);
+    assert.equal(claim.usage.limit, claim.terms.perShopperLimit);
+    assert.equal(claim.usage.asOf, "2026-11-18T11:00:00.000Z");
+    if (claim.status !== "READY") assert.equal((await preview.transport(`/api/rewards/claims/${claim.id}/credential`, { method: "POST" })).ok, false);
+  }
+  assert.equal((await preview.transport(offerPath)).offer.usage.remaining, 7);
+  assert.equal(preview.redeemLatest(), true);
+  assert.equal(preview.initialWallet().claims[0].usage.remaining, 6);
+  assert.equal(preview.reverseLatest(), true);
+  assert.equal(preview.initialWallet().claims[0].usage.remaining, 7);
+  preview.state.missingUsage = true;
+  const absent = await preview.transport("/api/rewards/claims");
+  assert.ok(absent.claims.every(claim => !Object.hasOwn(claim, "usage")));
+  assert.ok(absent.claims.every(claim => claim.terms.perShopperLimit > 0));
+  preview.state.missingUsage = false;
+  assert.equal(preview.initialWallet().claims[0].usage.remaining, 7);
 });
 
 test("preview fails closed for unsupported or external paths and can model empty and missing-usage reads", async () => {
