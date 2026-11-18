@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createPilotAdminHttp } from '../lib/retail-rewards/pilot-admin-http.mjs';
 import { safePilotAdminResult } from '../lib/retail-rewards/pilot-admin-dtos.mjs';
+import { pilotPreviewRoute } from '../lib/retail-rewards/pilot-preview-routes.mjs';
 const env={NODE_ENV:'production',RUVANAS_PUBLIC_URL:'https://rewards.example.invalid',RUVANAS_RETAIL_REWARDS_ENABLED:'true',RUVANAS_RETAIL_REWARDS_PILOT_ADMIN_ENABLED:'true',RUVANAS_RETAIL_REWARDS_PILOT_ORGANISATION_IDS:'["org-one"]'};
 const input={organisationId:'org-one',email:'shopper@example.invalid',displayName:'Pilot shopper',expiresAt:'2026-11-20T12:00:00.000Z',confirm:true};
 const invited={ok:true,shopperId:'shopper-one',invitationToken:'a'.repeat(64),invitationExpiresAt:'2026-11-15T12:00:00.000Z',membershipExpiresAt:'2026-11-20T12:00:00.000Z'};
@@ -53,4 +54,42 @@ test('pilot DTOs reject audit/private fields and raw invitation from read endpoi
   assert.equal(safePilotAdminResult('invite',{...invited,invitationExpiresAt:'2026-12-01T00:00:00.000Z'}),null);
   assert.equal(safePilotAdminResult('revoke',{ok:true,shopperId:'shopper-one',invitationToken:invited.invitationToken}),null);
   assert.equal(safePilotAdminResult('constructor',{}),null);
+});
+
+const newOperations = {
+  invitePrepared: { body: { organisationId:'org-one', shopperId:'shopper-one', email:'shopper@example.invalid', authVersion:1, preparedAt:'2026-11-14T10:00:00.000Z', expiresAt:input.expiresAt, confirm:true }, result:invited },
+  activateLocation: { body: { organisationId:'org-one', locationId:'shop-one', confirm:true }, result:{ok:true,locationId:'shop-one',status:'ACTIVE'} }
+};
+test('new pilot mutations remain off without any authentication, rate-limit or service access',async()=>{
+  for (const [operation,{body}] of Object.entries(newOperations)) {
+    const {http,seen}=setup({env:{...env,RUVANAS_RETAIL_REWARDS_ENABLED:'false'}});
+    assert.equal((await http.run(req(body),operation)).status,403);assert.deepEqual(seen,[]);
+  }
+});
+test('prepared identity and location operations reject method/origin/field injection before service',async()=>{
+  for (const [operation,{body}] of Object.entries(newOperations)) {
+    for(const [value,options] of [[body,{method:'GET'}],[body,{headers:{origin:'https://foreign.invalid'}}],[{...body,channelId:'forged'},{}],[{...body,confirm:false},{}],[body,{query:'?token=forged'}]]) {
+      const {http,seen}=setup();assert.ok((await http.run(req(value,options),operation)).status>=400);assert.ok(!seen.includes('load'));
+    }
+  }
+});
+test('new mutations pass only the strict reviewed input and return protected exact DTOs',async()=>{
+  for(const [operation,{body,result}] of Object.entries(newOperations)) {
+    let received;
+    const {http}=setup({loadService:async()=>({[operation]:async value=>{received=value;return result;}})});
+    const response=await http.run(req(body),operation);assert.equal(response.status,200);assert.deepEqual(received,body);
+    assert.deepEqual(await response.json(),result);assert.match(response.headers.get('cache-control'),/private.*no-store/);
+    assert.equal(response.headers.get('referrer-policy'),'no-referrer');
+    const malformed=setup({loadService:async()=>({[operation]:async()=>({...result,passwordHash:'private-fixture'})})});
+    const denied=await malformed.http.run(req(body),operation);assert.equal(denied.status,503);assert.ok(!(await denied.text()).includes('private-fixture'));
+  }
+});
+test('preview routing explicitly admits only POST for the two new administrator operations',()=>{
+  for(const operation of Object.keys(newOperations)) {
+    const path=`/api/admin/retail-rewards/pilot/${operation}`;
+    assert.equal(pilotPreviewRoute(path,'POST'),'ADMIN');
+    for(const method of ['GET','PATCH','DELETE']) assert.equal(pilotPreviewRoute(path,method),null);
+    assert.equal(pilotPreviewRoute(path,'POST',true),null);
+    assert.equal(pilotPreviewRoute(path+'/extra','POST'),null);
+  }
 });

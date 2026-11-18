@@ -16,6 +16,8 @@ const PREPARE = { organisationId: "org-one", expiresAt: END.toISOString(), tier:
 const SHOP = { organisationId: "org-one", locationId: "shop-one", publicSlug: "sample-shop", displayName: "Sample shop",
   description: "Public sample description", locality: "Valletta", countryCode: "MT", confirm: true };
 const INVITE = { organisationId: "org-one", email: "pilot@example.test", displayName: "Synthetic shopper", expiresAt: END.toISOString(), confirm: true };
+const PREPARED_INVITE = { organisationId: "org-one", shopperId: "prepared-shopper", email: "prepared@example.test", authVersion: 1,
+  preparedAt: START.toISOString(), expiresAt: END.toISOString(), confirm: true };
 const context = () => ({ user: { id: "super-admin", role: "SUPER_ADMIN", privatePreviewAccess: null },
   session: { id: "admin-session", userId: "super-admin", authMethod: "PASSWORD", expiresAt: END, revokedAt: null } });
 function terms() { return { schemaVersion: 1, title: "10% sample coupon", description: "Sample", category: "FASHION", type: "PERCENT_OFF", percentBps: 1000,
@@ -60,7 +62,8 @@ function fixture({ prepared = true } = {}) {
     rewardEntitlementGrant: prepared ? [{ id: "grant-one", organisationId: "org-one", subscriptionId: "sub-one", capability: "RETAIL_REWARDS", source: "MANUAL_INTERNAL",
       tier: "REWARDS_STARTER", status: "TRIAL", startsAt: START, expiresAt: END, revokedAt: null, limitsVersion: 1, ...LIMITS }] : [],
     rewardPublicShopProfile: [], rewardOffer: [], rewardOfferDiscovery: [], rewardShopper: [], rewardShopperCredential: [],
-    rewardShopperMembership: [], rewardShopperInvitation: [], rewardPilotShopperEnrollment: [], rewardPilotAuditEvent: []
+    rewardShopperMembership: [], rewardShopperInvitation: [], rewardPilotShopperEnrollment: [], rewardPilotAuditEvent: [],
+    rewardShopperSession: [], rewardClaim: [], rewardRedemption: [], auditLog: []
   };
   const env = { ...ENV }, calls = []; let serial = 0, beforeTransaction, afterWrite, failAudit = false, current = NOW;
   function hydrated(model, row, data) {
@@ -99,6 +102,7 @@ function fixture({ prepared = true } = {}) {
       if (sql.includes('FROM "User"')) return data.context.user.id === values[0] ? [{ id: values[0] }] : [];
       if (sql.includes('FROM "Session"')) return data.context.session.id === values[0] && data.context.session.userId === values[1] ? [{ id: values[0] }] : [];
       if (sql.includes('FROM "PrivatePreviewAccess"')) return data.context.user.privatePreviewAccess?.userId === values[0] ? [{ userId: values[0] }] : [];
+      if (sql.includes('FROM "RewardShopperSetup"')) return data.rewardShopperSetup.filter(s => s.shopperId === values[0] && s.organisationId === values[1]).map(s => ({ shopperId: s.shopperId }));
       if (sql.includes('FROM "Subscription"')) { const sub = data.organisation.find(o => o.id === values[0])?.subscription; return sub ? [{ id: sub.id }] : []; }
       if (sql.includes('FROM "RewardProgram"')) return data.rewardProgram.filter(p => p.organisationId === values[0]).map(p => ({ id: p.id }));
       if (sql.includes('FROM "RewardEntitlementGrant"')) return data.rewardEntitlementGrant.filter(g => g.organisationId === values[0]).map(g => ({ id: g.id }));
@@ -119,6 +123,14 @@ function fixture({ prepared = true } = {}) {
   const service = createRewardPilotAdminService({ db, env, loadContext: async currentClient => copy(currentClient._data.context), clock: () => new Date(current) });
   return { service, env, calls, get data() { return source; }, set beforeTransaction(value) { beforeTransaction = value; },
     set afterWrite(value) { afterWrite = value; }, set failAudit(value) { failAudit = value; }, set now(value) { current = value; },
+    addPreparedShopper() {
+      env.RUVANAS_RETAIL_REWARDS_SHOPPER_ENABLED = "true"; env.RUVANAS_RETAIL_REWARDS_SHOPPER_AUTH_ENABLED = "true";
+      source.rewardShopper.push({ id: PREPARED_INVITE.shopperId, displayName: "Prepared synthetic shopper", status: "DISABLED", authVersion: 1 });
+      source.rewardShopperSetup.push({ shopperId: PREPARED_INVITE.shopperId, organisationId: "org-one", emailCanonical: PREPARED_INVITE.email,
+        createdByUserId: "original-super-admin", createdAt: START });
+      source.auditLog.push({ organisationId: "org-one", actorUserId: "original-super-admin", action: "DORMANT_SHOPPER_PREPARED",
+        entityType: "RewardShopper", entityId: PREPARED_INVITE.shopperId, details: { shopperId: PREPARED_INVITE.shopperId, status: "DISABLED", accessGranted: false } });
+    },
     addOffer() { const t = terms(); source.rewardOffer.push({ id: "offer-one", organisationId: "org-one", programId: "program-one", state: "PUBLISHED", publishedRevision: 1,
       publishedStartsAt: START, publishedEndsAt: END, publishedSnapshot: { organisationId: "org-one", offerId: "offer-one", revision: 1, terms: t },
       locations: [{ organisationId: "org-one", offerId: "offer-one", locationId: "shop-one", scope: "PUBLISHED" }] }); }
@@ -338,4 +350,138 @@ test("expired membership cannot be reissued and clock expiry during invite rolls
 test("overview fails rather than silently truncating oversized location candidates", async () => {
   const f = fixture(); for (let i = 0; i < 100; i++) f.data.location.push({ id: `extra-${i}`, organisationId: "org-one", name: "Sample", status: "ACTIVE" });
   assert.equal((await f.service.overview({ organisationId: "org-one" })).code, "REVIEW_TOO_LARGE");
+});
+
+test("prepared invitation contract pins the exact identity, version and preparation and accepts no privilege fields", () => {
+  assert.equal(pilotAdminSchemas.invitePrepared.safeParse(PREPARED_INVITE).success, true);
+  for (const patch of [{ shopperId: undefined }, { email: undefined }, { authVersion: 2 }, { authVersion: "1" },
+    { preparedAt: "yesterday" }, { expiresAt: "2026-11-30" }, { confirm: false }, { displayName: "Replace name" }, { status: "ACTIVE" }]) {
+    assert.equal(pilotAdminSchemas.invitePrepared.safeParse({ ...PREPARED_INVITE, ...patch }).success, false);
+  }
+});
+
+test("exact prepared shopper receives one origin-bound invitation without changing disabled identity or provenance", async () => {
+  const f = fixture(); f.addPreparedShopper();
+  const before = copy({ shopper: f.data.rewardShopper, setup: f.data.rewardShopperSetup, audit: f.data.auditLog, organisations: f.data.organisation });
+  const result = await f.service.invitePrepared(PREPARED_INVITE);
+  assert.equal(result.ok, true); assert.equal(result.shopperId, PREPARED_INVITE.shopperId);
+  assert.match(result.invitationToken, /^[a-f0-9]{64}$/);
+  assert.deepEqual({ shopper: f.data.rewardShopper, setup: f.data.rewardShopperSetup, audit: f.data.auditLog, organisations: f.data.organisation }, before);
+  assert.equal(f.data.rewardShopperInvitation[0].tokenHash, hashShopperInvitationToken(result.invitationToken, ENV.SESSION_SECRET));
+  assert.equal(f.data.rewardShopperInvitation[0].emailCanonical, PREPARED_INVITE.email);
+  assert.equal(f.data.rewardShopperInvitation[0].authVersion, 1);
+  assert.equal(f.data.rewardShopperInvitation[0].expiresAt - NOW, 86400000);
+  assert.equal(f.data.rewardShopperMembership[0].expiresAt.toISOString(), PREPARED_INVITE.expiresAt);
+  assert.deepEqual(f.data.rewardPilotShopperEnrollment.map(r => [r.shopperId, r.organisationId, r.createdByUserId]), [[PREPARED_INVITE.shopperId, "org-one", "super-admin"]]);
+  for (const table of ["user", "rewardShopperCredential", "rewardShopperSession", "rewardClaim", "rewardRedemption"]) assert.equal(f.data[table].length, 0);
+  for (const privateText of [result.invitationToken, PREPARED_INVITE.email, "tokenHash", "Prepared synthetic shopper"]) assert.equal(JSON.stringify(f.data.rewardPilotAuditEvent).includes(privateText), false);
+  assert.deepEqual(Object.keys(f.data.rewardPilotAuditEvent[0].metadataJson).sort(), ["expiresAt", "status"]);
+  const locks = f.calls.filter(c => c.model === "lock");
+  const index = locks.findIndex(c => c.sql.includes('FROM "RewardShopper"'));
+  assert.match(locks[index].sql, /FOR UPDATE/); assert.match(locks[index + 1].sql, /FROM "RewardShopperSetup".*FOR SHARE/);
+  const saved = copy(f.data); assert.equal((await f.service.invitePrepared(PREPARED_INVITE)).code, "INVITATION_UNAVAILABLE"); assert.deepEqual(f.data, saved);
+});
+
+test("prepared shopper overview is read-only, tenant scoped and removes already-invited or changed preparations", async () => {
+  const f = fixture(); f.addPreparedShopper(); const before = copy(f.data);
+  f.data.rewardShopperSetup.push({ shopperId: "foreign-prepared", organisationId: "other-org", emailCanonical: "foreign@example.test" });
+  const result = await f.service.overview({ organisationId: "org-one" });
+  assert.deepEqual(result.preparedShoppers, [{ shopperId: PREPARED_INVITE.shopperId, email: PREPARED_INVITE.email,
+    displayName: "Prepared synthetic shopper", authVersion: 1, preparedAt: START.toISOString() }]);
+  assert.equal(JSON.stringify(result).includes("foreign@example.test"), false);
+  assert.equal(f.calls.some(c => ["create", "update"].includes(c.method)), false);
+  assert.deepEqual(f.data.rewardShopper, before.rewardShopper);
+  assert.equal((await f.service.invitePrepared(PREPARED_INVITE)).ok, true);
+  assert.deepEqual((await f.service.overview({ organisationId: "org-one" })).preparedShoppers, []);
+  const g = fixture(); g.addPreparedShopper(); g.data.auditLog[0].details.accessGranted = true;
+  assert.deepEqual((await g.service.overview({ organisationId: "org-one" })).preparedShoppers, []);
+});
+
+test("prepared invitation requires shopper authentication gates and a usable private-preview bridge", async () => {
+  for (const patch of [{ RUVANAS_RETAIL_REWARDS_ENABLED: "false" }, { RUVANAS_RETAIL_REWARDS_SHOPPER_ENABLED: "false" },
+    { RUVANAS_RETAIL_REWARDS_SHOPPER_AUTH_ENABLED: "false" }, { RUVANAS_RETAIL_REWARDS_SHOPPER_AUTH_ENABLED: "TRUE" }]) {
+    const f = fixture(); f.addPreparedShopper(); Object.assign(f.env, patch);
+    assert.equal((await f.service.invitePrepared(PREPARED_INVITE)).code, "FEATURE_DISABLED"); assert.equal(f.calls.length, 0);
+  }
+  const f = fixture(); f.addPreparedShopper(); Object.assign(f.env, pilotPreviewEnvironment(), { RUVANAS_RETAIL_REWARDS_PILOT_PREVIEW_ENABLED: "false" });
+  assert.equal((await f.service.invitePrepared(PREPARED_INVITE)).code, "FORBIDDEN"); assert.equal(f.calls.length, 0);
+  const g = fixture(); g.addPreparedShopper(); Object.assign(g.env, pilotPreviewEnvironment()); g.data.context = pilotPreviewOwnerContext(NOW);
+  assert.equal((await g.service.invitePrepared(PREPARED_INVITE)).ok, true);
+});
+
+test("wrong shopper pins, tenant, disabled state or immutable provenance never invite a prepared identity", async () => {
+  for (const patch of [{ shopperId: "absent" }, { email: "different@example.test" }, { preparedAt: NOW.toISOString() }]) {
+    const f = fixture(); f.addPreparedShopper(); const before = copy(f.data);
+    assert.equal((await f.service.invitePrepared({ ...PREPARED_INVITE, ...patch })).code, "INVITATION_UNAVAILABLE"); assert.deepEqual(f.data, before);
+  }
+  for (const mutate of [d => d.rewardShopper[0].status = "ACTIVE", d => d.rewardShopper[0].status = "SUSPENDED", d => d.rewardShopper[0].authVersion = 2,
+    d => d.rewardShopperSetup[0].organisationId = "other-org", d => d.rewardShopperSetup[0].emailCanonical = PREPARED_INVITE.email.toUpperCase(),
+    d => d.rewardShopperSetup[0].createdByUserId = "different-admin", d => d.rewardShopperSetup[0].createdAt = new Date(+NOW + 1),
+    d => d.auditLog.splice(0), d => d.auditLog.push(copy(d.auditLog[0])), d => d.auditLog[0].details.accessGranted = true,
+    d => d.auditLog[0].details.status = "ACTIVE", d => d.auditLog[0].details.shopperId = "another-shopper"]) {
+    const f = fixture(); f.addPreparedShopper(); mutate(f.data); const before = copy(f.data);
+    assert.equal((await f.service.invitePrepared(PREPARED_INVITE)).code, "INVITATION_UNAVAILABLE", String(mutate)); assert.deepEqual(f.data, before);
+  }
+});
+
+test("prepared invitation refuses every preexisting access row, including expired or revoked history", async () => {
+  for (const table of ["rewardShopperCredential", "rewardShopperInvitation", "rewardShopperMembership", "rewardShopperSession",
+    "rewardPilotShopperEnrollment", "rewardClaim", "rewardRedemption"]) {
+    const f = fixture(); f.addPreparedShopper();
+    f.data[table].push({ id: "existing-record", shopperId: PREPARED_INVITE.shopperId, organisationId: "other-org", expiresAt: START, revokedAt: START });
+    const before = copy(f.data); assert.equal((await f.service.invitePrepared(PREPARED_INVITE)).code, "INVITATION_UNAVAILABLE", table); assert.deepEqual(f.data, before);
+  }
+});
+
+test("prepared canonical email cannot collide with business, credential, invitation or another preparation", async () => {
+  for (const table of ["user", "rewardShopperCredential", "rewardShopperInvitation", "rewardShopperSetup"]) {
+    const f = fixture(); f.addPreparedShopper(); f.data[table].push(table === "user" ? { id: "business-user", email: PREPARED_INVITE.email.toUpperCase() }
+      : { shopperId: "other-shopper", organisationId: "other-org", emailCanonical: PREPARED_INVITE.email.toUpperCase() });
+    const before = copy(f.data); assert.equal((await f.service.invitePrepared(PREPARED_INVITE)).code, "INVITATION_UNAVAILABLE"); assert.deepEqual(f.data, before);
+  }
+  const f = fixture(); f.addPreparedShopper(); f.beforeTransaction = d => d.rewardShopperSession.push({ shopperId: PREPARED_INVITE.shopperId, id: "new-session" });
+  assert.equal((await f.service.invitePrepared(PREPARED_INVITE)).code, "INVITATION_UNAVAILABLE"); assert.equal(f.data.rewardShopperInvitation.length, 0);
+});
+
+test("prepared invitation bounds expiries and enrollment capacity and requires current entitlement", async () => {
+  for (const expiresAt of [NOW.toISOString(), new Date(+END + 1).toISOString(), new Date(+NOW + 31 * 86400000).toISOString()]) {
+    const f = fixture(); f.addPreparedShopper(); assert.equal((await f.service.invitePrepared({ ...PREPARED_INVITE, expiresAt })).code, "INVALID_REQUEST");
+    assert.equal(f.data.rewardShopperMembership.length, 0);
+  }
+  const f = fixture(); f.addPreparedShopper();
+  const result = await f.service.invitePrepared({ ...PREPARED_INVITE, expiresAt: new Date(+NOW + 3600000).toISOString() });
+  assert.equal(result.invitationExpiresAt, result.membershipExpiresAt);
+  const g = fixture(); g.addPreparedShopper(); g.data.rewardPilotShopperEnrollment.push(...Array.from({ length: 100 }, (_, i) => ({ organisationId: "org-one", shopperId: `shopper-${i}` })));
+  assert.equal((await g.service.invitePrepared(PREPARED_INVITE)).code, "LIMIT_REACHED");
+  for (const mutate of [d => d.rewardProgram[0].status = "DISABLED", d => d.rewardEntitlementGrant[0].expiresAt = NOW,
+    d => d.organisation[0].subscription.plan.retailRadioEnabled = false]) {
+    const h = fixture(); h.addPreparedShopper(); mutate(h.data); assert.equal((await h.service.invitePrepared(PREPARED_INVITE)).code, "NOT_ENTITLED");
+  }
+});
+
+test("prepared invitation rolls back on stale authority, withdrawn policies, entitlement changes, audit failure and clock expiry", async () => {
+  for (const change of [d => d.context.user.role = "OWNER", d => d.context.session.revokedAt = NOW]) {
+    const f = fixture(); f.addPreparedShopper(); f.beforeTransaction = change;
+    assert.equal((await f.service.invitePrepared(PREPARED_INVITE)).ok, false); assert.equal(f.data.rewardShopperMembership.length, 0);
+  }
+  for (const change of [d => d.context.user.role = "OWNER", d => d.context.session.revokedAt = NOW,
+    d => d.rewardEntitlementGrant[0].revokedAt = NOW, (_d, f) => f.env.RUVANAS_RETAIL_REWARDS_SHOPPER_AUTH_ENABLED = "false",
+    (_d, f) => f.env.RUVANAS_RETAIL_REWARDS_PILOT_ORGANISATION_IDS = '["other-org"]', (_d, f) => f.now = END]) {
+    const f = fixture(); f.addPreparedShopper(); const before = copy(f.data);
+    f.afterWrite = (d, model) => { if (model === "rewardPilotAuditEvent") change(d, f); };
+    assert.equal((await f.service.invitePrepared(PREPARED_INVITE)).ok, false); assert.deepEqual(f.data, before);
+  }
+  const f = fixture(); f.addPreparedShopper(); f.failAudit = true; const before = copy(f.data);
+  assert.equal((await f.service.invitePrepared(PREPARED_INVITE)).code, "UNAVAILABLE"); assert.deepEqual(f.data, before);
+});
+
+test("prepared invitation retains existing pending reissue and revoke workflow while ordinary invite still refuses setup email", async () => {
+  const f = fixture(); f.addPreparedShopper();
+  assert.equal((await f.service.invite({ ...INVITE, email: PREPARED_INVITE.email })).code, "CONFLICT");
+  const issued = await f.service.invitePrepared(PREPARED_INVITE); assert.equal(issued.ok, true);
+  const request = { organisationId: "org-one", shopperId: PREPARED_INVITE.shopperId, confirm: true };
+  const rotated = await f.service.reissue(request); assert.equal(rotated.ok, true); assert.notEqual(rotated.invitationToken, issued.invitationToken);
+  assert.equal((await f.service.revoke(request)).ok, true);
+  assert.equal(f.data.rewardShopper[0].status, "DISABLED"); assert.equal(f.data.rewardShopperCredential.length, 0);
+  assert.equal((await f.service.invitePrepared(PREPARED_INVITE)).code, "INVITATION_UNAVAILABLE");
 });

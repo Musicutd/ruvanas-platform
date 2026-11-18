@@ -12,6 +12,8 @@ const tierLabel = value => value.replace("REWARDS_", "").toLowerCase().replace(/
 const blankLimits = () => ({ activeOffers: "", locations: "", staffSeats: "", monthlyRedemptions: "", analyticsRetentionDays: "", exportEnabled: false, brandingEnabled: false });
 const blankShop = () => ({ locationId: "", publicSlug: "", displayName: "", description: "", locality: "", countryCode: "MT", confirm: false });
 const blankInvite = () => ({ email: "", displayName: "", expiresAt: "", confirm: false });
+const blankPreparedInvite = () => ({ shopperId: "", expiresAt: "", confirm: false });
+const blankActivation = () => ({ locationId: "", confirm: false });
 
 export default function RewardsPilotAdmin({ initialOrganisations = [], transport = checkoutTransport, previewOnly = false }) {
   const organisations = pilotOrganisations(initialOrganisations);
@@ -19,6 +21,7 @@ export default function RewardsPilotAdmin({ initialOrganisations = [], transport
   const [busy, setBusy] = useState(""), [error, setError] = useState(""), [notice, setNotice] = useState(""), [invitation, setInvitation] = useState(null);
   const [expiry, setExpiry] = useState(""), [tier, setTier] = useState("REWARDS_STARTER"), [allowances, setAllowances] = useState(blankLimits);
   const [shop, setShop] = useState(blankShop), [offer, setOffer] = useState({ id: "", publicSlug: "", confirm: false }), [invite, setInvite] = useState(blankInvite);
+  const [preparedInvite, setPreparedInvite] = useState(blankPreparedInvite), [activation, setActivation] = useState(blankActivation);
   const [pendingAction, setPendingAction] = useState(null);
   const [readiness, setReadiness] = useState(null), [readinessError, setReadinessError] = useState("");
   const epoch = useRef(0), active = useRef(null), alive = useRef(true), errorRef = useRef(null), tokenRef = useRef(null);
@@ -26,7 +29,7 @@ export default function RewardsPilotAdmin({ initialOrganisations = [], transport
   useEffect(() => { if (error) errorRef.current?.focus(); }, [error]);
   useEffect(() => { if (invitation) tokenRef.current?.focus(); }, [invitation]);
   function clear() { epoch.current++; active.current?.abort(); setBusy(""); setError(""); setNotice(""); setInvitation(null); setPendingAction(null); setReadiness(null); setReadinessError(""); }
-  function select(value) { clear(); setSelected(value); setData(null); setTab("access"); setShop(blankShop()); setOffer({ id: "", publicSlug: "", confirm: false }); setInvite(blankInvite()); setExpiry(""); setAllowances(blankLimits()); }
+  function select(value) { clear(); setSelected(value); setData(null); setTab("access"); setShop(blankShop()); setOffer({ id: "", publicSlug: "", confirm: false }); setInvite(blankInvite()); setPreparedInvite(blankPreparedInvite()); setActivation(blankActivation()); setExpiry(""); setAllowances(blankLimits()); }
   function start(operation) { clear(); const number = ++epoch.current, controller = new AbortController(); active.current = controller; setBusy(operation); return { number, controller, timer: setTimeout(() => controller.abort(), 20000) }; }
   const current = req => alive.current && epoch.current === req.number;
   function finish(req) { clearTimeout(req.timer); if (current(req)) { setBusy(""); active.current = null; } }
@@ -41,7 +44,7 @@ export default function RewardsPilotAdmin({ initialOrganisations = [], transport
   async function refresh() {
     if (!organisations.some(o => o.id === selected)) return;
     const req = start("overview"), organisationId = selected; setData(null);
-    try { const result = await read(organisationId, req.controller.signal); if (current(req)) { setData(result); setShop(blankShop()); setOffer({ id: "", publicSlug: "", confirm: false }); setInvite(blankInvite()); await readReadiness(organisationId, req); } }
+    try { const result = await read(organisationId, req.controller.signal); if (current(req)) { setData(result); setShop(blankShop()); setOffer({ id: "", publicSlug: "", confirm: false }); setInvite(blankInvite()); setPreparedInvite(blankPreparedInvite()); setActivation(blankActivation()); await readReadiness(organisationId, req); } }
     catch (problem) { if (current(req)) setError(pilotMessage(problem.code)); } finally { finish(req); }
   }
   async function mutate(operation, fields) {
@@ -54,15 +57,16 @@ export default function RewardsPilotAdmin({ initialOrganisations = [], transport
       // The one-time code is not placed in state until the selected pilot has
       // been reloaded successfully. Lost responses can be recovered by reissue.
       const refreshed = await read(organisationId, req.controller.signal); if (!current(req)) return;
-      setData(refreshed); setShop(blankShop()); setOffer({ id: "", publicSlug: "", confirm: false }); setInvite(blankInvite());
-      setNotice(({ prepare: "Pilot access prepared with the explicit allowances below.", publishShop: "Shop profile published for eligible signed-in shoppers.", approveOffer: "This exact coupon revision is approved for shopper discovery.", invite: "A new shopper invitation was created. Its one-time code is shown below.", reissue: "A replacement invitation was created. The previous code no longer works.", revoke: "The pending invitation was revoked." })[operation]);
-      if (operation === "invite" || operation === "reissue") setInvitation(saved);
+      setData(refreshed); setShop(blankShop()); setOffer({ id: "", publicSlug: "", confirm: false }); setInvite(blankInvite()); setPreparedInvite(blankPreparedInvite()); setActivation(blankActivation());
+      setNotice(({ prepare: "Pilot access prepared with the explicit allowances below.", activateLocation: "The existing shop is active for Rewards setup. Review and publish its shopper-facing profile next. Audio and devices were not changed.", publishShop: "Shop profile published for eligible signed-in shoppers.", approveOffer: "This exact coupon revision is approved for shopper discovery.", invite: "A new shopper invitation was created. Its one-time code is shown below.", invitePrepared: "The prepared shopper has a one-time invitation below. The account stays disabled until the shopper accepts it.", reissue: "A replacement invitation was created. The previous code no longer works.", revoke: "The pending invitation was revoked." })[operation]);
+      if (["invite", "invitePrepared", "reissue"].includes(operation)) setInvitation(saved);
       await readReadiness(organisationId, req);
     } catch (problem) { if (current(req)) { setInvitation(null); setError(pilotMessage(problem.code)); } } finally { finish(req); }
   }
   function submit(event, fn) { event.preventDefault(); setError(""); try { fn(); } catch (problem) { setError(problem.message || pilotMessage("INVALID_REQUEST")); } }
   const ready = data?.program?.status === "ACTIVE" && data.program.networkOptIn === true && ["TRIAL", "ACTIVE"].includes(data.grant?.status) && new Date(data.grant.expiresAt) > new Date();
   const chosenOffer = data?.offers.find(row => row.id === offer.id);
+  const chosenPrepared = data?.preparedShoppers.find(row => row.shopperId === preparedInvite.shopperId);
   const canPrepare = data && !data.program && !data.grant;
   const nextStep = pilotNextStep(readiness);
   function openSetup(step) { setTab(step); setPendingAction(null); requestAnimationFrame(() => document.getElementById(`pilot-tab-${step}`)?.focus()); }
@@ -113,8 +117,16 @@ export default function RewardsPilotAdmin({ initialOrganisations = [], transport
           </>}
           {tab === "shops" && <><h3>Shop details shoppers may see</h3><p>Choose an existing shop and review every public field. Publishing does not expose its private address or account details.</p>
             {!ready && <p className={styles.empty}>Prepare current pilot access first.</p>}
+            {ready && data.locations.some(l => l.status === "DRAFT") && <section className={styles.review} aria-label="Activate a shop for Rewards">
+              <h4>Prepare an existing draft shop</h4><p>Activate a shop for this Rewards pilot without setting up audio. The shop must have no assigned channels or devices. Its public profile is a separate step below.</p>
+              <form onSubmit={e => submit(e, () => mutate("activateLocation", activation))}>
+                <label className={styles.field}>Draft shop<select aria-label="Draft shop" required value={activation.locationId} onChange={e => setActivation({ locationId: e.target.value, confirm: false })}><option value="">Choose a draft shop</option>{data.locations.filter(l => l.status === "DRAFT").map(l => <option key={l.id} value={l.id}>{l.name}</option>)}</select></label>
+                <label className={styles.check}><input required type="checkbox" checked={activation.confirm} onChange={e => setActivation(v => ({ ...v, confirm: e.target.checked }))} />Activate this existing shop for the Rewards pilot.</label>
+                <button className={styles.primary} disabled={!!busy || !activation.locationId || !activation.confirm}>Activate shop for Rewards</button>
+              </form>
+            </section>}
             {ready && <form onSubmit={e => submit(e, () => mutate("publishShop", shop))}>
-              <label className={styles.field}>Existing shop<select aria-label="Existing shop" required value={shop.locationId} onChange={e => { const row = data.locations.find(l => l.id === e.target.value); setShop({ ...blankShop(), locationId: row?.id || "", ...(row?.profile ? { publicSlug: row.profile.publicSlug, displayName: row.profile.displayName, description: row.profile.description, locality: row.profile.locality, countryCode: row.profile.countryCode } : {}) }); }}><option value="">Choose a shop</option>{data.locations.map(l => <option key={l.id} value={l.id}>{l.name}{l.profile?.status === "PUBLISHED" ? " · profile published" : ""}</option>)}</select></label>
+              <label className={styles.field}>Existing shop<select aria-label="Existing shop" required value={shop.locationId} onChange={e => { const row = data.locations.find(l => l.id === e.target.value); setShop({ ...blankShop(), locationId: row?.id || "", ...(row?.profile ? { publicSlug: row.profile.publicSlug, displayName: row.profile.displayName, description: row.profile.description, locality: row.profile.locality, countryCode: row.profile.countryCode } : {}) }); }}><option value="">Choose an active shop</option>{data.locations.filter(l => l.status === "ACTIVE").map(l => <option key={l.id} value={l.id}>{l.name}{l.profile?.status === "PUBLISHED" ? " · profile published" : ""}</option>)}</select></label>
               <div className={styles.grid}>{[["displayName", "Shop display name", 140], ["publicSlug", "Shop URL name", 100], ["locality", "Town or locality", 120], ["countryCode", "Country code", 2]].map(([k, label, max]) => <label key={k} className={styles.field}>{label}<input required maxLength={max} value={shop[k]} onChange={e => setShop(v => ({ ...v, [k]: k === "countryCode" ? e.target.value.toUpperCase() : e.target.value }))} /></label>)}</div>
               <label className={styles.field}>Public description<textarea maxLength={2000} rows={3} value={shop.description} onChange={e => setShop(v => ({ ...v, description: e.target.value }))} /></label>
               <label className={styles.check}><input type="checkbox" required checked={shop.confirm} onChange={e => setShop(v => ({ ...v, confirm: e.target.checked }))} />I approve these fields for eligible signed-in shoppers to see.</label><button className={styles.primary} disabled={!!busy || !shop.locationId || !shop.confirm}>Publish shop profile</button>
@@ -128,11 +140,23 @@ export default function RewardsPilotAdmin({ initialOrganisations = [], transport
               <label className={styles.check}><input type="checkbox" required checked={offer.confirm} onChange={e => setOffer(v => ({ ...v, confirm: e.target.checked }))} />I approve this exact revision and its published shop profiles for discovery.</label><button className={styles.primary} disabled={!!busy || !chosenOffer || !offer.confirm}>Approve coupon discovery</button>
             </form>}
           </>}
-          {tab === "shoppers" && <><h3>Invite a test shopper</h3><p>Create a separate shopper account for claiming and using coupons. An invitation is not a client-admin login, and no email is sent.</p>
+          {tab === "shoppers" && <>
+            <h3>Invite a prepared shopper</h3><p>Choose the disabled shopper prepared for this workspace. The same account stays disabled until the shopper accepts their invitation and chooses a password.</p>
+            {!ready ? <p className={styles.empty}>Prepare current pilot access first.</p> : !data.preparedShoppers.length ? <p className={styles.empty}>No untouched prepared shoppers are available in this workspace.</p> : <form onSubmit={e => submit(e, () => {
+              if (chosenPrepared) mutate("invitePrepared", { shopperId: chosenPrepared.shopperId, email: chosenPrepared.email, authVersion: chosenPrepared.authVersion, preparedAt: chosenPrepared.preparedAt, expiresAt: pilotExpiry(preparedInvite.expiresAt, new Date(), data.grant.expiresAt), confirm: preparedInvite.confirm });
+            })}>
+              <label className={styles.field}>Prepared shopper<select aria-label="Prepared shopper" required value={preparedInvite.shopperId} onChange={e => setPreparedInvite({ shopperId: e.target.value, expiresAt: "", confirm: false })}><option value="">Choose a prepared shopper</option>{data.preparedShoppers.map(s => <option key={s.shopperId} value={s.shopperId}>{s.displayName} · {s.email}</option>)}</select></label>
+              {chosenPrepared && <p className={styles.help}>Prepared {dateLabel(chosenPrepared.preparedAt)} Malta time · disabled account</p>}
+              <label className={styles.field}>Prepared shopper access expiry (Malta time)<input required type="datetime-local" value={preparedInvite.expiresAt} onChange={e => setPreparedInvite(v => ({ ...v, expiresAt: e.target.value }))} /></label>
+              <p className={styles.help}>The code expires within 24 hours and access cannot outlast this pilot. No email is sent.</p>
+              <label className={styles.check}><input required type="checkbox" checked={preparedInvite.confirm} onChange={e => setPreparedInvite(v => ({ ...v, confirm: e.target.checked }))} />I approve an invitation for this prepared shopper.</label>
+              <button className={styles.primary} disabled={!!busy || !chosenPrepared || !preparedInvite.confirm}>Invite prepared shopper</button>
+            </form>}
+            <details className={styles.review}><summary>Invite a different, new shopper</summary><p>Create a separate shopper account for claiming and using coupons. An invitation is not a client-admin login, and no email is sent.</p>
             {!ready ? <p className={styles.empty}>Prepare current pilot access first.</p> : <form onSubmit={e => submit(e, () => mutate("invite", { ...invite, expiresAt: pilotExpiry(invite.expiresAt, new Date(), data.grant.expiresAt) }))}>
               <div className={styles.grid}><label className={styles.field}>Shopper display name<input required maxLength={80} autoComplete="off" value={invite.displayName} onChange={e => setInvite(v => ({ ...v, displayName: e.target.value }))} /></label><label className={styles.field}>Shopper email<input required type="email" maxLength={254} autoComplete="off" value={invite.email} onChange={e => setInvite(v => ({ ...v, email: e.target.value }))} /></label><label className={styles.field}>Shopper access expiry (Malta time)<input required type="datetime-local" value={invite.expiresAt} onChange={e => setInvite(v => ({ ...v, expiresAt: e.target.value }))} /></label></div>
               <p className={styles.help}>The invitation code expires within 24 hours. Shopper access cannot outlast this pilot’s expiry. Existing accounts are never attached by matching an email.</p><label className={styles.check}><input required type="checkbox" checked={invite.confirm} onChange={e => setInvite(v => ({ ...v, confirm: e.target.checked }))} />I approve invitation-only access for this test shopper.</label><button className={styles.primary} disabled={!!busy || !invite.confirm}>Create shopper invitation</button>
-            </form>}
+            </form>}</details>
             <div className={styles.invites}><h3>Shopper invitations from this pilot</h3>{!data.shoppers.length && <p className={styles.empty}>No shopper invitations have been created here.</p>}{data.shoppers.map(s => <article className={styles.invite} key={s.shopperId}><div><strong>{s.displayName}</strong><p>{s.invitationStatus.toLowerCase()} · shopper {s.status.toLowerCase()}</p><small>Code expires {dateLabel(s.invitationExpiresAt)} · access ends {dateLabel(s.membershipExpiresAt)}</small></div>{s.status === "DISABLED" && s.invitationStatus !== "ACCEPTED" && <div className={styles.actions}>{ready && new Date(s.membershipExpiresAt) > new Date() && <button className={styles.secondary} disabled={!!busy} onClick={() => { setInvitation(null); setPendingAction({ shopperId: s.shopperId, displayName: s.displayName, operation: "reissue" }); }}>Replace invitation</button>}{s.invitationStatus !== "REVOKED" && <button className={styles.secondary} disabled={!!busy} onClick={() => { setInvitation(null); setPendingAction({ shopperId: s.shopperId, displayName: s.displayName, operation: "revoke" }); }}>Revoke invitation</button>}</div>}</article>)}</div>
             {pendingAction && <section className={styles.review} aria-label="Confirm invitation change"><h4>{pendingAction.operation === "reissue" ? "Replace" : "Revoke"} {pendingAction.displayName}’s invitation?</h4><p>{pendingAction.operation === "reissue" ? "The old code will stop working. Save the replacement code when it appears." : "The pending code will stop working. This does not revoke an accepted shopper’s account."}</p><div className={styles.actions}><button className={styles.primary} onClick={() => mutate(pendingAction.operation, { shopperId: pendingAction.shopperId, confirm: true })}>Confirm {pendingAction.operation === "reissue" ? "replacement" : "revocation"}</button><button className={styles.secondary} onClick={() => setPendingAction(null)}>Cancel</button></div></section>}
           </>}

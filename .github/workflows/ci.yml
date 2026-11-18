@@ -177,6 +177,9 @@ jobs:
         # Run after the zero-data foundation suite. These tests retain synthetic
         # immutable offer/audit history until the isolated CI service is removed.
         run: node --test --test-concurrency=1 tests/retail-rewards-offer-database.test.mjs
+      - name: Verify prepared shopper invitations and Rewards-only shop activation
+        # Synthetic history remains only in this disposable PostgreSQL service.
+        run: node --test --test-concurrency=1 tests/retail-rewards-pilot-fixes-database.test.mjs
 
   rewards-checkout-database:
     # Isolated checkout PostgreSQL: immutable claim and receipt fixtures remain
