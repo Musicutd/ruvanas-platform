@@ -32,7 +32,7 @@ function text(tree) {
   return typeof tree === "string" || typeof tree === "number" ? String(tree) : "";
 }
 const settle = () => new Promise(resolve => setImmediate(resolve));
-function mount() {
+function mount({ expired = false } = {}) {
   const cells = []; let cursor = 0;
   const hookReact = { ...React,
     useState(initial) { const slot = cursor++; if (!(slot in cells)) cells[slot] = typeof initial === "function" ? initial() : initial;
@@ -40,6 +40,11 @@ function mount() {
     useRef(initial) { const slot = cursor++; if (!(slot in cells)) cells[slot] = { current: initial }; return cells[slot]; }, useEffect() {}
   };
   const module = { exports: {} }, data = fixture(), requests = [];
+  if (expired) {
+    data.grant.expiresAt = "2026-11-17T12:00:00.000Z";
+    data.preparedShoppers = [];
+    data.shoppers = [{ shopperId: "expired-one", displayName: "Expired shopper", status: "DISABLED", invitationStatus: "REVOKED", invitationExpiresAt: data.grant.expiresAt, membershipExpiresAt: data.grant.expiresAt }];
+  }
   const transport = async (path, options) => {
     requests.push({ path, method: options.method, body: options.body ? JSON.parse(options.body) : null });
     if (path.includes("/readiness?")) return Response.json({ ok: false, code: "FEATURE_DISABLED" }, { status: 403 });
@@ -56,6 +61,7 @@ function mount() {
     throw new Error(`Unexpected fixture request: ${path}`);
   };
   const mocks = { "react": hookReact, "@/lib/retail-rewards/pilot-admin-ui.mjs": pilotUi,
+    "./PilotAccessRenewal": { __esModule: true, default: () => null },
     "@/lib/retail-rewards/pilot-readiness-ui.mjs": readinessUi, "@/lib/retail-rewards/checkout-ui.mjs": checkoutUi,
     "./pilot-admin.module.css": { __esModule: true, default: new Proxy({}, { get: (_, key) => String(key) }) } };
   vm.runInNewContext(code, { module, exports: module.exports, Date: TestDate, Intl, AbortController, setTimeout, clearTimeout,
@@ -102,4 +108,16 @@ test("pilot UI submits pinned prepared identity and clears one-time code on work
   assert.ok(text(h.tree).includes("account stays disabled"));
   h.change(h.label("Test organisation"), "");
   assert.equal(nodes(h.tree).some(n => n.props["aria-label"] === "One-time invitation code"), false);
+});
+
+test("expired access mounts a tenant-keyed renewal review and clears it on tenant selection", async () => {
+  const active = mount(); await active.open();
+  assert.equal(nodes(active.tree).some(n => n.props.organisationId === "org-one" && n.props.shoppers), false);
+  const h = mount({ expired: true }); await h.open();
+  const panel = h.find(n => n.props.organisationId === "org-one" && n.props.shoppers);
+  assert.equal(panel.key, `org-one:${NOW}`);
+  assert.equal(panel.props.shoppers[0].shopperId, "expired-one");
+  assert.equal(typeof panel.props.onRefresh, "function");
+  h.change(h.label("Test organisation"), "");
+  assert.equal(nodes(h.tree).some(n => n.props.organisationId && n.props.shoppers), false);
 });

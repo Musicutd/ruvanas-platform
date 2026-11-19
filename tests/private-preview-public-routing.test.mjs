@@ -217,10 +217,14 @@ test("actual middleware admits the established preview owner only to scoped pilo
   await withEnv({ ...ADMIN_PILOT_ENV, RUVANAS_RETAIL_REWARDS_SHOPPER_ENABLED: "true" }, async () => {
     const c = pilotPreviewOwnerContext(), harness = middlewareHarness({ session: c.session });
     for (const path of ["/admin/retail-rewards/pilot", "/api/admin/retail-rewards/pilot/organisations",
-      "/api/admin/retail-rewards/pilot/readiness?organisationId=org-one"]) {
+      "/api/admin/retail-rewards/pilot/readiness?organisationId=org-one",
+      "/api/admin/retail-rewards/pilot/renewalReview?organisationId=org-one&shopperId=shopper-one"]) {
       const response = await harness.run(request(path));
       assert.equal(response.headers.get("x-test-action"), "next", path);
     }
+    assert.equal((await harness.run(request("/api/admin/retail-rewards/pilot/renew", {
+      method: "POST", headers: { origin: "https://www.ruvanas.com" }
+    }))).headers.get("x-test-action"), "next");
     const merchant = await harness.run(request("/dashboard/retail/rewards"));
     assert.equal(merchant.status, 307);
     assert.equal(new URL(merchant.headers.get("location")).pathname, "/rewards/pilot-sign-in");
@@ -243,7 +247,8 @@ test("actual middleware denies disabled pilot admin gates before any session or 
     await withEnv({ ...ADMIN_PILOT_ENV, [key]: "false" }, async () => {
       const harness = middlewareHarness({ session: pilotPreviewOwnerContext().session, lookupThrows: true });
       for (const [path, method] of [["/admin/retail-rewards/pilot", "GET"], ["/api/admin/retail-rewards/pilot/overview", "GET"],
-        ["/api/admin/retail-rewards/pilot/prepare", "POST"]]) {
+        ["/api/admin/retail-rewards/pilot/prepare", "POST"], ["/api/admin/retail-rewards/pilot/renewalReview", "GET"],
+        ["/api/admin/retail-rewards/pilot/renew", "POST"]]) {
         const response = await harness.run(request(path, { method, headers: { origin: "https://www.ruvanas.com" } }));
         assert.equal(response.status, 404, `${key} ${path}`);
       }
@@ -258,8 +263,11 @@ test("actual middleware rejects preview bootstrap and malformed owner grants on 
       s => s.user.privatePreviewAccess.enabled = false, s => s.user.privatePreviewAccess.organisationId = "org-one",
       s => s.user.privatePreviewAccess.pillars = ["RETAIL"], s => s.revokedAt = new Date(), s => s.expiresAt = new Date(0)]) {
       const session = pilotPreviewOwnerContext().session; mutate(session);
-      const response = await middlewareHarness({ session }).run(request("/api/admin/retail-rewards/pilot/organisations"));
-      assert.equal(response.status, 401, String(mutate));
+      for (const [path, method] of [["/api/admin/retail-rewards/pilot/organisations", "GET"],
+        ["/api/admin/retail-rewards/pilot/renewalReview", "GET"], ["/api/admin/retail-rewards/pilot/renew", "POST"]]) {
+        const response = await middlewareHarness({ session }).run(request(path, { method, headers: { origin: "https://www.ruvanas.com" } }));
+        assert.equal(response.status, 401, `${String(mutate)} ${path}`);
+      }
     }
   });
 });

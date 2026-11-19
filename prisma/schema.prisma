@@ -8652,6 +8652,7 @@ enum RewardPilotAuditAction {
   SHOPPER_INVITED
   INVITATION_REISSUED
   INVITATION_REVOKED
+  PILOT_ACCESS_RENEWED
 }
 
 enum RewardPilotAuditTargetType {
@@ -8786,6 +8787,7 @@ model RewardPilotAuditEvent {
 
   @@index([organisationId, createdAt, id], map: "RewardPilotAuditEvent_org_time_idx")
   @@index([organisationId, targetType, targetId, createdAt], map: "RewardPilotAuditEvent_target_time_idx")
+  @@unique([organisationId, action, requestId], map: "RewardPilotAuditEvent_request_key")
 }
 
 // RR-02 offer drafts are separate from immutable published terms. A published

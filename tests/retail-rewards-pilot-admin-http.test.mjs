@@ -93,3 +93,46 @@ test('preview routing explicitly admits only POST for the two new administrator 
     assert.equal(pilotPreviewRoute(path+'/extra','POST'),null);
   }
 });
+
+const renewalBody = { organisationId:'org-one', shopperId:'shopper-one', expectedState:'a'.repeat(64),
+  expiresAt:'2026-11-20T12:00:00.000Z', requestId:'11111111-1111-4111-8111-111111111111', confirm:true };
+const renewed = {ok:true,shopperId:'shopper-one',programId:'program-one',grantId:'grant-one',membershipId:'membership-one',
+  expiresAt:renewalBody.expiresAt,membershipVersion:2,requestId:renewalBody.requestId};
+const renewalReview = {ok:true,organisationId:'org-one',shopperId:'shopper-one',email:'shopper@example.invalid',displayName:'Pilot shopper',programId:'program-one',
+  grant:{id:'grant-one',tier:'REWARDS_STARTER',expiresAt:'2026-11-19T12:00:00.000Z',limits:{activeOffers:3,locations:1,staffSeats:1,monthlyRedemptions:100,analyticsRetentionDays:30,exportEnabled:false,brandingEnabled:false}},
+  membership:{id:'membership-one',expiresAt:'2026-11-19T12:00:00.000Z',version:1},invitation:{id:'invitation-one',status:'REVOKED'},expectedState:'a'.repeat(64),checkedAt:'2026-11-20T11:00:00.000Z'};
+test('renewal HTTP review accepts only an exact scoped GET and projects no hidden invitation fields',async()=>{
+  let received;
+  const {http}=setup({loadService:async()=>({renewalReview:async value=>{received=value;return renewalReview;}})});
+  const response=await http.run(req(null,{method:'GET',query:'?organisationId=org-one&shopperId=shopper-one'}),'renewalReview');
+  assert.equal(response.status,200);assert.deepEqual(await response.json(),renewalReview);
+  assert.deepEqual(received,{organisationId:'org-one',shopperId:'shopper-one'});
+  assert.match(response.headers.get('cache-control'),/private.*no-store/);assert.equal(response.headers.get('referrer-policy'),'no-referrer');
+  for(const query of ['?organisationId=org-one','?organisationId=org-one&shopperId=shopper-one&shopperId=foreign',
+    '?organisationId=org-one&shopperId=shopper-one&expectedState=forged','?organisationId=org-one&shopperId=shopper-one&token=secret']){
+    const denied=setup();assert.equal((await denied.http.run(req(null,{method:'GET',query}),'renewalReview')).status,400);assert.ok(!denied.seen.includes('load'));
+  }
+  assert.equal((await http.run(req(renewalBody),'renewalReview')).status,405);
+  for(const bad of [{...renewalReview,tokenHash:'private-secret'},{...renewalReview,invitation:{...renewalReview.invitation,tokenHash:'private-secret'}},
+    {...renewalReview,invitation:{...renewalReview.invitation,status:'PENDING'}},{...renewalReview,grant:{...renewalReview.grant,secret:'private-secret'}}]){
+    assert.equal(safePilotAdminResult('renewalReview',bad),null);
+  }
+});
+test('renewal POST requires explicit unchanged pins and refuses method, origin and capacity injection',async()=>{
+  for(const [body,options] of [[renewalBody,{method:'GET'}],[renewalBody,{headers:{origin:'https://foreign.invalid'}}],
+    [{...renewalBody,confirm:false},{}],[{...renewalBody,limits:renewalReview.grant.limits},{}],[{...renewalBody,tier:'REWARDS_ENTERPRISE'},{}],
+    [{...renewalBody,expectedState:'forged'},{}],[{...renewalBody,requestId:undefined},{}],[renewalBody,{query:'?expiresAt=forged'}]]){
+    const {http,seen}=setup();assert.ok((await http.run(req(body,options),'renew')).status>=400);assert.ok(!seen.includes('load'));
+  }
+  let received;const {http}=setup({loadService:async()=>({renew:async value=>{received=value;return renewed;}})});
+  const response=await http.run(req(renewalBody),'renew');assert.equal(response.status,200);assert.deepEqual(await response.json(),renewed);assert.deepEqual(received,renewalBody);
+  assert.equal(safePilotAdminResult('renew',{...renewed,invitationToken:'a'.repeat(64)}),null);
+  assert.equal(safePilotAdminResult('renew',{...renewed,membershipVersion:0}),null);
+});
+test('renewal routes never reach authority or service when Rewards is disabled',async()=>{
+  for(const operation of ['renewalReview','renew']){
+    const {http,seen}=setup({env:{...env,RUVANAS_RETAIL_REWARDS_ENABLED:'false'}});
+    const response=await http.run(operation==='renew'?req(renewalBody):req(null,{method:'GET',query:'?organisationId=org-one&shopperId=shopper-one'}),operation);
+    assert.equal(response.status,403);assert.deepEqual(seen,[]);
+  }
+});

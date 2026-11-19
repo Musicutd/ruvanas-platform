@@ -18,6 +18,10 @@ const SHOP = { organisationId: "org-one", locationId: "shop-one", publicSlug: "s
 const INVITE = { organisationId: "org-one", email: "pilot@example.test", displayName: "Synthetic shopper", expiresAt: END.toISOString(), confirm: true };
 const PREPARED_INVITE = { organisationId: "org-one", shopperId: "prepared-shopper", email: "prepared@example.test", authVersion: 1,
   preparedAt: START.toISOString(), expiresAt: END.toISOString(), confirm: true };
+const RENEWAL_REVIEW = { organisationId: "org-one", shopperId: "prepared-shopper" };
+const RENEWAL_NOW = new Date(+NOW + 2 * 3600000);
+const RENEWAL_END = new Date(+RENEWAL_NOW + 3600000).toISOString();
+const RENEWAL_ID = "11111111-1111-4111-8111-111111111111";
 const context = () => ({ user: { id: "super-admin", role: "SUPER_ADMIN", privatePreviewAccess: null },
   session: { id: "admin-session", userId: "super-admin", authMethod: "PASSWORD", expiresAt: END, revokedAt: null } });
 function terms() { return { schemaVersion: 1, title: "10% sample coupon", description: "Sample", category: "FASHION", type: "PERCENT_OFF", percentBps: 1000,
@@ -58,12 +62,12 @@ function fixture({ prepared = true } = {}) {
       plan: { active: true, code: "RETAIL_START", productFamily: "RETAIL", retailRadioEnabled: true } } }, { id: "other-org", name: "Foreign private business" }],
     location: [{ id: "shop-one", organisationId: "org-one", name: "Private shop name", status: "ACTIVE" }, { id: "shop-two", organisationId: "org-one", name: "Second shop", status: "ACTIVE" },
       { id: "foreign-shop", organisationId: "other-org", name: "Foreign", status: "ACTIVE" }],
-    rewardProgram: prepared ? [{ id: "program-one", organisationId: "org-one", status: "ACTIVE", networkOptIn: true, timezone: "Europe/Malta" }] : [],
+    rewardProgram: prepared ? [{ id: "program-one", organisationId: "org-one", status: "ACTIVE", networkOptIn: true, timezone: "Europe/Malta", updatedAt: START }] : [],
     rewardEntitlementGrant: prepared ? [{ id: "grant-one", organisationId: "org-one", subscriptionId: "sub-one", capability: "RETAIL_REWARDS", source: "MANUAL_INTERNAL",
-      tier: "REWARDS_STARTER", status: "TRIAL", startsAt: START, expiresAt: END, revokedAt: null, limitsVersion: 1, ...LIMITS }] : [],
+      tier: "REWARDS_STARTER", status: "TRIAL", startsAt: START, expiresAt: END, revokedAt: null, limitsVersion: 1, updatedAt: START, ...LIMITS }] : [],
     rewardPublicShopProfile: [], rewardOffer: [], rewardOfferDiscovery: [], rewardShopper: [], rewardShopperCredential: [],
     rewardShopperMembership: [], rewardShopperInvitation: [], rewardPilotShopperEnrollment: [], rewardPilotAuditEvent: [],
-    rewardShopperSession: [], rewardClaim: [], rewardRedemption: [], auditLog: []
+    rewardShopperSession: [], rewardClaim: [], rewardRedemption: [], rewardStaffGrant: [], auditLog: []
   };
   const env = { ...ENV }, calls = []; let serial = 0, beforeTransaction, afterWrite, failAudit = false, current = NOW;
   function hydrated(model, row, data) {
@@ -88,11 +92,14 @@ function fixture({ prepared = true } = {}) {
       async create(args) {
         calls.push({ model, method: "create" });
         if (model === "rewardPilotAuditEvent" && failAudit) throw new Error("Synthetic audit failure");
-        const row = { id: `${model}-${++serial}`, revokedAt: null, acceptedAt: null, createdAt: current, ...copy(args.data) };
+        const row = { id: `${model}-${++serial}`, revokedAt: null, acceptedAt: null, createdAt: current,
+          ...(["rewardProgram", "rewardEntitlementGrant", "rewardShopper", "rewardShopperMembership"].includes(model) ? { updatedAt: current } : {}), ...copy(args.data) };
         data[model].push(row); afterWrite?.(data, model); return project(hydrated(model, row, data), args.select);
       },
       async update(args) { calls.push({ model, method: "update" }); const row = data[model].find(r => matches(r, args.where));
-        if (!row) throw new Error("Missing synthetic row"); Object.assign(row, copy(args.data)); afterWrite?.(data, model); return project(row, args.select); },
+        if (!row) throw new Error("Missing synthetic row"); Object.assign(row, copy(args.data));
+        if (Object.hasOwn(row, "updatedAt")) row.updatedAt = current;
+        afterWrite?.(data, model); return project(row, args.select); },
       async upsert(args) { const row = data[model].find(r => matches(r, args.where));
         if (row) return result[model].update({ where: args.where, data: args.update, select: args.select });
         return result[model].create({ data: args.create, select: args.select }); }
@@ -125,7 +132,7 @@ function fixture({ prepared = true } = {}) {
     set afterWrite(value) { afterWrite = value; }, set failAudit(value) { failAudit = value; }, set now(value) { current = value; },
     addPreparedShopper() {
       env.RUVANAS_RETAIL_REWARDS_SHOPPER_ENABLED = "true"; env.RUVANAS_RETAIL_REWARDS_SHOPPER_AUTH_ENABLED = "true";
-      source.rewardShopper.push({ id: PREPARED_INVITE.shopperId, displayName: "Prepared synthetic shopper", status: "DISABLED", authVersion: 1 });
+      source.rewardShopper.push({ id: PREPARED_INVITE.shopperId, displayName: "Prepared synthetic shopper", status: "DISABLED", authVersion: 1, updatedAt: START });
       source.rewardShopperSetup.push({ shopperId: PREPARED_INVITE.shopperId, organisationId: "org-one", emailCanonical: PREPARED_INVITE.email,
         createdByUserId: "original-super-admin", createdAt: START });
       source.auditLog.push({ organisationId: "org-one", actorUserId: "original-super-admin", action: "DORMANT_SHOPPER_PREPARED",
@@ -484,4 +491,128 @@ test("prepared invitation retains existing pending reissue and revoke workflow w
   assert.equal((await f.service.revoke(request)).ok, true);
   assert.equal(f.data.rewardShopper[0].status, "DISABLED"); assert.equal(f.data.rewardShopperCredential.length, 0);
   assert.equal((await f.service.invitePrepared(PREPARED_INVITE)).code, "INVITATION_UNAVAILABLE");
+});
+
+async function expiredRenewalFixture() {
+  const f = fixture(); f.addPreparedShopper(); Object.assign(f.env, pilotPreviewEnvironment());
+  const expiry = new Date(+NOW + 3600000);
+  f.data.rewardEntitlementGrant[0].expiresAt = expiry;
+  const issued = await f.service.invitePrepared({ ...PREPARED_INVITE, expiresAt: expiry.toISOString() });
+  assert.equal(issued.ok, true, JSON.stringify(issued));
+  assert.equal((await f.service.revoke({ ...RENEWAL_REVIEW, confirm: true })).ok, true);
+  f.now = RENEWAL_NOW;
+  return f;
+}
+async function renewalInput(f) {
+  const review = await f.service.renewalReview(RENEWAL_REVIEW);
+  assert.equal(review.ok, true, JSON.stringify(review));
+  return { ...RENEWAL_REVIEW, expectedState: review.expectedState, expiresAt: RENEWAL_END, requestId: RENEWAL_ID, confirm: true };
+}
+
+test("expired renewal review is read only, typed, private and pins current state", async () => {
+  const f = await expiredRenewalFixture(), before = copy(f.data), writeCount = f.calls.filter(c => ["create", "update"].includes(c.method)).length;
+  const review = await f.service.renewalReview(RENEWAL_REVIEW);
+  assert.equal(review.ok, true, JSON.stringify(review)); assert.match(review.expectedState, /^[a-f0-9]{64}$/);
+  assert.deepEqual(review.grant.limits, LIMITS); assert.equal(review.email, PREPARED_INVITE.email);
+  assert.equal(review.invitation.status, "REVOKED"); assert.equal(review.checkedAt, RENEWAL_NOW.toISOString());
+  assert.deepEqual(f.data, before); assert.equal(f.calls.filter(c => ["create", "update"].includes(c.method)).length, writeCount);
+  const json = JSON.stringify(review);
+  for (const privateField of ["tokenHash", "passwordHash", "SESSION_SECRET", before.rewardShopperInvitation[0].tokenHash]) assert.equal(json.includes(privateField), false);
+});
+
+test("renewal extends same two records once, preserves history, identity, limits and closed invitation", async () => {
+  const f = await expiredRenewalFixture(), input = await renewalInput(f), before = copy(f.data);
+  const result = await f.service.renew(input); assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(result.grantId, before.rewardEntitlementGrant[0].id); assert.equal(result.membershipId, before.rewardShopperMembership[0].id);
+  assert.equal(result.membershipVersion, before.rewardShopperMembership[0].version + 1); assert.equal(result.expiresAt, RENEWAL_END);
+  for (const model of Object.keys(before).filter(k => !["rewardEntitlementGrant", "rewardShopperMembership", "rewardPilotAuditEvent"].includes(k))) assert.deepEqual(f.data[model], before[model], model);
+  for (const model of ["rewardEntitlementGrant", "rewardShopperMembership"]) {
+    assert.equal(f.data[model].length, before[model].length);
+    for (const key of Object.keys(before[model][0]).filter(k => !["expiresAt", "version", "updatedAt"].includes(k))) assert.deepEqual(f.data[model][0][key], before[model][0][key], `${model}.${key}`);
+  }
+  const event = f.data.rewardPilotAuditEvent.at(-1); assert.equal(event.action, "PILOT_ACCESS_RENEWED"); assert.equal(event.targetType, "PROGRAM");
+  assert.equal(event.requestId, input.requestId); assert.equal(event.metadataJson.status, "RENEWED");
+  assert.equal(event.metadataJson.previousGrantExpiry, before.rewardEntitlementGrant[0].expiresAt.toISOString());
+  assert.equal(event.metadataJson.previousMembershipExpiry, before.rewardShopperMembership[0].expiresAt.toISOString());
+  assert.equal(JSON.stringify(event).includes(before.rewardShopperInvitation[0].tokenHash), false);
+  const after = copy(f.data); assert.deepEqual(await f.service.renew(input), result); assert.deepEqual(f.data, after);
+});
+
+test("renewal retries reject altered requests, actor/state drift and reissued invitations", async () => {
+  for (const mutate of [input => ({ ...input, expectedState: "b".repeat(64) }), input => ({ ...input, expiresAt: new Date(Date.parse(input.expiresAt) + 1000).toISOString() }),
+    input => ({ ...input, requestId: "22222222-2222-4222-8222-222222222222" })]) {
+    const f = await expiredRenewalFixture(), input = await renewalInput(f); assert.equal((await f.service.renew(input)).ok, true);
+    const before = copy(f.data); assert.equal((await f.service.renew(mutate(input))).ok, false); assert.deepEqual(f.data, before);
+  }
+  const f = await expiredRenewalFixture(), input = await renewalInput(f); assert.equal((await f.service.renew(input)).ok, true);
+  assert.equal((await f.service.reissue({ ...RENEWAL_REVIEW, confirm: true })).ok, true);
+  const before = copy(f.data); assert.equal((await f.service.renew(input)).ok, false); assert.deepEqual(f.data, before);
+});
+
+test("renewal bounds and strict request reject zero, past, thirty-day, unknown fields and implicit confirmation", async () => {
+  const f = await expiredRenewalFixture(), input = await renewalInput(f);
+  for (const bad of [{ ...input, confirm: false }, { ...input, confirm: undefined }, { ...input, limits: LIMITS }, { ...input, requestId: "not-a-key" },
+    { ...input, expectedState: "A".repeat(64) }, { ...input, expiresAt: RENEWAL_NOW.toISOString() },
+    { ...input, expiresAt: new Date(+RENEWAL_NOW + 7200001).toISOString() }, { ...input, expiresAt: END.toISOString() }]) {
+    const before = copy(f.data); assert.equal((await f.service.renew(bad)).code, "INVALID_REQUEST"); assert.deepEqual(f.data, before);
+  }
+  assert.equal((await f.service.renew({ ...input, expiresAt: new Date(+RENEWAL_NOW + 7200000).toISOString() })).ok, true);
+});
+
+test("renewal requires explicit private-preview, shopper authentication and organisation gates before reads", async () => {
+  for (const [key, value] of [["RUVANAS_RETAIL_REWARDS_ENABLED", "false"], ["RUVANAS_RETAIL_REWARDS_PILOT_PREVIEW_ENABLED", "false"],
+    ["RUVANAS_PRIVATE_PREVIEW_ENABLED", "0"], ["RUVANAS_RETAIL_REWARDS_SHOPPER_AUTH_ENABLED", "false"],
+    ["RUVANAS_RETAIL_REWARDS_PILOT_ORGANISATION_IDS", '["other-org"]']]) {
+    const f = await expiredRenewalFixture(), input = await renewalInput(f), before = copy(f.data); f.env[key] = value;
+    const callCount = f.calls.length;
+    assert.equal((await f.service.renewalReview(RENEWAL_REVIEW)).ok, false); assert.equal((await f.service.renew(input)).ok, false);
+    assert.equal(f.calls.length, callCount); assert.deepEqual(f.data, before);
+  }
+});
+
+test("renewal rejects stale row timestamps, limits, subscription and programme pins without writes", async () => {
+  for (const change of [d => d.rewardEntitlementGrant[0].updatedAt = NOW, d => d.rewardEntitlementGrant[0].activeOffers++,
+    d => d.rewardShopperMembership[0].version++, d => d.rewardProgram[0].updatedAt = NOW,
+    d => d.rewardShopper[0].updatedAt = NOW, d => d.organisation[0].subscription.plan.code = "RETAIL_BUSINESS",
+    d => d.rewardShopperInvitation[0].tokenHash = "f".repeat(64)]) {
+    const f = await expiredRenewalFixture(), input = await renewalInput(f); change(f.data); const before = copy(f.data);
+    assert.equal((await f.service.renew(input)).ok, false, String(change)); assert.deepEqual(f.data, before);
+  }
+});
+
+test("renewal rejects missing, foreign, partially expired or used identities and unexpected tenant access", async () => {
+  for (const change of [d => d.rewardShopperSetup.splice(0), d => d.rewardShopperSetup[0].organisationId = "other-org",
+    d => d.rewardPilotShopperEnrollment[0].organisationId = "other-org", d => d.auditLog.splice(0),
+    d => d.rewardShopper[0].status = "ACTIVE", d => d.rewardShopper[0].authVersion++,
+    d => d.rewardShopperInvitation[0].revokedAt = null, d => d.rewardShopperInvitation[0].acceptedAt = NOW,
+    d => d.rewardShopperMembership[0].expiresAt = END, d => d.rewardEntitlementGrant[0].expiresAt = END,
+    d => d.rewardShopperMembership[0].source = "BILLING", d => d.rewardShopperMembership[0].status = "CANCELLED",
+    d => d.rewardEntitlementGrant[0].status = "ACTIVE", d => d.rewardEntitlementGrant[0].revokedAt = NOW,
+    d => d.organisation[0].subscription.status = "CANCELLED", d => d.organisation[0].subscription.plan.retailRadioEnabled = false,
+    d => d.rewardProgram[0].networkOptIn = false,
+    d => d.user.push({ id: "collision", email: PREPARED_INVITE.email.toUpperCase() }),
+    d => d.rewardShopperCredential.push({ shopperId: "foreign-shopper", emailCanonical: PREPARED_INVITE.email.toUpperCase() }),
+    d => d.rewardShopperInvitation.push({ id: "foreign-invite", shopperId: "foreign-shopper", emailCanonical: PREPARED_INVITE.email.toUpperCase() }),
+    d => d.rewardShopperSetup.push({ shopperId: "foreign-shopper", emailCanonical: PREPARED_INVITE.email.toUpperCase() }),
+    d => d.rewardPilotShopperEnrollment.push({ organisationId: "org-one", shopperId: "foreign-shopper" }),
+    d => d.rewardStaffGrant.push({ organisationId: "org-one" }),
+    d => d.rewardOffer.push({ organisationId: "org-one", state: "PUBLISHED", publishedEndsAt: END }),
+    ...["rewardShopperCredential", "rewardShopperSession", "rewardClaim", "rewardRedemption"].map(model => d => d[model].push({ shopperId: PREPARED_INVITE.shopperId }))]) {
+    const f = await expiredRenewalFixture(), input = await renewalInput(f); change(f.data); const before = copy(f.data);
+    assert.equal((await f.service.renewalReview(RENEWAL_REVIEW)).ok, false, String(change));
+    assert.equal((await f.service.renew(input)).ok, false, String(change)); assert.deepEqual(f.data, before);
+  }
+});
+
+test("renewal transaction rolls back partial writes, failed audit, authority revocation and end-of-window drift", async () => {
+  for (const change of [(d, f) => { d.context.user.role = "OWNER"; }, (d, f) => { f.env.RUVANAS_RETAIL_REWARDS_SHOPPER_AUTH_ENABLED = "false"; },
+    (d, f) => { f.env.RUVANAS_RETAIL_REWARDS_PILOT_PREVIEW_ENABLED = "false"; }, (d, f) => { d.context.session.revokedAt = NOW; },
+    (d, f) => { f.now = new Date(RENEWAL_END); }, (d, f) => { f.failAudit = true; }]) {
+    const f = await expiredRenewalFixture(), input = await renewalInput(f), before = copy(f.data);
+    f.afterWrite = (data, model) => { if (model === "rewardEntitlementGrant") change(data, f); };
+    assert.equal((await f.service.renew(input)).ok, false, String(change)); assert.deepEqual(f.data, before);
+  }
+  const f = await expiredRenewalFixture(), input = await renewalInput(f), before = copy(f.data);
+  f.afterWrite = (data, model) => { if (model === "rewardPilotAuditEvent") f.env.RUVANAS_RETAIL_REWARDS_SHOPPER_AUTH_ENABLED = "false"; };
+  assert.equal((await f.service.renew(input)).ok, false); assert.deepEqual(f.data, before);
 });
