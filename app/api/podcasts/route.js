@@ -27,8 +27,8 @@ const editorFields = {
   explicit: z.boolean().default(false),
   seasonNumber: z.number().int().min(1).max(999).optional().nullable(),
   episodeNumber: z.number().int().min(1).max(99999).optional().nullable(),
-  transcriptSegments: z.array(z.record(z.unknown())).max(500).default([]),
-  chapters: z.array(z.record(z.unknown())).max(100).default([]),
+  transcriptSegments: z.array(z.record(z.string(), z.unknown())).max(500).default([]),
+  chapters: z.array(z.record(z.string(), z.unknown())).max(100).default([]),
   submitTranscript: z.boolean().default(false)
 };
 

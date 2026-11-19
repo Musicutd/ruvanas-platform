@@ -7,8 +7,8 @@ import { assertStudioMultitrackWriteAllowed } from "@/lib/multitrack-studio.mjs"
 
 export const dynamic = "force-dynamic";
 const schema = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("SAVE"), state: z.record(z.unknown()), reason: z.string().trim().max(120).optional() }),
-  z.object({ action: z.literal("QUEUE_RENDER"), state: z.record(z.unknown()), preset: z.enum(["SCHOOL_RADIO_MP3", "SPEECH_MP3"]) })
+  z.object({ action: z.literal("SAVE"), state: z.record(z.string(), z.unknown()), reason: z.string().trim().max(120).optional() }),
+  z.object({ action: z.literal("QUEUE_RENDER"), state: z.record(z.string(), z.unknown()), preset: z.enum(["SCHOOL_RADIO_MP3", "SPEECH_MP3"]) })
 ]);
 async function load(projectId, access) {
   if (projectId !== access.session.projectId || access.session.project.type !== "MULTITRACK") return null;

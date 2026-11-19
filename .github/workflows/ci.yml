@@ -119,6 +119,303 @@ jobs:
         if: always()
         run: test ! -f /tmp/ruvanas-next.pid || kill $(cat /tmp/ruvanas-next.pid) || true
 
+  rewards-database:
+    # Isolated from the shared validation database. Foundation/reset cases roll
+    # back; offer concurrency cases retain synthetic history until job teardown.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: rewards_ci
+          POSTGRES_PASSWORD: rewards_ci
+          POSTGRES_DB: ruvanas_rewards_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U rewards_ci -d ruvanas_rewards_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://rewards_ci:rewards_ci@127.0.0.1:5432/ruvanas_rewards_ci
+      RUVANAS_REWARDS_DATABASE_URL: postgresql://rewards_ci:rewards_ci@127.0.0.1:5432/ruvanas_rewards_ci
+      RUN_DATABASE_TESTS: "1"
+      RUVANAS_REWARDS_CI_TEST: "1"
+      RUVANAS_RETAIL_REWARDS_ENABLED: "false"
+      RUVANAS_RETAIL_REWARDS_PUBLIC_CLAIMS_ENABLED: "false"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+      - name: Generate Prisma client
+        run: npx prisma generate
+      - name: Replay database migrations on dedicated PostgreSQL 16
+        run: npx prisma migrate deploy
+      - name: Verify migration history is clean
+        run: npx prisma migrate status
+      - name: Verify Rewards constraints, immutable evidence and atomic reset
+        run: node --test --test-concurrency=1 tests/retail-rewards-database.test.mjs
+      - name: Verify separate shopper identity, discovery and business-reset isolation
+        # Every shopper fixture rolls back before the offer suite retains its
+        # immutable synthetic concurrency evidence in this disposable database.
+        run: node --test --test-concurrency=1 tests/retail-rewards-shopper-database.test.mjs
+      - name: Verify private shopper invitations, login and concurrent revocation
+        # The authentication suite removes only its own mutable shopper fixtures.
+        # Run before immutable offer concurrency evidence is retained below.
+        run: node --test --test-concurrency=1 tests/retail-rewards-shopper-auth-database.test.mjs
+      - name: Verify disabled shopper setup and account isolation
+        # Uses synthetic records and removes only its own mutable fixtures.
+        run: node --test --test-concurrency=1 tests/dormant-shopper-database.test.mjs
+      - name: Verify Rewards offers and concurrent publication on the disposable database
+        # Run after the zero-data foundation suite. These tests retain synthetic
+        # immutable offer/audit history until the isolated CI service is removed.
+        run: node --test --test-concurrency=1 tests/retail-rewards-offer-database.test.mjs
+      - name: Verify prepared shopper invitations and Rewards-only shop activation
+        # Synthetic history remains only in this disposable PostgreSQL service.
+        run: node --test --test-concurrency=1 tests/retail-rewards-pilot-fixes-database.test.mjs
+
+  rewards-checkout-database:
+    # Isolated checkout PostgreSQL: immutable claim and receipt fixtures remain
+    # until this dedicated job container is removed.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: rewards_ci
+          POSTGRES_PASSWORD: rewards_ci
+          POSTGRES_DB: ruvanas_rewards_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U rewards_ci -d ruvanas_rewards_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://rewards_ci:rewards_ci@127.0.0.1:5432/ruvanas_rewards_ci
+      RUVANAS_REWARDS_DATABASE_URL: postgresql://rewards_ci:rewards_ci@127.0.0.1:5432/ruvanas_rewards_ci
+      RUN_DATABASE_TESTS: "1"
+      RUVANAS_REWARDS_CI_TEST: "1"
+      RUVANAS_RETAIL_REWARDS_ENABLED: "false"
+      RUVANAS_RETAIL_REWARDS_PUBLIC_CLAIMS_ENABLED: "false"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+      - name: Generate Prisma client
+        run: npx prisma generate
+      - name: Replay database migrations on dedicated PostgreSQL 16
+        run: npx prisma migrate deploy
+      - name: Verify migration history is clean
+        run: npx prisma migrate status
+      - name: Verify immutable coupon claims, exact-once redemption and concurrency
+        run: node --test --test-concurrency=1 tests/retail-rewards-checkout-database.test.mjs
+
+  rewards-wallet-database:
+    # The wallet suite requires an empty database. Keep its immutable synthetic
+    # claims separate from checkout/reversal history until job teardown.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: rewards_ci
+          POSTGRES_PASSWORD: rewards_ci
+          POSTGRES_DB: ruvanas_rewards_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U rewards_ci -d ruvanas_rewards_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://rewards_ci:rewards_ci@127.0.0.1:5432/ruvanas_rewards_ci
+      RUVANAS_REWARDS_DATABASE_URL: postgresql://rewards_ci:rewards_ci@127.0.0.1:5432/ruvanas_rewards_ci
+      RUN_DATABASE_TESTS: "1"
+      RUVANAS_REWARDS_CI_TEST: "1"
+      RUVANAS_RETAIL_REWARDS_ENABLED: "false"
+      RUVANAS_RETAIL_REWARDS_PUBLIC_CLAIMS_ENABLED: "false"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+      - name: Generate Prisma client
+        run: npx prisma generate
+      - name: Replay database migrations on dedicated PostgreSQL 16
+        run: npx prisma migrate deploy
+      - name: Verify migration history is clean
+        run: npx prisma migrate status
+      - name: Verify personal voucher uses, immutable terms and tenant isolation
+        run: node --test --test-concurrency=1 tests/retail-rewards-wallet-usage-database.test.mjs
+
+  rewards-pilot-renewal-database:
+    # Exact-identity renewal has its own disposable PostgreSQL database. Tests
+    # retain immutable synthetic audit history until service teardown.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: rewards_ci
+          POSTGRES_PASSWORD: rewards_ci
+          POSTGRES_DB: ruvanas_rewards_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U rewards_ci -d ruvanas_rewards_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://rewards_ci:rewards_ci@127.0.0.1:5432/ruvanas_rewards_ci
+      RUVANAS_REWARDS_DATABASE_URL: postgresql://rewards_ci:rewards_ci@127.0.0.1:5432/ruvanas_rewards_ci
+      RUN_DATABASE_TESTS: "1"
+      RUVANAS_REWARDS_CI_TEST: "1"
+      RUVANAS_RETAIL_REWARDS_ENABLED: "false"
+      RUVANAS_RETAIL_REWARDS_PUBLIC_CLAIMS_ENABLED: "false"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+      - name: Generate Prisma client
+        run: npx prisma generate
+      - name: Replay database migrations on dedicated PostgreSQL 16
+        run: npx prisma migrate deploy
+      - name: Verify migration history is clean
+        run: npx prisma migrate status
+      - name: Verify expired access renewal, isolation and concurrent retries
+        run: node --test --test-concurrency=1 tests/retail-rewards-pilot-renewal-database.test.mjs
+
+  rewards-reversal-database:
+    # Isolated reversal PostgreSQL: immutable receipt and correction fixtures remain
+    # until this dedicated job container is removed.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: rewards_ci
+          POSTGRES_PASSWORD: rewards_ci
+          POSTGRES_DB: ruvanas_rewards_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U rewards_ci -d ruvanas_rewards_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://rewards_ci:rewards_ci@127.0.0.1:5432/ruvanas_rewards_ci
+      RUVANAS_REWARDS_DATABASE_URL: postgresql://rewards_ci:rewards_ci@127.0.0.1:5432/ruvanas_rewards_ci
+      RUN_DATABASE_TESTS: "1"
+      RUVANAS_REWARDS_CI_TEST: "1"
+      RUVANAS_RETAIL_REWARDS_ENABLED: "false"
+      RUVANAS_RETAIL_REWARDS_PUBLIC_CLAIMS_ENABLED: "false"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+      - name: Generate Prisma client
+        run: npx prisma generate
+      - name: Replay database migrations on dedicated PostgreSQL 16
+        run: npx prisma migrate deploy
+      - name: Verify migration history is clean
+        run: npx prisma migrate status
+      - name: Verify immutable corrections, scoped authority and net/gross quotas
+        run: node --test --test-concurrency=1 tests/retail-rewards-reversal-database.test.mjs
+
+  rewards-restore-database:
+    # The regression owns baseline migration replay, populated upgrade and a
+    # standard logical restore in this disposable service. No website or worker
+    # is started; immutable synthetic history is removed with the job container.
+    # Pin the runner whose distribution supplies postgresql-client-16.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: rewards_ci
+          POSTGRES_PASSWORD: rewards_ci
+          POSTGRES_DB: ruvanas_rewards_restore_source
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U rewards_ci -d ruvanas_rewards_restore_source"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://rewards_ci:rewards_ci@127.0.0.1:5432/ruvanas_rewards_restore_source
+      RUVANAS_REWARDS_DATABASE_URL: postgresql://rewards_ci:rewards_ci@127.0.0.1:5432/ruvanas_rewards_restore_source
+      RUN_DATABASE_TESTS: "1"
+      RUVANAS_REWARDS_CI_TEST: "1"
+      RUVANAS_RETAIL_REWARDS_ENABLED: "false"
+      RUVANAS_RETAIL_REWARDS_PUBLIC_CLAIMS_ENABLED: "false"
+      PG_BINDIR: /usr/lib/postgresql/16/bin
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install PostgreSQL 16 backup tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client-16
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+      - name: Generate Prisma client
+        run: npx prisma generate
+      - name: Verify populated Rewards upgrade and standard backup restore
+        run: node --test --test-concurrency=1 tests/retail-rewards-restore-database.test.mjs
+      - name: Show sanitized restore evidence
+        if: always()
+        # Only the summary and redacted tool logs are printed. Never publish the
+        # temporary private directory, database archive or connection files.
+        run: |
+          for name in restore-result.json baseline-migrate.log candidate-migrate.log pg-dump.log createdb.log pg-restore.log; do
+            file="$RUNNER_TEMP/ruvanas-rewards-restore/$name"
+            if test -f "$file"; then
+              printf '\n%s\n' "$name"
+              cat "$file"
+            fi
+          done
+
   encoder-image:
     runs-on: ubuntu-latest
     timeout-minutes: 20

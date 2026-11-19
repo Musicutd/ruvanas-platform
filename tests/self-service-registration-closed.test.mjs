@@ -39,7 +39,8 @@ test("paid and trial self-service registration is disabled until payments are re
   assert.match(page, /\/register\/free-access/);
   assert.match(homepage, /priceCtaDisabled/);
   assert.match(homepage, /Registration paused/);
-  assert.match(homepage, /Create account with code/);
+  assert.match(homepage, /href="\/login">Log in with issued code/);
+  assert.doesNotMatch(homepage, /\/register(?:\/free-access|\?platform=)/);
   assert.doesNotMatch(login, /href="\/register"/);
   assert.match(login, /href="\/register\/free-access"/);
   assert.match(publicGuide, /href="\/register\/free-access"/);

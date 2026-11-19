@@ -88,6 +88,20 @@ test("player instance IDs are strict and media listener tokens are signed", () =
   assert.equal(appendPlayerListenerToken("/api/player/media/track-1", "signed.token"), "/api/player/media/track-1?listener=signed.token");
 });
 
+test("approved Retail devices use their verified listener cap and never an undefined allowance", async () => {
+  const database = memoryDatabase(), instant = new Date("2026-11-01T12:00:00Z");
+  const first = { ...player(100, "retail-one"), subscriberTestStream: { kind: "RETAIL_SHARED_STREAM" }, subscriberTestListenerLimit: 1 };
+  const second = { ...first, id: "retail-two" };
+  const held = await claimPlayerListenerLease(database, { player: first, instanceId: firstInstance, instant, secret });
+  assert.equal(held.ok, true); assert.equal(held.limit, 1);
+  const denied = await claimPlayerListenerLease(database, { player: second, instanceId: secondInstance, instant, secret });
+  assert.equal(denied.code, "PLAYER_STREAM_LIMIT_REACHED"); assert.equal(denied.limit, 1);
+  for (const limit of [undefined, null, NaN, -1, 0, 1.5]) {
+    const result = await claimPlayerListenerLease({}, { player: { ...first, subscriberTestListenerLimit: limit }, instanceId: firstInstance, instant, secret });
+    assert.equal(result.code, "PLAYER_SERVICE_UNAVAILABLE");
+  }
+});
+
 test("an enrolled player renews its holder and refuses a copied session on another browser", async () => {
   const database = memoryDatabase();
   const currentPlayer = player(1);

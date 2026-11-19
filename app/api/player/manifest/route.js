@@ -4,6 +4,7 @@ import { resolvePlayerProgramming } from "@/lib/player-programming";
 import { buildPlayerManifest } from "@/lib/player-manifest.mjs";
 import { prisma } from "@/lib/prisma";
 import { claimPlayerListenerLease, readPlayerInstanceId } from "@/lib/player-listener-lease.mjs";
+import { retailTestStreamManifest } from "@/lib/retail-test-player-access.mjs";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -25,6 +26,9 @@ export async function GET(request) {
       });
     }
     const instant = new Date();
+    if (player.subscriberTestStream) return NextResponse.json(retailTestStreamManifest(player, instant), {
+      headers: { "Cache-Control": "private, no-store" }
+    });
     const { resolution, playoutDecision, campaignPlayout, schoolPlayout, correctionsPlayout } = await resolvePlayerProgramming(player, instant);
     const manifest = buildPlayerManifest({
       player,

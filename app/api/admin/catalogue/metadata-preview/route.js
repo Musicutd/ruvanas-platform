@@ -19,7 +19,7 @@ export async function POST(request) {
     const audioFileName = String(formData.get("audioFileName") || "");
     if (!(spreadsheet instanceof File) || !spreadsheet.size) return NextResponse.json({ error: "Choose a CSV or XLSX metadata spreadsheet." }, { status: 400 });
     if (spreadsheet.size > MAX_CATALOGUE_MANIFEST_SIZE_BYTES) return NextResponse.json({ error: "The metadata spreadsheet exceeds 10 MB." }, { status: 413 });
-    const genres = await prisma.mediaGenre.findMany({ where: { active: true, providerReviewStatus: "APPROVED" }, select: { id: true, name: true, slug: true } });
+    const genres = await prisma.mediaGenre.findMany({ select: { id: true, name: true, slug: true, normalizedKey: true, active: true, providerReviewStatus: true } });
     const rows = await parseCatalogueManifest({
       buffer: Buffer.from(await spreadsheet.arrayBuffer()),
       fileName: spreadsheet.name,

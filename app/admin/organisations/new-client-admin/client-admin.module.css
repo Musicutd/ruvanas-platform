@@ -1,0 +1,21 @@
+.page { max-width: 760px; margin: 0 auto; padding: 36px 20px 64px; color: #172033; }
+.page h1 { margin: 28px 0 12px; font-size: clamp(1.6rem, 3vw, 2rem); }
+.page p { line-height: 1.6; }
+.page a { color: #765000; font-weight: 700; }
+.panel { margin-top: 24px; padding: 24px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 12px; }
+.fields { display: grid; gap: 18px; margin: 0; padding: 0; border: 0; min-width: 0; }
+.fields legend { font-weight: 800; margin-bottom: 20px; font-size: 1.15rem; }
+.fields label { display: grid; gap: 8px; font-weight: 700; }
+.fields input:not([type=checkbox]), .fields select { box-sizing: border-box; width: 100%; min-width: 0; padding: 12px; border: 1px solid #94a3b8; border-radius: 7px; font: inherit; color: #172033; background: #fff; }
+.fields input:focus-visible, .fields select:focus-visible, .fields button:focus-visible { outline: 3px solid #2563eb; outline-offset: 3px; }
+.fields .confirm { display: flex; align-items: flex-start; gap: 10px; line-height: 1.5; }
+.confirm input { margin-top: 5px; }
+.fields button { justify-self: start; padding: 13px 18px; border: 0; border-radius: 7px; background: #f4b942; color: #172033; font: inherit; font-weight: 800; cursor: pointer; }
+.fields:disabled { opacity: .65; }
+.help { margin: 0; font-size: .875rem; color: #475569; }
+.panel > .help { margin-top: 20px; }
+.error { border-left: 4px solid #b91c1c; padding: 10px 14px; background: #fef2f2; color: #991b1b; }
+.receipt { display: grid; grid-template-columns: auto 1fr; gap: 10px 16px; }
+.receipt dt { font-weight: 700; }
+.receipt dd { margin: 0; overflow-wrap: anywhere; }
+@media (max-width: 520px) { .panel { padding: 18px; } .receipt { grid-template-columns: 1fr; } }
