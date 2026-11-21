@@ -271,7 +271,8 @@ jobs:
 
   rewards-pilot-renewal-database:
     # Exact-identity renewal has its own disposable PostgreSQL database. Tests
-    # retain immutable synthetic audit history until service teardown.
+    # retain immutable synthetic audit history until service teardown. Preparation
+    # then proves read-only inspection preserves all rows, including that history.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
@@ -312,6 +313,8 @@ jobs:
         run: npx prisma migrate status
       - name: Verify expired access renewal, isolation and concurrent retries
         run: node --test --test-concurrency=1 tests/retail-rewards-pilot-renewal-database.test.mjs
+      - name: Verify closed Rewards preparation and unchanged tenant records
+        run: node --test --test-concurrency=1 tests/retail-rewards-pilot-preparation-database.test.mjs
 
   rewards-reversal-database:
     # Isolated reversal PostgreSQL: immutable receipt and correction fixtures remain

@@ -26,6 +26,40 @@ const BASE_ENV = {
   RUVANAS_RETAIL_REWARDS_PILOT_PREVIEW_ENABLED: undefined
 };
 
+test("preparation uses ordinary owner routing while Rewards pilot mutation routes stay closed", async () => {
+  await withEnv({ RUVANAS_RETAIL_REWARDS_ENABLED: "false", RUVANAS_RETAIL_REWARDS_PILOT_ADMIN_ENABLED: "false",
+    RUVANAS_PRIVATE_PREVIEW_ADMIN_EMAIL: "owner@example.invalid", RUVANAS_PRIVATE_PREVIEW_ALLOWED_EMAILS: "owner@example.invalid" }, async () => {
+    const owner = middlewareHarness({ session: pilotPreviewOwnerContext().session });
+    for (const route of ["/admin/retail-rewards/preparation?organisationId=org-one", "/api/admin/retail-rewards/preparation?organisationId=org-one"]) {
+      assert.equal(pilotPreviewRoute(new URL(route, "https://www.ruvanas.com").pathname, "GET", false), null);
+      const response = await owner.run(request(route));
+      assert.equal(response.headers.get("x-test-action"), "next", route);
+    }
+    for (const [route, method] of [["/admin/retail-rewards/pilot", "GET"], ["/api/admin/retail-rewards/pilot/renew", "POST"],
+      ["/api/admin/retail-rewards/pilot/invite", "POST"]]) {
+      assert.equal((await owner.run(request(route, { method, headers: { origin: "https://www.ruvanas.com" } }))).status, 404, route);
+    }
+  });
+});
+
+test("preparation routes do not admit anonymous or subscriber sessions through the closed pilot bridge", async () => {
+  await withEnv({ RUVANAS_RETAIL_REWARDS_ENABLED: "false", RUVANAS_RETAIL_REWARDS_PILOT_ADMIN_ENABLED: "false" }, async () => {
+    const subscriber = pilotPreviewOwnerContext().session;
+    subscriber.user.role = "OWNER";
+    subscriber.user.privatePreviewAccess = { userId: subscriber.userId, enabled: true, passwordEnabled: true,
+      organisationId: "org-one", expiresAt: new Date(Date.now() + 3600000), pillars: ["RETAIL"] };
+    subscriber.activeOrganisationId = "org-one";
+    for (const session of [null, subscriber]) {
+      const harness = middlewareHarness({ session });
+      for (const path of ["/admin/retail-rewards/preparation?organisationId=org-one", "/api/admin/retail-rewards/preparation?organisationId=org-one"]) {
+        const response = await harness.run(request(path));
+        assert.notEqual(response.headers.get("x-test-action"), "next", path);
+        assert.ok([307, 401, 403].includes(response.status), path);
+      }
+    }
+  });
+});
+
 class TestResponse extends Response {
   static next() { return new TestResponse(null, { headers: { "x-test-action": "next" } }); }
   static rewrite(url) { return new TestResponse(null, { headers: { "x-test-action": "rewrite", "x-test-rewrite": String(url) } }); }
