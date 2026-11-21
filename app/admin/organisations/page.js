@@ -11,6 +11,7 @@ import PageHeader from "@/app/components/PageHeader";
 import EmptyState from "@/app/components/EmptyState";
 import { interfaceMessages } from "@/lib/interface-guidance.mjs";
 import { resolveEntitlements } from "@/lib/entitlements.mjs";
+import { pilotPreparationIsClosed } from "@/lib/retail-rewards/pilot-preparation-context.mjs";
 import {
   buildCorrectionsProductOnboarding,
   buildFaithProductOnboarding,
@@ -156,6 +157,7 @@ function ProductAccessSummary({ subscription }) {
 export default async function AdminOrganisationsPage() {
   const adminUser = await getAdminUser();
   const canManageEntitlements = adminUser?.role === "SUPER_ADMIN";
+  const canReviewPreparation = canManageEntitlements && pilotPreparationIsClosed(process.env);
   const now = new Date();
   const organisations = await prisma.organisation.findMany({
     include: {
@@ -172,6 +174,7 @@ export default async function AdminOrganisationsPage() {
       musicSchedules: { where: { status: "PUBLISHED" }, select: { id: true } },
       playerListenerLeases: { where: { revokedAt: null, expiresAt: { gt: now } }, select: { id: true } },
       schoolProfile: { select: { id: true } },
+      ...(canReviewPreparation ? { rewardShopperSetups: { take: 1, select: { organisationId: true } } } : {}),
       correctionsProfile: { select: { policyConfiguredAt: true } },
       schoolSafeguardingReadiness: { select: { status: true } },
       staffSupervisors: { where: { active: true }, select: { id: true } },
@@ -381,6 +384,12 @@ export default async function AdminOrganisationsPage() {
                     </td>
 
                     <td style={styles.tableCellFeature}>
+                      {canReviewPreparation && organisation.subscription?.status === "TRIAL" &&
+                        organisation.subscription.plan?.productFamily === "RETAIL" && organisation.rewardShopperSetups?.length > 0 ? (
+                        <p><Link href={`/admin/retail-rewards/preparation?organisationId=${encodeURIComponent(organisation.id)}`}>
+                          Rewards pilot preparation
+                        </Link></p>
+                      ) : null}
                       {canManageEntitlements && resolveEntitlements(organisation.subscription).retailRadioEnabled ? (
                         <p><Link href={`/admin/organisations/${encodeURIComponent(organisation.id)}/retail-stream`}>
                           Retail connection draft
