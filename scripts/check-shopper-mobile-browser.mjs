@@ -40,7 +40,9 @@ async function check(name, run) { await run(); tests.push(name); console.log(`PA
 async function fresh() { await page.goto(base.href); await page.getByRole("heading", { name: "Where are you shopping?", exact: true }).waitFor(); }
 async function chooseSliema() {
   await page.getByRole("radio", { name: /Sliema/ }).check();
-  await page.getByRole("button", { name: "Find shops", exact: true }).click();
+  await page.getByRole("button", { name: "Choose category", exact: true }).click();
+  await page.getByRole("heading", { name: "What are you looking for?", exact: true }).waitFor();
+  await page.getByRole("button", { name: "All categories", exact: true }).click();
   await page.getByRole("heading", { name: "Choose a shop", exact: true }).waitFor();
   await page.getByRole("button", { name: "View vouchers from Urban Edit", exact: true }).waitFor();
 }
@@ -82,16 +84,29 @@ try {
     await fresh(); await overflow();
     assert.equal(await page.getByText("LOCAL PREVIEW", { exact: true }).isVisible(), true);
     await page.getByRole("radio", { name: /Sliema/ }).check();
-    assert.equal(await page.getByRole("button", { name: "Find shops", exact: true }).evaluate(node => {
+    assert.equal(await page.getByRole("button", { name: "Choose category", exact: true }).evaluate(node => {
       const button = node.getBoundingClientRect(), nav = document.querySelector('nav[aria-label="Shopper navigation"]').getBoundingClientRect();
       return button.top >= 0 && button.bottom <= nav.top;
-    }), true, "Find shops must be visible above the bottom navigation without scrolling");
+    }), true, "Choose category must be visible above the bottom navigation without scrolling");
     await screenshot("01-location-mobile");
     assert.equal(await countClaims(), 0);
     await chooseSliema();
     assert.equal(await page.getByRole("button", { name: "View vouchers from Urban Edit", exact: true }).count(), 1);
     assert.equal(await page.getByRole("button", { name: /City Style/ }).count(), 0);
     await overflow(); await screenshot("02-shops-mobile");
+  });
+  await check("Category choice comes before shops and filters the selected town", async () => {
+    await page.getByRole("button", { name: "Categories", exact: true }).click();
+    await headingHasFocus("What are you looking for?");
+    assert.equal(await page.getByRole("button", { name: "View vouchers from Urban Edit", exact: true }).count(), 0);
+    assert.equal(await page.getByRole("button", { name: "Choose Electronics", exact: true }).count(), 1);
+    await overflow(); await screenshot("02-category-mobile");
+    await page.getByRole("button", { name: "Choose Household", exact: true }).click();
+    await page.getByRole("button", { name: "View vouchers from Home Corner", exact: true }).waitFor();
+    assert.equal(await page.getByRole("button", { name: "View vouchers from Urban Edit", exact: true }).count(), 0);
+    await page.getByRole("button", { name: "Categories", exact: true }).click();
+    await page.getByRole("button", { name: "Choose Fashion", exact: true }).click();
+    await page.getByRole("button", { name: "View vouchers from Urban Edit", exact: true }).waitFor();
   });
   await check("Credit-card vouchers show personal uses and do not issue claims on browse", async () => {
     await chooseUrban(); await overflow();
@@ -172,7 +187,12 @@ try {
       await page.setViewportSize(viewport); await fresh();
       await page.getByRole("radio", { name: /Sliema/ }).check();
       await keyboardControlsVisible("locations", viewport.width);
-      await chooseSliema(); await headingHasFocus("Choose a shop");
+      await page.getByRole("button", { name: "Choose category", exact: true }).click();
+      await headingHasFocus("What are you looking for?"); await overflow();
+      await keyboardControlsVisible("categories", viewport.width);
+      await page.getByRole("button", { name: "All categories", exact: true }).click();
+      await page.getByRole("button", { name: "View vouchers from Urban Edit", exact: true }).waitFor();
+      await headingHasFocus("Choose a shop");
       await keyboardControlsVisible("shops", viewport.width);
       await chooseUrban(); await headingHasFocus("Urban Edit");
       await keyboardControlsVisible("vouchers", viewport.width);

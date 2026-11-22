@@ -247,6 +247,53 @@ test("location shopper admission stays closed when pilot or Rewards is disabled 
   }
 });
 
+test("actual middleware admits connected wallet and savings routes only for a current shopper", async () => {
+  await withEnv(SHOPPER_PILOT_ENV, async () => {
+    const fixture = middlewareShopperFixture(), harness = middlewareHarness({ shopperDb: fixture.db, lookupThrows: true });
+    const routes = [["/api/rewards/saved-wallet?page=2", "GET"], ["/api/rewards/saved-wallet", "HEAD"],
+      ["/api/rewards/saved-wallet", "POST"], ["/api/rewards/saved-wallet/status", "POST"],
+      ["/api/rewards/saved-wallet/saved-own", "DELETE"], ["/api/rewards/savings", "GET"], ["/rewards/savings", "GET"]];
+    for (const [path, method] of routes) {
+      const response = await harness.run(request(path, { method, cookie: false, shopperCookie: true, headers: { origin: "https://www.ruvanas.com" } }));
+      assert.equal(response.headers.get("x-test-action"), "next", `${method} ${path}`);
+      assert.match(response.headers.get("cache-control"), /private, no-store/);
+    }
+    assert.equal(harness.lookups, 0, "These routes cannot borrow a business or administrator session");
+    for (const [path, method] of routes.filter(([path]) => path.startsWith("/api/"))) {
+      const missing = await harness.run(request(path, { method, cookie: false, headers: { origin: "https://www.ruvanas.com" } }));
+      assert.equal(missing.status, 401); assert.equal(missing.headers.get("x-test-action"), null);
+      fixture.row.shopper.membership.status = "REVOKED";
+      const revoked = await harness.run(request(path, { method, cookie: false, shopperCookie: true, headers: { origin: "https://www.ruvanas.com" } }));
+      assert.equal(revoked.status, 401); assert.equal(revoked.headers.get("x-test-action"), null);
+      fixture.row.shopper.membership.status = "ACTIVE";
+    }
+    assert.equal(harness.lookups, 0);
+  });
+});
+
+test("connected wallet middleware cannot bypass disabled gates, method scope, origin checks or closed registration", async () => {
+  for (const disabled of ["RUVANAS_RETAIL_REWARDS_PILOT_PREVIEW_ENABLED", "RUVANAS_RETAIL_REWARDS_ENABLED", "RUVANAS_RETAIL_REWARDS_SHOPPER_ENABLED"]) {
+    await withEnv({ ...SHOPPER_PILOT_ENV, [disabled]: "false" }, async () => {
+      const fixture = middlewareShopperFixture(), harness = middlewareHarness({ shopperDb: fixture.db, lookupThrows: true });
+      for (const [path, method] of [["/api/rewards/saved-wallet", "GET"], ["/api/rewards/saved-wallet", "POST"], ["/api/rewards/saved-wallet/saved-own", "DELETE"], ["/api/rewards/savings", "GET"]]) {
+        const response = await harness.run(request(path, { method, cookie: false, shopperCookie: true, headers: { origin: "https://www.ruvanas.com" } }));
+        assert.equal(response.headers.get("x-test-action"), null); assert.equal(response.status, 401);
+      }
+      assert.equal(fixture.reads.length, 0);
+      assert.equal((await harness.run(request("/register", { cookie: false, shopperCookie: true }))).status, 404);
+      assert.equal((await harness.run(request("/api/auth/register", { method: "POST", cookie: false, shopperCookie: true }))).status, 403);
+    });
+  }
+  await withEnv(SHOPPER_PILOT_ENV, async () => {
+    const fixture = middlewareShopperFixture(), harness = middlewareHarness({ shopperDb: fixture.db, lookupThrows: true });
+    for (const [path, method, headers] of [["/api/rewards/saved-wallet/status", "DELETE", {}], ["/api/rewards/saved-wallet/status", "GET", {}],
+      ["/api/rewards/saved-wallet", "POST", { "next-action": "unreviewed" }], ["/api/rewards/saved-wallet", "POST", { origin: "https://unapproved.example.test" }]]) {
+      const response = await harness.run(request(path, { method, cookie: false, shopperCookie: true, headers: { origin: "https://www.ruvanas.com", ...headers } }));
+      assert.equal(response.headers.get("x-test-action"), null); assert.ok([401, 403].includes(response.status));
+    }
+  });
+});
+
 test("actual middleware admits the established preview owner only to scoped pilot administration", async () => {
   await withEnv({ ...ADMIN_PILOT_ENV, RUVANAS_RETAIL_REWARDS_SHOPPER_ENABLED: "true" }, async () => {
     const c = pilotPreviewOwnerContext(), harness = middlewareHarness({ session: c.session });
