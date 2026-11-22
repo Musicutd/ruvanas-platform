@@ -126,7 +126,7 @@ export function ClaimOfferAction({ shopSlug, offer, transport = checkoutTranspor
   return <section className={styles.claimAction} aria-label="Get this coupon"><h3>Ready to use your voucher?</h3><p>Get a voucher for these terms, then show its checkout code to the shop.</p><button type="button" className={styles.primary} disabled={busy} onClick={getCoupon}>{busy ? "Getting your coupon…" : error ? "Retry getting coupon" : "Get coupon"}</button><p className={styles.help}>Only staff-confirmed redemption uses your allowance. Getting a voucher does not reserve availability.</p>{error && <p className={styles.error} role="alert">{error}</p>}</section>;
 }
 
-export default function ShopperClaimsClient({ initialData, transport = checkoutTransport, previewOnly = false, onBrowse, onAccount }) {
+export default function ShopperClaimsClient({ initialData, transport = checkoutTransport, previewOnly = false, onBrowse, onSavings, onAccount }) {
   const [data, setData] = useState({ claims: [], page: 1, hasMore: false, ...initialData }), [selected, setSelected] = useState(null), [busy, setBusy] = useState(false), [error, setError] = useState(initialData?.ok === false ? checkoutMessage(initialData.code) : "");
   const active = useRef(null), sequence = useRef(0);
   useEffect(() => () => { sequence.current++; active.current?.abort(); }, []);
@@ -148,6 +148,6 @@ export default function ShopperClaimsClient({ initialData, transport = checkoutT
       {!selected && !error && <div className={styles.pagination}><button type="button" className={styles.secondary} disabled={busy || data.page <= 1} onClick={() => refresh(data.page - 1)}>← Previous</button><span>Page {data.page}</span><button type="button" className={styles.secondary} disabled={busy || !data.hasMore} onClick={() => refresh(data.page + 1)}>Next →</button></div>}
       <footer className={styles.footer}>A checkout code is private and temporary. The shop must validate it before applying the offer. This is coupon confirmation, not payment processing.</footer>
     </div>
-    <ShopperNav active="wallet" onExplore={onBrowse} onAccount={onAccount} />
+    <ShopperNav active="wallet" onExplore={onBrowse} onSavings={onSavings} onAccount={onAccount} />
   </main>;
 }

@@ -13,6 +13,12 @@ const emptyLocations = { locations: [], page: 1, hasMore: false };
 const defaultTransport = (path, options) => fetch(path, options);
 const locality = shop => [shop?.locality, shop?.countryCode].filter(Boolean).join(" · ");
 const locationLabel = location => location?.locality || (location?.countryCode ? `Other locations · ${location.countryCode}` : "Choose location");
+const categoryDescriptions = { FASHION: "Clothes, shoes & accessories", RESTAURANTS: "Meals, cafés & places to eat", HOME: "Home essentials & furnishings", ELECTRONICS: "Technology, gadgets & appliances", BEAUTY: "Beauty & personal care", HEALTH: "Health & wellbeing", LEISURE: "Days out & things to do", GROCERY: "Food & everyday shopping", SERVICES: "Helpful local services", OTHER: "More places to discover" };
+
+function CategoryArt({ category }) {
+  if (category === "ELECTRONICS") return <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><rect x="3" y="3" width="18" height="13" rx="2" /><path d="M8 21h8m-4-5v5" /></svg>;
+  return <ShopperIcon name={({ FASHION: "fashion", RESTAURANTS: "food", HOME: "home" })[category] || "sparkle"} width="28" height="28" />;
+}
 
 function Pagination({ page, hasMore, loading, onPage }) {
   if (page <= 1 && !hasMore) return null;
@@ -36,13 +42,14 @@ export function VoucherCard({ offer, shopName, loading = false, onOpen, detail =
   </article>;
 }
 
-export default function ShopperDiscoveryClient({ initialData, apiBase = "/api/rewards/discovery", transport = defaultTransport, previewOnly = false, enableSignOut = false, onSignOut, enableClaims = false, onOpenWallet }) {
+export default function ShopperDiscoveryClient({ initialData, apiBase = "/api/rewards/discovery", transport = defaultTransport, previewOnly = false, enableSignOut = false, onSignOut, enableClaims = false, onOpenWallet, onOpenSavings }) {
   const [locationsData, setLocationsData] = useState({ ...emptyLocations, ...(initialData?.locations ? initialData : {}) });
   const [shopsData, setShopsData] = useState(emptyShops);
   const [shopData, setShopData] = useState(null), [offerData, setOfferData] = useState(null);
   const [view, setView] = useState("locations"), [chosenLocation, setChosenLocation] = useState(null);
   const [locationSearch, setLocationSearch] = useState(""), [locationQuery, setLocationQuery] = useState("");
   const [search, setSearch] = useState(""), [filters, setFilters] = useState({ category: "", search: "" });
+  const [categoryChosen, setCategoryChosen] = useState(false);
   const [shopCategory, setShopCategory] = useState(""), [shopSlug, setShopSlug] = useState("");
   const [loading, setLoading] = useState(false), [error, setError] = useState(initialData?.ok === false ? initialData.error : "");
   const [announcement, setAnnouncement] = useState("");
@@ -75,10 +82,19 @@ export default function ShopperDiscoveryClient({ initialData, apiBase = "/api/re
   function showLocations(query = "", page = 1) {
     if (signOutPending.current || signedOut) return;
     setView("locations"); setLocationQuery(query); setShopData(null); setOfferData(null);
-    if (page === 1) { setLocationsData(emptyLocations); setChosenLocation(null); }
+    if (page === 1) { setLocationsData(emptyLocations); setChosenLocation(null); setCategoryChosen(false); setFilters({ category: "", search: "" }); setSearch(""); }
     return read(shopperReadPath(apiBase, { locations: true, search: query, page }), body => {
       setLocationsData(previous => ({ ...body, locations: page === 1 ? mergeShopperLocations([], body.locations) : mergeShopperLocations(previous.locations, body.locations) }));
     }, "Locations updated.");
+  }
+  function showCategories() {
+    if (signOutPending.current || signedOut) return;
+    if (!chosenLocation) return showLocations();
+    cancelRead(); setView("categories"); setShopData(null); setOfferData(null); setShopsData(emptyShops); setError(""); setAnnouncement("Choose a category."); focusHeading();
+  }
+  function chooseCategory(category) {
+    if (category !== "" && !Object.hasOwn(labels, category)) return;
+    setCategoryChosen(true); setSearch(""); return browse({ category, search: "" });
   }
   function browse(nextFilters = filters, page = 1) {
     if (signOutPending.current || signedOut) return;
@@ -123,7 +139,7 @@ export default function ShopperDiscoveryClient({ initialData, apiBase = "/api/re
     <div className={styles.container}>
       {signOutError && <p className={styles.error} role="alert">{signOutError}</p>}
       {view === "locations" && <>
-        <section className={styles.hero}><p className={styles.stepLabel}>1 / 3 · YOUR LOCATION</p><h1 tabIndex={-1} ref={screenHeading}>Where are you<br className={styles.mobileBreak} /> shopping?</h1><p>Choose your town.</p></section>
+        <section className={styles.hero}><p className={styles.stepLabel}>1 / 4 · YOUR LOCATION</p><h1 tabIndex={-1} ref={screenHeading}>Where are you<br className={styles.mobileBreak} /> shopping?</h1><p>Choose your town.</p></section>
         <form className={styles.search} onSubmit={event => { event.preventDefault(); showLocations(locationSearch); }}><ShopperIcon name="search" /><label className={styles.screenReaderOnly} htmlFor="location-search">Search location</label><input id="location-search" type="search" maxLength={100} value={locationSearch} onChange={event => setLocationSearch(event.target.value)} placeholder="Search location" autoComplete="off" /><button type="submit" aria-label="Search locations" disabled={loading}><ShopperIcon name="arrow" /></button></form>
         <fieldset className={styles.locationChoices}><legend className={styles.screenReaderOnly}>Choose your town</legend>{locationsData.locations.map(location => {
           const key = shopperLocationKey(location), checked = chosenLocation && shopperLocationKey(chosenLocation) === key;
@@ -132,20 +148,27 @@ export default function ShopperDiscoveryClient({ initialData, apiBase = "/api/re
         {!loading && !error && locationsData.locations.length === 0 && <section className={styles.empty}><h2>No locations on this page</h2><p>Try another town or load more locations below.</p></section>}
         {locationsData.hasMore && <button type="button" className={styles.textButton} disabled={loading} onClick={() => showLocations(locationQuery, locationsData.page + 1)}>More locations</button>}
         <div className={styles.locationDecoration} aria-hidden="true"><span /><span /><ShopperIcon name="pin" width="38" height="38" /></div>
-        <button type="button" className={styles.primary} disabled={!chosenLocation || loading || Boolean(error)} onClick={() => { setSearch(""); browse({ category: "", search: "" }); }}>Find shops <ShopperIcon name="arrow" /></button>
+        <button type="button" className={styles.primary} disabled={!chosenLocation || loading || Boolean(error)} onClick={showCategories}>Choose category <ShopperIcon name="arrow" /></button>
+      </>}
+      {view === "categories" && <>
+        <div className={styles.locationBar}>{locationButton}</div>
+        <section className={styles.hero}><p className={styles.stepLabel}>2 / 4 · CATEGORY</p><h1 tabIndex={-1} ref={screenHeading}>What are you looking for?</h1><p>Choose a category to find shops in {locationLabel(chosenLocation)}.</p></section>
+        <section className={styles.categoryGrid} aria-label="Shop categories">{REWARD_CATEGORIES.map(category => <button type="button" key={category.value} className={styles.categoryCard} aria-label={`Choose ${category.label}`} aria-pressed={categoryChosen && filters.category === category.value} onClick={() => chooseCategory(category.value)}>
+          <span className={`${styles.categoryArt} ${styles[`art${category.value}`] || ""}`}><CategoryArt category={category.value} /></span><span><strong>{category.label}</strong><small>{categoryDescriptions[category.value]}</small></span><ShopperIcon name="arrow" width="16" height="16" />
+        </button>)}</section>
+        <button type="button" className={styles.allCategories} onClick={() => chooseCategory("")}>All categories <ShopperIcon name="arrow" width="17" height="17" /></button>
       </>}
       {view === "shops" && <>
-        <div className={styles.locationBar}>{locationButton}</div>
-        <section className={styles.hero}><p className={styles.stepLabel}>2 / 3 · SHOPS</p><h1 tabIndex={-1} ref={screenHeading}>Choose a shop</h1><p>A little something for your next visit.</p></section>
+        <div className={styles.backRow}><button type="button" className={styles.backButton} onClick={showCategories}><ShopperIcon name="back" width="18" height="18" />Categories</button>{locationButton}</div>
+        <section className={styles.hero}><p className={styles.stepLabel}>3 / 4 · SHOPS</p><h1 tabIndex={-1} ref={screenHeading}>Choose a shop</h1><p>{labels[filters.category] || "All categories"} · {locationLabel(chosenLocation)}</p></section>
         <form className={styles.search} onSubmit={event => { event.preventDefault(); browse({ ...filters, search }); }}><ShopperIcon name="search" /><label className={styles.screenReaderOnly} htmlFor="shopper-search">Search shops</label><input id="shopper-search" type="search" maxLength={100} value={search} onChange={event => setSearch(event.target.value)} placeholder="Search shops" autoComplete="off" /><button type="submit" disabled={loading} aria-label="Search shops"><ShopperIcon name="arrow" /></button></form>
-        <nav className={styles.categories} aria-label="Offer categories"><button type="button" aria-pressed={!filters.category} onClick={() => browse({ ...filters, category: "" })}>All</button>{REWARD_CATEGORIES.map(category => <button type="button" key={category.value} aria-pressed={filters.category === category.value} onClick={() => browse({ ...filters, category: category.value })}>{category.label}</button>)}</nav>
-        {!loading && !error && shopsData.shops.length === 0 && <section className={styles.empty}><h2>No shops to show here yet</h2><p>Try another category or town, or the next page if available.</p><button type="button" className={styles.textButton} onClick={() => { setSearch(""); browse({ category: "", search: "" }); }}>Clear filters</button></section>}
+        {!loading && !error && shopsData.shops.length === 0 && <section className={styles.empty}><h2>No matching shops yet</h2><p>Try another category or town{filters.search ? ", or clear your search" : ""}.</p><button type="button" className={styles.textButton} onClick={showCategories}>Choose another category</button>{filters.search && <button type="button" className={styles.textButton} onClick={() => { setSearch(""); browse({ ...filters, search: "" }); }}>Clear search</button>}</section>}
         <section className={styles.shopGrid} aria-label="Participating shop results">{shopsData.shops.map(shop => <button type="button" className={styles.shopCard} key={shop.slug} disabled={loading} onClick={() => openShop(shop.slug)} aria-label={`View vouchers from ${shop.name}`}><ShopArt shop={shop} /><span className={styles.shopCopy}><strong>{shop.name}</strong><span>{shop.categories.map(category => labels[category] || category).join(" · ")}</span><small>View vouchers</small></span><ShopperIcon name="arrow" /></button>)}</section>
         {!error && <Pagination page={shopsData.page} hasMore={shopsData.hasMore} loading={loading} onPage={page => browse(filters, page)} />}
       </>}
       {(view === "shop" || view === "offer") && <>
         <div className={styles.backRow}><button type="button" className={styles.backButton} onClick={() => view === "offer" ? openShop(shopSlug, shopCategory) : browse(filters)}><ShopperIcon name="back" width="18" height="18" />{view === "offer" ? "Vouchers" : "Shops"}</button>{locationButton}</div>
-        <section className={styles.hero}><p className={styles.stepLabel}>3 / 3 · VOUCHERS</p><h1 tabIndex={-1} ref={screenHeading}>{currentShop?.name || "Shop vouchers"}</h1><p>{view === "offer" ? "Your next little saving." : "Choose your voucher"}</p></section>
+        <section className={styles.hero}><p className={styles.stepLabel}>4 / 4 · VOUCHERS</p><h1 tabIndex={-1} ref={screenHeading}>{currentShop?.name || "Shop vouchers"}</h1><p>{view === "offer" ? "Your next little saving." : "Choose your voucher"}</p></section>
         {view === "shop" && shopData && <>
           {shopCategory && <button type="button" className={styles.textButton} onClick={() => openShop(shopSlug, "")} disabled={loading}>See all vouchers at this shop</button>}
           {shopData.offers.length === 0 && <section className={styles.empty}><h2>No vouchers on this page</h2><p>Try another category or check back soon.</p></section>}
@@ -167,6 +190,6 @@ export default function ShopperDiscoveryClient({ initialData, apiBase = "/api/re
       {error && <section className={styles.error} role="alert"><strong>We couldn’t load this just now</strong><p>{error}</p><button type="button" className={styles.secondary} onClick={() => { setLocationSearch(""); showLocations(); }}>Try locations again</button></section>}
       <p className={styles.screenReaderOnly} role="status">{announcement}</p>
     </div>
-    <ShopperNav active={view === "account" ? "account" : "explore"} onExplore={() => chosenLocation ? browse(filters) : showLocations()} onWallet={openWallet} onAccount={openAccount} enableWallet={enableClaims} />
+      <ShopperNav active={view === "account" ? "account" : "explore"} onExplore={() => chosenLocation ? categoryChosen ? browse(filters) : showCategories() : showLocations()} onWallet={openWallet} onAccount={openAccount} onSavings={onOpenSavings} enableWallet={enableClaims} />
   </main>;
 }

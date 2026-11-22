@@ -8818,6 +8818,7 @@ model RewardOffer {
   claims            RewardClaim[]
   campaignDraft     RewardOfferCampaignDraft?
   campaignRevisions RewardOfferCampaignRevision[]
+  savedVouchers     RewardSavedVoucher[]
 
   @@unique([id, organisationId])
   @@index([organisationId, updatedAt, id])
@@ -8933,6 +8934,7 @@ model RewardShopper {
   setup      RewardShopperSetup?
   pilotEnrollment RewardPilotShopperEnrollment?
   claims     RewardClaim[]
+  savedVouchers RewardSavedVoucher[]
 }
 
 // Inactive account preparation only. This immutable identity/provenance record
@@ -9171,9 +9173,33 @@ model RewardPublicShopProfile {
 
   organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   location Location @relation(fields: [locationId, organisationId], references: [id, organisationId], onDelete: Restrict, onUpdate: Restrict)
+  savedVouchers RewardSavedVoucher[]
 
+  @@unique([id, organisationId])
   @@index([locationId, organisationId])
   @@index([organisationId, status, publicSlug])
+}
+
+// Shopper-owned bookmarks only: saving neither issues a claim nor reserves a
+// use. Stable shop/offer identities prevent a renamed slug adopting a bookmark.
+// The offer and public shop must belong to the same client. Withdrawn offers
+// remain removable without exposing their withdrawn terms to the shopper.
+model RewardSavedVoucher {
+  id             String   @id @default(cuid())
+  shopperId      String
+  shopProfileId  String
+  offerId        String
+  organisationId String
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+
+  shopper     RewardShopper           @relation(fields: [shopperId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  shopProfile RewardPublicShopProfile @relation(fields: [shopProfileId, organisationId], references: [id, organisationId], onDelete: Restrict, onUpdate: Restrict)
+  offer       RewardOffer             @relation(fields: [offerId, organisationId], references: [id, organisationId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([shopperId, shopProfileId, offerId])
+  @@index([shopperId, createdAt, id])
+  @@index([shopProfileId, organisationId])
+  @@index([offerId, organisationId])
 }
 
 // Explicit discovery consent is tied to one immutable published revision.

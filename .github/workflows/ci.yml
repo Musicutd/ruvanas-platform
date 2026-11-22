@@ -268,6 +268,14 @@ jobs:
         run: npx prisma migrate status
       - name: Verify personal voucher uses, immutable terms and tenant isolation
         run: node --test --test-concurrency=1 tests/retail-rewards-wallet-usage-database.test.mjs
+      - name: Verify saved favourites, shopper isolation and concurrent saves
+        # Reuse this exact disposable service. Saved-wallet actions do not
+        # modify the prior suite's issued claims or immutable receipts.
+        run: node --test --test-concurrency=1 tests/retail-rewards-saved-wallet-database.test.mjs
+      - name: Verify personal savings and unchanged wallet history
+        # New synthetic shopper identities isolate the totals; all retained
+        # tables are hashed before and after the read-only savings checks.
+        run: node --test --test-concurrency=1 tests/retail-rewards-savings-database.test.mjs
 
   rewards-pilot-renewal-database:
     # Exact-identity renewal has its own disposable PostgreSQL database. Tests

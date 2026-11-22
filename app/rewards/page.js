@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { readShopperFeaturePolicy } from "@/lib/retail-rewards/shopper-contracts.mjs";
 import { readShopperAuthPolicy } from "@/lib/retail-rewards/shopper-auth-contracts.mjs";
 import { readCheckoutPolicy } from "@/lib/retail-rewards/checkout-contracts.mjs";
-import ShopperDiscoveryClient from "./ShopperDiscoveryClient";
+import ConnectedShopperDashboard from "./ConnectedShopperDashboard";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Ruvanas Rewards · Shopper", robots: { index: false, follow: false } };
@@ -19,5 +19,5 @@ export default async function ShopperRewardsPage() {
     {result.code === "RATE_LIMITED" && <p>Please wait a minute before refreshing this page.</p>}
     {authEnabled && <p><a href="/rewards/sign-in">Sign in with private shopper access</a></p>}
   </main>;
-  return <ShopperDiscoveryClient initialData={JSON.parse(JSON.stringify(result))} enableSignOut={authEnabled} enableClaims={readCheckoutPolicy(process.env).enabled} />;
+  return <ConnectedShopperDashboard initialData={JSON.parse(JSON.stringify(result))} enableSignOut={authEnabled} enableClaims={readCheckoutPolicy(process.env).enabled} />;
 }

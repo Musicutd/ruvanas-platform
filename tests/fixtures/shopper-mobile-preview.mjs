@@ -34,7 +34,21 @@ export function createShopperMobilePreview({ clock = () => new Date(), delayMs =
   ];
   const usage = new Map([["urban-edit-ten", 3]]), claims = [], claimRequests = new Map(), requests = [];
   let tokenSequence = 0;
-  const state = { delayMs, failNext: false, emptyLocations: false, missingUsage: false, ignoreAbort: false };
+  const state = { delayMs, failNext: false, emptyLocations: false, missingUsage: false, ignoreAbort: false, savingsMode: "positive" };
+  function savings() {
+    const at = now(), mode = state.savingsMode;
+    const row = { currency: "EUR", couponSavingsMinor: 2500, valuedRedemptions: 4, unvaluedRedemptions: 0,
+      subscriptionPaidMinor: 1500, netBenefitMinor: 1000 };
+    if (mode === "unavailable") { row.subscriptionPaidMinor = null; row.netBenefitMinor = null; }
+    if (mode === "negative") { row.couponSavingsMinor = 500; row.valuedRedemptions = 1; row.netBenefitMinor = -1000; }
+    if (mode === "zero") { row.couponSavingsMinor = 1500; row.netBenefitMinor = 0; }
+    if (mode === "unknown") { row.unvaluedRedemptions = 1; row.netBenefitMinor = null; }
+    const currencies = mode === "empty" ? [] : [row];
+    if (mode === "multiple") currencies.push({ currency: "USD", couponSavingsMinor: 800, valuedRedemptions: 2,
+      unvaluedRedemptions: 0, subscriptionPaidMinor: 1200, netBenefitMinor: -400 });
+    return clone({ ok: true, checkedAt: at, period: { kind: "ALL_TIME", through: at },
+      paymentEvidence: ["unavailable", "empty"].includes(mode) ? "UNAVAILABLE" : "VERIFIED_COMPLETE", currencies });
+  }
   const projectedOffer = offer => ({ slug: offer.slug, revision: offer.revision, terms: clone(offer.terms),
     ...(!state.missingUsage ? { usage: { limit: offer.terms.perShopperLimit, used: usage.get(offer.slug) || 0,
       remaining: Math.max(0, offer.terms.perShopperLimit - (usage.get(offer.slug) || 0)), asOf: now() } } : {}) });
@@ -143,7 +157,8 @@ export function createShopperMobilePreview({ clock = () => new Date(), delayMs =
     if (state.failNext) { state.failNext = false; return fail("UNAVAILABLE", "This sample request could not be completed. Please try again."); }
     const query = Object.fromEntries(url.searchParams);
     let result;
-    if (method === "GET" && url.pathname === "/api/rewards/discovery/locations") result = locations(query);
+    if (method === "GET" && url.pathname === "/api/rewards/savings" && Object.keys(query).length === 0) result = savings();
+    else if (method === "GET" && url.pathname === "/api/rewards/discovery/locations") result = locations(query);
     else if (method === "GET" && url.pathname === "/api/rewards/discovery/shops") result = discover(query);
     else if (method === "GET" && /^\/api\/rewards\/discovery\/shops\/[^/]+$/.test(url.pathname)) result = shopView(decodeURIComponent(url.pathname.split("/").at(-1)), query);
     else if (method === "GET" && /^\/api\/rewards\/discovery\/shops\/[^/]+\/offers\/[^/]+$/.test(url.pathname)) {
@@ -161,5 +176,5 @@ export function createShopperMobilePreview({ clock = () => new Date(), delayMs =
   }
   return Object.freeze({ initialData: locations(), transport, state, redeemLatest, reverseLatest, loadSampleWallet, requests,
     snapshot: () => ({ uses: Object.fromEntries(usage), claims: claims.map(publicClaim), requestCount: requests.length }),
-    initialWallet: () => ({ ok: true, claims: claims.map(publicClaim), page: 1, hasMore: false }) });
+    initialWallet: () => ({ ok: true, claims: claims.map(publicClaim), page: 1, hasMore: false }), initialSavings: savings });
 }

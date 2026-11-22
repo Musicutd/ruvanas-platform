@@ -13,6 +13,7 @@ export function ShopperIcon({ name, ...props }) {
     explore: <><circle cx="12" cy="12" r="9" /><path d="m16 8-2 6-6 2 2-6Z" /></>,
     voucher: <><path d="M3 5h18v5a2 2 0 0 0 0 4v5H3v-5a2 2 0 0 0 0-4Z" /><path d="M9 5v2m0 3v2m0 3v2" /></>,
     account: <><circle cx="12" cy="7" r="4" /><path d="M4 22v-2a8 8 0 0 1 16 0v2Z" /></>,
+    savings: <><rect x="3" y="4" width="18" height="16" rx="3" /><path d="M3 9h18M7 15h3m4 0h3" /></>,
     fashion: <path d="m8 3-6 4 3 5 3-2v11h8V10l3 2 3-5-6-4c-1 3-7 3-8 0Z" />,
     food: <><path d="M4 2v7c0 4 6 4 6 0V2M7 2v20M20 2v20M20 2c-5 3-5 11 0 11" /></>,
     home: <><path d="m2 11 10-9 10 9M5 9v13h14V9M10 22v-8h4v8" /></>,
@@ -26,7 +27,7 @@ export function ShopperHeader({ onHome }) {
   return <header className={styles.siteHeader}>{onHome ? <button type="button" className={styles.brand} onClick={onHome} aria-label="Ruvanas Rewards home">{brand}</button> : <a href="/rewards" className={styles.brand}>{brand}</a>}</header>;
 }
 
-export function ShopperNav({ active = "explore", onExplore, onWallet, onAccount, enableWallet = true }) {
+export function ShopperNav({ active = "explore", onExplore, onWallet, onSavings, onAccount, enableWallet = true }) {
   function item(name, text, href, action, enabled = true) {
     const content = <><ShopperIcon name={name === "wallet" ? "voucher" : name} /><span>{text}</span></>;
     const shared = { className: active === name ? styles.activeNav : "", "aria-current": active === name ? "page" : undefined };
@@ -36,6 +37,7 @@ export function ShopperNav({ active = "explore", onExplore, onWallet, onAccount,
   return <nav className={styles.bottomNav} aria-label="Shopper navigation">
     {item("explore", "Explore", "/rewards", onExplore)}
     {item("wallet", "My vouchers", "/rewards/wallet", onWallet, enableWallet)}
+    {item("savings", "My savings", "/rewards/savings", onSavings)}
     {item("account", "Account", "/rewards#account", onAccount)}
   </nav>;
 }
