@@ -15,6 +15,7 @@ import { pilotPreviewAdminIdentity } from "../lib/retail-rewards/pilot-preview-a
 import { requirePilotAdminAccess } from "../lib/retail-rewards/pilot-admin-access.mjs";
 import { requireRewardShopperAccess, hashShopperSessionToken, SHOPPER_COOKIE } from "../lib/retail-rewards/shopper-access.mjs";
 import { pilotPreviewOwnerContext } from "./fixtures/rewards-pilot-preview-admin.mjs";
+import { readPrivatePreviewRecoveryPolicy, privatePreviewRecoveryRoute } from "../lib/private-preview-account-recovery.mjs";
 
 const source = await readFile(new URL("../middleware.js", import.meta.url), "utf8");
 const BASE_ENV = {
@@ -23,7 +24,10 @@ const BASE_ENV = {
   RUVANAS_PRIVATE_PREVIEW_ALLOWED_EMAILS: "owner@example.test", RUVANAS_PRIVATE_PREVIEW_ADMIN_EMAIL: "owner@example.test",
   RUVANAS_PUBLIC_URL: "https://www.ruvanas.com", RUVANAS_PUBLIC_COMING_SOON_URL: "https://www.ruvanas.com/",
   ALLOWED_ORIGINS: "https://ruvanas-platform.onrender.com,https://unapproved.example.test",
-  RUVANAS_RETAIL_REWARDS_PILOT_PREVIEW_ENABLED: undefined
+  RUVANAS_RETAIL_REWARDS_PILOT_PREVIEW_ENABLED: undefined,
+  RUVANAS_PRIVATE_PREVIEW_ACCOUNT_RECOVERY_ENABLED: undefined,
+  RUVANAS_PRIVATE_PREVIEW_ACCOUNT_RECOVERY_ACCOUNTS: undefined,
+  RUVANAS_PRIVATE_PREVIEW_ACCOUNT_RECOVERY_EXPIRES_AT: undefined
 };
 
 test("preparation uses ordinary owner routing while Rewards pilot mutation routes stay closed", async () => {
@@ -88,7 +92,8 @@ function middlewareHarness({ session = null, lookupThrows = false, deviceAllowed
     "readPrivatePreviewPolicy", "isPrivatePreviewPublicPath", "isPrivatePreviewRegistrationPath", "privatePreviewSessionLanding",
     "isPrivatePreviewAdminSession", "isPrivatePreviewOwnerBootstrapSession", "loadPrisma", "crypto", "catalogueRequestSizePolicy",
     "retailTestPlayerBootstrapRequest", "retailTestPlayerDeviceRequest", "hashPlayerToken", "loadRetailTestPlayerByTokenHash", "isPrivatePreviewSubscriberTestingSession",
-    "isPrivatePreviewOnlineDraftSession", "readPilotPreviewPolicy", "pilotPreviewRoute", "pilotPreviewBusinessIdentity", "pilotPreviewAdminIdentity", "requireRewardShopperAccess", "SHOPPER_COOKIE"];
+    "isPrivatePreviewOnlineDraftSession", "readPilotPreviewPolicy", "pilotPreviewRoute", "pilotPreviewBusinessIdentity", "pilotPreviewAdminIdentity", "requireRewardShopperAccess", "SHOPPER_COOKIE",
+    "readPrivatePreviewRecoveryPolicy", "privatePreviewRecoveryRoute"];
   const values = [TestResponse, publicRequestOrigin, privatePreviewTesterRequestAllowed,
     async () => { lookups += 1; if (lookupThrows) throw new Error("No public session query allowed"); return session; },
     "ruvanas_session", policy.readPrivatePreviewPolicy, policy.isPrivatePreviewPublicPath, policy.isPrivatePreviewRegistrationPath,
@@ -96,7 +101,8 @@ function middlewareHarness({ session = null, lookupThrows = false, deviceAllowed
     async () => { loads += 1; return shopperDb; }, { randomUUID: () => "synthetic-request-id" }, catalogueRequestSizePolicy,
     retailTestPlayerBootstrapRequest, retailTestPlayerDeviceRequest, hashPlayerToken, async () => deviceAllowed ? { subscriberTestStream: {} } : null,
     isPrivatePreviewSubscriberTestingSession, isPrivatePreviewOnlineDraftSession, readPilotPreviewPolicy, pilotPreviewRoute,
-    pilotPreviewBusinessIdentity, pilotPreviewAdminIdentity, requireRewardShopperAccess, SHOPPER_COOKIE];
+    pilotPreviewBusinessIdentity, pilotPreviewAdminIdentity, requireRewardShopperAccess, SHOPPER_COOKIE,
+    readPrivatePreviewRecoveryPolicy, privatePreviewRecoveryRoute];
   const run = new Function(...names, `${body}\nreturn middleware;`)(...values);
   return { run, get loads() { return loads; }, get lookups() { return lookups; } };
 }
