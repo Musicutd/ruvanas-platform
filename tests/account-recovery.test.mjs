@@ -68,20 +68,22 @@ test("recovery links use an approved origin and email content carries no passwor
   assert.equal(message.idempotencyKey.length, 64);
 });
 
-test("request and reset APIs preserve privacy, atomic use and session revocation", async () => {
-  const [requestRoute, resetRoute, schema] = await Promise.all([
+test("request and reset routes use the shared reviewed recovery boundary", async () => {
+  const [requestRoute, resetRoute, schema, service, transport] = await Promise.all([
     readFile(new URL("../app/api/auth/password-recovery/request/route.js", import.meta.url), "utf8"),
     readFile(new URL("../app/api/auth/password-recovery/reset/route.js", import.meta.url), "utf8"),
-    readFile(new URL("../prisma/schema.prisma", import.meta.url), "utf8")
+    readFile(new URL("../prisma/schema.prisma", import.meta.url), "utf8"),
+    readFile(new URL("../lib/account-recovery-service.mjs", import.meta.url), "utf8"),
+    readFile(new URL("../lib/account-recovery-server.js", import.meta.url), "utf8")
   ]);
-  assert.match(requestRoute, /ACCOUNT_RECOVERY_MESSAGE/);
-  assert.match(requestRoute, /accountAllowsPasswordRecovery/);
-  assert.match(requestRoute, /account-recovery-request/);
+  assert.match(requestRoute, /accountRecoveryHandlers\(request\)\.request\(request\)/);
+  assert.match(service, /accountAllowsPasswordRecovery/);
+  assert.match(transport, /account-recovery-/);
   assert.doesNotMatch(requestRoute, /token:\s*generated\.token/);
-  assert.match(resetRoute, /account-recovery-reset/);
-  assert.match(resetRoute, /expiresAt: \{ gt: now \}/);
-  assert.match(resetRoute, /session\.updateMany/);
-  assert.match(resetRoute, /bcrypt\.hash\(validation\.password, 12\)/);
+  assert.match(resetRoute, /accountRecoveryHandlers\(request\)\.reset\(request\)/);
+  assert.match(service, /expiresAt: \{ gt: now \}/);
+  assert.match(service, /session\.updateMany/);
+  assert.match(service, /bcrypt\.hash\(password, 12\)/);
   assert.match(schema, /model PasswordResetToken/);
   assert.match(ACCOUNT_RECOVERY_MESSAGE, /If an eligible Ruvanas account/);
 });

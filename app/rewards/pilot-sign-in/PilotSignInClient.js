@@ -8,12 +8,14 @@ import styles from "../shopper-auth.module.css";
 
 const defaultTransport = (path, options) => fetch(path, options);
 
-export default function PilotSignInClient({ transport = defaultTransport, onSuccess, previewOnly = false }) {
+export default function PilotSignInClient({ transport = defaultTransport, onSuccess, previewOnly = false, recoveryEnabled = false }) {
   const [email, setEmail] = useState(""), [password, setPassword] = useState(""), [organisationId, setOrganisationId] = useState("");
   const [busy, setBusy] = useState(false), [complete, setComplete] = useState(false), [error, setError] = useState("");
+  const [passwordReset, setPasswordReset] = useState(false);
   const mounted = useRef(true), inFlight = useRef(false), controller = useRef(null), errorRef = useRef(null);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; controller.current?.abort(); }; }, []);
   useEffect(() => { if (error) errorRef.current?.focus(); }, [error]);
+  useEffect(() => { setPasswordReset(new URLSearchParams(window.location.search).get("password-reset") === "1"); }, []);
 
   async function submit(event) {
     event.preventDefault();
@@ -21,7 +23,7 @@ export default function PilotSignInClient({ transport = defaultTransport, onSucc
     setError("");
     const canonicalEmail = canonicalEmailSchema.safeParse(email), workspace = organisationId.trim();
     if (!canonicalEmail.success || !password || new TextEncoder().encode(password).byteLength > 72 || password.includes("\0") ||
-      !password.isWellFormed() || (workspace && !rewardIdSchema.safeParse(workspace).success)) {
+      /[\uD800-\uDFFF]/u.test(password) || (workspace && !rewardIdSchema.safeParse(workspace).success)) {
       setError("Enter your business email and password. If you enter a workspace ID, use the exact ID supplied by the Super Admin."); setPassword(""); return;
     }
     const body = { email: canonicalEmail.data, password, ...(workspace ? { organisationId: workspace } : {}) };
@@ -61,6 +63,7 @@ export default function PilotSignInClient({ transport = defaultTransport, onSucc
       </section>
       <section className={styles.card} aria-labelledby="pilot-login-heading"><p className={styles.eyebrow}>BUSINESS & ADMINISTRATOR SIGN-IN</p><h2 id="pilot-login-heading">Sign in to your pilot</h2>
         <p className={styles.cardLead}>Use the account already approved for this pilot. This form does not create an account or change your role.</p>
+        {passwordReset && <p className={styles.success} role="status">Password reset complete. Sign in with your new password.</p>}
         <form method="post" action="/api/retail-rewards/pilot-login" onSubmit={submit} noValidate>
           <label className={styles.field}>Business email<input name="email" type="email" inputMode="email" autoComplete="username" autoCapitalize="none" spellCheck={false} maxLength={254} value={email} onChange={event => setEmail(event.target.value)} disabled={busy || complete} /></label>
           <label className={styles.field}>Password<input name="password" type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} disabled={busy || complete} /></label>
@@ -72,6 +75,9 @@ export default function PilotSignInClient({ transport = defaultTransport, onSucc
           {complete && <p className={styles.success} role="status">Signed in. Opening your Rewards workspace…</p>}
           <button className={styles.submit} type="submit" disabled={busy || complete}>{busy ? "Signing in…" : "Sign in to pilot"}</button>
         </form>
+        <p className={styles.switchLink}>{recoveryEnabled
+          ? <a href="/forgot-password">Forgot password?</a>
+          : "Forgot your password? Contact the Super Admin to arrange account recovery."}</p>
         <p className={styles.switchLink}>Using coupons? <a href="/rewards/sign-in">Shopper sign-in</a></p>
         <div className={styles.privateNote}><strong>Private access only</strong><p>Public registration remains closed. Contact the Super Admin if your existing account has not been assigned to the pilot.</p></div>
       </section>

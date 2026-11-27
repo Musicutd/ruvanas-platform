@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { readPilotPreviewPolicy } from "@/lib/retail-rewards/pilot-preview-policy.mjs";
+import { readPrivatePreviewRecoveryPolicy } from "@/lib/private-preview-account-recovery.mjs";
 import PilotSignInClient from "./PilotSignInClient";
 
 export const dynamic = "force-dynamic";
@@ -7,5 +8,5 @@ export const metadata = { title: "Private pilot sign-in · Ruvanas Rewards", rob
 
 export default function RewardsPilotSignInPage() {
   if (!readPilotPreviewPolicy(process.env).enabled) notFound();
-  return <PilotSignInClient />;
+  return <PilotSignInClient recoveryEnabled={readPrivatePreviewRecoveryPolicy(process.env).enabled} />;
 }

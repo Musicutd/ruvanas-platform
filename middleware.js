@@ -11,6 +11,7 @@ import { readPilotPreviewPolicy } from "@/lib/retail-rewards/pilot-preview-polic
 import { pilotPreviewRoute } from "@/lib/retail-rewards/pilot-preview-routes.mjs";
 import { pilotPreviewBusinessIdentity } from "@/lib/retail-rewards/pilot-preview-business.mjs";
 import { pilotPreviewAdminIdentity } from "@/lib/retail-rewards/pilot-preview-admin.mjs";
+import { readPrivatePreviewRecoveryPolicy, privatePreviewRecoveryRoute } from "@/lib/private-preview-account-recovery.mjs";
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 const LEGACY_MATCHER = (path) => path === "/" || path === "/api" || path.startsWith("/api/");
@@ -191,6 +192,14 @@ export async function middleware(request) {
     }
     const loginEntry = (request.method === "GET" || request.method === "HEAD") &&
       (request.nextUrl.pathname === "/login" || request.nextUrl.pathname === "/preview-login");
+    const recoveryRoute = privatePreviewRecoveryRoute(request.nextUrl.pathname, request.method, request.headers.has("next-action"));
+    const recoveryPolicy = readPrivatePreviewRecoveryPolicy(process.env);
+    if (["PAGE", "API"].includes(recoveryRoute) && !recoveryPolicy.enabled) {
+      return previewResponse(new NextResponse(null, { status: 404 }), requestId);
+    }
+    // Bootstrap only: the recovery service independently checks the exact
+    // account and expiring scope. Continue through size and Origin checks.
+    const recoveryAllowed = Boolean(recoveryPolicy.enabled && recoveryRoute);
     const pilotPolicy = readPilotPreviewPolicy(process.env);
     const classifiedPilotRoute = pilotPreviewRoute(request.nextUrl.pathname, request.method, request.headers.has("next-action"));
     // A preview owner's normal back-office access must not bypass the separate
@@ -213,7 +222,7 @@ export async function middleware(request) {
     let retailDeviceAllowed = false;
     try { retailDeviceAllowed = await retailDeviceFromRequest(request); } catch { /* Fail closed; never grant a stale device cookie. */ }
     const retailBootstrap = retailTestPlayerBootstrapRequest(request.nextUrl.pathname, request.method);
-    if (!rewardsPilotAllowed && !retailBootstrap && !retailDeviceAllowed && (loginEntry || !previewBootstrap(request))) {
+    if (!recoveryAllowed && !rewardsPilotAllowed && !retailBootstrap && !retailDeviceAllowed && (loginEntry || !previewBootstrap(request))) {
       let session = null;
       try {
         session = await previewSessionFromRequest(request);
