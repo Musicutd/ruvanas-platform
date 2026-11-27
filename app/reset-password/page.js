@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { RECOVERY_RESET_COMPLETE, recoveryPasswordError, recoveryResetDestination } from "@/lib/account-recovery-ui.mjs";
 import styles from "../auth-recovery.module.css";
 
 export default function ResetPasswordPage() {
@@ -12,17 +13,24 @@ export default function ResetPasswordPage() {
   const [confirmation, setConfirmation] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [complete, setComplete] = useState(false);
+  const fragmentRead = useRef(false);
 
   useEffect(() => {
+    if (fragmentRead.current) return;
+    fragmentRead.current = true;
     const raw = new URLSearchParams(window.location.hash.slice(1)).get("token") || "";
     setToken(raw);
     setReady(true);
-    if (raw) window.history.replaceState(null, "", window.location.pathname);
+    if (window.location.hash) window.history.replaceState(null, "", window.location.pathname);
   }, []);
 
   async function submit(event) {
     event.preventDefault();
+    if (loading || complete) return;
     setError("");
+    const validationError = recoveryPasswordError(password, confirmation);
+    if (validationError) { setError(validationError); return; }
     setLoading(true);
     try {
       const response = await fetch("/api/auth/password-recovery/reset", {
@@ -31,8 +39,12 @@ export default function ResetPasswordPage() {
         body: JSON.stringify({ token, password, confirmation })
       });
       const body = await response.json();
-      if (!response.ok) setError(body.error || "Unable to reset your password.");
-      else router.replace(body.destination || "/login?password-reset=1");
+      if (!response.ok || body.ok !== true) setError(body.error || "Unable to reset your password.");
+      else {
+        setToken(""); setPassword(""); setConfirmation(""); setComplete(true);
+        const destination = recoveryResetDestination(body);
+        if (destination) router.replace(destination);
+      }
     } catch {
       setError("A connection error occurred. Please try again.");
     } finally {
@@ -40,15 +52,20 @@ export default function ResetPasswordPage() {
     }
   }
 
-  const missingToken = ready && !token;
+  const missingToken = ready && !token && !complete;
   return (
     <main className={styles.page} id="main-content">
       <section className={styles.card} aria-labelledby="reset-title">
         <a className={styles.brand} href="/">RUVANAS</a>
         <p className={styles.eyebrow}>SECURE PASSWORD RESET</p>
-        <h1 className={styles.title} id="reset-title">Choose a new password</h1>
-        <p className={styles.subtitle}>Use at least 12 characters with a letter and a number. Completing this step signs the account out on every device.</p>
-        {missingToken ? (
+        <h1 className={styles.title} id="reset-title">{complete ? "Password reset" : "Choose a new password"}</h1>
+        {!complete && <p className={styles.subtitle}>Use at least 12 characters with a letter and a number. We will check the maximum length before saving. Completing this step signs the account out on every device.</p>}
+        {complete ? (
+          <>
+            <p className={styles.notice} role="status">{RECOVERY_RESET_COMPLETE}</p>
+            <p className={styles.footer}>Your administrator can arrange your next private pilot sign-in. Resetting your password does not enable Rewards or change your access.</p>
+          </>
+        ) : missingToken ? (
           <>
             <p className={styles.error} role="alert">This recovery link is incomplete. Request a new private link.</p>
             <p className={styles.footer}><a className={styles.link} href="/forgot-password">Request another link</a></p>
@@ -57,11 +74,11 @@ export default function ResetPasswordPage() {
           <form className={styles.form} onSubmit={submit}>
             <label className={styles.label}>
               New password
-              <input className={styles.input} type="password" autoComplete="new-password" minLength="12" maxLength="128" value={password} onChange={(event) => setPassword(event.target.value)} required />
+              <input className={styles.input} type="password" autoComplete="new-password" minLength="12" maxLength="72" value={password} onChange={(event) => setPassword(event.target.value)} disabled={loading} required />
             </label>
             <label className={styles.label}>
               Confirm new password
-              <input className={styles.input} type="password" autoComplete="new-password" minLength="12" maxLength="128" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} required />
+              <input className={styles.input} type="password" autoComplete="new-password" minLength="12" maxLength="72" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} disabled={loading} required />
             </label>
             {error ? <p className={styles.error} role="alert">{error}</p> : null}
             <button className={styles.button} type="submit" disabled={!ready || loading}>{loading ? "Resetting securely…" : "Reset password"}</button>
